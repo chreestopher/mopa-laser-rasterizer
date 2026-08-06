@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cgi-server-config
+  namespace: default
+data:
+  SERVER_PORT: "8000"
+  PYTHONUNBUFFERED: "1"
+  LOG_LEVEL: "INFO"

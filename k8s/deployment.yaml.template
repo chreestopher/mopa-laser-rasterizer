@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cgi-server
+  namespace: default
+  labels:
+    app: cgi-server
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: cgi-server
+  template:
+    metadata:
+      labels:
+        app: cgi-server
+    spec:
+      containers:
+      - name: cgi-server
+        image: my-cgi-server:local
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+#        livenessProbe:
+#          httpGet:
+#            path: /
+#            port: http
+#          initialDelaySeconds: 10
+#          periodSeconds: 6
+#          timeoutSeconds: 60
+#          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 6
+          timeoutSeconds: 60
+          failureThreshold: 150
+        volumeMounts:
+        - name: html
+          mountPath: ${CONTAINER_HTML_PATH}
+          readOnly: true
+        - name: cgi-bin
+          mountPath: ${CONTAINER_CGI_PATH}
+          readOnly: true
+        - name: uploads
+          mountPath: ${CONTAINER_UPLOADS_PATH}
+          readOnly: false
+      volumes:
+      - name: html
+        hostPath:
+          path: ${HOST_HTML_PATH}
+          type: Directory
+      - name: cgi-bin
+        hostPath:
+          path: ${HOST_CGI_PATH}
+          type: Directory
+      - name: uploads
+        hostPath:
+          path: ${HOST_UPLOADS_PATH}
+          type: DirectoryOrCreate

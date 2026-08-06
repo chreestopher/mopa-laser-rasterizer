@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traefik-static-conf
+  namespace: kube-system
+data:
+  traefik.yml: |
+    # Traefik static configuration (intended for Traefik v2.x)
+    # This file sets entryPoints and attempts to disable request-body limits
+    # (support for `maxRequestBodyBytes` depends on Traefik version).
+    providers:
+      kubernetesIngress: {}
+
+    entryPoints:
+      web:
+        address: ":80"
+      websecure:
+        address: ":443"
+
+    # Experimental / optional settings. Some Traefik builds support
+    # an HTTP `maxRequestBodyBytes` under `experimental.http`.
+    # Set to 0 to allow unlimited size (or adjust to desired bytes).
+    experimental:
+      http:
+        maxRequestBodyBytes: 0
+
+    # Note: Traefik does not implement nginx-style proxy buffering annotations.
+    # Disabling buffering behaviour is controller/version-dependent.
+    # If this config key is ignored by your Traefik, we'll patch the deployment
+    # to pass a config file or additional CLI args instead.

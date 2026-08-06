@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  template:
+    spec:
+      containers:
+      - name: traefik
+        args:
+        - --configFile=/config/traefik.yml
+        volumeMounts:
+        - name: traefik-static-config
+          mountPath: /config/traefik.yml
+          subPath: traefik.yml
+      volumes:
+      - name: traefik-static-config
+        configMap:
+          name: traefik-static-conf
