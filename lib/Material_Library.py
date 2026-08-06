@@ -161,7 +161,6 @@ def _convert_for_json(o):
 
 def parse_material_settings(material_settings_path):
     new_color_settings = lb.parse_material_library(material_settings_path)
-    #new_color_settings = lb.parse_material_library("C:\\Users\\chree\\Desktop\\code\\lightburn-generator\\100 watt mopa fiber.clb")
 
     for item in new_color_settings:
         if item.materialName == "colors - stainless steel":
@@ -389,14 +388,9 @@ lb = lightburn.Lightburn()
 
 if __name__ == "__main__":
     INPUT_FILE = sys.argv[1]
-    #INPUT_FILE="C:\\Users\\chree\\Desktop\\my-cgi-server\\cover.jpg"
     OUTPUT_FILE=sys.argv[2]
-    #OUTPUT_FILE="cover-completed.svg"
-    #square_mm=0.25
     square_mm=float(sys.argv[3])
-    #new_width=800
     new_width=sys.argv[4]
-    #new_height=0
     new_height=sys.argv[5]
     material_library_file=sys.argv[6]
     print(f"using material library settings: {material_library_file}")
