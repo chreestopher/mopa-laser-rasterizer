@@ -34,9 +34,7 @@ class CGIHTTPRequestHandler(http.server.CGIHTTPRequestHandler):
     
     def do_GET(self):
         """Handle GET requests."""
-        if self.path == '/upload':
-            self.serve_upload_form()
-        elif self.path.startswith('/cgi-bin/'):
+        if self.path.startswith('/cgi-bin/'):
             # Set CGI directories
             self.cgi_directories = ['/cgi-bin']
             http.server.CGIHTTPRequestHandler.do_GET(self)
@@ -53,44 +51,6 @@ class CGIHTTPRequestHandler(http.server.CGIHTTPRequestHandler):
             http.server.CGIHTTPRequestHandler.do_POST(self)
         else:
             self.send_error(http.client.METHOD_NOT_ALLOWED)
-
-    def serve_upload_form(self):
-        """Serve a simple upload form."""
-        html = b"""<!DOCTYPE html>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>File Upload Raster Image File</title>
-</head>
-<body>
-    <h1>Upload a File</h1>
-    <form action="/upload" method="post" enctype="multipart/form-data">
-        <label for="file">Choose a file:</label>
-        <input type="file" id="file" name="file" required>
-        <br><br>
-        <label for="file2">Choose material settings file:</label>
-        <input type="file" id="file2" name="file2" required>
-        <br><br>        
-        <label for="pixel_square_mm">pixel_square_mm:</label>
-        <input type="text" id="pixel_square_mm" name="pixel_square_mm" placeholder="size in decimal of mm for pixels to be drawn">
-        <br><br>
-        <label for="new_width">new_width:</label>
-        <input type="text" id="new_width" name="new_width" placeholder="new width to resize to, respecting aspect ration">
-        <br><br>
-        <label for="new-height">new_height:</label>
-        <input type="text" id="new_height" name="new_height" placeholder="new height to resize to, respecting aspect ration">       
-        <button type="submit">Upload</button>
-    </form>
-</body>
-</html>
-"""
-        self.send_response(http.client.OK)
-        self.send_header('Content-type', 'text/html; charset=utf-8')
-        self.send_header('Content-Length', str(len(html)))
-        self.end_headers()
-        self.wfile.write(html)
 
     def handle_upload(self):
         """Handle file upload and save the uploaded file to disk."""
