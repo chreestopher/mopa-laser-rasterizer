@@ -110,6 +110,7 @@ kubectl get service mopa-laser-rasterizer
 
 # View pod logs
 kubectl logs -f deployment/mopa-laser-rasterizer
+kubectl logs -l app=mopa-laser-rasterizer --tail=100
 
 # Describe deployment for details
 kubectl describe deployment mopa-laser-rasterizer

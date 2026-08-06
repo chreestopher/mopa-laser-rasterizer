@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: default
+
+metadata:
+  name: mopa-laser-rasterizer
+
+commonLabels:
+  app: mopa-laser-rasterizer
+  managed-by: kustomize
+
+commonAnnotations:
+  description: "Re-Rasterize color images into lightburn mopa color engraving projects for your laser"
+
+resources:
+- deployment.yaml
+- service.yaml
+- configmap.yaml
+- ingress.yaml
+
+replicas:
+- name: mopa-laser-rasterizer
+  count: 3
+
+images:
+- name: mopa-laser-rasterizer
+  newName: mopa-laser-rasterizer
+  newTag: "local"
