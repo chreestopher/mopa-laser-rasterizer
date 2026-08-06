@@ -49,24 +49,24 @@ spec:
 #          failureThreshold: 150
         volumeMounts:
         - name: html
-          mountPath: ${CONTAINER_HTML_PATH}
+          mountPath: /app/html
           readOnly: true
         - name: cgi-bin
-          mountPath: ${CONTAINER_CGI_PATH}
+          mountPath: /app/cgi-bin
           readOnly: true
         - name: uploads
-          mountPath: ${CONTAINER_UPLOADS_PATH}
+          mountPath: /app/uploads
           readOnly: false
       volumes:
       - name: html
         hostPath:
-          path: ${HOST_HTML_PATH}
+          path: /mnt/c/Users/chree/Desktop/mopa-laser-rasterizer/html
           type: Directory
       - name: cgi-bin
         hostPath:
-          path: ${HOST_CGI_PATH}
+          path: /mnt/c/Users/chree/Desktop/mopa-laser-rasterizer/cgi-bin
           type: Directory
       - name: uploads
         hostPath:
-          path: ${HOST_UPLOADS_PATH}
+          path: /mnt/c/Users/chree/Desktop/mopa-laser-rasterizer/uploads
           type: DirectoryOrCreate

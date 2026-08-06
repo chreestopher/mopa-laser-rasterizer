@@ -5,7 +5,7 @@ A simple Python HTTP server that serves static HTML files and executes Python CG
 ## Project Structure
 
 ```
-my-cgi-server/
+mopa-laser-rasterizer/
 ├── server.py           # Main server application
 ├── html/               # Static HTML files directory
 │   └── index.html     # Add your HTML files here

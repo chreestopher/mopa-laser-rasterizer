@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE_NAME="my-cgi-server"
+IMAGE_NAME="mopa-laser-rasterizer"
 IMAGE_TAG="local"
 DOCKERFILE="Dockerfile"
 CONTEXT="."
@@ -55,5 +55,5 @@ fi
 
 echo "Success. Image $FULL_TAG is loaded into the runtime."
 echo "Use this image tag in your Kubernetes resources, for example:"
-echo "  kubectl set image deployment/cgi-server cgi-server=$FULL_TAG"
-echo "Then restart the deployment with: kubectl rollout restart deployment/cgi-server"
+echo "  kubectl set image deployment/mopa-laser-rasterizer mopa-laser-rasterizer=$FULL_TAG"
+echo "Then restart the deployment with: kubectl rollout restart deployment/mopa-laser-rasterizer"

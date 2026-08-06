@@ -1,10 +1,10 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: cgi-server
+  name: mopa-laser-rasterizer
   namespace: default
   labels:
-    app: cgi-server
+    app: mopa-laser-rasterizer
   annotations:
     kubernetes.io/ingress.class: traefik
     cert-manager.io/cluster-issuer: letsencrypt-prod
@@ -18,16 +18,16 @@ spec:
   ingressClassName: traefik
   tls:
   - hosts:
-    - cgi-server.local
-    secretName: cgi-server-tls
+    - mopa-laser-rasterizer.local
+    secretName: mopa-laser-rasterizer-tls
   rules:
-  - host: cgi-server.local
+  - host: mopa-laser-rasterizer.local
     http:
       paths:
       - path: /
         pathType: Prefix
         backend:
           service:
-            name: cgi-server
+            name: mopa-laser-rasterizer
             port:
               number: 80

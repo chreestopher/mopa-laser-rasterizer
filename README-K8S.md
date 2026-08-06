@@ -15,30 +15,30 @@ This guide explains how to deploy the CGI server to Kubernetes using kubectl.
 
 ```bash
 # Build the Docker image
-docker build -t my-cgi-server:1 .
+docker build -t mopa-laser-rasterizer:1 .
 
 # Tag for your registry (replace with your registry URL)
-docker tag my-cgi-server:1 your-registry.com/my-cgi-server:1
+docker tag mopa-laser-rasterizer:1 your-registry.com/mopa-laser-rasterizer:1
 
 # Push to registry
-docker push your-registry.com/my-cgi-server:1
+docker push your-registry.com/mopa-laser-rasterizer:1
 ```
 
 For local development with Docker Desktop or Minikube:
 ```bash
 # Build directly (no push needed)
-docker build -t my-cgi-server:1 .
+docker build -t mopa-laser-rasterizer:1 .
 ```
 
 For local k3s development, use the helper script:
 ```powershell
 # Windows PowerShell
-.\load-k3s-image.ps1 -ImageName my-cgi-server -ImageTag local
+.\load-k3s-image.ps1 -ImageName mopa-laser-rasterizer -ImageTag local
 ```
 
 ```bash
 # WSL or Linux shell
-./load-k3s-image.sh my-cgi-server local
+./load-k3s-image.sh mopa-laser-rasterizer local
 ```
 
 ### Local environment sync
@@ -61,7 +61,7 @@ A single script is also available to rebuild, load, clean, and apply:
 
 Example:
 ```powershell
-.\deploy-k8s.ps1 -ImageName my-cgi-server -ImageTag local -KubeConfigPath /etc/rancher/k3s/k3s.yaml
+.\deploy-k8s.ps1 -ImageName mopa-laser-rasterizer -ImageTag local -KubeConfigPath /etc/rancher/k3s/k3s.yaml
 ```
 
 Then apply from WSL:
@@ -71,8 +71,8 @@ wsl -e sh -lc 'cd projectdir && ./sync-env.sh && kubectl apply -k k8s/'
 
 Then update your deployment to use that tag and restart it:
 ```bash
-kubectl set image deployment/cgi-server cgi-server=my-cgi-server:local
-kubectl rollout restart deployment.cgi-server
+kubectl set image deployment/mopa-laser-rasterizer mopa-laser-rasterizer=mopa-laser-rasterizer:local
+kubectl rollout restart deployment.mopa-laser-rasterizer
 ```
 
 ### 2. Deploy to Kubernetes
@@ -102,38 +102,38 @@ kubectl apply -f k8s/
 
 ```bash
 # Check deployment status
-kubectl get deployment cgi-server
-kubectl get pods -l app=cgi-server
+kubectl get deployment mopa-laser-rasterizer
+kubectl get pods -l app=mopa-laser-rasterizer
 
 # Check service
-kubectl get service cgi-server
+kubectl get service mopa-laser-rasterizer
 
 # View pod logs
-kubectl logs -f deployment/cgi-server
+kubectl logs -f deployment/mopa-laser-rasterizer
 
 # Describe deployment for details
-kubectl describe deployment cgi-server
+kubectl describe deployment mopa-laser-rasterizer
 ```
 
 ### 4. Access the Server
 
 **Using Port Forwarding:**
 ```bash
-kubectl port-forward service/cgi-server 8000:80
+kubectl port-forward service/mopa-laser-rasterizer 8000:80
 # Access at: http://localhost:8000
 ```
 
 **Using LoadBalancer / Traefik:**
 ```bash
-kubectl get service cgi-server
+kubectl get service mopa-laser-rasterizer
 # If the service is reachable, use the external IP on port 80
 ```
 
 **Using Ingress via Traefik:**
 1. Add a host entry on Windows for the Traefik external IP:
-   - `172.30.216.123 cgi-server.local`
+   - `172.30.216.123 mopa-laser-rasterizer.local`
 2. Open the browser at:
-   - `http://cgi-server.local`
+   - `http://mopa-laser-rasterizer.local`
 
 This is the preferred way to access the app without `kubectl port-forward`.
 
@@ -149,7 +149,7 @@ This is the preferred way to access the app without `kubectl port-forward`.
 
 ### service.yaml
 - LoadBalancer service exposing port 80 → 8000
-- Selector: `app: cgi-server`
+- Selector: `app: mopa-laser-rasterizer`
 
 ### configmap.yaml
 - Configuration values (can be referenced by pods)
@@ -163,7 +163,7 @@ This is the preferred way to access the app without `kubectl port-forward`.
 ### ingress.yaml
 - Traefik ingress controller integration
 - TLS/SSL support (requires cert-manager)
-- Routes `cgi-server.local` to the service
+- Routes `mopa-laser-rasterizer.local` to the service
 
 ### kustomization.yaml
 - Kustomize configuration for managing multiple resources
@@ -196,35 +196,35 @@ Modify in `deployment.yaml` under `spec.template.spec.containers[0].resources`:
 ### Scale Deployment
 ```bash
 # Set specific number of replicas
-kubectl scale deployment cgi-server --replicas=5
+kubectl scale deployment mopa-laser-rasterizer --replicas=5
 
 # Check HPA status
-kubectl get hpa cgi-server
+kubectl get hpa mopa-laser-rasterizer
 ```
 
 ### Update Image
 ```bash
 # Set new image
-kubectl set image deployment/cgi-server \
-  cgi-server=my-cgi-server:v2.0
+kubectl set image deployment/mopa-laser-rasterizer \
+  mopa-laser-rasterizer=mopa-laser-rasterizer:v2.0
 ```
 
 ### View Logs
 ```bash
 # Recent logs
-kubectl logs deployment/cgi-server
+kubectl logs deployment/mopa-laser-rasterizer
 
 # Follow logs
-kubectl logs -f deployment/cgi-server
+kubectl logs -f deployment/mopa-laser-rasterizer
 
 # Previous pod logs
-kubectl logs deployment/cgi-server --previous
+kubectl logs deployment/mopa-laser-rasterizer --previous
 ```
 
 ### Execute Commands in Pod
 ```bash
 # Get pod name
-kubectl get pods -l app=cgi-server
+kubectl get pods -l app=mopa-laser-rasterizer
 
 # Execute command
 kubectl exec -it <pod-name> -- /bin/bash
@@ -236,8 +236,8 @@ kubectl exec -it <pod-name> -- /bin/bash
 kubectl delete -k k8s/
 
 # Or delete individual resources
-kubectl delete deployment cgi-server
-kubectl delete service cgi-server
+kubectl delete deployment mopa-laser-rasterizer
+kubectl delete service mopa-laser-rasterizer
 ```
 
 ## Production Considerations
@@ -261,8 +261,8 @@ kubectl logs <pod-name>
 
 ### Service not accessible
 ```bash
-kubectl get endpoints cgi-server
-kubectl get svc cgi-server
+kubectl get endpoints mopa-laser-rasterizer
+kubectl get svc mopa-laser-rasterizer
 ```
 
 ### Image pull errors
@@ -288,7 +288,7 @@ To deploy in a custom namespace:
 kubectl apply -f k8s/namespace.yaml
 
 # Deploy with namespace
-kubectl apply -f k8s/ -n cgi-server
+kubectl apply -f k8s/ -n mopa-laser-rasterizer
 ```
 
 Update the namespace in YAML files as needed.

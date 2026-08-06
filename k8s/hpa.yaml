@@ -1,15 +1,15 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: cgi-server
+  name: mopa-laser-rasterizer
   namespace: default
   labels:
-    app: cgi-server
+    app: mopa-laser-rasterizer
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: cgi-server
+    name: mopa-laser-rasterizer
   minReplicas: 2
   maxReplicas: 10
   metrics:

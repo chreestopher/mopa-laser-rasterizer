@@ -1,5 +1,5 @@
 param(
-    [string]$ImageName = "my-cgi-server",
+    [string]$ImageName = "mopa-laser-rasterizer",
     [string]$ImageTag = "local",
     [string]$Dockerfile = "Dockerfile",
     [string]$Context = "."
@@ -47,5 +47,5 @@ if (-not $imported) {
 
 Write-Host "Success. Image $fullTag is loaded into the k3s runtime."
 Write-Host "Use this tag in your Kubernetes deployment, for example:"
-Write-Host "  kubectl set image deployment/cgi-server cgi-server=$fullTag" -ForegroundColor Cyan
-Write-Host "Then restart the deployment with: kubectl rollout restart deployment/cgi-server"
+Write-Host "  kubectl set image deployment/mopa-laser-rasterizer mopa-laser-rasterizer=$fullTag" -ForegroundColor Cyan
+Write-Host "Then restart the deployment with: kubectl rollout restart deployment/mopa-laser-rasterizer"

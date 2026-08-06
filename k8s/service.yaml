@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: cgi-server
+  name: mopa-laser-rasterizer
   namespace: default
   labels:
-    app: cgi-server
+    app: mopa-laser-rasterizer
 spec:
   type: ClusterIP
   ports:
@@ -13,4 +13,4 @@ spec:
     targetPort: http
     protocol: TCP
   selector:
-    app: cgi-server
+    app: mopa-laser-rasterizer

@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: cgi-server-config
+  name: mopa-laser-rasterizer-config
   namespace: default
 data:
   SERVER_PORT: "8000"

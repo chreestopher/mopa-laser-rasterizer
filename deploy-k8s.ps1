@@ -1,5 +1,5 @@
 param(
-    [string]$ImageName = "my-cgi-server",
+    [string]$ImageName = "mopa-laser-rasterizer",
     [string]$ImageTag = "local",
     [string]$Dockerfile = "Dockerfile",
     [string]$Context = ".",
@@ -136,16 +136,16 @@ finally {
 if (-not $SkipClean) {
     Write-Host "Cleaning existing Kubernetes resources..."
     Invoke-WslCommand "sudo KUBECONFIG=$KubeConfigPath kubectl delete -k '$k8sPathWsl' --ignore-not-found=true"
-    Invoke-WslCommand "sudo KUBECONFIG=$KubeConfigPath kubectl delete service cgi-server-cgi-server --ignore-not-found=true"
+    Invoke-WslCommand "sudo KUBECONFIG=$KubeConfigPath kubectl delete service mopa-laser-rasterizer-mopa-laser-rasterizer --ignore-not-found=true"
 }
 
 Write-Host "Applying Kubernetes configuration..."
 Invoke-WslCommand "cd '$rootWsl' && sudo KUBECONFIG=$KubeConfigPath kubectl apply -k 'k8s'"
 
 Write-Host "Restarting the deployment to pick up the new image..."
-Invoke-WslCommand "cd '$rootWsl' && sudo KUBECONFIG=$KubeConfigPath kubectl rollout restart deployment/cgi-server -n default"
+Invoke-WslCommand "cd '$rootWsl' && sudo KUBECONFIG=$KubeConfigPath kubectl rollout restart deployment/mopa-laser-rasterizer -n default"
 
 Write-Host "Deployment complete. Current pods:"
-Invoke-WslCommand "cd '$rootWsl' && sudo KUBECONFIG=$KubeConfigPath kubectl get pods -n default -l app=cgi-server"
+Invoke-WslCommand "cd '$rootWsl' && sudo KUBECONFIG=$KubeConfigPath kubectl get pods -n default -l app=mopa-laser-rasterizer"
 
 Write-Host "Done. Your image is loaded into the local k3s runtime and Kubernetes was updated."
