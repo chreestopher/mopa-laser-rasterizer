@@ -227,9 +227,12 @@ class CGIHTTPRequestHandler(http.server.CGIHTTPRequestHandler):
             new_width=form_fields['new_width']
             new_height=form_fields['new_height']
             material_settings=processed_log["material_settings"]
+            colors_limit=form_fields['colors'].split(",")
+            print(colors_limit)
+            print("\n")
             try:
                 result_of_script = subprocess.run(
-                    ["python", "lib/Material_Library.py", input_file, output_file, f"{square_mm}", f"{new_width}",f"{new_height}", material_settings],
+                    ["python", "lib/Material_Library.py", input_file, output_file, f"{square_mm}", f"{new_width}",f"{new_height}", material_settings,  ",".join(colors_limit)],
                     capture_output=True, 
                     text=True
                 )
@@ -247,8 +250,13 @@ class CGIHTTPRequestHandler(http.server.CGIHTTPRequestHandler):
             resp_text = f"File '{filename}' uploaded successfully. Size: {file_size} bytes."
             if field_info:
                 resp_text += f"\nParsed form fields:\n{field_info}"
-                resp_text += result_of_script.stdout
-                resp_text += result_of_script.stderr
+                try:
+                    result_of_script
+                    resp_text += result_of_script.stdout
+                    resp_text += result_of_script.stderr                    
+                except NameError:
+                    print("The variable is not defined.")
+            
             resp = resp_text.encode('utf-8')
             self.send_response(200)
             self.send_header('Content-Type', 'text/plain; charset=utf-8')
