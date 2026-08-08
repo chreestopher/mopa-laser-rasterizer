@@ -1,4 +1,4 @@
-# CGI-Enabled Web Server
+# MOPA-LASER-RASTERIZER
 
 Simple web form for processing image files to prepare for color engraving on stainless steel
 
@@ -45,11 +45,10 @@ Make sure the Material Settings Description matches one of the following descrip
 
 ```
 mopa-laser-rasterizer/
-├── server.py               # Main server application
-├── html/                   # Static HTML files directory
+├── app.py               # Main server application
+├── static/                   # Static HTML files directory
 │   └── index.html          # Add your HTML files here
-├── cgi-bin/                # Python CGI scripts directory
-│   └── example.py          # Add your CGI scripts here
+├── templates/              # Templated HTML files directory
 ├── lib/                    # Core library and utility modules
 │   ├── lightburn.py        # library for interacting with lightburn project and material files
 │   └── Material_Library.py # process sent file with sent material settings file
@@ -68,69 +67,6 @@ mopa-laser-rasterizer/
 1. Open a terminal in the project directory
 2. Run the server:
    ```bash
-   python server.py
+   python app.py
    ```
 3. Open your browser and navigate to: `http://localhost:8000`
-
-## Directory Usage
-
-### HTML Files (`html/`)
-
-Place any static HTML, CSS, and JavaScript files here if you want to customize the upload form or add additional pages
-
-
-### CGI Scripts (`cgi-bin/`)
-
-Place your Python CGI scripts here:
-- Scripts must be executable
-- Scripts should output proper HTTP headers
-- Access via `/cgi-bin/script_name.py`
-
-Example CGI script:
-```python
-#!/usr/bin/env python3
-print("Content-Type: text/html")
-print()
-print("<h1>Hello from CGI!</h1>")
-```
-
-## Accessing Resources
-
-- Static files: `http://localhost:8000/filename.html`
-- CGI scripts: `http://localhost:8000/cgi-bin/script.py`
-- Default route: `http://localhost:8000/` → serves `html/index.html`
-
-## Example CGI Script
-
-Create `cgi-bin/hello.py`:
-
-```python
-#!/usr/bin/env python3
-import cgi
-
-print("Content-Type: text/html")
-print()
-
-# Get query parameters
-form = cgi.FieldStorage()
-name = form.getvalue('name', 'World')
-
-print(f"<h1>Hello, {name}!</h1>")
-```
-
-Access it at: `http://localhost:8000/cgi-bin/hello.py?name=YourName`
-
-## Configuration
-
-Edit `server.py` to change:
-- `PORT` - Server port (default: 8000)
-- `HOST` - Server host (default: localhost)
-- `HTML_DIR` - Static files directory
-- `CGI_BIN_DIR` - CGI scripts directory
-
-## Notes
-
-- The server runs on `localhost:8000` by default
-- Press Ctrl+C to stop the server
-- Ensure CGI scripts have proper permissions to execute
-- CGI scripts must start with a shebang line: `#!/usr/bin/env python3`
