@@ -18,3 +18,4 @@ sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
 
 
 
+sudo apt install build-essential libpotrace-dev libagg-dev pkg-config python3-dev

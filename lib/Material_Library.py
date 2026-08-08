@@ -5,26 +5,17 @@ import json
 from PIL import Image
 import colorsys
 import math
-    
-def hex_to_rgb(hex_str):
-    """Converts a hex string (e.g., '#FFFFFF' or 'FFF') to an RGB tuple."""
-    hex_str = hex_str.lstrip('#')
-    # Handle shorthand 3-digit hex codes like #FFF
-    if len(hex_str) == 3:
-        hex_str = ''.join([char*2 for char in hex_str])
-    return tuple(int(hex_str[i:i+2], 16) for i in (0, 2, 4))
+import cv2
+import numpy as np 
+import svgwrite
+import potrace
 
-def find_closest_hex(target_hex, hex_list):
-    """Finds the closest hex color from a list to the target hex."""
-    target_rgb = hex_to_rgb(target_hex)
+def str_to_bool(value: str) -> bool:
+    # Convert to lowercase and strip whitespace
+    clean_val = value.strip().lower()
     
-    def calculate_distance(hex_code):
-        rgb = hex_to_rgb(hex_code)
-        # Standard Euclidean distance formula in 3D space (R, G, B)
-        return math.sqrt(sum((a - b) ** 2 for a, b in zip(target_rgb, rgb)))
-    
-    # Returns the hex code with the minimum distance
-    return min(hex_list, key=calculate_distance)
+    # Return True if it matches truthy terms
+    return clean_val in ("true", "1", "yes", "on", "t")
 
 def resize_to_specific_height_or_width( image, width=0, height=0 ):
     if (height == 0 and width != 0):
@@ -41,18 +32,21 @@ def resize_to_specific_height_or_width( image, width=0, height=0 ):
         return image
     return resized_img
 
-def get_closest_color(r, g, b):
+def get_closest_color(r, g, b, TARGET_COLORS):
     """
     Determines the output color based on the input pixel's value (luminance) and hue.
     """
     # 1. Calculate Value (V) for thresholding (using max component for simplicity)
+    r=int(r)
+    g=int(g)
+    b=int(b)
     V = max(r, g, b)
 
     # 2. Apply Luminance Threshold Rules
     if V < 25:
         return "#000000"  # Black
     
-    # if (V > 200):
+    # if (V > 250):
     #     return "#B4B4B4"  # Light Gray
 
     # 3. Apply Hue Matching Rule (between 25 and 200)
@@ -87,12 +81,8 @@ def get_closest_color(r, g, b):
             min_diff = angular_diff
             closest_hex = hex_code
 
-    color_palette = TARGET_COLORS.keys() 
     my_color = closest_hex
-
-    closest_lightburn_layer_hex_code = find_closest_hex(my_color, color_palette)
-
-    return closest_lightburn_layer_hex_code
+    return my_color
 
 def generate_pixel_svg(TARGET_COLORS, input_image_path, output_svg_path, square_size_mm=0.25, new_width=0, new_height=0):
     """
@@ -144,7 +134,7 @@ def generate_pixel_svg(TARGET_COLORS, input_image_path, output_svg_path, square_
             r, g, b = img.getpixel((x, y))
             
             # Determine the color based on the rules
-            color = get_closest_color(r, g, b)
+            color = get_closest_color(r, g, b, TARGET_COLORS)
             # Calculate the position of the square in millimeters
             x_mm = x * square_size_mm
             y_mm = y * square_size_mm
@@ -173,16 +163,125 @@ def generate_pixel_svg(TARGET_COLORS, input_image_path, output_svg_path, square_
     except Exception as e:
         print(f"Error writing LightBurn file: {e}")
 
-def _convert_for_json(o):
-    if isinstance(o, dict):
-        return {k: _convert_for_json(v) for k, v in o.items()}
-    if isinstance(o, list):
-        return [_convert_for_json(x) for x in o]
-    if hasattr(o, "__dict__"):
-        return {k: _convert_for_json(v) for k, v in vars(o).items()}
-    if isinstance(o, (str, int, float, bool)) or o is None:
-        return o
-    return str(o)
+
+def hex_to_rgb(hex_str):
+    """Helper to convert #R_G_B or R_G_B hex string to a Numpy RGB tuple."""
+    hex_str = hex_str.lstrip('#')
+    return tuple(int(hex_str[i:i+2], 16) for i in (0, 2, 4))
+
+def rgb_to_hex(rgb):
+    """Converts an (R, G, B) tuple to a #RRGGBB hex string."""
+    return '#{:02x}{:02x}{:02x}'.format(*rgb)
+
+def trace_with_palette_mapping(image_path, svg_output_path):
+    MAX_DIMENSION = None
+    RESIZE_FACTOR = 1.0
+    TURD_SIZE = 15
+    # 1. Load and read image
+    img = cv2.imread(image_path)
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    orig_h, orig_w, _ = img_rgb.shape
+    target_w, target_h = orig_w, orig_h
+
+    if RESIZE_FACTOR != 1.0:
+        target_w = int(orig_w * RESIZE_FACTOR)
+        target_h = int(orig_h * RESIZE_FACTOR)
+    if MAX_DIMENSION is not None and max(target_w, target_h) > MAX_DIMENSION:
+        scale = MAX_DIMENSION / float(max(target_w, target_h))
+        target_w = int(target_w * scale)
+        target_h = int(target_h * scale)
+    if (target_w, target_h) != (orig_w, orig_h):
+        print(f"Resizing image from {orig_w}, {orig_h} to {target_w}, {target_h}")
+        img_rgb = cv2.resize(img_rgb, (target_w, target_h),interpolation=cv2.INTER_AREA)
+    else: 
+        print(f"Processing image at original dimension {orig_w}, {orig_h}")
+
+    # 2. Extract unique colors present in the original image to build a cache
+    pixels = img_rgb.reshape(-1, 3)
+    unique_src_colors = np.unique(pixels, axis=0)
+
+    # 3. Build a fast lookup dictionary using your get_closest_color function
+    color_lut = {}
+    for color in unique_src_colors:
+        # Convert RGB numpy array to hex string
+        src_hex = rgb_to_hex(color)
+        src_color = hex_to_rgb(src_hex)
+        r, g, b = src_color
+            
+        # Determine the color based on the rules
+        close_color = get_closest_color(r, g, b, TARGET_COLORS)
+        target_hex = close_color
+
+        # Convert the matched target hex back to an RGB tuple for mapping
+        color_lut[tuple(color)] = hex_to_rgb(target_hex)
+
+    # 4. Apply the color mapping to flatten the entire image
+    # We construct a new flattened image array matching the original shape
+    flattened_img = np.zeros_like(img_rgb)
+    for src_rgb, target_rgb in color_lut.items():
+        # Find all pixels matching the source color and replace them with the target palette color
+        mask = (img_rgb == src_rgb).all(axis=-1)
+        flattened_img[mask] = target_rgb
+
+    # 5. Initialize SVG canvas
+    dwg = svgwrite.Drawing(svg_output_path, size=(target_w, target_h))
+
+    # 6. Extract unique target colors that actually ended up in the flattened image
+    final_palette_colors = np.unique(flattened_img.reshape(-1, 3), axis=0)
+
+    # 7. Trace each individual color layer
+    for color in final_palette_colors:
+        hex_color = '#{:02x}{:02x}{:02x}'.format(*color)
+
+        # Optional: Skip drawing a background canvas layer if it's pure white
+        if hex_color.lower() == '#ffffff':
+            continue
+
+        # Create binary mask for this specific allowed palette color
+        mask = cv2.inRange(flattened_img, color, color)
+
+        # Use morphology to close tiny gaps created by flattening smooth gradients
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
+        # Convert the clean mask to a Potrace bitmap
+        bitmap = potrace.Bitmap(mask > 0)
+
+        # Trace paths with smooth curves (alphamax=1.0) and ignore noise (turdsize=15)
+        path = bitmap.trace(
+            turnpolicy=potrace.TURNPOLICY_MINORITY,
+            alphamax=1.0,
+            turdsize=TURD_SIZE
+        )
+
+        # 8. Build the SVG path string
+        svg_path_data = ""
+        for curve in path:
+            # Access tuple elements by index: [0] is x, [1] is y
+            start = curve.start_point
+            svg_path_data += f"M {start[0]},{start[1]} "
+
+            for segment in curve:
+                if segment.is_corner:
+                    c = segment.c
+                    end = segment.end_point
+                    svg_path_data += f"L {c[0]},{c[1]} L {end[0]},{end[1]} "
+                else:
+                    c1 = segment.c1
+                    c2 = segment.c2
+                    end = segment.end_point
+                    svg_path_data += f"C {c1[0]},{c1[1]} {c2[0]},{c2[1]} {end[0]},{end[1]} "
+
+            svg_path_data += "Z "
+
+
+        # Write layer to the vector canvas
+        if svg_path_data:
+            dwg.add(dwg.path(d=svg_path_data, fill=hex_color, stroke="none"))
+
+    # Save final vector file
+    dwg.save()
+    print(f"Vector tracing complete. Output saved to: {svg_output_path}")
 
 def parse_material_settings(lb, material_settings_path, limit_colors, TARGET_COLORS):
     """
@@ -231,20 +330,20 @@ def init_lightburn(the_colors_limit):
         '#B4B4B4': (0, 8, 'Light-Gray'),
         '#000000': (0, 0, 'Black'),
         '#0000FF': (240, 1, 'Blue'),
-        '#FF0000': (0, 2, 'Red'),
+        '#FF0000': (1, 2, 'Red'),
         '#00E000': (120, 3, 'Green'),
         '#D0D000': (60, 4, 'Yellow'),
         '#FF8000': (30, 5, 'Orange'),
         '#00E0E0': (180, 6, 'Cyan'),
         '#FF00FF': (300, 7, 'Magenta'),
         '#0000A0': (240, 9, 'Dark-Blue'),
-        '#A00000': (0, 10, 'Dark-Red'),
+        '#A00000': (359, 10, 'Dark-Red'),
         '#00A000': (120, 11, 'Dark-Green'),
         '#A0A000': (60, 12, 'Dark-Yellow'),
         '#C08000': (40, 13, 'Dark-Orange'),
         '#00A0FF': (202, 14, 'Light-Blue'),
         '#A000A0': (300, 15, 'Dark-Magenta'),
-        '#808080': (0, 16, 'Medium-Gray'),
+        '#808080': (2, 16, 'Medium-Gray'),
         '#7D87B9': (230, 17, 'Slate-Blue'),
         '#BB7784': (349, 18, 'Rose'),
         '#4A6FE3': (225, 19, 'Periwinkle-Blue'),
@@ -290,6 +389,8 @@ if __name__ == "__main__":
     new_height=sys.argv[5]
     material_library_file=sys.argv[6]
     the_limit_colors = sys.argv[7]    
+    vectorize = str_to_bool(sys.argv[8]) 
+
     the_limit_colors_list = [item.strip() for item in the_limit_colors.split(",")]
     print(f"\nusing material library settings: {material_library_file}")
     print(f"\nusing colors: {the_limit_colors}")
@@ -299,6 +400,9 @@ if __name__ == "__main__":
 
     print(f"\nusing TARGET_COLORS: {TARGET_COLORS}")
     print(f"\nusing LIMIT COLORS: {','.join(the_limit_colors_list)}")
-    
+
     TARGET_COLORS = parse_material_settings(lb, material_library_file, the_limit_colors_list, TARGET_COLORS)
-    generate_pixel_svg(TARGET_COLORS, INPUT_FILE, OUTPUT_FILE, square_mm, new_width, new_height)
+    if vectorize:
+        trace_with_palette_mapping(INPUT_FILE, OUTPUT_FILE.replace(".svg", ".vector.svg", -1))
+    else:
+        generate_pixel_svg(TARGET_COLORS, INPUT_FILE, OUTPUT_FILE, square_mm, new_width, new_height)

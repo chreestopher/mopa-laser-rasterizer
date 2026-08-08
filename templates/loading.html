@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Processing Your Request</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+            background-color: #f9f9f9;
+        }
+        /* Simple CSS Loading Spinner */
+        .spinner {
+            border: 8px solid #f3f3f3;
+            border-top: 8px solid #3498db;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="spinner"></div>
+    <h2>Processing your data, please do not close this window...</h2>
+    <p id="progress-text">Initializing...</p>
+
+<script>
+    // 1. Grab the tracking ID from the Flask template context safely
+    const taskId = "{{ task_id }}";
+    const statusTextElement = document.getElementById("status-text"); // Make sure this matches your HTML ID
+
+    // 2. ARCHITECTURAL FIX: Wait 1.5 seconds BEFORE starting the polling loop
+    // This gives the Docker container and background thread plenty of time to initialize.
+    setTimeout(() => {
+        console.log(`Initial wait over. Starting status polling for Task: ${taskId}`);
+        
+        const checkStatus = setInterval(async () => {
+            try {
+                const response = await fetch(`/task-status/${taskId}`);
+                
+                // If the container is heavily loaded and drops a single packet,
+                // do NOT crash the UI. Keep silent and try again on the next tick.
+                if (!response.ok) {
+                    console.warn(`Server busy (HTTP ${response.status}). Retrying shortly...`);
+                    return; 
+                }
+
+                const data = await response.json();
+                console.log("Current Task State:", data);
+
+                // Handle the 4 different backend lifecycle states cleanly
+                if (data.status === "pending") {
+                    if (statusTextElement) statusTextElement.innerText = "Initializing image workspace...";
+                }
+                else if (data.status === "processing") {
+                    if (statusTextElement) {
+                        statusTextElement.innerText = `Processing your image data... (${data.progress}%)`;
+                    }
+                } 
+                else if (data.status === "completed") {
+                    clearInterval(checkStatus);
+                    if (statusTextElement) statusTextElement.innerText = "Download starting...";
+
+                    // 1. Create a hidden <a> link element pointing to your new Flask download route
+                    const downloadLink = document.createElement("a");
+                    downloadLink.href = `/download/${taskId}`;
+                    downloadLink.style.display = "none";
+                    
+                    // 2. Append it to the document body, click it programmatically, then remove it
+                    document.body.appendChild(downloadLink);
+                    downloadLink.click();
+                    document.body.removeChild(downloadLink);
+
+                    // Wait 1.5 seconds to give the browser time to initiate the file save stream,
+                    // then cleanly redirect to the specific task's success layout screen
+                    setTimeout(() => {
+                        window.location.href = `/success/${taskId}`;
+                    }, 1500);
+                }
+
+                else if (data.status === "failed") {
+                    clearInterval(checkStatus);
+                    if (statusTextElement) {
+                        statusTextElement.innerText = `Error: ${data.error || 'The image processor failed.'}`;
+                    }
+                }
+            } catch (networkError) {
+                // Catches local network timeouts gracefully without breaking the DOM text
+                console.error("Temporary status network hiccup:", networkError);
+            }
+        }, 2500); // Poll every 2.5 seconds to give your CPU room to breathe
+
+    }, 1500); 
+</script>
+    
+
+</body>
+</html>
