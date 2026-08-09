@@ -2,108 +2,116 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Processing Your Request</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Processing Image</title>
     <style>
         body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f4f7f6;
             display: flex;
-            flex-direction: column;
-            align-items: center;
             justify-content: center;
+            align-items: center;
             height: 100vh;
-            font-family: Arial, sans-serif;
-            background-color: #f9f9f9;
+            margin: 0;
         }
-        /* Simple CSS Loading Spinner */
-        .spinner {
-            border: 8px solid #f3f3f3;
-            border-top: 8px solid #3498db;
-            border-radius: 50%;
-            width: 60px;
-            height: 60px;
-            animation: spin 1s linear infinite;
-            margin-bottom: 20px;
+        .terminal-box {
+            background: #1e1e1e;
+            color: #00ff00;
+            font-family: 'Courier New', Courier, monospace;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: left;
+            width: 90%;
+            max-width: 600px;
+            height: 300px;
+            overflow-y: auto;
+            box-shadow: inset 0 0 15px #000, 0 8px 30px rgba(0,0,0,0.15);
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        .log-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .log-item {
+            margin-bottom: 8px;
+            line-height: 1.4;
+            word-break: break-all;
+        }
+        .log-prefix {
+            color: #666;
+            margin-right: 8px;
+            user-select: none;
         }
     </style>
 </head>
 <body>
 
-    <div class="spinner"></div>
-    <h2>Processing your data, please do not close this window...</h2>
-    <p id="progress-text">Initializing...</p>
+    <div class="terminal-box" id="terminal">
+        <ul class="log-list" id="log-container">
+            <li class="log-item"><span class="log-prefix">$</span>Connecting to script pipeline...</li>
+        </ul>
+    </div>
 
-<script>
-    // 1. Grab the tracking ID from the Flask template context safely
-    const taskId = "{{ task_id }}";
-    const statusTextElement = document.getElementById("status-text"); // Make sure this matches your HTML ID
+    <script>
+        const taskId = "{{ task_id }}";
+        const logContainer = document.getElementById("log-container");
+        const terminalBox = document.getElementById("terminal");
+        const visibleLogs = new Set(["Connecting to script pipeline..."]);
 
-    // 2. ARCHITECTURAL FIX: Wait 1.5 seconds BEFORE starting the polling loop
-    // This gives the Docker container and background thread plenty of time to initialize.
-    setTimeout(() => {
-        console.log(`Initial wait over. Starting status polling for Task: ${taskId}`);
-        
-        const checkStatus = setInterval(async () => {
-            try {
-                const response = await fetch(`/task-status/${taskId}`);
-                
-                // If the container is heavily loaded and drops a single packet,
-                // do NOT crash the UI. Keep silent and try again on the next tick.
-                if (!response.ok) {
-                    console.warn(`Server busy (HTTP ${response.status}). Retrying shortly...`);
-                    return; 
-                }
-
-                const data = await response.json();
-                console.log("Current Task State:", data);
-
-                // Handle the 4 different backend lifecycle states cleanly
-                if (data.status === "pending") {
-                    if (statusTextElement) statusTextElement.innerText = "Initializing image workspace...";
-                }
-                else if (data.status === "processing") {
-                    if (statusTextElement) {
-                        statusTextElement.innerText = `Processing your image data... (${data.progress}%)`;
-                    }
-                } 
-                else if (data.status === "completed") {
-                    clearInterval(checkStatus);
-                    if (statusTextElement) statusTextElement.innerText = "Download starting...";
-
-                    // 1. Create a hidden <a> link element pointing to your new Flask download route
-                    const downloadLink = document.createElement("a");
-                    downloadLink.href = `/download/${taskId}`;
-                    downloadLink.style.display = "none";
-                    
-                    // 2. Append it to the document body, click it programmatically, then remove it
-                    document.body.appendChild(downloadLink);
-                    downloadLink.click();
-                    document.body.removeChild(downloadLink);
-
-                    // Wait 1.5 seconds to give the browser time to initiate the file save stream,
-                    // then cleanly redirect to the specific task's success layout screen
-                    setTimeout(() => {
-                        window.location.href = `/success/${taskId}`;
-                    }, 1500);
-                }
-
-                else if (data.status === "failed") {
-                    clearInterval(checkStatus);
-                    if (statusTextElement) {
-                        statusTextElement.innerText = `Error: ${data.error || 'The image processor failed.'}`;
-                    }
-                }
-            } catch (networkError) {
-                // Catches local network timeouts gracefully without breaking the DOM text
-                console.error("Temporary status network hiccup:", networkError);
+        function appendLogMessage(message) {
+            const cleanMessage = message ? message.trim() : "";
+            if (!cleanMessage || cleanMessage === "" || cleanMessage === "Waiting to start..." || visibleLogs.has(cleanMessage)) {
+                return; 
             }
-        }, 2500); // Poll every 2.5 seconds to give your CPU room to breathe
+            visibleLogs.add(cleanMessage);
 
-    }, 1500); 
-</script>
-    
+            const li = document.createElement("li");
+            li.className = "log-item";
+            li.innerHTML = `<span class="log-prefix">$</span>${cleanMessage}`;
+            logContainer.appendChild(li);
+            terminalBox.scrollTop = terminalBox.scrollHeight;
+        }
+
+        setTimeout(() => {
+            const checkStatus = setInterval(async () => {
+                try {
+                    const response = await fetch(`/task-status/${taskId}`);
+                    if (!response.ok) return;
+
+                    const data = await response.json();
+
+                    if (data.current_log) {
+                        if (Array.isArray(data.current_log)) {
+                            data.current_log.forEach((logMessage) => {
+                                appendLogMessage(logMessage);
+                            });
+                        } else if (typeof data.current_log === 'string') {
+                            appendLogMessage(data.current_log);
+                        }
+                    }
+
+                    // FIX: Bypass browser drive-by download blocks by redirecting 
+                    // immediately to the success page instead of clicking hidden tags!
+                    if (data.status === "completed") {
+                        clearInterval(checkStatus);
+                        appendLogMessage("Task completed successfully! Redirecting to dashboard...");
+                        
+                        // Navigate directly to your final template screen layout
+                        window.location.href = "/success/" + taskId;
+                    }
+                    else if (data.status === "failed") {
+                        clearInterval(checkStatus);
+                        appendLogMessage(`CRITICAL FAILURE: ${data.error || 'Check server logs'}`);
+                        const errorLine = logContainer.lastChild;
+                        if (errorLine) errorLine.style.color = "#ff3333";
+                    }
+                } catch (err) {
+                    console.error("Polling stream exception error:", err);
+                }
+            }, 1000); 
+
+        }, 1500);
+    </script>
 
 </body>
 </html>

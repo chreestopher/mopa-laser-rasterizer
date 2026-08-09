@@ -146,7 +146,7 @@ This is the preferred way to access the app without `kubectl port-forward`.
 - 3 replicas of the CGI server
 - Resource limits and requests
 - Liveness and readiness probes
-- Volume mounts for html and cgi-bin directories
+- Volume mounts for static and templates directories
 
 ### service.yaml
 - LoadBalancer service exposing port 80 → 8000

@@ -48,25 +48,33 @@ spec:
 #          timeoutSeconds: 60
 #          failureThreshold: 150
         volumeMounts:
-        - name: html
-          mountPath: ${CONTAINER_HTML_PATH}
+        - name: static
+          mountPath: ${CONTAINER_STATIC_PATH}
           readOnly: true
-        - name: cgi-bin
-          mountPath: ${CONTAINER_CGI_PATH}
+        - name: templates
+          mountPath: ${CONTAINER_TEMPLATE_PATH}
           readOnly: true
         - name: uploads
           mountPath: ${CONTAINER_UPLOADS_PATH}
           readOnly: false
+        - name: local-script-volume
+          mountPath: ${CONTAINER_SCRIPT_PATH}
+          readOnly: false
+
       volumes:
-      - name: html
+      - name: static
         hostPath:
-          path: ${HOST_HTML_PATH}
+          path: ${HOST_STATIC_PATH}
           type: Directory
-      - name: cgi-bin
+      - name: templates
         hostPath:
-          path: ${HOST_CGI_PATH}
+          path: ${HOST_TEMPLATES_PATH}
           type: Directory
       - name: uploads
         hostPath:
           path: ${HOST_UPLOADS_PATH}
           type: DirectoryOrCreate
+      - name: local-script-volume
+        hostPath:
+          path:  ${HOST_SCRIPT_PATH}
+          type: Directory

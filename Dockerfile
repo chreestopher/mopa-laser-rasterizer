@@ -29,7 +29,5 @@ RUN apt-get update && apt-get install -y \
 # 4. Install the Python modules
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Run the server
-CMD ["gunicorn", "--workers=2", "--threads=4", "--timeout=1200", "--bind", "0.0.0.0:8000", "app:app"]
-
-
+# FIX: Reduce workers to 1 so they share a single unified global memory cache space
+CMD ["gunicorn", "--workers=1", "--threads=4", "--timeout=1200", "--bind", "0.0.0.0:8000", "app:app"]

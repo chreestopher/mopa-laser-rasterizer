@@ -21,12 +21,12 @@ def resize_to_specific_height_or_width( image, width=0, height=0 ):
     if (height == 0 and width != 0):
         width_percent = float(width) / float(image.size[0])
         new_height = int(float(image.size[1]) * float(width_percent))
-        print("resizing image to width: " + str(width) + " height: "+ str(new_height))
+        print("resizing image to width: " + str(width) + " height: "+ str(new_height), flush=True)
         resized_img = image.resize((width, int(new_height)), Image.Resampling.LANCZOS)
     elif (width == 0 and height != 0) :
         height_percent = float(height) / float(image.size[1])
         new_width = int(float(image.size[0]) * float(height_percent))
-        print("resizing image to width: " + str(new_width) + " height: "+ str(height))
+        print("resizing image to width: " + str(new_width) + " height: "+ str(height), flush=True)
         resized_img = image.resize((int(new_width),int(height) ), Image.Resampling.LANCZOS)
     else:
         return image
@@ -96,16 +96,16 @@ def generate_pixel_svg(TARGET_COLORS, input_image_path, output_svg_path, square_
         new_height: New Height to resize the image to, respecting the aspect ratio
             * only one of new_width or new_height can be used at a time
     """
-    print(input_image_path, output_svg_path, square_size_mm, new_width, new_height)
+    print(input_image_path, output_svg_path, square_size_mm, new_width, new_height, flush=True)
     
     try:
         # Load the image and convert to RGB (to ensure consistent 3-channel access)
         img = Image.open(input_image_path).convert("RGB")
     except FileNotFoundError:
-        print(f"Error: Input file not found at '{input_image_path}'")
+        print(f"Error: Input file not found at '{input_image_path}'", flush=True)
         return
     except Exception as e:
-        print(f"Error loading image: {e}")
+        print(f"Error loading image: {e}", flush=True)
         return
 
     img = resize_to_specific_height_or_width(image=img, height=int(new_height), width=int(new_width))
@@ -118,8 +118,8 @@ def generate_pixel_svg(TARGET_COLORS, input_image_path, output_svg_path, square_
     # Constants for the SVG output
     STROKE_WIDTH_MM = 0.01
 
-    print(f"Processing image: {width}x{height} pixels.")
-    print(f"Output SVG size: {svg_width_mm:.2f}mm x {svg_height_mm:.2f}mm.")
+    print(f"Processing image: {width}x{height} pixels.", flush=True)
+    print(f"Output SVG size: {svg_width_mm:.2f}mm x {svg_height_mm:.2f}mm.", flush=True)
     
     svg_content = []
 
@@ -154,14 +154,14 @@ def generate_pixel_svg(TARGET_COLORS, input_image_path, output_svg_path, square_
     try:
         with open(output_svg_path, "w") as f:
             f.write("\n".join(svg_content))
-        print(f"Success! SVG saved to '{output_svg_path}'")
+        print(f"Success! SVG saved to '{output_svg_path}'", flush=True)
     except Exception as e:
-        print(f"Error writing SVG file: {e}")
+        print(f"Error writing SVG file: {e}", flush=True)
     try:
         lb.write(output_svg_path +".lbrn2")
-        print(f"Success! lbrn2 saved to "+ output_svg_path +".lbrn2")
+        print(f"Success! lbrn2 saved to "+ output_svg_path +".lbrn2", flush=True)
     except Exception as e:
-        print(f"Error writing LightBurn file: {e}")
+        print(f"Error writing LightBurn file: {e}", flush=True)
 
 
 def hex_to_rgb(hex_str):
@@ -176,7 +176,7 @@ def rgb_to_hex(rgb):
 def trace_with_palette_mapping(image_path, svg_output_path):
     MAX_DIMENSION = None
     RESIZE_FACTOR = 1.0
-    TURD_SIZE = 15
+    TURD_SIZE = 10
     # 1. Load and read image
     img = cv2.imread(image_path)
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -191,10 +191,10 @@ def trace_with_palette_mapping(image_path, svg_output_path):
         target_w = int(target_w * scale)
         target_h = int(target_h * scale)
     if (target_w, target_h) != (orig_w, orig_h):
-        print(f"Resizing image from {orig_w}, {orig_h} to {target_w}, {target_h}")
+        print(f"Resizing image from {orig_w}, {orig_h} to {target_w}, {target_h}", flush=True)
         img_rgb = cv2.resize(img_rgb, (target_w, target_h),interpolation=cv2.INTER_AREA)
     else: 
-        print(f"Processing image at original dimension {orig_w}, {orig_h}")
+        print(f"Processing image at original dimension {orig_w}, {orig_h}", flush=True)
 
     # 2. Extract unique colors present in the original image to build a cache
     pixels = img_rgb.reshape(-1, 3)
@@ -281,7 +281,7 @@ def trace_with_palette_mapping(image_path, svg_output_path):
 
     # Save final vector file
     dwg.save()
-    print(f"Vector tracing complete. Output saved to: {svg_output_path}")
+    print(f"Vector tracing complete. Output saved to: {svg_output_path}", flush=True)
 
 def parse_material_settings(lb, material_settings_path, limit_colors, TARGET_COLORS):
     """
@@ -306,9 +306,10 @@ def parse_material_settings(lb, material_settings_path, limit_colors, TARGET_COL
                 matched_settings[target_key[0]] = TARGET_COLORS[target_key[0]]
                 item.index = target_touple[-2]
                 lb.add_layer(item)
-                print(f"added Layer: {item.name}")
+                print(f"added Layer: {item.name}", flush=True)
+
             else:
-                print(f"unable to add layer: {item.name}, name not in lightburn target colors")
+                print(f"unable to add layer: {item.name}, name not in lightburn target colors", flush=True)
     return matched_settings    
 
 def init_lightburn(the_colors_limit):
@@ -392,17 +393,17 @@ if __name__ == "__main__":
     vectorize = str_to_bool(sys.argv[8]) 
 
     the_limit_colors_list = [item.strip() for item in the_limit_colors.split(",")]
-    print(f"\nusing material library settings: {material_library_file}")
-    print(f"\nusing colors: {the_limit_colors}")
+    print(f"\nusing material library settings: {material_library_file}", flush=True)
+    print(f"\nusing colors: {the_limit_colors}", flush=True)
     TARGET_COLORS , lb, lightburn = init_lightburn(the_limit_colors)
     if len(the_limit_colors_list) <= 1:
         the_limit_colors_list = [cv[-1].lower() for cn,cv in TARGET_COLORS.items()]
 
-    print(f"\nusing TARGET_COLORS: {TARGET_COLORS}")
-    print(f"\nusing LIMIT COLORS: {','.join(the_limit_colors_list)}")
+    print(f"\nusing TARGET_COLORS: {TARGET_COLORS}", flush=True)
+    print(f"\nusing LIMIT COLORS: {','.join(the_limit_colors_list)}", flush=True)
 
     TARGET_COLORS = parse_material_settings(lb, material_library_file, the_limit_colors_list, TARGET_COLORS)
     if vectorize:
-        trace_with_palette_mapping(INPUT_FILE, OUTPUT_FILE.replace(".svg", ".vector.svg", -1))
+        trace_with_palette_mapping(INPUT_FILE, f"{OUTPUT_FILE}.vector.svg")
     else:
-        generate_pixel_svg(TARGET_COLORS, INPUT_FILE, OUTPUT_FILE, square_mm, new_width, new_height)
+        generate_pixel_svg(TARGET_COLORS, INPUT_FILE, f"{OUTPUT_FILE}.svg", square_mm, new_width, new_height)

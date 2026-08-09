@@ -11,9 +11,10 @@
             color: #333;
             text-align: center;
             padding: 50px 20px;
+            margin: 0;
         }
         .container {
-            max-width: 600px;
+            max-width: 650px;
             background: white;
             padding: 40px;
             border-radius: 12px;
@@ -27,42 +28,107 @@
             max-height: 400px;
             border-radius: 8px;
             border: 1px solid #ddd;
-            margin-bottom: 30px;
+            margin-bottom: 35px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
+        /* Flexbox structure keeps the action button grid aligned perfectly */
         .btn-group {
             display: flex;
-            gap: 15px;
-            justify-content: center;
+            flex-direction: column;
+            gap: 12px;
+            max-width: 400px;
+            margin: 0 auto;
         }
+        /* 
+           MATCHING LOGIC STYLES:
+           These properties mirror a standard high-utility submission element setup.
+        */
         .btn {
-            display: inline-block;
-            padding: 12px 24px;
+            display: block;
+            width: 100%;
+            padding: 14px 20px;
+            box-sizing: border-box;
+            border: none;
             border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
             text-decoration: none;
-            font-weight: bold;
-            transition: background 0.2s;
+            cursor: pointer;
+            text-align: center;
+            transition: background-color 0.15s ease, transform 0.1s ease;
         }
-        .btn-primary { background-color: #3498db; color: white; }
-        .btn-primary:hover { background-color: #2980b9; }
-        .btn-secondary { background-color: #e2e8f0; color: #4a5568; }
-        .btn-secondary:hover { background-color: #cbd5e1; }
+        /* Primary actions (Like your main page submit action background setup) */
+        .btn-primary { 
+            background-color: #3498db; 
+            color: white; 
+        }
+        .btn-primary:hover { 
+            background-color: #2980b9; 
+        }
+        .btn-primary:active {
+            transform: scale(0.98);
+        }
+        /* Accent Laser file action variant */
+        .btn-accent {
+            background-color: #e67e22;
+            color: white;
+        }
+        .btn-accent:hover {
+            background-color: #d35400;
+        }
+        .btn-accent:active {
+            transform: scale(0.98);
+        }
+        /* Secondary home actions fallback */
+        .btn-secondary { 
+            background-color: #e2e8f0; 
+            color: #4a5568; 
+        }
+        .btn-secondary:hover { 
+            background-color: #cbd5e1; 
+        }
+        .btn-secondary:active {
+            transform: scale(0.98);
+        }
     </style>
 </head>
 <body>
 
     <div class="container">
         <h1>Processing Complete!</h1>
-        <p>Your image has been optimized and processed successfully.</p>
+        <p>Your engraving assets have been generated and optimized successfully.</p>
         
-        <!-- Displays the newly created image using the unique task ID -->
-        <img class="image-preview" src="/view-image/{{ task_id }}" alt="Processed Result">
+        <!-- Dynamic view-image preview loader -->
+        <img class="image-preview" src="/view-image/{{ task_id }}" alt="Processed Result Preview">
 
         <div class="btn-group">
-            <a href="/download/{{ task_id }}" class="btn btn-primary">Download File Again</a>
+            <!-- Main Vector Asset Download -->
+            <a href="/download/{{ task_id }}" class="btn btn-primary">Download Processed SVG</a>
+            
+            <!-- LightBurn Layout Download -->
+            <a href="/download-lbrn2/{{ task_id }}" class="btn btn-accent">Download LightBurn File (.lbrn2)</a>
+            
+            <!-- Process reset navigation trigger -->
             <a href="/" class="btn btn-secondary">Process Another Image</a>
         </div>
     </div>
+<!-- Inside templates/success.html, add this at the very bottom -->
+<script>
+    // Extract the task ID passed into the template by Flask
+    const taskId = "{{ task_id }}";
 
+    // The moment the success page finishes loading, trigger the file download streams.
+    // Because this happens on a page transition context layout, browsers allow it cleanly!
+    window.addEventListener('DOMContentLoaded', () => {
+        console.log("Success page mounted. Initializing download streams...");
+        
+        // Trigger main vector asset download automatically
+        const mainDownload = document.createElement("a");
+        mainDownload.href = "/download/" + taskId;
+        document.body.appendChild(mainDownload);
+        mainDownload.click();
+        document.body.removeChild(mainDownload);
+    });
+</script>
 </body>
 </html>

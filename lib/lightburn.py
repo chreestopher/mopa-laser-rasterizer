@@ -383,7 +383,7 @@ class Lightburn:
             self.write_cuts(f)
             self.write_objects(f)
             f.write(file_footer)
-            print(f"Wrote {filename}.  You can load it directly into lightburn.")
+            print(f"Wrote {filename}.  You can load it directly into lightburn.", flush=True)
 
     def write_cuts(self, f):
         for layer in self._layers:

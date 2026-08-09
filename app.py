@@ -2,8 +2,8 @@ import os
 import threading
 import uuid
 import subprocess
+import multiprocessing
 
-# FIX: Added secure_filename and imported all Flask tools cleanly
 from flask import Flask, render_template, jsonify, request, send_from_directory
 from werkzeug.utils import secure_filename
 
@@ -14,8 +14,9 @@ UPLOAD_FOLDER = './uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# Dictionary to hold the state of background tasks
-tasks = {}
+# Shared multi-process dictionary manager
+manager = multiprocessing.Manager()
+tasks = manager.dict()
 
 @app.route('/')
 def index():
@@ -23,59 +24,78 @@ def index():
 
 
 def long_running_script(task_id, data, image_path, material_settings_path):
-    """Background thread runs the image processing script safely without blocking Flask."""
+    """Background thread runs the script and streams flat root logs to shared memory."""
     try:
-        # Update status to processing immediately when the thread executes
-        tasks[task_id] = {"status": "processing", "progress": 50, "error": None}
+        tasks[f"{task_id}_status"] = "processing"
 
-        # Safely extract standard form strings with defaults
         square_mm = data.get('pixel_square_mm', '1')
         new_width = data.get('new_width', '100')
         new_height = data.get('new_height', '100')
         colors = data.get('colors', '')
         vectorize_string = data.get('vectorize', 'false')
+        
+        output_filename = tasks[f"{task_id}_filename"]
+        output_file_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
 
-        # Define explicit output path using the session task ID
-        output_file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"output_{task_id}.png")
+        print(f"[Thread-{task_id}] Launching Material_Library.py subprocess...", flush=True)
 
-        print(f"[Thread-{task_id}] Launching Material_Library.py subprocess...")
-
-        # Run the processing script as an independent OS process to beat CPU limits
-        result_of_script = subprocess.run(
+        # Launch the subprocess with unbuffered output and merged streams
+        process = subprocess.Popen(
             [
-                "python", 
+                "python", "-u", 
                 "lib/Material_Library.py", 
-                image_path,              
-                output_file_path,        
+                image_path, 
+                output_file_path, 
                 str(square_mm), 
-                str(new_width),
+                str(new_width), 
                 str(new_height), 
-                material_settings_path,  
+                material_settings_path, 
                 str(colors), 
                 str(vectorize_string)
             ],
-            capture_output=True, 
-            text=True,
-            check=True  # Raises an exception if the subprocess fails internally
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,  # Merges stderr into stdout cleanly
+            text=True
         )
-        
-        print(f"[Thread-{task_id}] Script STDOUT:", result_of_script.stdout)
-        print(f"[Thread-{task_id}] Script STDERR:", result_of_script.stderr)        
-        
-        # Mark task completed
-        tasks[task_id] = {"status": "completed", "progress": 100, "error": None}
 
-    except subprocess.CalledProcessError as e:
-        print(f"[Thread-{task_id}] Subprocess runtime error! Stderr: {e.stderr}")
-        tasks[task_id] = {"status": "failed", "progress": 0, "error": f"Script failed: {e.stderr}"}
+        # Read the stdout stream line-by-line in real time
+        while True:
+            line = process.stdout.readline()
+            if not line and process.poll() is not None:
+                break
+            
+            if line:
+                cleaned_line = line.strip()
+                if cleaned_line:
+                    print(f"[Subprocess Stream]: {cleaned_line}", flush=True)
+                    
+                    # Safely update the shared list
+                    current_logs = tasks.get(f"{task_id}_logs", [])
+                    current_logs.append(cleaned_line)
+                    tasks[f"{task_id}_logs"] = current_logs
+
+        # FIX: Safely wait for exit code without trying to re-read exhausted streams
+        return_code = process.wait()
+        print(f"[Thread-{task_id}] Subprocess exited with return code: {return_code}", flush=True)
+        
+        if return_code == 0:
+            tasks[f"{task_id}_status"] = "completed"
+        else:
+            tasks[f"{task_id}_status"] = "failed"
+            tasks[f"{task_id}_error"] = f"Script exited with error code {return_code}."
+
     except Exception as e:
-        print(f"[Thread-{task_id}] General exception in thread: {str(e)}")
-        tasks[task_id] = {"status": "failed", "progress": 0, "error": str(e)}
+        print(f"[Thread-{task_id}] CRITICAL THREAD EXCEPTION: {str(e)}", flush=True)
+        tasks[f"{task_id}_status"] = "failed"
+        tasks[f"{task_id}_error"] = str(e)
 
 
-@app.route('/upload', methods=['POST'])
+@app.route('/upload', methods=['GET', 'POST'])
 def start_task():
     """Entry point for file uploads and task initialization."""
+    if request.method == 'GET':
+        return redirect('/')
+
     if 'image' not in request.files or 'material_settings' not in request.files:
         return jsonify({"status": "error", "message": "Missing required files"}), 400
 
@@ -87,7 +107,11 @@ def start_task():
 
     task_id = str(uuid.uuid4())
     
-    img_filename = f"{task_id}_{secure_filename(image_file.filename)}"
+    base_name = secure_filename(image_file.filename) 
+    
+    # Grab the true base name to match your subprocess extension modifications
+    custom_output_name = f"output_{task_id}_{base_name}"
+    img_filename = f"{task_id}_{base_name}"
     mat_filename = f"{task_id}_{secure_filename(material_settings.filename)}"
     
     image_path = os.path.join(app.config['UPLOAD_FOLDER'], img_filename)
@@ -95,11 +119,14 @@ def start_task():
 
     image_file.save(image_path)
     material_settings.save(material_settings_path)
-    print(f"Successfully saved files for Task {task_id}")
 
     user_data = request.form.to_dict()
-    
-    tasks[task_id] = {"status": "pending", "progress": 0, "error": None}
+
+    # Clear top-level keys initialize cleanly
+    tasks[f"{task_id}_status"] = "pending"
+    tasks[f"{task_id}_logs"] = ["Waiting to start..."]
+    tasks[f"{task_id}_filename"] = custom_output_name
+    tasks[f"{task_id}_error"] = None
 
     thread = threading.Thread(
         target=long_running_script, 
@@ -112,39 +139,95 @@ def start_task():
 
 @app.route('/task-status/<task_id>')
 def task_status(task_id):
-    """Endpoint for JavaScript to check task completion."""
-    task = tasks.get(task_id, {"status": "pending", "progress": 0, "error": None})
-    return jsonify(task)
+    """Endpoint for JavaScript to check task completion, pulling clean values out of flat keys."""
+    status = tasks.get(f"{task_id}_status", "pending")
+    logs = tasks.get(f"{task_id}_logs", ["Initializing workspace..."])
+    error = tasks.get(f"{task_id}_error", None)
+
+    return jsonify({
+        "status": status,
+        "current_log": logs,
+        "error": error
+    })
 
 
 @app.route('/download/<task_id>')
 def download_file(task_id):
-    """Securely serves the processed output file for a specific task ID."""
-    filename = f"output_{task_id}.png"
-    try:
-        return send_from_directory(
-            directory=app.config['UPLOAD_FOLDER'],
-            path=filename,
-            as_attachment=True,              
-            download_name=f"rasterized_{task_id}.png"
-        )
-    except FileNotFoundError:
-        return jsonify({"status": "error", "message": "Processed file not found on disk"}), 404
+    """Locates and downloads the main image file produced by the subprocess."""
+    import glob
+    search_pattern = os.path.join(app.config['UPLOAD_FOLDER'], f"output_{task_id}_*")
+    matching_files = glob.glob(search_pattern)
+    
+    image_file = None
+    for file_path in matching_files:
+        if not file_path.endswith('.lbrn2'):
+            image_file = os.path.basename(file_path)
+            break
+            
+    if not image_file:
+        return jsonify({"status": "error", "message": "Processed image file not found on disk"}), 404
+        
+    mimetype = 'image/svg+xml' if image_file.endswith('.svg') else None
+        
+    return send_from_directory(
+        directory=app.config['UPLOAD_FOLDER'],
+        path=image_file,
+        as_attachment=True,              
+        download_name=image_file,
+        mimetype=mimetype
+    )
+
+
+@app.route('/download-lbrn2/<task_id>')
+def download_lbrn2(task_id):
+    """Locates and downloads the matching LightBurn vector layout file."""
+    import glob
+    search_pattern = os.path.join(app.config['UPLOAD_FOLDER'], f"output_{task_id}_*.lbrn2")
+    matching_files = glob.glob(search_pattern)
+    
+    if not matching_files:
+        return jsonify({"status": "error", "message": "LightBurn file (.lbrn2) not found on disk"}), 404
+        
+    lbrn2_file = os.path.basename(matching_files[0])
+    
+    return send_from_directory(
+        directory=app.config['UPLOAD_FOLDER'],
+        path=lbrn2_file,
+        as_attachment=True,              
+        download_name=lbrn2_file
+    )
 
 
 @app.route('/view-image/<task_id>')
 def view_image(task_id):
-    """Serves the image to the HTML <img> preview tag safely."""
-    filename = f"output_{task_id}.png"
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    """Dynamically finds and serves the preview file (e.g., .jpg.svg) with correct vector headers."""
+    import glob
+    search_pattern = os.path.join(app.config['UPLOAD_FOLDER'], f"output_{task_id}_*")
+    matching_files = glob.glob(search_pattern)
+    
+    image_file = None
+    for file_path in matching_files:
+        if not file_path.endswith('.lbrn2'):
+            image_file = os.path.basename(file_path)
+            break
+            
+    if not image_file:
+        return jsonify({"status": "error", "message": "Preview asset not found on disk"}), 404
+
+    mimetype = 'image/svg+xml' if '.svg' in image_file.lower() else None
+
+    return send_from_directory(
+        directory=app.config['UPLOAD_FOLDER'], 
+        path=image_file,
+        mimetype=mimetype
+    )
 
 
 @app.route('/success/<task_id>')
 def success_page(task_id):
-    """Renders the dedicated success HTML file, passing along template variables."""
+    """Renders the dedicated confirmation results template screen."""
     return render_template('success.html', task_id=task_id)
 
 
 if __name__ == '__main__':
-    # Fallback if run without Gunicorn directly
     app.run(host='0.0.0.0', port=8000, threaded=True, use_reloader=False, debug=False)
