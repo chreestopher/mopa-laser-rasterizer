@@ -64,27 +64,33 @@ def long_running_script(task_id, data, image_path, material_settings_path):
         with open(log_file_path, "a", buffering=1) as log_file:
             print(f"[Thread-{task_id}] Subprocess loop active...", flush=True)
 
-            # FIX: Use read1() or an iterator to prevent blocking on partial lines
+            # FIX: Read individual characters non-blockingly to handle any output style
+            current_line = []
             while True:
-                # read1() fetches whatever bytes/chars are currently available in the OS buffer
-                # It will NOT block waiting for a newline character
-                chunk = process.stdout.read1(4096) 
+                # Reads exactly 1 text character. It will only block if there is absolutely 
+                # no output from the process at all.
+                char = process.stdout.read(1)
                 
-                # If the chunk is empty and the process ended, break the loop
-                if not chunk and process.poll() is not None:
+                # If we get no character and the process is done, break out
+                if not char and process.poll() is not None:
                     break
                 
-                if chunk:
-                    # Split the chunk by newlines manually to preserve log line formatting
-                    lines = chunk.splitlines()
-                    
-                    for cleaned_line in lines:
-                        cleaned_line = cleaned_line.strip()
-                        if cleaned_line:
-                            print(f"[Subprocess Stream]: {cleaned_line}", flush=True)
-                            
-                            # Safely append to the tasks dictionary snapshot
-                            tasks[f"{task_id}_logs"] = tasks.get(f"{task_id}_logs", []) + [cleaned_line]
+                if char:
+                    if char == '\n' or char == '\r':
+                        # We hit a line break! Process the line built so far
+                        line_text = "".join(current_line).strip()
+                        if line_text:
+                            print(f"[Subprocess Stream]: {line_text}", flush=True)
+                            tasks[f"{task_id}_logs"] = tasks.get(f"{task_id}_logs", []) + [line_text]
+                        current_line = [] # Reset for the next line
+                    else:
+                        current_line.append(char)
+
+            # Handle any remaining text left over if the process exits without a trailing newline
+            if current_line:
+                line_text = "".join(current_line).strip()
+                if line_text:
+                    tasks[f"{task_id}_logs"] = tasks.get(f"{task_id}_logs", []) + [line_text]
 
         # Safely wait for exit code without trying to re-read exhausted streams
         return_code = process.wait()
