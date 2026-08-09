@@ -14,6 +14,7 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
     # Traefik (best-effort; Traefik may require different config depending on version):
     traefik.ingress.kubernetes.io/proxy-buffering: "off"
+    
 spec:
   ingressClassName: traefik
   tls:
@@ -21,7 +22,7 @@ spec:
     - mopa-laser-rasterizer.local
     secretName: mopa-laser-rasterizer-tls
   rules:
-  - host: mopa-laser-rasterizer.local
+  - host: mopa-laser-rasterizer.com
     http:
       paths:
       - path: /

@@ -57,23 +57,39 @@ def long_running_script(task_id, data, image_path, material_settings_path):
             stderr=subprocess.STDOUT,  # Merges stderr into stdout cleanly
             text=True
         )
+        # Define a log file path inside your shared UPLOAD_FOLDER
+        log_file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{task_id}.log")
 
-        # Read the stdout stream line-by-line in real time
-        while True:
-            line = process.stdout.readline()
-            if not line and process.poll() is not None:
-                break
+        # Open the file in append mode with line-buffering (buffering=1)
+        with open(log_file_path, "a", buffering=1) as log_file:
+            while True:
+                line = process.stdout.readline()
+                if not line and process.poll() is not None:
+                    break
+                
+                if line:
+                    cleaned_line = line.strip()
+                    if cleaned_line:
+                        print(f"[Subprocess Stream]: {cleaned_line}", flush=True)
+                        
+                        # Write directly to disk instantly
+                        log_file.write(cleaned_line + "\n")
+
+        # # Read the stdout stream line-by-line in real time
+        # while True:
+        #     line = process.stdout.readline()
+        #     if not line and process.poll() is not None:
+        #         break
             
-            if line:
-                cleaned_line = line.strip()
-                if cleaned_line:
-                    print(f"[Subprocess Stream]: {cleaned_line}", flush=True)
-                    
-                    # Safely update the shared list
-                    current_logs = tasks.get(f"{task_id}_logs", [])
-                    current_logs.append(cleaned_line)
-                    tasks[f"{task_id}_logs"] = current_logs
+        #     if line:
+        #         cleaned_line = line.strip()
+        #         if cleaned_line:
 
+        #             print(f"[Subprocess Stream]: {cleaned_line}", flush=True)
+                    
+        #             # Safely update the shared list
+        #             # Create a brand new list in memory instead of mutating the old reference
+        #             tasks[f"{task_id}_logs"] = tasks.get(f"{task_id}_logs", []) + [cleaned_line]
         # FIX: Safely wait for exit code without trying to re-read exhausted streams
         return_code = process.wait()
         print(f"[Thread-{task_id}] Subprocess exited with return code: {return_code}", flush=True)
@@ -88,6 +104,7 @@ def long_running_script(task_id, data, image_path, material_settings_path):
         print(f"[Thread-{task_id}] CRITICAL THREAD EXCEPTION: {str(e)}", flush=True)
         tasks[f"{task_id}_status"] = "failed"
         tasks[f"{task_id}_error"] = str(e)
+
 
 
 @app.route('/upload', methods=['GET', 'POST'])
@@ -140,15 +157,24 @@ def start_task():
 @app.route('/task-status/<task_id>')
 def task_status(task_id):
     """Endpoint for JavaScript to check task completion, pulling clean values out of flat keys."""
-    status = tasks.get(f"{task_id}_status", "pending")
-    logs = tasks.get(f"{task_id}_logs", ["Initializing workspace..."])
-    error = tasks.get(f"{task_id}_error", None)
+    log_file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{task_id}.log")
+    
+    if os.path.exists(log_file_path):
+        with open(log_file_path, "r") as f:
+            lines = f.read().splitlines()
+        return jsonify({"status": "processing", "logs": lines})
+        
+    return jsonify({"status": "pending", "logs": []})
 
-    return jsonify({
-        "status": status,
-        "current_log": logs,
-        "error": error
-    })
+    # status = tasks.get(f"{task_id}_status", "pending")
+    # logs = tasks.get(f"{task_id}_logs", ["Initializing workspace..."])
+    # error = tasks.get(f"{task_id}_error", None)
+
+    # return jsonify({
+    #     "status": status,
+    #     "current_log": logs,
+    #     "error": error
+    # })
 
 
 @app.route('/download/<task_id>')
