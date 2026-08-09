@@ -57,50 +57,54 @@ def long_running_script(task_id, data, image_path, material_settings_path):
             stderr=subprocess.STDOUT,  # Merges stderr into stdout cleanly
             text=True
         )
-        # Define a log file path inside your shared UPLOAD_FOLDER
+       # Define a log file path inside your shared UPLOAD_FOLDER
         log_file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{task_id}.log")
+        status_file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{task_id}.status")
 
-        # Open the file in append mode with line-buffering (buffering=1)
-        with open(log_file_path, "a", buffering=1) as log_file:
-            print(f"[Thread-{task_id}] Subprocess loop active...", flush=True)
+        # Set status to processing on disk
+        with open(status_file_path, "w") as sf:
+            sf.write("processing")
 
-            # FIX: Read individual characters non-blockingly to handle any output style
-            current_line = []
+        print(f"[Thread-{task_id}] Subprocess loop active...", flush=True)
+
+        current_line = []
+        
+        # Open file with buffering=1 (Line buffering) so text hits disk instantly
+        with open(log_file_path, "w", buffering=1) as log_file:
             while True:
-                # Reads exactly 1 text character. It will only block if there is absolutely 
-                # no output from the process at all.
                 char = process.stdout.read(1)
                 
-                # If we get no character and the process is done, break out
                 if not char and process.poll() is not None:
                     break
                 
                 if char:
                     if char == '\n' or char == '\r':
-                        # We hit a line break! Process the line built so far
                         line_text = "".join(current_line).strip()
                         if line_text:
                             print(f"[Subprocess Stream]: {line_text}", flush=True)
-                            tasks[f"{task_id}_logs"] = tasks.get(f"{task_id}_logs", []) + [line_text]
-                        current_line = [] # Reset for the next line
+                            
+                            # CRITICAL: Write straight to the shared HostPath file
+                            log_file.write(line_text + "\n")
+                            log_file.flush() # Force OS memory sync across container boundaries
+                            
+                        current_line = []
                     else:
                         current_line.append(char)
 
-            # Handle any remaining text left over if the process exits without a trailing newline
             if current_line:
                 line_text = "".join(current_line).strip()
                 if line_text:
-                    tasks[f"{task_id}_logs"] = tasks.get(f"{task_id}_logs", []) + [line_text]
+                    log_file.write(line_text + "\n")
+                    log_file.flush()
 
-        # Safely wait for exit code without trying to re-read exhausted streams
         return_code = process.wait()
-        print(f"[Thread-{task_id}] Subprocess exited with return code: {return_code}", flush=True)
         
-        if return_code == 0:
-            tasks[f"{task_id}_status"] = "completed"
-        else:
-            tasks[f"{task_id}_status"] = "failed"
-            tasks[f"{task_id}_error"] = f"Script exited with error code {return_code}."
+        # Update status on disk
+        with open(status_file_path, "w") as sf:
+            if return_code == 0:
+                sf.write("completed")
+            else:
+                sf.write("failed")
 
     except Exception as e:
         print(f"[Thread-{task_id}] CRITICAL THREAD EXCEPTION: {str(e)}", flush=True)
@@ -111,6 +115,7 @@ def long_running_script(task_id, data, image_path, material_settings_path):
 
 @app.route('/upload', methods=['GET', 'POST'])
 def start_task():
+
     """Entry point for file uploads and task initialization."""
     if request.method == 'GET':
         return redirect('/')
@@ -160,24 +165,25 @@ def start_task():
 def task_status(task_id):
     """Endpoint for JavaScript to check task completion, pulling clean values out of flat keys."""
     log_file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{task_id}.log")
+    status_file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{task_id}.status")
     
+    status = "pending"
+    logs = []
+    
+    # Read status from disk
+    if os.path.exists(status_file_path):
+        with open(status_file_path, "r") as sf:
+            status = sf.read().strip()
+            
+    # Read logs from disk
     if os.path.exists(log_file_path):
-        with open(log_file_path, "r") as f:
-            lines = f.read().splitlines()
-        return jsonify({"status": "processing", "logs": lines})
-        
-    return jsonify({"status": "pending", "logs": []})
-
-    # status = tasks.get(f"{task_id}_status", "pending")
-    # logs = tasks.get(f"{task_id}_logs", ["Initializing workspace..."])
-    # error = tasks.get(f"{task_id}_error", None)
-
-    # return jsonify({
-    #     "status": status,
-    #     "current_log": logs,
-    #     "error": error
-    # })
-
+        with open(log_file_path, "r") as lf:
+            logs = lf.read().splitlines()
+            
+    return jsonify({
+        "status": status,
+        "logs": logs
+    })
 
 @app.route('/download/<task_id>')
 def download_file(task_id):
