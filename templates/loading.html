@@ -80,7 +80,7 @@
             const checkStatus = setInterval(async () => {
                 try {
                     // UPDATED: Points to your new file-based log delivery backend route
-                    const response = await fetch(`/get-logs/${taskId}`);
+                    const response = await fetch(`/task-status/${taskId}`);
                     if (!response.ok) return;
 
                     const data = await response.json();
