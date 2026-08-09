@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MOPA-LASER-RASTERIZER</title>
+
 <style>
   body {
     font-family: system-ui, -apple-system, sans-serif;
@@ -20,12 +21,91 @@
     font-size: 1.5rem;
     margin-bottom: 20px;
   }
+  h2 {
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin-top: 0;
+    margin-bottom: 8px;
+  }
+  h3 {
+    font-size: 0.9rem;
+    font-weight: 400;
+    color: #64748b;
+    margin-top: 0;
+    margin-bottom: 20px;
+  }
+  
+  /* Color Palette Grid Styles */
+  .palette-section {
+    margin-bottom: 32px;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 24px;
+  }
+  .color-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(75px, 1fr));
+    gap: 16px 10px;
+    margin-top: 14px;
+  }
+  .color-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  .color-name {
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: #64748b;
+    line-height: 1.2;
+    margin-bottom: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .color-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #1e293b;
+    line-height: 1.2;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+  }
+  .color-square {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 4px;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.15);
+    transition: transform 0.1s ease, border-color 0.1s ease;
+    cursor: pointer; /* Changed to pointer to show it is clickable */
+    box-sizing: border-box;
+  }
+  .color-square:hover {
+    transform: scale(1.08);
+  }
+/* Active visual state when checked - Greys out the square */
+  .color-square.selected {
+    box-shadow: inset 0 0 0 999px rgba(128, 128, 128, 0.65), inset 0 0 0 1px rgba(0,0,0,0.2);
+    opacity: 0.5;
+    transform: scale(0.95); /* Slightly shrinks to show it is tucked away */
+  }
+
+
+  .color-hex {
+    font-size: 0.6rem;
+    color: #94a3b8;
+    margin-top: 4px;
+    font-family: monospace;
+  }
+
+  /* Form Styles */
   form {
     display: flex;
     flex-direction: column;
     gap: 16px;
   }
-  div {
+  div.form-group {
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -34,14 +114,15 @@
     font-size: 0.875rem;
     font-weight: 500;
   }
-  input[type="text"], input[type="file"] {
+  input[type="text"], input[type="file"], select {
     padding: 8px 12px;
     font-size: 0.875rem;
     border: 1px solid #cbd5e1;
     border-radius: 6px;
     outline: none;
+    background-color: #fff;
   }
-  input:focus {
+  input:focus, select:focus {
     border-color: #3b82f6;
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
   }
@@ -63,38 +144,90 @@
 </head>
 <body> 
   <h1>MOPA-LASER-RASTERIZER</h1> 
-  <h2> Upload a Image file, and a Lightburn Material Library file</h2>
-  <h3> Please be patient, its slow</h3>
-  <form action="/upload" method="post" enctype="multipart/form-data"> 
-    <div>
-      <label for="image">Choose a raster image file:</label> 
-      <input type="file" id="image" name="image" required> 
+  <h2>Upload an image file, and a Lightburn Material Library file</h2>
+  <h3>Please be patient, it is slow</h3>
+  <H3> Name your material settings in your lighburn material settings file with description matching the color names , and material name containing: stainless - steel</H3>
+  <h3>pick the colors you want to limit to if you dont want to use all the color settings in your library file that match the lightburn layer colors, if you dont click any of the colors, all matching colors found in your library wil be used </h3>
+  <!-- Lightburn Color Palette Grid Section -->
+  <div class="palette-section">
+    <label style="font-size: 0.9rem; font-weight: 600;">Lightburn Layer Reference (00 - 29)</label>
+    <div class="color-grid">
+      <!-- Row 1 -->
+      <div class="color-card"><span class="color-name">Black</span><span class="color-label">C00</span><div class="color-square" style="background-color: #000000;" data-value="C00"></div><span class="color-hex">#000000</span></div>
+      <div class="color-card"><span class="color-name">Blue</span><span class="color-label">C01</span><div class="color-square" style="background-color: #0000ff;" data-value="C01"></div><span class="color-hex">#0000FF</span></div>
+      <div class="color-card"><span class="color-name">Green</span><span class="color-label">C02</span><div class="color-square" style="background-color: #00ff00;" data-value="C02"></div><span class="color-hex">#00FF00</span></div>
+      <div class="color-card"><span class="color-name">Red</span><span class="color-label">C03</span><div class="color-square" style="background-color: #ff0000;" data-value="C03"></div><span class="color-hex">#FF0000</span></div>
+      <div class="color-card"><span class="color-name">Yellow</span><span class="color-label">C04</span><div class="color-square" style="background-color: #d0d000;" data-value="C04"></div><span class="color-hex">#D0D000</span></div>
+      <div class="color-card"><span class="color-name">Magenta</span><span class="color-label">C05</span><div class="color-square" style="background-color: #ff00ff;" data-value="C05"></div><span class="color-hex">#FF00FF</span></div>
+      <!-- Row 2 -->
+      <div class="color-card"><span class="color-name">Cyan</span><span class="color-label">C06</span><div class="color-square" style="background-color: #00ffff;" data-value="C06"></div><span class="color-hex">#00FFFF</span></div>
+      <div class="color-card"><span class="color-name">Orange</span><span class="color-label">C07</span><div class="color-square" style="background-color: #ffaa00;" data-value="C07"></div><span class="color-hex">#FFAA00</span></div>
+      <div class="color-card"><span class="color-name">Rose</span><span class="color-label">C08</span><div class="color-square" style="background-color: #ff00aa;" data-value="C08"></div><span class="color-hex">#FF00AA</span></div>
+      <div class="color-card"><span class="color-name">Purple</span><span class="color-label">C09</span><div class="color-square" style="background-color: #aa00ff;" data-value="C09"></div><span class="color-hex">#AA00FF</span></div>
+      <div class="color-card"><span class="color-name">Dk Green</span><span class="color-label">C10</span><div class="color-square" style="background-color: #00aa00;" data-value="C10"></div><span class="color-hex">#00AA00</span></div>
+      <div class="color-card"><span class="color-name">Dk Blue</span><span class="color-label">C11</span><div class="color-square" style="background-color: #000080;" data-value="C11"></div><span class="color-hex">#000080</span></div>
+      <!-- Row 3 -->
+      <div class="color-card"><span class="color-name">Maroon</span><span class="color-label">C12</span><div class="color-square" style="background-color: #800000;" data-value="C12"></div><span class="color-hex">#800000</span></div>
+      <div class="color-card"><span class="color-name">Plum</span><span class="color-label">C13</span><div class="color-square" style="background-color: #800080;" data-value="C13"></div><span class="color-hex">#800080</span></div>
+      <div class="color-card"><span class="color-name">Teal</span><span class="color-label">C14</span><div class="color-square" style="background-color: #008080;" data-value="C14"></div><span class="color-hex">#008080</span></div>
+      <div class="color-card"><span class="color-name">Olive</span><span class="color-label">C15</span><div class="color-square" style="background-color: #808000;" data-value="C15"></div><span class="color-hex">#808000</span></div>
+      <div class="color-card"><span class="color-name">Gray</span><span class="color-label">C16</span><div class="color-square" style="background-color: #808080;" data-value="C16"></div><span class="color-hex">#808080</span></div>
+      <div class="color-card"><span class="color-name">Lt Gray</span><span class="color-label">C17</span><div class="color-square" style="background-color: #c0c0c0;" data-value="C17"></div><span class="color-hex">#C0C0C0</span></div>
+      <!-- Row 4 -->
+      <div class="color-card"><span class="color-name">Charcoal</span><span class="color-label">C18</span><div class="color-square" style="background-color: #404040;" data-value="C18"></div><span class="color-hex">#404040</span></div>
+      <div class="color-card"><span class="color-name">Coral</span><span class="color-label">C19</span><div class="color-square" style="background-color: #ff5555;" data-value="C19"></div><span class="color-hex">#FF5555</span></div>
+      <div class="color-card"><span class="color-name">Lt Green</span><span class="color-label">C20</span><div class="color-square" style="background-color: #55ff55;" data-value="C20"></div><span class="color-hex">#55FF55</span></div>
+      <div class="color-card"><span class="color-name">Lt Yellow</span><span class="color-label">C21</span><div class="color-square" style="background-color: #ffff55;" data-value="C21"></div><span class="color-hex">#FFFF55</span></div>
+      <div class="color-card"><span class="color-name">Lt Blue</span><span class="color-label">C22</span><div class="color-square" style="background-color: #a0a0ff;" data-value="C22"></div><span class="color-hex">#A0A0FF</span></div>
     </div>
-    <div>
-      <label for="material_settings">Choose material settings file:</label> 
-      <input type="file" id="material_settings" name="material_settings" required> 
+  </div>
+
+  <!-- Form Section -->
+  <form action="/upload" method="post" enctype="multipart/form-data">
+    <div class="form-group">
+      <label for="imageFile">Image File:</label>
+      <input type="file" id="imageFile" name="image" accept="image/*" required>
     </div>
-    <div>
-      <label for="pixel_square_mm">pixel_square_mm:</label> 
-      <input type="text" id="pixel_square_mm" name="pixel_square_mm" placeholder="size in decimal of mm for pixels to be drawn"> 
+    
+    <div class="form-group">
+      <label for="clbFile">Lightburn Library File (.clb):</label>
+      <input type="file" id="clbFile" name="library" accept=".clb" required>
     </div>
-    <div>
-      <label for="new_width">new_width:</label> 
-      <input type="number" id="new_width" name="new_width" placeholder="new width to resize to, respecting aspect ration"> 
+
+    <div class="form-group">
+      <label for="colorList">Selected Colors:</label>
+      <input type="text" id="colorList" name="colors" placeholder="Click colors above to add..." readonly>
     </div>
-    <div>
-      <label for="new_height">new_height:</label> 
-      <input type="number" id="new_height" name="new_height" placeholder="new height to resize to, respecting aspect ration"> 
-    </div>
-    <div>
-      <label for="colors">colors:</label> 
-      <input type="text" id="colors" name="colors" placeholder="black, blue, red, green..."> 
-    </div>
-    <div>
-      <label for="vectorize">vectorize:</label> 
-      <input type="checkbox" id="vectorize" name="vectorize"> 
-    </div>    
-    <button type="submit">Upload</button> 
-  </form> 
-</body> 
-</html>
+
+    <button type="submit">Process Raster</button>
+  </form>
+
+  <script>
+    const squares = document.querySelectorAll('.color-square');
+    const colorInput = document.getElementById('colorList');
+    let selectedColors = [];
+
+    squares.forEach(square => {
+      square.addEventListener('click', () => {
+        // Find the color name element inside the same card container
+        const card = square.closest('.color-card');
+        const colorName = card.querySelector('.color-name').textContent;
+        
+        if (selectedColors.includes(colorName)) {
+          // If already selected, remove it
+          selectedColors = selectedColors.filter(color => color !== colorName);
+          square.classList.remove('selected');
+        } else {
+          // If not selected, add it
+          selectedColors.push(colorName);
+          square.classList.add('selected');
+        }
+        
+        // Keep them sorted alphabetically so the list stays organized
+        selectedColors.sort();
+        
+        // Join the items by a comma and display them in the field
+        colorInput.value = selectedColors.join(', ');
+      });
+    });
+  </script>
