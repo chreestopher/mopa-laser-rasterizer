@@ -56,47 +56,50 @@
         const taskId = "{{ task_id }}";
         const logContainer = document.getElementById("log-container");
         const terminalBox = document.getElementById("terminal");
-        const visibleLogs = new Set(["Connecting to script pipeline..."]);
+        
+        // Track the exact number of logs we have rendered so far
+        let logIndex = 0; 
 
         function appendLogMessage(message) {
             const cleanMessage = message ? message.trim() : "";
-            if (!cleanMessage || cleanMessage === "" || cleanMessage === "Waiting to start..." || visibleLogs.has(cleanMessage)) {
+            if (!cleanMessage || cleanMessage === "Waiting to start...") {
                 return; 
             }
-            visibleLogs.add(cleanMessage);
 
             const li = document.createElement("li");
             li.className = "log-item";
             li.innerHTML = `<span class="log-prefix">$</span>${cleanMessage}`;
             logContainer.appendChild(li);
+            
+            // Instantly auto-scroll to the bottom of the black terminal box
             terminalBox.scrollTop = terminalBox.scrollHeight;
         }
 
+        // Start checking the logs after a short initial delay
         setTimeout(() => {
             const checkStatus = setInterval(async () => {
                 try {
-                    const response = await fetch(`/task-status/${taskId}`);
+                    // UPDATED: Points to your new file-based log delivery backend route
+                    const response = await fetch(`/get-logs/${taskId}`);
                     if (!response.ok) return;
 
                     const data = await response.json();
 
-                    if (data.current_log) {
-                        if (Array.isArray(data.current_log)) {
-                            data.current_log.forEach((logMessage) => {
-                                appendLogMessage(logMessage);
-                            });
-                        } else if (typeof data.current_log === 'string') {
-                            appendLogMessage(data.current_log);
-                        }
+                    // Process and append ONLY new logs that have arrived since our last look
+                    if (data.logs && Array.isArray(data.logs) && data.logs.length > logIndex) {
+                        const newLines = data.logs.slice(logIndex);
+                        newLines.forEach((logMessage) => {
+                            appendLogMessage(logMessage);
+                        });
+                        // Shift our tracking pointer forward
+                        logIndex = data.logs.length;
                     }
 
-                    // FIX: Bypass browser drive-by download blocks by redirecting 
-                    // immediately to the success page instead of clicking hidden tags!
+                    // Check for completion status and handle screen redirection layouts
                     if (data.status === "completed") {
                         clearInterval(checkStatus);
                         appendLogMessage("Task completed successfully! Redirecting to dashboard...");
                         
-                        // Navigate directly to your final template screen layout
                         window.location.href = "/success/" + taskId;
                     }
                     else if (data.status === "failed") {
@@ -108,7 +111,7 @@
                 } catch (err) {
                     console.error("Polling stream exception error:", err);
                 }
-            }, 1000); 
+            }, 1000); // Polls precisely every 1 second
 
         }, 1500);
     </script>
