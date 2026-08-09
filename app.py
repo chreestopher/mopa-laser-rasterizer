@@ -62,35 +62,31 @@ def long_running_script(task_id, data, image_path, material_settings_path):
 
         # Open the file in append mode with line-buffering (buffering=1)
         with open(log_file_path, "a", buffering=1) as log_file:
-            while True:
-                line = process.stdout.readline()
-                if not line and process.poll() is not None:
-                    break
+        print(f"[Thread-{task_id}] Subprocess loop active...", flush=True)
+
+        # FIX: Use read1() or an iterator to prevent blocking on partial lines
+        while True:
+            # read1() fetches whatever bytes/chars are currently available in the OS buffer
+            # It will NOT block waiting for a newline character
+            chunk = process.stdout.read1(4096) 
+            
+            # If the chunk is empty and the process ended, break the loop
+            if not chunk and process.poll() is not None:
+                break
+            
+            if chunk:
+                # Split the chunk by newlines manually to preserve log line formatting
+                lines = chunk.splitlines()
                 
-                if line:
-                    cleaned_line = line.strip()
+                for cleaned_line in lines:
+                    cleaned_line = cleaned_line.strip()
                     if cleaned_line:
                         print(f"[Subprocess Stream]: {cleaned_line}", flush=True)
                         
-                        # Write directly to disk instantly
-                        log_file.write(cleaned_line + "\n")
+                        # Safely append to the tasks dictionary snapshot
+                        tasks[f"{task_id}_logs"] = tasks.get(f"{task_id}_logs", []) + [cleaned_line]
 
-        # # Read the stdout stream line-by-line in real time
-        # while True:
-        #     line = process.stdout.readline()
-        #     if not line and process.poll() is not None:
-        #         break
-            
-        #     if line:
-        #         cleaned_line = line.strip()
-        #         if cleaned_line:
-
-        #             print(f"[Subprocess Stream]: {cleaned_line}", flush=True)
-                    
-        #             # Safely update the shared list
-        #             # Create a brand new list in memory instead of mutating the old reference
-        #             tasks[f"{task_id}_logs"] = tasks.get(f"{task_id}_logs", []) + [cleaned_line]
-        # FIX: Safely wait for exit code without trying to re-read exhausted streams
+        # Safely wait for exit code without trying to re-read exhausted streams
         return_code = process.wait()
         print(f"[Thread-{task_id}] Subprocess exited with return code: {return_code}", flush=True)
         
