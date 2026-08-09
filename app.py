@@ -4,7 +4,7 @@ import uuid
 import subprocess
 import multiprocessing
 
-from flask import Flask, render_template, jsonify, request, send_from_directory
+from flask import Flask, render_template, jsonify, request, send_from_directory, redirect
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
@@ -214,12 +214,27 @@ def view_image(task_id):
     if not image_file:
         return jsonify({"status": "error", "message": "Preview asset not found on disk"}), 404
 
-    mimetype = 'image/svg+xml' if '.svg' in image_file.lower() else None
+    # Convert to lowercase to handle extensions like .PNG or .JPEG
+    #mimetype = 'image/svg+xml' if image_file.lower().endswith('.svg') else None
+    filename_lower = image_file.lower()
+    mime_type = None
+    if 'svg' in filename_lower:
+        mime_type = "image/svg+xml"
+    elif filename_lower.endswith(".png"):
+        mime_type = "image/png"
+    elif filename_lower.endswith(".jpg", ".jpeg"):
+        mime_type = "image/jpeg"
+    elif filename_lower.endswith(".gif"):
+        mime_type = "image/gif"
+    elif filename_lower.endswith(".webp"):
+        mime_type = "image/webp"
+    else:
+        None
 
     return send_from_directory(
         directory=app.config['UPLOAD_FOLDER'], 
         path=image_file,
-        mimetype=mimetype
+        mimetype=mime_type
     )
 
 

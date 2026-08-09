@@ -173,10 +173,97 @@ def rgb_to_hex(rgb):
     """Converts an (R, G, B) tuple to a #RRGGBB hex string."""
     return '#{:02x}{:02x}{:02x}'.format(*rgb)
 
-def trace_with_palette_mapping(image_path, svg_output_path):
-    MAX_DIMENSION = None
+import re
+import cv2
+import numpy as np
+import potrace
+import svgwrite
+
+
+import cv2
+import numpy as np
+import potrace
+import svgwrite
+
+import cv2
+import numpy as np
+
+#region todo: finish faster implementation with numpy arrays
+# def trace_with_palette_mapping(
+#     TARGET_COLORS, image_path, svg_output_path, MAX_DIMENSION=None
+# ):
+#     # Setup configuration variables
+#     RESIZE_FACTOR = 1.0
+#     TURD_SIZE = 10
+
+#     # 1. Load and read image
+#     img = cv2.imread(image_path)
+#     if img is None:
+#         raise FileNotFoundError(f"Could not open or read image: {image_path}")
+
+#     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+#     orig_h, orig_w, _ = img_rgb.shape
+#     target_w, target_h = orig_w, orig_h
+
+#     if RESIZE_FACTOR != 1.0:
+#         target_w = int(orig_w * RESIZE_FACTOR)
+#         target_h = int(orig_h * RESIZE_FACTOR)
+#     if MAX_DIMENSION is not None and max(target_w, target_h) > MAX_DIMENSION:
+#         scale = MAX_DIMENSION / float(max(target_w, target_h))
+#         target_w = int(target_w * scale)
+#         target_h = int(target_h * scale)
+#     if (target_w, target_h) != (orig_w, orig_h):
+#         print(
+#             f"Resizing image from {orig_w}, {orig_h} to {target_w}, {target_h}",
+#             flush=True,
+#         )
+#         img_rgb = cv2.resize(
+#             img_rgb, (target_w, target_h), interpolation=cv2.INTER_AREA
+#         )
+#     else:
+#         print(
+#             f"Processing image at original dimension {orig_w}, {orig_h}",
+#             flush=True,
+#         )
+
+#     # 2. Reshape and convert image pixels to float32 for distance math
+#     pixels = img_rgb.reshape(-1, 3).astype(np.float32)
+
+#     # Convert TARGET_COLORS list of hex strings into a NumPy array of RGB values
+#     # (Replaces old hex_to_rgb loop)
+#     target_rgbs = np.array(
+#         [[int(h.lstrip("#")[i : i + 2], 16) for i in (0, 2, 4)] for h in TARGET_COLORS],
+#         dtype=np.float32,
+#     )
+
+#     # 3. Vectorized closest color calculation (No loops)
+#     # Uses NumPy broadcasting to find the squared Euclidean distance
+#     # shape: (num_pixels, 1, 3) - (1, num_colors, 3) -> (num_pixels, num_colors, 3)
+#     differences = pixels[:, None, :] - target_rgbs[None, :, :]
+#     distances = np.sum(differences**2, axis=2)
+
+#     # Find the index of the closest target color for every pixel
+#     closest_color_indices = np.argmin(distances, axis=1)
+
+#     # 4. Map the pixels to the target colors and reconstruct the image
+#     flattened_pixels = target_rgbs[closest_color_indices].astype(np.uint8)
+#     flattened_img = flattened_pixels.reshape(target_h, target_w, 3)
+
+#     print(
+#         f"Color flattening complete. Proceeding with SVG generation...",
+#         flush=True,
+#     )
+
+#     # 5. Pass flattened_img to your subprocess/SVG tracing tool below
+#     # (Insert your potrace/vtracer call or remaining logic here)
+
+#     return flattened_img
+#endregion todonew
+def trace_with_palette_mapping( TARGET_COLORS, image_path, svg_output_path, MAX_DIMENSION=None ):
+    # Setup configuration variables
     RESIZE_FACTOR = 1.0
     TURD_SIZE = 10
+
     # 1. Load and read image
     img = cv2.imread(image_path)
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -191,10 +278,18 @@ def trace_with_palette_mapping(image_path, svg_output_path):
         target_w = int(target_w * scale)
         target_h = int(target_h * scale)
     if (target_w, target_h) != (orig_w, orig_h):
-        print(f"Resizing image from {orig_w}, {orig_h} to {target_w}, {target_h}", flush=True)
-        img_rgb = cv2.resize(img_rgb, (target_w, target_h),interpolation=cv2.INTER_AREA)
-    else: 
-        print(f"Processing image at original dimension {orig_w}, {orig_h}", flush=True)
+        print(
+            f"Resizing image from {orig_w}, {orig_h} to {target_w}, {target_h}",
+            flush=True,
+        )
+        img_rgb = cv2.resize(
+            img_rgb, (target_w, target_h), interpolation=cv2.INTER_AREA
+        )
+    else:
+        print(
+            f"Processing image at original dimension {orig_w}, {orig_h}",
+            flush=True,
+        )
 
     # 2. Extract unique colors present in the original image to build a cache
     pixels = img_rgb.reshape(-1, 3)
@@ -203,23 +298,17 @@ def trace_with_palette_mapping(image_path, svg_output_path):
     # 3. Build a fast lookup dictionary using your get_closest_color function
     color_lut = {}
     for color in unique_src_colors:
-        # Convert RGB numpy array to hex string
         src_hex = rgb_to_hex(color)
         src_color = hex_to_rgb(src_hex)
         r, g, b = src_color
-            
-        # Determine the color based on the rules
+
         close_color = get_closest_color(r, g, b, TARGET_COLORS)
         target_hex = close_color
-
-        # Convert the matched target hex back to an RGB tuple for mapping
         color_lut[tuple(color)] = hex_to_rgb(target_hex)
 
     # 4. Apply the color mapping to flatten the entire image
-    # We construct a new flattened image array matching the original shape
     flattened_img = np.zeros_like(img_rgb)
     for src_rgb, target_rgb in color_lut.items():
-        # Find all pixels matching the source color and replace them with the target palette color
         mask = (img_rgb == src_rgb).all(axis=-1)
         flattened_img[mask] = target_rgb
 
@@ -231,11 +320,13 @@ def trace_with_palette_mapping(image_path, svg_output_path):
 
     # 7. Trace each individual color layer
     for color in final_palette_colors:
-        hex_color = '#{:02x}{:02x}{:02x}'.format(*color)
+        hex_color = "#{:02x}{:02x}{:02x}".format(*color)
 
-        # Optional: Skip drawing a background canvas layer if it's pure white
-        if hex_color.lower() == '#ffffff':
+        if hex_color.lower() == "#ffffff":
             continue
+        init_color = hex_to_rgb(hex_color)
+        initr, initg, initb = init_color
+        lb_color = get_closest_color(initr, initg, initb, TARGET_COLORS)
 
         # Create binary mask for this specific allowed palette color
         mask = cv2.inRange(flattened_img, color, color)
@@ -251,37 +342,93 @@ def trace_with_palette_mapping(image_path, svg_output_path):
         path = bitmap.trace(
             turnpolicy=potrace.TURNPOLICY_MINORITY,
             alphamax=1.0,
-            turdsize=TURD_SIZE
+            turdsize=TURD_SIZE,
         )
 
-        # 8. Build the SVG path string
+        # 8. Build the SVG path string and LightBurn data geometry concurrently
         svg_path_data = ""
+        lb_points = []
+
         for curve in path:
-            # Access tuple elements by index: [0] is x, [1] is y
             start = curve.start_point
-            svg_path_data += f"M {start[0]},{start[1]} "
+            svg_path_data += f"M {start[0]:.4f},{start[1]:.4f} "
+
+            # Append the absolute starting position tracking node
+            lb_points.append((start[0], start[1]))
 
             for segment in curve:
+                end = segment.end_point
+
                 if segment.is_corner:
                     c = segment.c
-                    end = segment.end_point
-                    svg_path_data += f"L {c[0]},{c[1]} L {end[0]},{end[1]} "
+                    svg_path_data += (
+                        f"L {c[0]:.4f},{c[1]:.4f} L {end[0]:.4f},{end[1]:.4f} "
+                    )
+
+                    # Gather corner vector anchors
+                    lb_points.append((c[0], c[1]))
+                    lb_points.append((end[0], end[1]))
                 else:
                     c1 = segment.c1
                     c2 = segment.c2
-                    end = segment.end_point
-                    svg_path_data += f"C {c1[0]},{c1[1]} {c2[0]},{c2[1]} {end[0]},{end[1]} "
+                    svg_path_data += f"C {c1[0]:.4f},{c1[1]:.4f} {c2[0]:.4f},{c2[1]:.4f} {end[0]:.4f},{end[1]:.4f} "
+
+                    # Interpolate the Bezier curve into straight linear subdivisions for LightBurn path arrays
+                    # This ensures curve smoothness without requiring native curve builders
+                    STEPS = 12
+                    for step in range(1, STEPS + 1):
+                        t = step / STEPS
+                        # Standard Cubic Bezier mathematical calculation
+                        x_t = (
+                            (1 - t) ** 3 * start[0]
+                            + 3 * (1 - t) ** 2 * t * c1[0]
+                            + 3 * (1 - t) * t**2 * c2[0]
+                            + t**3 * end[0]
+                        )
+                        y_t = (
+                            (1 - t) ** 3 * start[1]
+                            + 3 * (1 - t) ** 2 * t * c1[1]
+                            + 3 * (1 - t) * t**2 * c2[1]
+                            + t**3 * end[1]
+                        )
+                        lb_points.append((x_t, y_t))
+
+                # Update the starting node reference for the next consecutive segment tracking loop
+                start = end
 
             svg_path_data += "Z "
 
-
-        # Write layer to the vector canvas
+        # Write data layers to both vector canvases sequentially
         if svg_path_data:
+            # 1. Add path to the standard SVG object canvas instance
             dwg.add(dwg.path(d=svg_path_data, fill=hex_color, stroke="none"))
 
-    # Save final vector file
-    dwg.save()
-    print(f"Vector tracing complete. Output saved to: {svg_output_path}", flush=True)
+            # 2. Instantiate LightBurn path cleanly with our compiled coordinate array
+            # If your custom lightburn module requires an alternative geometry constructor
+            # (like lightburn.Path(d=svg_path_data)), swap this instantiation safely.
+            lb_shape = lightburn.Path(lb_points).layer(
+                TARGET_COLORS[lb_color][1]
+            )
+            lb.add(lb_shape)
+
+    try:
+        # Save final vector file
+        dwg.save()
+    except Exception as e:
+        print(f"Error writing SVG file: {e}", flush=True)
+
+    print(
+        f"Vector tracing complete. Output saved to: {svg_output_path}",
+        flush=True,
+    )
+    try:
+        lb.write(svg_output_path + ".lbrn2")
+        print(
+            f"Success! lbrn2 saved to " + svg_output_path + ".lbrn2",
+            flush=True,
+        )
+    except Exception as e:
+        print(f"Error writing LightBurn file: {e}", flush=True)
 
 def parse_material_settings(lb, material_settings_path, limit_colors, TARGET_COLORS):
     """
@@ -391,6 +538,7 @@ if __name__ == "__main__":
     material_library_file=sys.argv[6]
     the_limit_colors = sys.argv[7]    
     vectorize = str_to_bool(sys.argv[8]) 
+    max_dimension = max(new_width, new_height)
 
     the_limit_colors_list = [item.strip() for item in the_limit_colors.split(",")]
     print(f"\nusing material library settings: {material_library_file}", flush=True)
@@ -404,6 +552,6 @@ if __name__ == "__main__":
 
     TARGET_COLORS = parse_material_settings(lb, material_library_file, the_limit_colors_list, TARGET_COLORS)
     if vectorize:
-        trace_with_palette_mapping(INPUT_FILE, f"{OUTPUT_FILE}.vector.svg")
+        trace_with_palette_mapping(TARGET_COLORS, INPUT_FILE, f"{OUTPUT_FILE}.vector.svg", int(max_dimension))
     else:
         generate_pixel_svg(TARGET_COLORS, INPUT_FILE, f"{OUTPUT_FILE}.svg", square_mm, new_width, new_height)
