@@ -550,8 +550,8 @@ if __name__ == "__main__":
     TARGET_COLORS['#000000'] = (0, 0, 'Black')
     if len(the_limit_colors_list) <= 1:
         the_limit_colors_list = [cv[-1].lower() for cn,cv in TARGET_COLORS.items()]
-    the_limit_colors_list.apend("black")
-    the_limit_colors_list.apend("light-gray")
+    the_limit_colors_list.append("black")
+    the_limit_colors_list.append("light-gray")
     print(f"\nusing TARGET_COLORS: {TARGET_COLORS}", flush=True)
     print(f"\nusing LIMIT COLORS: {','.join(the_limit_colors_list)}", flush=True)
 
