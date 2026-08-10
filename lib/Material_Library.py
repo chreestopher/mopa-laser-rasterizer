@@ -18,7 +18,7 @@ from svgelements import SVG, Path, Polygon as SVGPolygon
 def flatten_and_subtract_svg_in_place(svg_path):
     # 1. Load data entirely into RAM
     svg_data = SVG.parse(svg_path)
-    
+    print(f"flattenning: {svg_path}")
     black_polygons = []
     color_groups = defaultdict(list)
     
@@ -49,6 +49,7 @@ def flatten_and_subtract_svg_in_place(svg_path):
     all_color_polygons = []
     
     for color, polys in color_groups.items():
+        print(f"welding color layer")
         welded_color = unary_union(polys)
         fused_layers[color] = welded_color
         if not welded_color.is_empty:
@@ -60,6 +61,7 @@ def flatten_and_subtract_svg_in_place(svg_path):
     # 4. Punch holes into the ACTUAL black background base path
     if not fused_black_base.is_empty and all_color_polygons:
         # Combine all non-black layers into a solid carving mask
+        print(f"subtracting non-black from black layer")
         subtraction_mask = unary_union(all_color_polygons)
         # Carve holes ONLY out of the existing black geometry
         fused_layers["black"] = fused_black_base.difference(subtraction_mask)
@@ -87,10 +89,13 @@ def flatten_and_subtract_svg_in_place(svg_path):
 
     # Output the layers back to the file
     for color, geometry in fused_layers.items():
+        print(f"adding {color} layer back to svg: {svg_path}")
         add_geom_to_svg(geometry, color)
 
     tree = ET.ElementTree(root)
+    print(f"writing to file: {svg_path}")
     tree.write(svg_path, encoding='utf-8', xml_declaration=True)
+
 def str_to_bool(value: str) -> bool:
     # Convert to lowercase and strip whitespace
     clean_val = value.strip().lower()
