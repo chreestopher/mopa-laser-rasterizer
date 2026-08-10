@@ -18,7 +18,7 @@ from svgelements import SVG, Path, Polygon as SVGPolygon
 def flatten_and_subtract_svg_in_place(svg_path):
     # 1. Load data entirely into RAM
     svg_data = SVG.parse(svg_path)
-    print(f"flattenning: {svg_path}")
+    print(f"flattenning: {svg_path}", flush=True)
     black_polygons = []
     color_groups = defaultdict(list)
     
@@ -49,7 +49,7 @@ def flatten_and_subtract_svg_in_place(svg_path):
     all_color_polygons = []
     
     for color, polys in color_groups.items():
-        print(f"welding color layer")
+        print(f"welding color layer", flush=True)
         welded_color = unary_union(polys)
         fused_layers[color] = welded_color
         if not welded_color.is_empty:
@@ -61,7 +61,7 @@ def flatten_and_subtract_svg_in_place(svg_path):
     # 4. Punch holes into the ACTUAL black background base path
     if not fused_black_base.is_empty and all_color_polygons:
         # Combine all non-black layers into a solid carving mask
-        print(f"subtracting non-black from black layer")
+        print(f"subtracting non-black from black layer", flush=True)
         subtraction_mask = unary_union(all_color_polygons)
         # Carve holes ONLY out of the existing black geometry
         fused_layers["black"] = fused_black_base.difference(subtraction_mask)
@@ -89,11 +89,11 @@ def flatten_and_subtract_svg_in_place(svg_path):
 
     # Output the layers back to the file
     for color, geometry in fused_layers.items():
-        print(f"adding {color} layer back to svg: {svg_path}")
+        print(f"adding {color} layer back to svg: {svg_path}", flush=True)
         add_geom_to_svg(geometry, color)
 
     tree = ET.ElementTree(root)
-    print(f"writing to file: {svg_path}")
+    print(f"writing to file: {svg_path}", flush=True)
     tree.write(svg_path, encoding='utf-8', xml_declaration=True)
 
 def str_to_bool(value: str) -> bool:
@@ -615,4 +615,3 @@ if __name__ == "__main__":
         flatten_and_subtract_svg_in_place(the_output_file)
     else:
         generate_pixel_svg(TARGET_COLORS, INPUT_FILE, the_output_file, square_mm, new_width, new_height)
-        flatten_and_subtract_svg_in_place(the_output_file)
