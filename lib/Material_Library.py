@@ -24,7 +24,7 @@ def flatten_and_subtract_svg_in_place(svg_path):
     # 1. Load data entirely into RAM
     svg_data = SVG.parse(svg_path)
 
-    printLogMessage(f"flattenning: {svg_path}", flush=True)
+    printLogMessage(f"flattenning: {svg_path}")
     black_polygons = []
     color_groups = defaultdict(list)
     
