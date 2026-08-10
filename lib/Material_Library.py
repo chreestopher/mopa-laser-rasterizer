@@ -20,102 +20,73 @@ def printLogMessage(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}", flush=True)
 
-def flatten_and_subtract_svg_in_place(svg_path):
-    # 1. Load data entirely into RAM
-    svg_data = SVG.parse(svg_path)
-    printLogMessage(f"Flattening: {svg_path}")
+def raster_to_puzzle_svg(raster_image_path, output_svg_path, , new_height, new_width, TARGET_COLORS, ignore_background_hex="#ffffff"):
+    """
+    Parses a raster image, snaps pixels to a strict target palette,
+    and builds non-overlapping vector puzzle pieces out of them.
+    """
+    print(f"Opening raster image: {raster_image_path}")
+    img = Image.open(raster_image_path).convert("RGB")
+    img = resize_to_specific_height_or_width(image=img, height=int(new_height), width=int(new_width))
+    width, height = img.size
     
-    # Track the order of colors as they appear in the file (Z-Index / Stack order)
-    color_order = []
-    color_groups = defaultdict(list)
+    # Map to hold pixel coordinate bounding boxes grouped by snapped color
+    pixel_boxes_by_color = defaultdict(list)
     
-    for element in svg_data.elements():
-        if isinstance(element, (Path, SVGPolygon)):
-            points = [point for point in element.as_points()]
-            if len(points) >= 3:
-                poly = Polygon([(p.x, p.y) for p in points])
-                
-                # Critical step 1: Repair any self-intersections or bad geometry early
-                if not poly.is_valid:
-                    poly = poly.buffer(0)
-                
-                # Determine color hex or string
-                fill_color = "black"
-                if element.fill is not None and hasattr(element.fill, 'hex'):
-                    fill_color = element.fill.hex.lower()
-                elif element.fill is None:
-                    fill_color = "#000000"
-                
-                # Track color sequence to maintain exact visual stacking hierarchy
-                if fill_color not in color_groups:
-                    color_order.append(fill_color)
-                    
-                color_groups[fill_color].append(poly)
-
-    if not color_groups:
-        return  # No vectors found, exit safely
-
-    # 2. Fuse (weld) polygons for each color layer individually
-    fused_raw = {}
-    for color, polys in color_groups.items():
-        printLogMessage(f"Welding color layer: {color}")
-        # Critical step 2: A tiny buffer fixes microscopic precision gaps during union
-        welded = unary_union(polys).buffer(0.001).buffer(-0.001)
-        fused_raw[color] = welded
-
-    # 3. Process from top to bottom (Z-index carving)
-    # Top elements carve into bottom elements to fit like a puzzle without gaps
-    fused_layers = {}
-    accumulated_top_mask = Polygon()  # Empty base geometry
-    
-    # Process layers in reverse order (assuming elements at the end of the SVG are on top)
-    for color in reversed(color_order):
-        current_geom = fused_raw[color]
-        if current_geom.is_empty:
-            continue
+    print("Analyzing pixels and snapping colors...")
+    for y in range(height):
+        for x in range(width):
+            pixel_rgb = img.getpixel((x, y))
+            closest_hex = get_closest_color(pixel_rgb, TARGET_COLORS)
             
-        if not accumulated_top_mask.is_empty:
-            printLogMessage(f"Carving out upper elements from layer: {color}")
-            # Subtract everything above it from the current layer
-            puzzle_piece = current_geom.difference(accumulated_top_mask)
-        else:
-            puzzle_piece = current_geom
-            
-        # Clean up the resulting piece edges
-        puzzle_piece = puzzle_piece.buffer(0.001).buffer(-0.001)
-        fused_layers[color] = puzzle_piece
-        
-        # Add this layer's original raw layout to the mask for items beneath it
-        accumulated_top_mask = unary_union([accumulated_top_mask, current_geom]).buffer(0.0005)
+            # Skip background color completely if requested (e.g. white background)
+            if closest_hex == ignore_background_hex:
+                continue
+                
+            # Create a 1x1 box polygon matching this pixel's boundaries
+            # In SVGs, Y goes down, so we construct coordinate boxes matching pixel grids
+            pixel_poly = box(x, y, x + 1, y + 1)
+            pixel_boxes_by_color[closest_hex].append(pixel_poly)
 
-    # 4. Rebuild standard flat SVG structure
+    # Rebuild standard flat SVG structure
     root = ET.Element('svg', xmlns="http://w3.org", version="1.1")
-    if svg_data.viewbox:
-        root.set('viewBox', f"{svg_data.viewbox.x} {svg_data.viewbox.y} {svg_data.viewbox.width} {svg_data.viewbox.height}")
-        root.set('width', str(svg_data.viewbox.width))
-        root.set('height', str(svg_data.viewbox.height))
+    root.set('viewBox', f"0 0 {width} {height}")
+    root.set('width', str(width))
+    root.set('height', str(height))
 
     def add_geom_to_svg(geom, fill_color):
         if geom.is_empty:
             return
         if geom.geom_type == 'Polygon':
-            d_path = "M " + " L ".join([f"{x:.3f},{y:.3f}" for x, y in geom.exterior.coords]) + " Z"
+            # Format points to 1 decimal place since pixel grids are highly uniform
+            d_path = "M " + " L ".join([f"{x:.1f},{y:.1f}" for x, y in geom.exterior.coords]) + " Z"
             for interior in geom.interiors:
-                d_path += " M " + " L ".join([f"{x:.3f},{y:.3f}" for x, y in interior.coords]) + " Z"
+                d_path += " M " + " L ".join([f"{x:.1f},{y:.1f}" for x, y in interior.coords]) + " Z"
             ET.SubElement(root, 'path', d=d_path, fill=fill_color, stroke="none")
         elif geom.geom_type in ('MultiPolygon', 'GeometryCollection'):
             for sub_geom in geom.geoms:
                 add_geom_to_svg(sub_geom, fill_color)
 
-    # Output the finalized jigsaw layers back to the file (preserving visual order)
-    for color in color_order:
-        if color in fused_layers and not fused_layers[color].is_empty:
-            printLogMessage(f"Adding {color} puzzle piece back to SVG: {svg_path}")
-            add_geom_to_svg(fused_layers[color], color)
+    # Weld pixel boxes into solid composite vector layers
+    for color_hex, boxes in pixel_boxes_by_color.items():
+        print(f"Welding and smoothing interlocking vector layer for color: {color_hex}")
+        
+        # Merge all individual pixel squares into single contiguous shapes
+        welded_layer = unary_union(boxes)
+        
+        # Micro-buffer ensures alignment rounding errors don't present fake gaps in renderers
+        final_puzzle_piece = welded_layer.buffer(0.001).buffer(-0.001)
+        
+        # Write to our target SVG structure
+        add_geom_to_svg(final_puzzle_piece, color_hex)
 
+    # Save to disk
     tree = ET.ElementTree(root)
-    printLogMessage(f"Writing to puzzle-fit file: {svg_path}")
-    tree.write(svg_path, encoding='utf-8', xml_declaration=True)
+    print(f"Writing finalized zero-overlap SVG to: {output_svg_path}")
+    tree.write(output_svg_path, encoding='utf-8', xml_declaration=True)
+
+# Example Usage:
+# raster_to_puzzle_svg("input_design.png", "output_puzzle.svg", TARGET_COLORS)
 
 # def flatten_and_subtract_svg_in_place(svg_path):
 #     # 1. Load data entirely into RAM
@@ -220,58 +191,6 @@ def resize_to_specific_height_or_width( image, width=0, height=0 ):
     else:
         return image
     return resized_img
-
-def get_closest_color(r, g, b, TARGET_COLORS):
-    """
-    Determines the output color based on the input pixel's value (luminance) and hue.
-    """
-    # 1. Calculate Value (V) for thresholding (using max component for simplicity)
-    r=int(r)
-    g=int(g)
-    b=int(b)
-    V = max(r, g, b)
-
-    # 2. Apply Luminance Threshold Rules
-    if V < 25:
-        return "#000000"  # Black
-    
-    # if (V > 250):
-    #     return "#B4B4B4"  # Light Gray
-
-    # 3. Apply Hue Matching Rule (between 25 and 200)
-    
-    # Normalize RGB to 0-1 range for colorsys
-    r_norm, g_norm, b_norm = r / 255.0, g / 255.0, b / 255.0
-    
-    # Convert RGB to HSV. colorsys hue is 0-1, so multiply by 360
-    h_float, s_float, v_float = colorsys.rgb_to_hsv(r_norm, g_norm, b_norm)
-    pixel_hue = h_float * 360
-
-    # Ensure the pixel has enough saturation/value to be considered a 'color'
-    # If the pixel is too grayish or dark, the hue is meaningless.
-    # We proceed with hue matching only if saturation/value is decent.
-    if s_float < 0.45 or v_float < 0.15:
-         # If not colorful enough, treat it as a shade of gray based on its value
-         return "#B4B4B4" if v_float > 0.5 else "#000000"
-         
-    
-    min_diff = 360
-    closest_hex = ""
-
-    # Iterate through target hues to find the minimum angular difference
-    for hex_code, (target_hue, layer_index, layer_name) in TARGET_COLORS.items():
-        # Calculate the angular difference, handling the wrap-around at 0/360 degrees
-        diff = abs(pixel_hue - target_hue)
-        
-        # Check the shortest path around the circle (e.g., 350 vs 10 is 20, not 340)
-        angular_diff = min(diff, 360 - diff)
-        
-        if angular_diff < min_diff:
-            min_diff = angular_diff
-            closest_hex = hex_code
-
-    my_color = closest_hex
-    return my_color
 
 def get_closest_color(r, g, b, TARGET_COLORS):
     """
@@ -710,7 +629,8 @@ if __name__ == "__main__":
     
     TARGET_COLORS = parse_material_settings(lb, material_library_file, the_limit_colors_list, TARGET_COLORS)
     if vectorize:
-        trace_with_palette_mapping(TARGET_COLORS, INPUT_FILE, the_output_file, int(max_dimension))
-        flatten_and_subtract_svg_in_place(the_output_file)
+        #trace_with_palette_mapping(TARGET_COLORS, INPUT_FILE, the_output_file, int(max_dimension))
+        #flatten_and_subtract_svg_in_place(the_output_file)
+        raster_to_puzzle_svg(INPUT_FILE, the_output_file, new_height, new_width, TARGET_COLORS)
     else:
         generate_pixel_svg(TARGET_COLORS, INPUT_FILE, the_output_file, square_mm, new_width, new_height)
