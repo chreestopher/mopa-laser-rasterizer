@@ -66,19 +66,29 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
                 add_geom_to_svg(sub_geom, fill_color)
 
     def push_geom_to_lightburn(geom, layer_id):
-        """Breaks down shapely paths cleanly into LightBurn coordinates."""
+        """
+        Converts shapely geometry into standard SVG path command strings
+        to completely bypass the buggy svgelements validation engine.
+        """
         if geom.is_empty:
             return
             
         if geom.geom_type == 'Polygon':
-            # 1. Add outer boundary path to LightBurn (Bypassing svgelements connection validation)
-            exterior_coords = [[round(x, 3), round(y, 3)] for x, y in geom.exterior.coords]
-            lb_project_instance.add(Path(exterior_coords, validate_connections=False).layer(layer_id))
+            # 1. Build an exact SVG path string representation for the polygon
+            # M = Move to start point, L = Line to next points, Z = Close path loop
+            ext_coords = list(geom.exterior.coords)
+            d_string = f"M {ext_coords[0][0]:.3f},{ext_coords[0][1]:.3f} " 
+            d_string += " ".join([f"L {x:.3f},{y:.3f}" for x, y in ext_coords[1:]]) + " Z"
             
-            # 2. Add inner cutouts
+            # Add nested inner hole paths into the same SVG string if they exist
             for interior in geom.interiors:
-                interior_coords = [[round(x, 3), round(y, 3)] for x, y in interior.coords]
-                lb_project_instance.add(Path(interior_coords, validate_connections=False).layer(layer_id))
+                int_coords = list(interior.coords)
+                d_string += f" M {int_coords[0][0]:.3f},{int_coords[0][1]:.3f} "
+                d_string += " ".join([f"L {x:.3f},{y:.3f}" for x, y in int_coords[1:]]) + " Z"
+            
+            # 2. Feed the path string directly to the LightBurn instance.
+            # svgelements handles explicitly formed SVG strings correctly without crashing.
+            lb_project_instance.add(Path(d_string).layer(layer_id))
                 
         elif geom.geom_type in ('MultiPolygon', 'GeometryCollection'):
             for sub_geom in geom.geoms:
