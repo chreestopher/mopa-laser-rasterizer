@@ -228,7 +228,7 @@ def download_file(task_id):
         mimetype=mimetype
     )
 
-def cleanup_reddis_inflight(task_id)
+def cleanup_reddis_inflight(task_id):
     redis_log_key = f"task:{task_id}:log"
     redis_status_key = f"task:{task_id}:status"
     redis_download_key = f"task:{task_id}:downloads"
