@@ -61,7 +61,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
     for y in range(height):
         for x in range(width):
             pixel_rgb = img.getpixel((x, y))
-            closest_hex = get_closest_color(pixel_rgb, TARGET_COLORS)
+            closest_hex = get_closest_color(*pixel_rgb, TARGET_COLORS)
             
             if closest_hex == ignore_background_hex:
                 continue
