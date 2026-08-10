@@ -92,6 +92,73 @@ def flatten_and_subtract_svg_in_place(svg_path):
     tree = ET.ElementTree(root)
     tree.write(svg_path, encoding='utf-8', xml_declaration=True)
 
+def resize_to_specific_height_or_width( image, width=0, height=0 ):
+    if (height == 0 and width != 0):
+        width_percent = float(width) / float(image.size[0])
+        new_height = int(float(image.size[1]) * float(width_percent))
+        print("resizing image to width: " + str(width) + " height: "+ str(new_height), flush=True)
+        resized_img = image.resize((width, int(new_height)), Image.Resampling.LANCZOS)
+    elif (width == 0 and height != 0) :
+        height_percent = float(height) / float(image.size[1])
+        new_width = int(float(image.size[0]) * float(height_percent))
+        print("resizing image to width: " + str(new_width) + " height: "+ str(height), flush=True)
+        resized_img = image.resize((int(new_width),int(height) ), Image.Resampling.LANCZOS)
+    else:
+        return image
+    return resized_img
+
+def get_closest_color(r, g, b, TARGET_COLORS):
+    """
+    Determines the output color based on the input pixel's value (luminance) and hue.
+    """
+    # 1. Calculate Value (V) for thresholding (using max component for simplicity)
+    r=int(r)
+    g=int(g)
+    b=int(b)
+    V = max(r, g, b)
+
+    # 2. Apply Luminance Threshold Rules
+    if V < 25:
+        return "#000000"  # Black
+    
+    # if (V > 250):
+    #     return "#B4B4B4"  # Light Gray
+
+    # 3. Apply Hue Matching Rule (between 25 and 200)
+    
+    # Normalize RGB to 0-1 range for colorsys
+    r_norm, g_norm, b_norm = r / 255.0, g / 255.0, b / 255.0
+    
+    # Convert RGB to HSV. colorsys hue is 0-1, so multiply by 360
+    h_float, s_float, v_float = colorsys.rgb_to_hsv(r_norm, g_norm, b_norm)
+    pixel_hue = h_float * 360
+
+    # Ensure the pixel has enough saturation/value to be considered a 'color'
+    # If the pixel is too grayish or dark, the hue is meaningless.
+    # We proceed with hue matching only if saturation/value is decent.
+    if s_float < 0.45 or v_float < 0.15:
+         # If not colorful enough, treat it as a shade of gray based on its value
+         return "#B4B4B4" if v_float > 0.5 else "#000000"
+         
+    
+    min_diff = 360
+    closest_hex = ""
+
+    # Iterate through target hues to find the minimum angular difference
+    for hex_code, (target_hue, layer_index, layer_name) in TARGET_COLORS.items():
+        # Calculate the angular difference, handling the wrap-around at 0/360 degrees
+        diff = abs(pixel_hue - target_hue)
+        
+        # Check the shortest path around the circle (e.g., 350 vs 10 is 20, not 340)
+        angular_diff = min(diff, 360 - diff)
+        
+        if angular_diff < min_diff:
+            min_diff = angular_diff
+            closest_hex = hex_code
+
+    my_color = closest_hex
+    return my_color
+
 def get_closest_color(r, g, b, TARGET_COLORS):
     """
     Determines the output color based on the input pixel's value (luminance) and hue.
