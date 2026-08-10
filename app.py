@@ -43,7 +43,7 @@ def start_disk_cleanup_worker(app, redis_client, interval_seconds=3600):
                     # Extract the task_id from filenames like: "task_id.log", "task_id.status", or the output file
                     # If your output file uses a specific pattern, match it here.
                     # Assuming task_id can be extracted by splitting the first part of the filename:
-                    task_id = filename.split('.')[0]
+                    task_id = filename.split('_')[0]
                     
                     # 2. Check if the master status key still exists in Redis
                     redis_status_key = f"task:{task_id}:status"
