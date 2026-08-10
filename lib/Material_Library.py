@@ -72,7 +72,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
         """Extracts coordinate paths from Shapely geometry and pipes them into LightBurn."""
         if geom.is_empty:
             return
-        printLogMessage(f"Add shepe on Layer: {layer_id}")
+        
         if geom.geom_type == 'Polygon':
             # 1. Process the outer boundary loop
             exterior_coords = [[round(x, 3), round(y, 3)] for x, y in geom.exterior.coords]
@@ -87,6 +87,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
                     lb_project_instance.add(lb_hole)
                 
         elif geom.geom_type in ('MultiPolygon', 'GeometryCollection'):
+            printLogMessage(f"Add {len(geom.geoms)} shapes on Layer: {layer_id}")
             for sub_geom in geom.geoms:
                 push_geom_to_lightburn(sub_geom, layer_id)
 
