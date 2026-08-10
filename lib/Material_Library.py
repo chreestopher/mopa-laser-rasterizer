@@ -15,26 +15,12 @@ from shapely.geometry import Polygon, box
 from shapely.ops import unary_union
 from svgelements import SVG, Path, Polygon as SVGPolygon
 
-def flatten_svg_for_lightburn(svg_path):
-    # 1. Parse the document entirely into memory
+def flatten_and_subtract_svg_in_place(svg_path):
+    # 1. Load data entirely into RAM
     svg_data = SVG.parse(svg_path)
-    print(f"flattenning svg: {svg_path}")
     
-    # Track only genuine, non-black colored layers
+    black_polygons = []
     color_groups = defaultdict(list)
-    
-    # Establish document boundaries
-    if svg_data.viewbox:
-        v_x = svg_data.viewbox.x
-        v_y = svg_data.viewbox.y
-        v_w = svg_data.viewbox.width
-        v_h = svg_data.viewbox.height
-    else:
-        # Fallback bounds if viewbox is empty
-        v_x, v_y, v_w, v_h = 0, 0, 1000, 1000
-
-    # The background canvas frame to carve into
-    master_canvas = box(v_x, v_y, v_x + v_w, v_y + v_h)
     
     for element in svg_data.elements():
         if isinstance(element, (Path, SVGPolygon)):
@@ -44,45 +30,48 @@ def flatten_svg_for_lightburn(svg_path):
                 if not poly.is_valid:
                     poly = poly.buffer(0)
                 
-                # Check for explicit coloring parameters
-                fill_color = None
+                # Determine color
+                fill_color = "black"
                 if element.fill is not None and hasattr(element.fill, 'hex'):
                     fill_color = element.fill.hex.lower()
                 
-                # Filter out implicit/explicit black backgrounds entirely
-                if fill_color not in (None, "black", "#000000", "#000"):
+                # Group specifically by black vs non-black paths
+                if fill_color in ("black", "#000000", "#000") or element.fill is None:
+                    black_polygons.append(poly)
+                else:
                     color_groups[fill_color].append(poly)
+                    
+    if not black_polygons and not color_groups:
+        return  # No vectors found, exit safely
 
-    # 2. Weld each color tier separately
+    # 2. Fuse the non-black colors together into clean standalone layers
     fused_layers = {}
     all_color_polygons = []
     
     for color, polys in color_groups.items():
-        print(f"flattenning color:{color} ")
-        welded = unary_union(polys)
-        fused_layers[color] = welded
-        if not welded.is_empty:
-            all_color_polygons.append(welded)
+        welded_color = unary_union(polys)
+        fused_layers[color] = welded_color
+        if not welded_color.is_empty:
+            all_color_polygons.append(welded_color)
 
-    # 3. Calculate the true black areas based entirely on vacuum spaces
-    if all_color_polygons:
-        # Fuse ALL non-black shapes into one massive mask
-        total_color_mask = unary_union(all_color_polygons)
-        # The black shape is calculated strictly as what remains of the canvas
-        calculated_black_shapes = master_canvas.difference(total_color_mask)
-    else:
-        # If the file had no color elements, it remains fully black
-        calculated_black_shapes = master_canvas
+    # 3. Fuse the ACTUAL black background shapes into one base geometry
+    fused_black_base = unary_union(black_polygons)
 
-    # Assign the structural subtraction back to the collection
-    if not calculated_black_shapes.is_empty:
-        fused_layers["black"] = calculated_black_shapes
+    # 4. Punch holes into the ACTUAL black background base path
+    if not fused_black_base.is_empty and all_color_polygons:
+        # Combine all non-black layers into a solid carving mask
+        subtraction_mask = unary_union(all_color_polygons)
+        # Carve holes ONLY out of the existing black geometry
+        fused_layers["black"] = fused_black_base.difference(subtraction_mask)
+    elif not fused_black_base.is_empty:
+        fused_layers["black"] = fused_black_base
 
-    # 4. Rebuild standard flat SVG schema structures
-    root = ET.Element('svg', xmlns="http://www.w3.org/2000/svg", version="1.1")
-    root.set('viewBox', f"{v_x} {v_y} {v_w} {v_h}")
-    root.set('width', str(v_w))
-    root.set('height', str(v_h))
+    # 5. Rebuild standard flat SVG structure
+    root = ET.Element('svg', xmlns="http://w3.org", version="1.1")
+    if svg_data.viewbox:
+        root.set('viewBox', f"{svg_data.viewbox.x} {svg_data.viewbox.y} {svg_data.viewbox.width} {svg_data.viewbox.height}")
+        root.set('width', str(svg_data.viewbox.width))
+        root.set('height', str(svg_data.viewbox.height))
 
     def add_geom_to_svg(geom, fill_color):
         if geom.is_empty:
@@ -96,35 +85,12 @@ def flatten_svg_for_lightburn(svg_path):
             for sub_geom in geom.geoms:
                 add_geom_to_svg(sub_geom, fill_color)
 
-    # Compile everything into standard LightBurn compliant path elements
+    # Output the layers back to the file
     for color, geometry in fused_layers.items():
         add_geom_to_svg(geometry, color)
 
-    # 5. Overwrite the file in-place cleanly
     tree = ET.ElementTree(root)
     tree.write(svg_path, encoding='utf-8', xml_declaration=True)
-
-def str_to_bool(value: str) -> bool:
-    # Convert to lowercase and strip whitespace
-    clean_val = value.strip().lower()
-    
-    # Return True if it matches truthy terms
-    return clean_val in ("true", "1", "yes", "on", "t")
-
-def resize_to_specific_height_or_width( image, width=0, height=0 ):
-    if (height == 0 and width != 0):
-        width_percent = float(width) / float(image.size[0])
-        new_height = int(float(image.size[1]) * float(width_percent))
-        print("resizing image to width: " + str(width) + " height: "+ str(new_height), flush=True)
-        resized_img = image.resize((width, int(new_height)), Image.Resampling.LANCZOS)
-    elif (width == 0 and height != 0) :
-        height_percent = float(height) / float(image.size[1])
-        new_width = int(float(image.size[0]) * float(height_percent))
-        print("resizing image to width: " + str(new_width) + " height: "+ str(height), flush=True)
-        resized_img = image.resize((int(new_width),int(height) ), Image.Resampling.LANCZOS)
-    else:
-        return image
-    return resized_img
 
 def get_closest_color(r, g, b, TARGET_COLORS):
     """
@@ -567,7 +533,7 @@ if __name__ == "__main__":
     TARGET_COLORS = parse_material_settings(lb, material_library_file, the_limit_colors_list, TARGET_COLORS)
     if vectorize:
         trace_with_palette_mapping(TARGET_COLORS, INPUT_FILE, f"{OUTPUT_FILE}.vector.svg", int(max_dimension))
-        flatten_svg_for_lightburn("{OUTPUT_FILE}.vector.svg")
+        flatten_and_subtract_svg_in_place("{OUTPUT_FILE}.vector.svg")
     else:
         generate_pixel_svg(TARGET_COLORS, INPUT_FILE, f"{OUTPUT_FILE}.svg", square_mm, new_width, new_height)
-        flatten_svg_for_lightburn(f"{OUTPUT_FILE}.svg")
+        flatten_and_subtract_svg_in_place(f"{OUTPUT_FILE}.svg")
