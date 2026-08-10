@@ -50,7 +50,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
     """
     print(f"Opening raster image: {raster_image_path}")
     img = Image.open(raster_image_path).convert("RGB")
-    if max(int(new_width),int(new_height)) > 0):
+    if max(int(new_width),int(new_height)) > 0:
         img = resize_to_specific_height_or_width(image=img, height=int(new_height), width=int(new_width))
 
     width, height = img.size
