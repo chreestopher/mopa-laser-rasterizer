@@ -15,12 +15,25 @@ from shapely.geometry import Polygon
 from shapely.ops import unary_union
 from svgelements import SVG, Path, Polygon as SVGPolygon
 
-def flatten_and_subtract_svg_in_place(svg_path):
-    # 1. Load data entirely into RAM
+def flatten_svg_for_lightburn(input_svg_path):
+    # 1. Parse the document entirely into memory
     svg_data = SVG.parse(svg_path)
-
-    # Use a dictionary to group shapes by their parsed hex color code
+    
+    # Track only genuine, non-black colored layers
     color_groups = defaultdict(list)
+    
+    # Establish document boundaries
+    if svg_data.viewbox:
+        v_x = svg_data.viewbox.x
+        v_y = svg_data.viewbox.y
+        v_w = svg_data.viewbox.width
+        v_h = svg_data.viewbox.height
+    else:
+        # Fallback bounds if viewbox is empty
+        v_x, v_y, v_w, v_h = 0, 0, 1000, 1000
+
+    # The background canvas frame to carve into
+    master_canvas = box(v_x, v_y, v_x + v_w, v_y + v_h)
     
     for element in svg_data.elements():
         if isinstance(element, (Path, SVGPolygon)):
@@ -30,63 +43,64 @@ def flatten_and_subtract_svg_in_place(svg_path):
                 if not poly.is_valid:
                     poly = poly.buffer(0)
                 
-                # Extract clean hex color codes, default to black if unspecified
-                fill_color = "black"
-                if element.fill is not None:
+                # Check for explicit coloring parameters
+                fill_color = None
+                if element.fill is not None and hasattr(element.fill, 'hex'):
                     fill_color = element.fill.hex.lower()
                 
-                color_groups[fill_color].append(poly)
-                
-    if not color_groups:
-        return  # Exit if no valid geometric layers exist
+                # Filter out implicit/explicit black backgrounds entirely
+                if fill_color not in (None, "black", "#000000", "#000"):
+                    color_groups[fill_color].append(poly)
 
-    # 2. Fuse elements of identical color channels first
+    # 2. Weld each color tier separately
     fused_layers = {}
-    for color, polys in color_groups.items():
-        fused_layers[color] = unary_union(polys)
-
-    # 3. Perform Boolean Subtraction on the background layer
-    # Collect every non-black fused geometry layer into an exclusion mask
-    non_black_geometries = [
-        geom for color, geom in fused_layers.items() 
-        if color != "black" and not geom.is_empty
-    ]
+    all_color_polygons = []
     
-    if "black" in fused_layers and non_black_geometries:
-        # Fuse all colored shapes together to form a solid master cutting mask
-        subtraction_mask = unary_union(non_black_geometries)
-        
-        # Punch holes cleanly into the black base layer using .difference()
-        fused_layers["black"] = fused_layers["black"].difference(subtraction_mask)
+    for color, polys in color_groups.items():
+        welded = unary_union(polys)
+        fused_layers[color] = welded
+        if not welded.is_empty:
+            all_color_polygons.append(welded)
 
-    # 4. Rebuild the output SVG schema structure
-    root = ET.Element('svg', xmlns="http://w3.org", version="1.1")
-    if svg_data.viewbox:
-        root.set('viewBox', f"{svg_data.viewbox.x} {svg_data.viewbox.y} {svg_data.viewbox.width} {svg_data.viewbox.height}")
-        root.set('width', str(svg_data.viewbox.width))
-        root.set('height', str(svg_data.viewbox.height))
+    # 3. Calculate the true black areas based entirely on vacuum spaces
+    if all_color_polygons:
+        # Fuse ALL non-black shapes into one massive mask
+        total_color_mask = unary_union(all_color_polygons)
+        # The black shape is calculated strictly as what remains of the canvas
+        calculated_black_shapes = master_canvas.difference(total_color_mask)
+    else:
+        # If the file had no color elements, it remains fully black
+        calculated_black_shapes = master_canvas
 
-    # Helper function to append calculated geometric layers back to XML strings
+    # Assign the structural subtraction back to the collection
+    if not calculated_black_shapes.is_empty:
+        fused_layers["black"] = calculated_black_shapes
+
+    # 4. Rebuild standard flat SVG schema structures
+    root = ET.Element('svg', xmlns="http://www.w3.org/2000/svg", version="1.1")
+    root.set('viewBox', f"{v_x} {v_y} {v_w} {v_h}")
+    root.set('width', str(v_w))
+    root.set('height', str(v_h))
+
     def add_geom_to_svg(geom, fill_color):
         if geom.is_empty:
             return
         if geom.geom_type == 'Polygon':
-            d_path = "M " + " L ".join([f"{x},{y}" for x, y in geom.exterior.coords]) + " Z"
+            d_path = "M " + " L ".join([f"{x:.3f},{y:.3f}" for x, y in geom.exterior.coords]) + " Z"
             for interior in geom.interiors:
-                d_path += " M " + " L ".join([f"{x},{y}" for x, y in interior.coords]) + " Z"
+                d_path += " M " + " L ".join([f"{x:.3f},{y:.3f}" for x, y in interior.coords]) + " Z"
             ET.SubElement(root, 'path', d=d_path, fill=fill_color, stroke="none")
         elif geom.geom_type in ('MultiPolygon', 'GeometryCollection'):
             for sub_geom in geom.geoms:
                 add_geom_to_svg(sub_geom, fill_color)
 
-    # Re-compile all processed layers back into your document string
+    # Compile everything into standard LightBurn compliant path elements
     for color, geometry in fused_layers.items():
         add_geom_to_svg(geometry, color)
 
-    # 5. Safely overwrite the original source file 
+    # 5. Overwrite the file in-place cleanly
     tree = ET.ElementTree(root)
     tree.write(svg_path, encoding='utf-8', xml_declaration=True)
-
 
 def str_to_bool(value: str) -> bool:
     # Convert to lowercase and strip whitespace
@@ -237,7 +251,7 @@ def generate_pixel_svg(TARGET_COLORS, input_image_path, output_svg_path, square_
         print(f"Error writing SVG file: {e}", flush=True)
 
     try:
-        flatten_svg_for_lightburn(output_svg_path, output_svg_path)
+        flatten_svg_for_lightburn(output_svg_path)
         lb.write(output_svg_path +".lbrn2")
         print(f"Success! lbrn2 saved to "+ output_svg_path +".lbrn2", flush=True)
     except Exception as e:
