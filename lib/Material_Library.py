@@ -72,20 +72,17 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
         """Extracts coordinate paths from Shapely geometry and pipes them into LightBurn."""
         if geom.is_empty:
             return
-            
+        printLogMessage(f"Add shepe on Layer: {layer_id}")
         if geom.geom_type == 'Polygon':
             # 1. Process the outer boundary loop
             exterior_coords = [[round(x, 3), round(y, 3)] for x, y in geom.exterior.coords]
             if exterior_coords:
-                printLogMessage(f"Add Exterior shepe on Layer: {layer_id}")
                 lb_shape = lightburn.Path(exterior_coords).layer(layer_id)
                 lb_project_instance.add(lb_shape)
-            
             # 2. Process any inner cutout holes on the exact same layer ID
             for interior in geom.interiors:
                 interior_coords = [[round(x, 3), round(y, 3)] for x, y in interior.coords]
                 if interior_coords:
-                    printLogMessage(f"Add Interior shepe on Layer: {layer_id}")
                     lb_hole = lightburn.Path(interior_coords).layer(layer_id)
                     lb_project_instance.add(lb_hole)
                 
