@@ -23,11 +23,9 @@ def printLogMessage(message):
 def flatten_and_subtract_svg_in_place(svg_path):
     # 1. Load data entirely into RAM
     svg_data = SVG.parse(svg_path)
-
     printLogMessage(f"flattenning: {svg_path}")
-    black_polygons = []
-    color_groups = defaultdict(list)
     
+    color_groups = defaultdict(list)
     for element in svg_data.elements():
         if isinstance(element, (Path, SVGPolygon)):
             points = [point for point in element.as_points()]
@@ -40,41 +38,39 @@ def flatten_and_subtract_svg_in_place(svg_path):
                 fill_color = "black"
                 if element.fill is not None and hasattr(element.fill, 'hex'):
                     fill_color = element.fill.hex.lower()
-                
-                # Group specifically by black vs non-black paths
-                if fill_color in ("black", "#000000", "#000") or element.fill is None:
-                    black_polygons.append(poly)
-                else:
-                    color_groups[fill_color].append(poly)
+                elif element.fill is None:
+                    fill_color = "#000000"
                     
-    if not black_polygons and not color_groups:
+                color_groups[fill_color].append(poly)
+
+    if not color_groups:
         return  # No vectors found, exit safely
 
-    # 2. Fuse the non-black colors together into clean standalone layers
-    fused_layers = {}
-    all_color_polygons = []
-    
+    # 2. Fuse (weld) polygons for each individual color layer
+    fused_raw = {}
     for color, polys in color_groups.items():
-        printLogMessage(f"welding color layer")
-        welded_color = unary_union(polys)
-        fused_layers[color] = welded_color
-        if not welded_color.is_empty:
-            all_color_polygons.append(welded_color)
+        printLogMessage(f"welding color layer: {color}")
+        fused_raw[color] = unary_union(polys)
 
-    # 3. Fuse the ACTUAL black background shapes into one base geometry
-    fused_black_base = unary_union(black_polygons)
+    # 3. Subtract all competing colors from each target color layer
+    fused_layers = {}
+    all_colors = list(fused_raw.keys())
 
-    # 4. Punch holes into the ACTUAL black background base path
-    if not fused_black_base.is_empty and all_color_polygons:
-        # Combine all non-black layers into a solid carving mask
-        printLogMessage(f"subtracting non-black from black layer")
-        subtraction_mask = unary_union(all_color_polygons)
-        # Carve holes ONLY out of the existing black geometry
-        fused_layers["black"] = fused_black_base.difference(subtraction_mask)
-    elif not fused_black_base.is_empty:
-        fused_layers["black"] = fused_black_base
+    for target_color, target_geom in fused_raw.items():
+        if target_geom.is_empty:
+            continue
+            
+        # Collect all geometries that are NOT the current target color
+        other_geoms = [geom for col, geom in fused_raw.items() if col != target_color and not geom.is_empty]
+        
+        if other_geoms:
+            printLogMessage(f"subtracting other colors from {target_color} layer")
+            subtraction_mask = unary_union(other_geoms)
+            fused_layers[target_color] = target_geom.difference(subtraction_mask)
+        else:
+            fused_layers[target_color] = target_geom
 
-    # 5. Rebuild standard flat SVG structure
+    # 4. Rebuild standard flat SVG structure
     root = ET.Element('svg', xmlns="http://w3.org", version="1.1")
     if svg_data.viewbox:
         root.set('viewBox', f"{svg_data.viewbox.x} {svg_data.viewbox.y} {svg_data.viewbox.width} {svg_data.viewbox.height}")
@@ -101,6 +97,88 @@ def flatten_and_subtract_svg_in_place(svg_path):
     tree = ET.ElementTree(root)
     printLogMessage(f"writing to file: {svg_path}")
     tree.write(svg_path, encoding='utf-8', xml_declaration=True)
+    
+# def flatten_and_subtract_svg_in_place(svg_path):
+#     # 1. Load data entirely into RAM
+#     svg_data = SVG.parse(svg_path)
+
+#     printLogMessage(f"flattenning: {svg_path}")
+#     black_polygons = []
+#     color_groups = defaultdict(list)
+    
+#     for element in svg_data.elements():
+#         if isinstance(element, (Path, SVGPolygon)):
+#             points = [point for point in element.as_points()]
+#             if len(points) >= 3:
+#                 poly = Polygon([(p.x, p.y) for p in points])
+#                 if not poly.is_valid:
+#                     poly = poly.buffer(0)
+                
+#                 # Determine color
+#                 fill_color = "black"
+#                 if element.fill is not None and hasattr(element.fill, 'hex'):
+#                     fill_color = element.fill.hex.lower()
+                
+#                 # Group specifically by black vs non-black paths
+#                 if fill_color in ("black", "#000000", "#000") or element.fill is None:
+#                     black_polygons.append(poly)
+#                 else:
+#                     color_groups[fill_color].append(poly)
+                    
+#     if not black_polygons and not color_groups:
+#         return  # No vectors found, exit safely
+
+#     # 2. Fuse the non-black colors together into clean standalone layers
+#     fused_layers = {}
+#     all_color_polygons = []
+    
+#     for color, polys in color_groups.items():
+#         printLogMessage(f"welding color layer")
+#         welded_color = unary_union(polys)
+#         fused_layers[color] = welded_color
+#         if not welded_color.is_empty:
+#             all_color_polygons.append(welded_color)
+
+#     # 3. Fuse the ACTUAL black background shapes into one base geometry
+#     fused_black_base = unary_union(black_polygons)
+
+#     # 4. Punch holes into the ACTUAL black background base path
+#     if not fused_black_base.is_empty and all_color_polygons:
+#         # Combine all non-black layers into a solid carving mask
+#         printLogMessage(f"subtracting non-black from black layer")
+#         subtraction_mask = unary_union(all_color_polygons)
+#         # Carve holes ONLY out of the existing black geometry
+#         fused_layers["black"] = fused_black_base.difference(subtraction_mask)
+#     elif not fused_black_base.is_empty:
+#         fused_layers["black"] = fused_black_base
+
+#     # 5. Rebuild standard flat SVG structure
+#     root = ET.Element('svg', xmlns="http://w3.org", version="1.1")
+#     if svg_data.viewbox:
+#         root.set('viewBox', f"{svg_data.viewbox.x} {svg_data.viewbox.y} {svg_data.viewbox.width} {svg_data.viewbox.height}")
+#         root.set('width', str(svg_data.viewbox.width))
+#         root.set('height', str(svg_data.viewbox.height))
+
+#     def add_geom_to_svg(geom, fill_color):
+#         if geom.is_empty:
+#             return
+#         if geom.geom_type == 'Polygon':
+#             d_path = "M " + " L ".join([f"{x:.3f},{y:.3f}" for x, y in geom.exterior.coords]) + " Z"
+#             for interior in geom.interiors:
+#                 d_path += " M " + " L ".join([f"{x:.3f},{y:.3f}" for x, y in interior.coords]) + " Z"
+#             ET.SubElement(root, 'path', d=d_path, fill=fill_color, stroke="none")
+#         elif geom.geom_type in ('MultiPolygon', 'GeometryCollection'):
+#             for sub_geom in geom.geoms:
+#                 add_geom_to_svg(sub_geom, fill_color)
+
+#     # Output the layers back to the file
+#     for color, geometry in fused_layers.items():
+#         printLogMessage(f"adding {color} layer back to svg: {svg_path}")
+#         add_geom_to_svg(geometry, color)
+
+#     tree = ET.ElementTree(root)
+#     printLogMessage(f"writing to file: {svg_path}")
+#     tree.write(svg_path, encoding='utf-8', xml_declaration=True)
 
 def str_to_bool(value: str) -> bool:
     # Convert to lowercase and strip whitespace
