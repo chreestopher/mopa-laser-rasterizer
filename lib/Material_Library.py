@@ -71,14 +71,14 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
             return
             
         if geom.geom_type == 'Polygon':
-            # 1. Add outer boundary path to LightBurn
+            # 1. Add outer boundary path to LightBurn (Bypassing svgelements connection validation)
             exterior_coords = [[round(x, 3), round(y, 3)] for x, y in geom.exterior.coords]
-            lb_project_instance.add(Path(exterior_coords).layer(layer_id))
+            lb_project_instance.add(Path(exterior_coords, validate_connections=False).layer(layer_id))
             
             # 2. Add inner cutouts
             for interior in geom.interiors:
                 interior_coords = [[round(x, 3), round(y, 3)] for x, y in interior.coords]
-                lb_project_instance.add(Path(interior_coords).layer(layer_id))
+                lb_project_instance.add(Path(interior_coords, validate_connections=False).layer(layer_id))
                 
         elif geom.geom_type in ('MultiPolygon', 'GeometryCollection'):
             for sub_geom in geom.geoms:
