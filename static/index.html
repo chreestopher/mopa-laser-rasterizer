@@ -172,8 +172,8 @@
   <h2>or perhaps a vectorized raster? </h2>
   <h2> You can control the size of each "pixel" with the pixel_square_mm form field</h2>
   <h2> You can control how many pixels Wide or how many pixels Tall, but only one option at a time. For the other dimension option , you must put 0. The original aspect ratio will ALWAYS be respected</h2>
-  <H2> You can check the box for vectorize in order to try making vectors of all touching pixels of identical colors, but it is experimental, and sometimes looks more like a picasso piece than a vectorized drawing of the original input.</H2>
-  <H1> The files this application creates tend to be extremely large (100MB is a real posibilitiy depending on how large of a field of view your laser has and how dense your designs are </H1>  
+  <H2> You can check the box for vectorize in order to instead make vectors of all touching pixels of identical colors. When vectorize is checked, pixel_square_mm is used as a scaling factor and works with positive and negative amounts</H2>
+  <H1> Some of the files this application creates can be extremely large (100MB is a real posibilitiy depending on how large of a field of view your laser has and how dense your designs are, and whether or not you use the vectorize feature (vectorize reduces the size substantially) </H1>  
   <H1> When loading thes in lightburn, most people think lighburn has crashed<H1> 
   <H2> The two slowest parts in the process are when clicking "frame" and when clicking "Run"</H2>
   <H2> It really really really helps to disable ALL cut optimzation options before clicking preview, frame or Run/Send </H2>
@@ -217,7 +217,7 @@
       <input type="checkbox" id="vectorize" name="vectorize"> 
     </div>    
     <div>
-      <h3>All colors of lightburn layers included by default, pick the colors you want toggle on / off , when a color is toggled off it means both the lightburn color layer will not be used for the engraving, as well as that color will not be included in the "find closest lightburn layer color" logic, so excluding a color not only exludes the settings but also the color itself from being used in the project file, the next closest color that is not exlcluded will be used instead </h3>
+      <h3>All colors of lightburn layers included by default, pick the colors you want toggle on / off , when a color is toggled off it means the lightburn color layer will not be used for the engraving, and color will not be considered when finding the closest lightburn layer color, so excluding a only exludes the color itself the drawing, the next closest color that is not exlcluded will be used instead, but the color's settings will still be loaded into lightburn if present in your material library file. </h3>
       <!-- Lightburn Color Palette Grid Section -->
       <div class="palette-section">
         <label style="font-size: 0.9rem; font-weight: 600;">Lightburn Color Reference Grid</label>
