@@ -3,11 +3,9 @@ import threading
 import uuid
 import subprocess
 import multiprocessing
-
+import time
 from flask import Flask, render_template, jsonify, request, send_from_directory, redirect
 from werkzeug.utils import secure_filename
-
-import os
 import redis
 
 redis_client = redis.Redis(
@@ -15,6 +13,61 @@ redis_client = redis.Redis(
     port=int(os.environ.get('REDIS_PORT', 6379)),
     decode_responses=True # Automatically decodes Redis bytes into Python strings
 )
+
+def start_disk_cleanup_worker(app, redis_client, interval_seconds=3600):
+    """
+    Launches a background thread that periodically scans the upload directory
+    and deletes files whose tracking keys have expired from Redis.
+    """
+    def cleanup_loop():
+        # Wait a moment for the application to fully stabilize on boot
+        time.sleep(10)
+        
+        while True:
+            try:
+                upload_folder = app.config.get('UPLOAD_FOLDER')
+                if not upload_folder or not os.path.exists(upload_folder):
+                    time.sleep(interval_seconds)
+                    continue
+
+                print("[Disk-Cleanup] Starting periodic disk scan...", flush=True)
+                
+                # 1. List all files currently sitting in the uploads directory
+                all_files = os.listdir(upload_folder)
+                
+                for filename in all_files:
+                    # Ignore system or hidden files
+                    if filename.startswith('.'):
+                        continue
+                        
+                    # Extract the task_id from filenames like: "task_id.log", "task_id.status", or the output file
+                    # If your output file uses a specific pattern, match it here.
+                    # Assuming task_id can be extracted by splitting the first part of the filename:
+                    task_id = filename.split('.')[0]
+                    
+                    # 2. Check if the master status key still exists in Redis
+                    redis_status_key = f"task:{task_id}:status"
+                    
+                    # If the key is gone from Redis, it either hit the 7-day TTL or was deleted on the 3rd download
+                    if not redis_client.exists(redis_status_key):
+                        file_path = os.path.join(upload_folder, filename)
+                        
+                        try:
+                            if os.path.isfile(file_path):
+                                os.remove(file_path)
+                                print(f"[Disk-Cleanup] Successfully purged orphaned file: {filename}", flush=True)
+                        except Exception as file_err:
+                            print(f"[Disk-Cleanup] Failed to delete {filename}: {str(file_err)}", flush=True)
+                            
+            except Exception as e:
+                print(f"[Disk-Cleanup] CRITICAL WORKER EXCEPTION: {str(e)}", flush=True)
+                
+            # Sleep until the next cycle (default: 1 hour)
+            time.sleep(interval_seconds)
+
+    # Run as a daemon thread so it doesn't block the main Flask process from shutting down cleanly
+    cleanup_thread = threading.Thread(target=cleanup_loop, daemon=True)
+    cleanup_thread.start()
 
 app = Flask(__name__)
 
@@ -314,4 +367,6 @@ def success_page(task_id):
 
 
 if __name__ == '__main__':
+    # Start the worker to check every 1 hour (3600 seconds)
+    start_disk_cleanup_worker(app, redis_client, interval_seconds=3600)
     app.run(host='0.0.0.0', port=8000, threaded=True, use_reloader=False, debug=False)
