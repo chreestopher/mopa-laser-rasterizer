@@ -354,7 +354,7 @@ def generate_pixel_svg(TARGET_COLORS, input_image_path, output_svg_path, square_
                 f'fill="{color}" stroke="{color}" stroke-width="{STROKE_WIDTH_MM:.4f}" />'
             )
             svg_content.append(rect)
-            lb.add(lightburn.Square(square_size_mm, square_size_mm).layer( ).translate(x_mm, y_mm))
+            lb.add(lightburn.Square(square_size_mm, square_size_mm).layer( TARGET_COLORS[color][1] ).translate(x_mm, y_mm))
             
     # 3. SVG Footer
     svg_content.append("</svg>")
