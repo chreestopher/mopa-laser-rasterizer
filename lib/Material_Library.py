@@ -600,13 +600,14 @@ if __name__ == "__main__":
         the_limit_colors_list = [cv[-1].lower() for cn,cv in TARGET_COLORS.items()]
     the_limit_colors_list.append("black")
     the_limit_colors_list.append("light-gray")
+    the_output_file = f"{OUTPUT_FILE}.vector.svg"
     print(f"\nusing TARGET_COLORS: {TARGET_COLORS}", flush=True)
     print(f"\nusing LIMIT COLORS: {','.join(the_limit_colors_list)}", flush=True)
-
+    
     TARGET_COLORS = parse_material_settings(lb, material_library_file, the_limit_colors_list, TARGET_COLORS)
     if vectorize:
-        trace_with_palette_mapping(TARGET_COLORS, INPUT_FILE, f"{OUTPUT_FILE}.vector.svg", int(max_dimension))
-        flatten_and_subtract_svg_in_place("{OUTPUT_FILE}.vector.svg")
+        trace_with_palette_mapping(TARGET_COLORS, INPUT_FILE, the_output_file, int(max_dimension))
+        flatten_and_subtract_svg_in_place(the_output_file)
     else:
-        generate_pixel_svg(TARGET_COLORS, INPUT_FILE, f"{OUTPUT_FILE}.svg", square_mm, new_width, new_height)
-        flatten_and_subtract_svg_in_place(f"{OUTPUT_FILE}.svg")
+        generate_pixel_svg(TARGET_COLORS, INPUT_FILE, the_output_file, square_mm, new_width, new_height)
+        flatten_and_subtract_svg_in_place(the_output_file)
