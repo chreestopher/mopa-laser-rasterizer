@@ -13,6 +13,7 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 from shapely.geometry import Polygon, box
 from shapely.ops import unary_union
+from shapely.affinity import scale
 from svgelements import SVG, Path, Polygon as SVGPolygon
 from datetime import datetime
 
