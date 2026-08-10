@@ -16,7 +16,7 @@ from shapely.ops import unary_union
 from svgelements import SVG, Path, Polygon as SVGPolygon
 from datetime import datetime
 
-def printLogMessage(message, flush=True):
+def printLogMessage(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}", flush=True)
 
@@ -55,7 +55,7 @@ def flatten_and_subtract_svg_in_place(svg_path):
     all_color_polygons = []
     
     for color, polys in color_groups.items():
-        printLogMessage(f"welding color layer", flush=True)
+        printLogMessage(f"welding color layer")
         welded_color = unary_union(polys)
         fused_layers[color] = welded_color
         if not welded_color.is_empty:
@@ -67,7 +67,7 @@ def flatten_and_subtract_svg_in_place(svg_path):
     # 4. Punch holes into the ACTUAL black background base path
     if not fused_black_base.is_empty and all_color_polygons:
         # Combine all non-black layers into a solid carving mask
-        printLogMessage(f"subtracting non-black from black layer", flush=True)
+        printLogMessage(f"subtracting non-black from black layer")
         subtraction_mask = unary_union(all_color_polygons)
         # Carve holes ONLY out of the existing black geometry
         fused_layers["black"] = fused_black_base.difference(subtraction_mask)
@@ -95,11 +95,11 @@ def flatten_and_subtract_svg_in_place(svg_path):
 
     # Output the layers back to the file
     for color, geometry in fused_layers.items():
-        printLogMessage(f"adding {color} layer back to svg: {svg_path}", flush=True)
+        printLogMessage(f"adding {color} layer back to svg: {svg_path}")
         add_geom_to_svg(geometry, color)
 
     tree = ET.ElementTree(root)
-    printLogMessage(f"writing to file: {svg_path}", flush=True)
+    printLogMessage(f"writing to file: {svg_path}")
     tree.write(svg_path, encoding='utf-8', xml_declaration=True)
 
 def str_to_bool(value: str) -> bool:
@@ -113,12 +113,12 @@ def resize_to_specific_height_or_width( image, width=0, height=0 ):
     if (height == 0 and width != 0):
         width_percent = float(width) / float(image.size[0])
         new_height = int(float(image.size[1]) * float(width_percent))
-        printLogMessage("resizing image to width: " + str(width) + " height: "+ str(new_height), flush=True)
+        printLogMessage("resizing image to width: " + str(width) + " height: "+ str(new_height))
         resized_img = image.resize((width, int(new_height)), Image.Resampling.LANCZOS)
     elif (width == 0 and height != 0) :
         height_percent = float(height) / float(image.size[1])
         new_width = int(float(image.size[0]) * float(height_percent))
-        printLogMessage("resizing image to width: " + str(new_width) + " height: "+ str(height), flush=True)
+        printLogMessage("resizing image to width: " + str(new_width) + " height: "+ str(height))
         resized_img = image.resize((int(new_width),int(height) ), Image.Resampling.LANCZOS)
     else:
         return image
@@ -240,16 +240,16 @@ def generate_pixel_svg(TARGET_COLORS, input_image_path, output_svg_path, square_
         new_height: New Height to resize the image to, respecting the aspect ratio
             * only one of new_width or new_height can be used at a time
     """
-    printLogMessage(input_image_path, output_svg_path, square_size_mm, new_width, new_height, flush=True)
+    printLogMessage(input_image_path, output_svg_path, square_size_mm, new_width, new_height)
     
     try:
         # Load the image and convert to RGB (to ensure consistent 3-channel access)
         img = Image.open(input_image_path).convert("RGB")
     except FileNotFoundError:
-        printLogMessage(f"Error: Input file not found at '{input_image_path}'", flush=True)
+        printLogMessage(f"Error: Input file not found at '{input_image_path}'")
         return
     except Exception as e:
-        printLogMessage(f"Error loading image: {e}", flush=True)
+        printLogMessage(f"Error loading image: {e}")
         return
 
     img = resize_to_specific_height_or_width(image=img, height=int(new_height), width=int(new_width))
@@ -262,8 +262,8 @@ def generate_pixel_svg(TARGET_COLORS, input_image_path, output_svg_path, square_
     # Constants for the SVG output
     STROKE_WIDTH_MM = 0.01
 
-    printLogMessage(f"Processing image: {width}x{height} pixels.", flush=True)
-    printLogMessage(f"Output SVG size: {svg_width_mm:.2f}mm x {svg_height_mm:.2f}mm.", flush=True)
+    printLogMessage(f"Processing image: {width}x{height} pixels.")
+    printLogMessage(f"Output SVG size: {svg_width_mm:.2f}mm x {svg_height_mm:.2f}mm.")
     
     svg_content = []
 
@@ -298,15 +298,15 @@ def generate_pixel_svg(TARGET_COLORS, input_image_path, output_svg_path, square_
     try:
         with open(output_svg_path, "w") as f:
             f.write("\n".join(svg_content))
-        printLogMessage(f"Success! SVG saved to '{output_svg_path}'", flush=True)
+        printLogMessage(f"Success! SVG saved to '{output_svg_path}'")
     except Exception as e:
-        printLogMessage(f"Error writing SVG file: {e}", flush=True)
+        printLogMessage(f"Error writing SVG file: {e}")
 
     try:
         lb.write(output_svg_path +".lbrn2")
-        printLogMessage(f"Success! lbrn2 saved to "+ output_svg_path +".lbrn2", flush=True)
+        printLogMessage(f"Success! lbrn2 saved to "+ output_svg_path +".lbrn2")
     except Exception as e:
-        printLogMessage(f"Error writing LightBurn file: {e}", flush=True)
+        printLogMessage(f"Error writing LightBurn file: {e}")
 
 
 def hex_to_rgb(hex_str):
@@ -474,7 +474,7 @@ def trace_with_palette_mapping( TARGET_COLORS, image_path, svg_output_path, MAX_
         # Save final vector file
         dwg.save()
     except Exception as e:
-        printLogMessage(f"Error writing SVG file: {e}", flush=True)
+        printLogMessage(f"Error writing SVG file: {e}")
 
     printLogMessage(
         f"Vector tracing complete. Output saved to: {svg_output_path}",
@@ -487,7 +487,7 @@ def trace_with_palette_mapping( TARGET_COLORS, image_path, svg_output_path, MAX_
             flush=True,
         )
     except Exception as e:
-        printLogMessage(f"Error writing LightBurn file: {e}", flush=True)
+        printLogMessage(f"Error writing LightBurn file: {e}")
 
 def parse_material_settings(lb, material_settings_path, limit_colors, TARGET_COLORS):
     """
@@ -512,10 +512,10 @@ def parse_material_settings(lb, material_settings_path, limit_colors, TARGET_COL
                 matched_settings[target_key[0]] = TARGET_COLORS[target_key[0]]
                 item.index = target_touple[-2]
                 lb.add_layer(item)
-                printLogMessage(f"added Layer: {item.name}", flush=True)
+                printLogMessage(f"added Layer: {item.name}")
 
             else:
-                printLogMessage(f"unable to add layer: {item.name}, name not in lightburn target colors", flush=True)
+                printLogMessage(f"unable to add layer: {item.name}, name not in lightburn target colors")
 
     return matched_settings    
 
@@ -602,8 +602,8 @@ if __name__ == "__main__":
     max_dimension = max(new_width, new_height)
 
     the_limit_colors_list = [item.strip() for item in the_limit_colors.split(",")]
-    printLogMessage(f"\nusing material library settings: {material_library_file}", flush=True)
-    printLogMessage(f"\nusing colors: {the_limit_colors}", flush=True)
+    printLogMessage(f"\nusing material library settings: {material_library_file}")
+    printLogMessage(f"\nusing colors: {the_limit_colors}")
     TARGET_COLORS , lb, lightburn = init_lightburn(the_limit_colors)
     TARGET_COLORS['#B4B4B4'] = (0, 8, 'Light-Gray')
     TARGET_COLORS['#000000'] = (0, 0, 'Black')
@@ -612,8 +612,8 @@ if __name__ == "__main__":
     the_limit_colors_list.append("black")
     the_limit_colors_list.append("light-gray")
     the_output_file = f"{OUTPUT_FILE}.vector.svg"
-    printLogMessage(f"\nusing TARGET_COLORS: {TARGET_COLORS}", flush=True)
-    printLogMessage(f"\nusing LIMIT COLORS: {','.join(the_limit_colors_list)}", flush=True)
+    printLogMessage(f"\nusing TARGET_COLORS: {TARGET_COLORS}")
+    printLogMessage(f"\nusing LIMIT COLORS: {','.join(the_limit_colors_list)}")
     
     TARGET_COLORS = parse_material_settings(lb, material_library_file, the_limit_colors_list, TARGET_COLORS)
     if vectorize:
