@@ -43,11 +43,11 @@ spec:
             memory: "2048Mi"
             cpu: "500m"
         volumeMounts:
-        - name: html
-          mountPath: /app/html
+        - name: static
+          mountPath: /app/static
           readOnly: true
-        - name: cgi-bin
-          mountPath: /app/cgi-bin
+        - name: templates
+          mountPath: /app/templates
           readOnly: true
         - name: uploads
           mountPath: /app/uploads

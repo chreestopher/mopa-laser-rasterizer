@@ -43,23 +43,23 @@ spec:
             memory: "2048Mi"
             cpu: "500m"
         volumeMounts:
-        - name: html
-          mountPath: /app/html
+        - name: static
+          mountPath: /app/static
           readOnly: true
-        - name: cgi-bin
-          mountPath: /app/cgi-bin
+        - name: templates
+          mountPath: /app/templates
           readOnly: true
         - name: uploads
           mountPath: /app/uploads
           readOnly: false
       volumes:
-      - name: html
+      - name: static
         hostPath:
-          path: /mnt/c/Users/chree/Desktop/mopa-laser-rasterizer/html
+          path: /mnt/c/Users/chree/Desktop/mopa-laser-rasterizer/static
           type: Directory
-      - name: cgi-bin
+      - name: templates
         hostPath:
-          path: /mnt/c/Users/chree/Desktop/mopa-laser-rasterizer/cgi-bin
+          path: /mnt/c/Users/chree/Desktop/mopa-laser-rasterizer/templates
           type: Directory
       - name: uploads
         hostPath:
