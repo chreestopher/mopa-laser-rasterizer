@@ -146,8 +146,44 @@
   <h1>MOPA-LASER-RASTERIZER</h1> 
   <h2>Upload an image file, and a Lightburn Material Library file</h2>
   <h3>Please be patient, it is slow</h3>
-  <H3> Name your material settings in your lighburn material settings file with description matching the color names , and material name containing: stainless - steel</H3>
-  <h3>All colors of lightburn layers included by default, pick the colors you want toggle on / off , when a color is toggled off it means both the lightburn color layer will not be used for the engraving, as well as that color will not be included in the "find closest lightburn layer color" logic, so excluding a color not only exludes the settings but also the color itself from being used in the project file, the next closest color that is not exlcluded will be used instead </h3>
+  <H3> Name your material settings in your lighburn material settings file with description matching the color names here, and material name containing: stainless - steel</H3>
+     
+  <!-- Form Section -->
+  <form action="/upload" method="post" enctype="multipart/form-data"> 
+    <div class="form-group"></div>
+    <div>
+      <label for="image">Choose a raster image file:</label> 
+      <input type="file" id="image" name="image" required> 
+    </div>
+    <div>
+      <label for="material_settings">Choose material settings file:</label> 
+      <input type="file" id="material_settings" name="material_settings" required> 
+    </div>
+    <div>
+      <label for="pixel_square_mm">pixel_square_mm:</label> 
+      <input type="text" id="pixel_square_mm" name="pixel_square_mm" placeholder="size in decimal of mm for pixels to be drawn"> 
+    </div>
+    <div>
+      <label for="new_width">new_width:</label> 
+      <input type="text" id="new_width" name="new_width" placeholder="new width to resize to, respecting aspect ration"> 
+    </div>
+    <div>
+      <label for="new_height">new_height:</label> 
+      <input type="text" id="new_height" name="new_height" placeholder="new height to resize to, respecting aspect ration"> 
+    </div>
+    <div>
+
+    <div class="form-group">
+      <!-- <label for="colorList">Selected Colors:</label> -->
+      <input type="text" id="colorList" name="colors" placeholder="All colors included by default..." readonly hidden="True">
+    </div>
+    <div>
+      <label for="vectorize">vectorize:</label> 
+      <input type="checkbox" id="vectorize" name="vectorize"> 
+    </div>    
+
+    <button type="submit">Process Raster</button>
+<h3>All colors of lightburn layers included by default, pick the colors you want toggle on / off , when a color is toggled off it means both the lightburn color layer will not be used for the engraving, as well as that color will not be included in the "find closest lightburn layer color" logic, so excluding a color not only exludes the settings but also the color itself from being used in the project file, the next closest color that is not exlcluded will be used instead </h3>
   <!-- Lightburn Color Palette Grid Section -->
   <div class="palette-section">
     <label style="font-size: 0.9rem; font-weight: 600;">Lightburn Color Reference Grid</label>
@@ -183,45 +219,7 @@
       <div class="color-card"><span class="color-name">bright-mint-green</span><div class="color-square" style="background-color: #86FA88;"></div><span class="color-hex">#86FA88</span></div>
       <div class="color-card"><span class="color-name">light-gold</span><div class="color-square" style="background-color: #FFDB66;"></div><span class="color-hex">#FFDB66</span></div>
     </div>
-  </div>
-
-
-    
-  <!-- Form Section -->
-  <form action="/upload" method="post" enctype="multipart/form-data"> 
-    <div class="form-group"></div>
-    <div>
-      <label for="image">Choose a raster image file:</label> 
-      <input type="file" id="image" name="image" required> 
-    </div>
-    <div>
-      <label for="material_settings">Choose material settings file:</label> 
-      <input type="file" id="material_settings" name="material_settings" required> 
-    </div>
-    <div>
-      <label for="pixel_square_mm">pixel_square_mm:</label> 
-      <input type="text" id="pixel_square_mm" name="pixel_square_mm" placeholder="size in decimal of mm for pixels to be drawn"> 
-    </div>
-    <div>
-      <label for="new_width">new_width:</label> 
-      <input type="text" id="new_width" name="new_width" placeholder="new width to resize to, respecting aspect ration"> 
-    </div>
-    <div>
-      <label for="new_height">new_height:</label> 
-      <input type="text" id="new_height" name="new_height" placeholder="new height to resize to, respecting aspect ration"> 
-    </div>
-    <div>
-
-    <div class="form-group">
-      <label for="colorList">Selected Colors:</label>
-      <input type="text" id="colorList" name="colors" placeholder="All colors included by default..." readonly>
-    </div>
-    <div>
-      <label for="vectorize">vectorize:</label> 
-      <input type="checkbox" id="vectorize" name="vectorize"> 
-    </div>    
-
-    <button type="submit">Process Raster</button>
+  </div>  
   </form>
 
   <script>
