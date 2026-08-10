@@ -72,7 +72,9 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
         """Extracts coordinate paths from Shapely geometry and pipes them into LightBurn."""
         if geom.is_empty:
             return
-        
+        layer_meta = TARGET_COLORS[color_hex]
+        layer_id = layer_meta[1]
+        layer_color_name = layer_meta[2]
         if geom.geom_type == 'Polygon':
             # 1. Process the outer boundary loop
             exterior_coords = [[round(x, 3), round(y, 3)] for x, y in geom.exterior.coords]
@@ -87,13 +89,16 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
                     lb_project_instance.add(lb_hole)
                 
         elif geom.geom_type in ('MultiPolygon', 'GeometryCollection'):
-            printLogMessage(f"Add {len(geom.geoms)} shapes on Layer: {layer_id}")
+            printLogMessage(f"Add {len(geom.geoms)} shapes on Layer: {layer_id} color: {layer_color_name}")
             for sub_geom in geom.geoms:
                 push_geom_to_lightburn(sub_geom, layer_id)
 
     # Process, scale, and export geometries
     for color_hex, boxes in pixel_boxes_by_color.items():
-        printLogMessage(f"Processing and welding layer for color: {color_hex}")
+        layer_meta = TARGET_COLORS[color_hex]
+        layer_id = layer_meta[1]
+        layer_color_name = layer_meta[2]
+        printLogMessage(f"Processing and welding layer {layer_id}  color: {layer_color_name}")
         
         # 1. Weld individual pixel boundaries
         welded_layer = unary_union(boxes)
@@ -101,7 +106,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
         
         # 2. Apply Unified Scale Factor (Scaling from the top-left origin)
         if scale_factor != 1.0:
-            printLogMessage(f"Scaling {color_hex} geometry by a factor of {scale_factor}x")
+            printLogMessage(f"Scaling {layer_color_name} geometry by a factor of {scale_factor}x")
             final_puzzle_piece = scale(final_puzzle_piece, xfact=scale_factor, yfact=scale_factor, origin=(0, 0))
         
         # Export Option 1: Add to SVG Tree
@@ -109,8 +114,10 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
         
         # Export Option 2: Push to LightBurn
         if color_hex in TARGET_COLORS:
-            layer_id = TARGET_COLORS[color_hex][1]
-            printLogMessage(f"Pushing scaled {color_hex} geometry into LightBurn Layer ID: {layer_id}")
+            layer_meta = TARGET_COLORS[color_hex]
+            layer_id = layer_meta[1]
+            layer_color_name = layer_meta[2]
+            printLogMessage(f"Pushing scaled {layer_color_name} geometry into LightBurn Layer ID: {layer_id}")
             push_geom_to_lightburn(final_puzzle_piece, layer_id)
 
     # Save SVG to disk
