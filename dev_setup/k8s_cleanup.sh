@@ -87,7 +87,6 @@ fi
 echo "The following files on disk have already been processed (no longer tracked in Redis):"
 for file in "${ORPHANED_FILES[@]}"; do
     echo " - $file"
-)
 
 echo ""
 read -p "Do you want to permanently delete these processed files to free up disk space? (y/N): " CONFIRM_DISK
