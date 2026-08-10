@@ -20,31 +20,52 @@ def printLogMessage(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}", flush=True)
 
-def raster_to_puzzle_svg(raster_image_path, output_svg_path, new_height, new_width, TARGET_COLORS, ignore_background_hex="#ffffff"):
+import xml.etree.ElementTree as ET
+from collections import defaultdict
+from PIL import Image
+from shapely.geometry import box
+from shapely.ops import unary_union
+
+# Updated TARGET_COLORS layout: Key -> (RGB Tuple, LightBurn Layer ID)
+# def get_closest_target_hex(rgb_pixel):
+#     """Finds the closest target hex color using 3D Euclidean distance."""
+#     r, g, b = rgb_pixel[:3]
+#     min_dist = float('inf')
+#     closest_hex = "#ffffff"
+    
+#     for hex_code, (target_rgb, _) in TARGET_COLORS.items():
+#         dist = (r - target_rgb)[0]**2 + (g - target_rgb)[1]**2 + (b - target_rgb)[2]**2
+#         # Simple Euclidean calculation
+#         dist = (r - target_rgb[0])**2 + (g - target_rgb[1])**2 + (b - target_rgb[2])**2
+#         if dist < min_dist:
+#             min_dist = dist
+#             closest_hex = hex_code
+            
+#     return closest_hex
+
+def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_height, new_width, lb_project_instance, TARGET_COLORS, ignore_background_hex="#ffffff"):
     """
-    Parses a raster image, snaps pixels to a strict target palette,
-    and builds non-overlapping vector puzzle pieces out of them.
+    Parses a raster image, saves a gapless SVG, and pushes 
+    matching path coordinates directly into a LightBurn project instance.
     """
     print(f"Opening raster image: {raster_image_path}")
     img = Image.open(raster_image_path).convert("RGB")
-    img = resize_to_specific_height_or_width(image=img, height=int(new_height), width=int(new_width))
+    if max(int(new_width),int(new_height)) > 0):
+        img = resize_to_specific_height_or_width(image=img, height=int(new_height), width=int(new_width))
+
     width, height = img.size
     
-    # Map to hold pixel coordinate bounding boxes grouped by snapped color
     pixel_boxes_by_color = defaultdict(list)
     
     print("Analyzing pixels and snapping colors...")
     for y in range(height):
         for x in range(width):
             pixel_rgb = img.getpixel((x, y))
-            closest_hex = get_closest_color(*pixel_rgb, TARGET_COLORS)
+            closest_hex = get_closest_color(pixel_rgb, TARGET_COLORS)
             
-            # Skip background color completely if requested (e.g. white background)
             if closest_hex == ignore_background_hex:
                 continue
                 
-            # Create a 1x1 box polygon matching this pixel's boundaries
-            # In SVGs, Y goes down, so we construct coordinate boxes matching pixel grids
             pixel_poly = box(x, y, x + 1, y + 1)
             pixel_boxes_by_color[closest_hex].append(pixel_poly)
 
@@ -58,7 +79,6 @@ def raster_to_puzzle_svg(raster_image_path, output_svg_path, new_height, new_wid
         if geom.is_empty:
             return
         if geom.geom_type == 'Polygon':
-            # Format points to 1 decimal place since pixel grids are highly uniform
             d_path = "M " + " L ".join([f"{x:.1f},{y:.1f}" for x, y in geom.exterior.coords]) + " Z"
             for interior in geom.interiors:
                 d_path += " M " + " L ".join([f"{x:.1f},{y:.1f}" for x, y in interior.coords]) + " Z"
@@ -67,108 +87,114 @@ def raster_to_puzzle_svg(raster_image_path, output_svg_path, new_height, new_wid
             for sub_geom in geom.geoms:
                 add_geom_to_svg(sub_geom, fill_color)
 
-    # Weld pixel boxes into solid composite vector layers
+    def push_geom_to_lightburn(geom, layer_id):
+        """Recursively breaks down shapely paths into LightBurn coordinates."""
+        if geom.is_empty:
+            return
+            
+        if geom.geom_type == 'Polygon':
+            # 1. Add outer boundary path to LightBurn
+            exterior_coords = [[round(x, 3), round(y, 3)] for x, y in geom.exterior.coords]
+            lb_project_instance.add(Path(exterior_coords).layer(layer_id))
+            
+            # 2. Add inner holes/cutouts to LightBurn (assigned to the same layer)
+            for interior in geom.interiors:
+                interior_coords = [[round(x, 3), round(y, 3)] for x, y in interior.coords]
+                lb_project_instance.add(Path(interior_coords).layer(layer_id))
+                
+        elif geom.geom_type in ('MultiPolygon', 'GeometryCollection'):
+            for sub_geom in geom.geoms:
+                push_geom_to_lightburn(sub_geom, layer_id)
+
+    # Process and export geometries
     for color_hex, boxes in pixel_boxes_by_color.items():
-        print(f"Welding and smoothing interlocking vector layer for color: {color_hex}")
+        print(f"Processing layer for color: {color_hex}")
         
-        # Merge all individual pixel squares into single contiguous shapes
+        # Weld and isolate
         welded_layer = unary_union(boxes)
-        
-        # Micro-buffer ensures alignment rounding errors don't present fake gaps in renderers
         final_puzzle_piece = welded_layer.buffer(0.001).buffer(-0.001)
         
-        # Write to our target SVG structure
+        # Export Option 1: Add to SVG Tree
         add_geom_to_svg(final_puzzle_piece, color_hex)
+        
+        # Export Option 2: Push to LightBurn Project File
+        if color_hex in TARGET_COLORS:
+            layer_id = TARGET_COLORS[color_hex][1]
+            print(f"Pushing {color_hex} geometry into LightBurn Layer ID: {layer_id}")
+            push_geom_to_lightburn(final_puzzle_piece, layer_id)
 
-    # Save to disk
+    # Save SVG to disk
     tree = ET.ElementTree(root)
     print(f"Writing finalized zero-overlap SVG to: {output_svg_path}")
     tree.write(output_svg_path, encoding='utf-8', xml_declaration=True)
 
-# Example Usage:
-# raster_to_puzzle_svg("input_design.png", "output_puzzle.svg", TARGET_COLORS)
 
-# def flatten_and_subtract_svg_in_place(svg_path):
-#     # 1. Load data entirely into RAM
-#     svg_data = SVG.parse(svg_path)
-
-#     printLogMessage(f"flattenning: {svg_path}")
-#     black_polygons = []
-#     color_groups = defaultdict(list)
+#GOOD 
+# def raster_to_puzzle_svg(raster_image_path, output_svg_path, new_height, new_width, TARGET_COLORS, ignore_background_hex="#ffffff"):
+#     """
+#     Parses a raster image, snaps pixels to a strict target palette,
+#     and builds non-overlapping vector puzzle pieces out of them.
+#     """
+#     print(f"Opening raster image: {raster_image_path}")
+#     img = Image.open(raster_image_path).convert("RGB")
+#     img = resize_to_specific_height_or_width(image=img, height=int(new_height), width=int(new_width))
+#     width, height = img.size
     
-#     for element in svg_data.elements():
-#         if isinstance(element, (Path, SVGPolygon)):
-#             points = [point for point in element.as_points()]
-#             if len(points) >= 3:
-#                 poly = Polygon([(p.x, p.y) for p in points])
-#                 if not poly.is_valid:
-#                     poly = poly.buffer(0)
-                
-#                 # Determine color
-#                 fill_color = "black"
-#                 if element.fill is not None and hasattr(element.fill, 'hex'):
-#                     fill_color = element.fill.hex.lower()
-                
-#                 # Group specifically by black vs non-black paths
-#                 if fill_color in ("black", "#000000", "#000") or element.fill is None:
-#                     black_polygons.append(poly)
-#                 else:
-#                     color_groups[fill_color].append(poly)
-                    
-#     if not black_polygons and not color_groups:
-#         return  # No vectors found, exit safely
-
-#     # 2. Fuse the non-black colors together into clean standalone layers
-#     fused_layers = {}
-#     all_color_polygons = []
+#     # Map to hold pixel coordinate bounding boxes grouped by snapped color
+#     pixel_boxes_by_color = defaultdict(list)
     
-#     for color, polys in color_groups.items():
-#         printLogMessage(f"welding color layer")
-#         welded_color = unary_union(polys)
-#         fused_layers[color] = welded_color
-#         if not welded_color.is_empty:
-#             all_color_polygons.append(welded_color)
+#     print("Analyzing pixels and snapping colors...")
+#     for y in range(height):
+#         for x in range(width):
+#             pixel_rgb = img.getpixel((x, y))
+#             closest_hex = get_closest_color(*pixel_rgb, TARGET_COLORS)
+            
+#             # Skip background color completely if requested (e.g. white background)
+#             if closest_hex == ignore_background_hex:
+#                 continue
+                
+#             # Create a 1x1 box polygon matching this pixel's boundaries
+#             # In SVGs, Y goes down, so we construct coordinate boxes matching pixel grids
+#             pixel_poly = box(x, y, x + 1, y + 1)
+#             pixel_boxes_by_color[closest_hex].append(pixel_poly)
 
-#     # 3. Fuse the ACTUAL black background shapes into one base geometry
-#     fused_black_base = unary_union(black_polygons)
-
-#     # 4. Punch holes into the ACTUAL black background base path
-#     if not fused_black_base.is_empty and all_color_polygons:
-#         # Combine all non-black layers into a solid carving mask
-#         printLogMessage(f"subtracting non-black from black layer")
-#         subtraction_mask = unary_union(all_color_polygons)
-#         # Carve holes ONLY out of the existing black geometry
-#         fused_layers["black"] = fused_black_base.difference(subtraction_mask)
-#     elif not fused_black_base.is_empty:
-#         fused_layers["black"] = fused_black_base
-
-#     # 5. Rebuild standard flat SVG structure
+#     # Rebuild standard flat SVG structure
 #     root = ET.Element('svg', xmlns="http://w3.org", version="1.1")
-#     if svg_data.viewbox:
-#         root.set('viewBox', f"{svg_data.viewbox.x} {svg_data.viewbox.y} {svg_data.viewbox.width} {svg_data.viewbox.height}")
-#         root.set('width', str(svg_data.viewbox.width))
-#         root.set('height', str(svg_data.viewbox.height))
+#     root.set('viewBox', f"0 0 {width} {height}")
+#     root.set('width', str(width))
+#     root.set('height', str(height))
 
 #     def add_geom_to_svg(geom, fill_color):
 #         if geom.is_empty:
 #             return
 #         if geom.geom_type == 'Polygon':
-#             d_path = "M " + " L ".join([f"{x:.3f},{y:.3f}" for x, y in geom.exterior.coords]) + " Z"
+#             # Format points to 1 decimal place since pixel grids are highly uniform
+#             d_path = "M " + " L ".join([f"{x:.1f},{y:.1f}" for x, y in geom.exterior.coords]) + " Z"
 #             for interior in geom.interiors:
-#                 d_path += " M " + " L ".join([f"{x:.3f},{y:.3f}" for x, y in interior.coords]) + " Z"
+#                 d_path += " M " + " L ".join([f"{x:.1f},{y:.1f}" for x, y in interior.coords]) + " Z"
 #             ET.SubElement(root, 'path', d=d_path, fill=fill_color, stroke="none")
 #         elif geom.geom_type in ('MultiPolygon', 'GeometryCollection'):
 #             for sub_geom in geom.geoms:
 #                 add_geom_to_svg(sub_geom, fill_color)
 
-#     # Output the layers back to the file
-#     for color, geometry in fused_layers.items():
-#         printLogMessage(f"adding {color} layer back to svg: {svg_path}")
-#         add_geom_to_svg(geometry, color)
+#     # Weld pixel boxes into solid composite vector layers
+#     for color_hex, boxes in pixel_boxes_by_color.items():
+#         print(f"Welding and smoothing interlocking vector layer for color: {color_hex}")
+        
+#         # Merge all individual pixel squares into single contiguous shapes
+#         welded_layer = unary_union(boxes)
+        
+#         # Micro-buffer ensures alignment rounding errors don't present fake gaps in renderers
+#         final_puzzle_piece = welded_layer.buffer(0.001).buffer(-0.001)
+        
+#         # Write to our target SVG structure
+#         add_geom_to_svg(final_puzzle_piece, color_hex)
 
+#     # Save to disk
 #     tree = ET.ElementTree(root)
-#     printLogMessage(f"writing to file: {svg_path}")
-#     tree.write(svg_path, encoding='utf-8', xml_declaration=True)
+#     print(f"Writing finalized zero-overlap SVG to: {output_svg_path}")
+#     tree.write(output_svg_path, encoding='utf-8', xml_declaration=True)
+
 
 def str_to_bool(value: str) -> bool:
     # Convert to lowercase and strip whitespace
@@ -305,7 +331,7 @@ def generate_pixel_svg(TARGET_COLORS, input_image_path, output_svg_path, square_
                 f'fill="{color}" stroke="{color}" stroke-width="{STROKE_WIDTH_MM:.4f}" />'
             )
             svg_content.append(rect)
-            lb.add(lightburn.Square(square_size_mm, square_size_mm).layer(TARGET_COLORS[color][1]).translate(x_mm, y_mm))
+            lb.add(lightburn.Square(square_size_mm, square_size_mm).layer( ).translate(x_mm, y_mm))
             
     # 3. SVG Footer
     svg_content.append("</svg>")
@@ -631,6 +657,6 @@ if __name__ == "__main__":
     if vectorize:
         #trace_with_palette_mapping(TARGET_COLORS, INPUT_FILE, the_output_file, int(max_dimension))
         #flatten_and_subtract_svg_in_place(the_output_file)
-        raster_to_puzzle_svg(INPUT_FILE, the_output_file, new_height, new_width, TARGET_COLORS)
+        raster_to_puzzle_and_lightburn(INPUT_FILE, the_output_file, new_height, new_width, lb, TARGET_COLORS)
     else:
         generate_pixel_svg(TARGET_COLORS, INPUT_FILE, the_output_file, square_mm, new_width, new_height)
