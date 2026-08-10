@@ -184,22 +184,42 @@
       <div class="color-card"><span class="color-name">Light-Gold</span><div class="color-square" style="background-color: #FFDB66;"></div><span class="color-hex">#FFDB66</span></div>
     </div>
   </div>
-  <!-- Form Section -->
-  <form action="/upload" method="post" enctype="multipart/form-data">
-    <div class="form-group">
-      <label for="imageFile">Image File:</label>
-      <input type="file" id="imageFile" name="image" accept="image/*" required>
-    </div>
+
+
     
-    <div class="form-group">
-      <label for="clbFile">Lightburn Library File (.clb):</label>
-      <input type="file" id="clbFile" name="library" accept=".clb" required>
+  <!-- Form Section -->
+  <form action="/upload" method="post" enctype="multipart/form-data"> 
+    <div class="form-group"></div>
+    <div>
+      <label for="image">Choose a raster image file:</label> 
+      <input type="file" id="image" name="image" required> 
     </div>
+    <div>
+      <label for="material_settings">Choose material settings file:</label> 
+      <input type="file" id="material_settings" name="material_settings" required> 
+    </div>
+    <div>
+      <label for="pixel_square_mm">pixel_square_mm:</label> 
+      <input type="text" id="pixel_square_mm" name="pixel_square_mm" placeholder="size in decimal of mm for pixels to be drawn"> 
+    </div>
+    <div>
+      <label for="new_width">new_width:</label> 
+      <input type="text" id="new_width" name="new_width" placeholder="new width to resize to, respecting aspect ration"> 
+    </div>
+    <div>
+      <label for="new_height">new_height:</label> 
+      <input type="text" id="new_height" name="new_height" placeholder="new height to resize to, respecting aspect ration"> 
+    </div>
+    <div>
 
     <div class="form-group">
       <label for="colorList">Selected Colors:</label>
       <input type="text" id="colorList" name="colors" placeholder="All colors included by default..." readonly>
     </div>
+    <div>
+      <label for="vectorize">vectorize:</label> 
+      <input type="checkbox" id="vectorize" name="vectorize"> 
+    </div>    
 
     <button type="submit">Process Raster</button>
   </form>
