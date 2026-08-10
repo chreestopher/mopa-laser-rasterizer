@@ -56,69 +56,75 @@
         </ul>
     </div>
 
-    <script>
-        const taskId = "{{ task_id }}";
-        const logContainer = document.getElementById("log-container");
-        const terminalBox = document.getElementById("terminal");
-        
-        // Track the exact number of logs we have rendered so far
-        let logIndex = 0; 
+<script>
+    const taskId = "{{ task_id }}";
+    const logContainer = document.getElementById("log-container");
+    const terminalBox = document.getElementById("terminal");
+    
+    let logIndex = 0; 
 
-        function appendLogMessage(message) {
-            const cleanMessage = message ? message.trim() : "";
-            if (!cleanMessage || cleanMessage === "Waiting to start...") {
+    function appendLogMessage(message) {
+        const cleanMessage = message ? message.trim() : "";
+        if (!cleanMessage || cleanMessage === "Waiting to start...") {
+            return; 
+        }
+
+        const li = document.createElement("li");
+        li.className = "log-item";
+        li.innerHTML = `<span class="log-prefix">$</span>${cleanMessage}`;
+        logContainer.appendChild(li);
+        
+        terminalBox.scrollTop = terminalBox.scrollHeight;
+    }
+
+    // Start checking logs immediately, but handle connection lags robustly
+    const checkStatus = setInterval(async () => {
+        try {
+            const response = await fetch(`/task-status/${taskId}`);
+            
+            // FIX 1: If the server is busy/booting, don't crash or freeze. Log it and retry.
+            if (!response.ok) {
+                console.warn(`Server booting task or unavailable. Status: ${response.status}`);
                 return; 
             }
 
-            const li = document.createElement("li");
-            li.className = "log-item";
-            li.innerHTML = `<span class="log-prefix">$</span>${cleanMessage}`;
-            logContainer.appendChild(li);
+            const data = await response.json();
+
+            // FIX 2: Ensure data parsing fallback arrays exist to prevent undefined breaks
+            const currentLogs = data.logs || [];
+
+            // Process and append new logs
+            if (currentLogs.length > logIndex) {
+                const newLines = currentLogs.slice(logIndex);
+                newLines.forEach((logMessage) => {
+                    appendLogMessage(logMessage);
+                });
+                logIndex = currentLogs.length;
+            }
+
+            // Evaluate completion statuses cleanly after logs are checked
+            if (data.status === "completed") {
+                clearInterval(checkStatus);
+                appendLogMessage("Task completed successfully! Redirecting to dashboard...");
+                
+                setTimeout(() => {
+                    window.location.href = "/success/" + taskId;
+                }, 500);
+            }
+            else if (data.status === "failed") {
+                clearInterval(checkStatus);
+                appendLogMessage(`CRITICAL FAILURE: ${data.error || 'Check server logs'}`);
+                const errorLine = logContainer.lastChild;
+                if (errorLine) errorLine.style.color = "#ff3333";
+            }
             
-            // Instantly auto-scroll to the bottom of the black terminal box
-            terminalBox.scrollTop = terminalBox.scrollHeight;
+        } catch (err) {
+            // FIX 3: Catch local network disconnects cleanly without killing the timer
+            console.error("Polling interval encountered a connection drop:", err);
         }
+    }, 1000); // Check every 1000ms from the very beginning
 
-        // Start checking the logs after a short initial delay
-        setTimeout(() => {
-            const checkStatus = setInterval(async () => {
-                try {
-                    // UPDATED: Points to your new file-based log delivery backend route
-                    const response = await fetch(`/task-status/${taskId}`);
-                    if (!response.ok) return;
-
-                    const data = await response.json();
-
-                    // Process and append ONLY new logs that have arrived since our last look
-                    if (data.logs && Array.isArray(data.logs) && data.logs.length > logIndex) {
-                        const newLines = data.logs.slice(logIndex);
-                        newLines.forEach((logMessage) => {
-                            appendLogMessage(logMessage);
-                        });
-                        // Shift our tracking pointer forward
-                        logIndex = data.logs.length;
-                    }
-
-                    // Check for completion status and handle screen redirection layouts
-                    if (data.status === "completed") {
-                        clearInterval(checkStatus);
-                        appendLogMessage("Task completed successfully! Redirecting to dashboard...");
-                        
-                        window.location.href = "/success/" + taskId;
-                    }
-                    else if (data.status === "failed") {
-                        clearInterval(checkStatus);
-                        appendLogMessage(`CRITICAL FAILURE: ${data.error || 'Check server logs'}`);
-                        const errorLine = logContainer.lastChild;
-                        if (errorLine) errorLine.style.color = "#ff3333";
-                    }
-                } catch (err) {
-                    console.error("Polling stream exception error:", err);
-                }
-            }, 1000); // Polls precisely every 1 second
-
-        }, 1500);
-    </script>
+</script>
 
 </body>
 </html>
