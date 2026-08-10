@@ -11,7 +11,7 @@ import svgwrite
 import potrace
 import xml.etree.ElementTree as ET
 from collections import defaultdict
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, box
 from shapely.ops import unary_union
 from svgelements import SVG, Path, Polygon as SVGPolygon
 import re
@@ -570,3 +570,4 @@ if __name__ == "__main__":
         flatten_svg_for_lightburn(f"{OUTPUT_FILE}.vector.svg")
     else:
         generate_pixel_svg(TARGET_COLORS, INPUT_FILE, f"{OUTPUT_FILE}.svg", square_mm, new_width, new_height)
+        
