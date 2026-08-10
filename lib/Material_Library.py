@@ -23,52 +23,70 @@ def printLogMessage(message):
 def flatten_and_subtract_svg_in_place(svg_path):
     # 1. Load data entirely into RAM
     svg_data = SVG.parse(svg_path)
-    printLogMessage(f"flattenning: {svg_path}")
+    printLogMessage(f"Flattening: {svg_path}")
     
+    # Track the order of colors as they appear in the file (Z-Index / Stack order)
+    color_order = []
     color_groups = defaultdict(list)
+    
     for element in svg_data.elements():
         if isinstance(element, (Path, SVGPolygon)):
             points = [point for point in element.as_points()]
             if len(points) >= 3:
                 poly = Polygon([(p.x, p.y) for p in points])
+                
+                # Critical step 1: Repair any self-intersections or bad geometry early
                 if not poly.is_valid:
                     poly = poly.buffer(0)
                 
-                # Determine color
+                # Determine color hex or string
                 fill_color = "black"
                 if element.fill is not None and hasattr(element.fill, 'hex'):
                     fill_color = element.fill.hex.lower()
                 elif element.fill is None:
                     fill_color = "#000000"
+                
+                # Track color sequence to maintain exact visual stacking hierarchy
+                if fill_color not in color_groups:
+                    color_order.append(fill_color)
                     
                 color_groups[fill_color].append(poly)
 
     if not color_groups:
         return  # No vectors found, exit safely
 
-    # 2. Fuse (weld) polygons for each individual color layer
+    # 2. Fuse (weld) polygons for each color layer individually
     fused_raw = {}
     for color, polys in color_groups.items():
-        printLogMessage(f"welding color layer: {color}")
-        fused_raw[color] = unary_union(polys)
+        printLogMessage(f"Welding color layer: {color}")
+        # Critical step 2: A tiny buffer fixes microscopic precision gaps during union
+        welded = unary_union(polys).buffer(0.001).buffer(-0.001)
+        fused_raw[color] = welded
 
-    # 3. Subtract all competing colors from each target color layer
+    # 3. Process from top to bottom (Z-index carving)
+    # Top elements carve into bottom elements to fit like a puzzle without gaps
     fused_layers = {}
-    all_colors = list(fused_raw.keys())
-
-    for target_color, target_geom in fused_raw.items():
-        if target_geom.is_empty:
+    accumulated_top_mask = Polygon()  # Empty base geometry
+    
+    # Process layers in reverse order (assuming elements at the end of the SVG are on top)
+    for color in reversed(color_order):
+        current_geom = fused_raw[color]
+        if current_geom.is_empty:
             continue
             
-        # Collect all geometries that are NOT the current target color
-        other_geoms = [geom for col, geom in fused_raw.items() if col != target_color and not geom.is_empty]
-        
-        if other_geoms:
-            printLogMessage(f"subtracting other colors from {target_color} layer")
-            subtraction_mask = unary_union(other_geoms)
-            fused_layers[target_color] = target_geom.difference(subtraction_mask)
+        if not accumulated_top_mask.is_empty:
+            printLogMessage(f"Carving out upper elements from layer: {color}")
+            # Subtract everything above it from the current layer
+            puzzle_piece = current_geom.difference(accumulated_top_mask)
         else:
-            fused_layers[target_color] = target_geom
+            puzzle_piece = current_geom
+            
+        # Clean up the resulting piece edges
+        puzzle_piece = puzzle_piece.buffer(0.001).buffer(-0.001)
+        fused_layers[color] = puzzle_piece
+        
+        # Add this layer's original raw layout to the mask for items beneath it
+        accumulated_top_mask = unary_union([accumulated_top_mask, current_geom]).buffer(0.0005)
 
     # 4. Rebuild standard flat SVG structure
     root = ET.Element('svg', xmlns="http://w3.org", version="1.1")
@@ -89,15 +107,16 @@ def flatten_and_subtract_svg_in_place(svg_path):
             for sub_geom in geom.geoms:
                 add_geom_to_svg(sub_geom, fill_color)
 
-    # Output the layers back to the file
-    for color, geometry in fused_layers.items():
-        printLogMessage(f"adding {color} layer back to svg: {svg_path}")
-        add_geom_to_svg(geometry, color)
+    # Output the finalized jigsaw layers back to the file (preserving visual order)
+    for color in color_order:
+        if color in fused_layers and not fused_layers[color].is_empty:
+            printLogMessage(f"Adding {color} puzzle piece back to SVG: {svg_path}")
+            add_geom_to_svg(fused_layers[color], color)
 
     tree = ET.ElementTree(root)
-    printLogMessage(f"writing to file: {svg_path}")
+    printLogMessage(f"Writing to puzzle-fit file: {svg_path}")
     tree.write(svg_path, encoding='utf-8', xml_declaration=True)
-    
+
 # def flatten_and_subtract_svg_in_place(svg_path):
 #     # 1. Load data entirely into RAM
 #     svg_data = SVG.parse(svg_path)
