@@ -26,7 +26,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
     Parses a raster image directly (no SVGs read), saves a gapless vector SVG,
     and pushes path coordinates into a LightBurn project instance.
     """
-    print(f"Opening raster image: {raster_image_path}")
+    printLogMessage(f"Opening raster image: {raster_image_path}")
     img = Image.open(raster_image_path).convert("RGB")
     if max(int(new_width),int(new_height)) > 0:
         img = resize_to_specific_height_or_width(image=img, height=int(new_height), width=int(new_width))
@@ -35,7 +35,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
     
     pixel_boxes_by_color = defaultdict(list)
     
-    print("Analyzing pixels and snapping colors...")
+    printLogMessage("Analyzing pixels and snapping colors...")
     for y in range(height):
         for x in range(width):
             pixel_rgb = img.getpixel((x, y))
@@ -99,7 +99,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
 
     # Process and export geometries
     for color_hex, boxes in pixel_boxes_by_color.items():
-        print(f"Processing layer for color: {color_hex}")
+        printLogMessage(f"Processing layer for color: {color_hex}")
         
         # Weld individual pixel boundaries
         welded_layer = unary_union(boxes)
@@ -111,12 +111,12 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
         # Export Option 2: Push to LightBurn
         if color_hex in TARGET_COLORS:
             layer_id = TARGET_COLORS[color_hex][1] # Safely grab index [1] layer id
-            print(f"Pushing {color_hex} geometry into LightBurn Layer ID: {layer_id}")
+            printLogMessage(f"Pushing {color_hex} geometry into LightBurn Layer ID: {layer_id}")
             push_geom_to_lightburn(final_puzzle_piece, layer_id)
 
     # Save SVG to disk
     tree = ET.ElementTree(root)
-    print(f"Writing finalized zero-overlap SVG to: {output_svg_path}")
+    printLogMessage(f"Writing finalized zero-overlap SVG to: {output_svg_path}")
     tree.write(output_svg_path, encoding='utf-8', xml_declaration=True)
 
 
@@ -126,7 +126,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
 #     Parses a raster image, snaps pixels to a strict target palette,
 #     and builds non-overlapping vector puzzle pieces out of them.
 #     """
-#     print(f"Opening raster image: {raster_image_path}")
+#     printLogMessage(f"Opening raster image: {raster_image_path}")
 #     img = Image.open(raster_image_path).convert("RGB")
 #     img = resize_to_specific_height_or_width(image=img, height=int(new_height), width=int(new_width))
 #     width, height = img.size
@@ -134,7 +134,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
 #     # Map to hold pixel coordinate bounding boxes grouped by snapped color
 #     pixel_boxes_by_color = defaultdict(list)
     
-#     print("Analyzing pixels and snapping colors...")
+#     printLogMessage("Analyzing pixels and snapping colors...")
 #     for y in range(height):
 #         for x in range(width):
 #             pixel_rgb = img.getpixel((x, y))
@@ -170,7 +170,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
 
 #     # Weld pixel boxes into solid composite vector layers
 #     for color_hex, boxes in pixel_boxes_by_color.items():
-#         print(f"Welding and smoothing interlocking vector layer for color: {color_hex}")
+#         printLogMessage(f"Welding and smoothing interlocking vector layer for color: {color_hex}")
         
 #         # Merge all individual pixel squares into single contiguous shapes
 #         welded_layer = unary_union(boxes)
@@ -183,7 +183,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
 
 #     # Save to disk
 #     tree = ET.ElementTree(root)
-#     print(f"Writing finalized zero-overlap SVG to: {output_svg_path}")
+#     printLogMessage(f"Writing finalized zero-overlap SVG to: {output_svg_path}")
 #     tree.write(output_svg_path, encoding='utf-8', xml_declaration=True)
 
 
