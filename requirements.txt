@@ -6,3 +6,4 @@ svgwrite
 flask
 gunicorn
 pypotrace
+redis
