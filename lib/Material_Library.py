@@ -37,7 +37,7 @@ def raster_to_puzzle_svg(raster_image_path, output_svg_path, new_height, new_wid
     for y in range(height):
         for x in range(width):
             pixel_rgb = img.getpixel((x, y))
-            closest_hex = get_closest_color(pixel_rgb, TARGET_COLORS)
+            closest_hex = get_closest_color(*pixel_rgb, TARGET_COLORS)
             
             # Skip background color completely if requested (e.g. white background)
             if closest_hex == ignore_background_hex:
