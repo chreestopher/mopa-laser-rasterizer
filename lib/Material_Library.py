@@ -457,6 +457,7 @@ def parse_material_settings(lb, material_settings_path, limit_colors, TARGET_COL
 
             else:
                 print(f"unable to add layer: {item.name}, name not in lightburn target colors", flush=True)
+
     return matched_settings    
 
 def init_lightburn(the_colors_limit):
@@ -545,9 +546,12 @@ if __name__ == "__main__":
     print(f"\nusing material library settings: {material_library_file}", flush=True)
     print(f"\nusing colors: {the_limit_colors}", flush=True)
     TARGET_COLORS , lb, lightburn = init_lightburn(the_limit_colors)
+    TARGET_COLORS['#B4B4B4'] = (0, 8, 'Light-Gray')
+    TARGET_COLORS['#000000'] = (0, 0, 'Black')
     if len(the_limit_colors_list) <= 1:
         the_limit_colors_list = [cv[-1].lower() for cn,cv in TARGET_COLORS.items()]
-
+    the_limit_colors_list.apend("black")
+    the_limit_colors_list.apend("light-gray")
     print(f"\nusing TARGET_COLORS: {TARGET_COLORS}", flush=True)
     print(f"\nusing LIMIT COLORS: {','.join(the_limit_colors_list)}", flush=True)
 
