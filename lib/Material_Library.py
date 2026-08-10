@@ -91,6 +91,12 @@ def flatten_and_subtract_svg_in_place(svg_path):
 
     tree = ET.ElementTree(root)
     tree.write(svg_path, encoding='utf-8', xml_declaration=True)
+def str_to_bool(value: str) -> bool:
+    # Convert to lowercase and strip whitespace
+    clean_val = value.strip().lower()
+    
+    # Return True if it matches truthy terms
+    return clean_val in ("true", "1", "yes", "on", "t")
 
 def resize_to_specific_height_or_width( image, width=0, height=0 ):
     if (height == 0 and width != 0):
