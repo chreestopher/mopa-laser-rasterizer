@@ -53,15 +53,15 @@ spec:
           mountPath: /app/uploads
           readOnly: false
       volumes:
-      - name: html
+      - name: static
         hostPath:
-          path: /mnt/c/Users/chree/Desktop/mopa-laser-rasterizer/html
+          path: /home/ubuntu/mopa-laser-rasterizer/static
           type: Directory
-      - name: cgi-bin
+      - name: templates
         hostPath:
-          path: /mnt/c/Users/chree/Desktop/mopa-laser-rasterizer/cgi-bin
+          path: /home/ubuntu/mopa-laser-rasterizer/templates
           type: Directory
       - name: uploads
         hostPath:
-          path: /mnt/c/Users/chree/Desktop/mopa-laser-rasterizer/uploads
+          path: /home/ubuntu/mopa-laser-rasterizer/uploads
           type: DirectoryOrCreate

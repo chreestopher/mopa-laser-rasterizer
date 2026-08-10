@@ -7,6 +7,15 @@ import multiprocessing
 from flask import Flask, render_template, jsonify, request, send_from_directory, redirect
 from werkzeug.utils import secure_filename
 
+import os
+import redis
+
+redis_client = redis.Redis(
+    host=os.environ.get('REDIS_HOST', 'localhost'),
+    port=int(os.environ.get('REDIS_PORT', 6379)),
+    decode_responses=True # Automatically decodes Redis bytes into Python strings
+)
+
 app = Flask(__name__)
 
 # Configure a directory to save the uploaded files
@@ -26,7 +35,19 @@ def index():
 def long_running_script(task_id, data, image_path, material_settings_path):
     """Background thread runs the script and streams flat root logs to shared memory."""
     try:
-        tasks[f"{task_id}_status"] = "processing"
+        # Redis Key Definitions instead of file paths
+        redis_log_key = f"task:{task_id}:log"
+        redis_status_key = f"task:{task_id}:status"
+        redis_download_key = f"task:{task_id}:downloads" # New download tracker key
+
+        # Set status to processing in Redis
+        redis_client.set(redis_status_key, "processing")
+        
+        # CRITICAL: Set 7-day TTL (in seconds) on keys when introduced so they auto-delete
+        seven_days_in_seconds = 7 * 24 * 60 * 60
+        redis_client.expire(redis_status_key, seven_days_in_seconds)
+        redis_client.expire(redis_log_key, seven_days_in_seconds)
+
 
         square_mm = data.get('pixel_square_mm', '1')
         new_width = data.get('new_width', '100')
@@ -57,54 +78,50 @@ def long_running_script(task_id, data, image_path, material_settings_path):
             stderr=subprocess.STDOUT,  # Merges stderr into stdout cleanly
             text=True
         )
-       # Define a log file path inside your shared UPLOAD_FOLDER
-        log_file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{task_id}.log")
-        status_file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{task_id}.status")
 
-        # Set status to processing on disk
-        with open(status_file_path, "w") as sf:
-            sf.write("processing")
+        # Redis Key Definitions instead of file paths
+        redis_log_key = f"task:{task_id}:log"
+        redis_status_key = f"task:{task_id}:status"
+
+        # Set status to processing in Redis
+        redis_client.set(redis_status_key, "processing")
 
         print(f"[Thread-{task_id}] Subprocess loop active...", flush=True)
 
         current_line = []
         
-        # Open file with buffering=1 (Line buffering) so text hits disk instantly
-        with open(log_file_path, "w", buffering=1) as log_file:
-            while True:
-                char = process.stdout.read(1)
-                
-                if not char and process.poll() is not None:
-                    break
-                
-                if char:
-                    if char == '\n' or char == '\r':
-                        line_text = "".join(current_line).strip()
-                        if line_text:
-                            print(f"[Subprocess Stream]: {line_text}", flush=True)
-                            
-                            # CRITICAL: Write straight to the shared HostPath file
-                            log_file.write(line_text + "\n")
-                            log_file.flush() # Force OS memory sync across container boundaries
-                            
-                        current_line = []
-                    else:
-                        current_line.append(char)
+        # We loop exactly as before, appending lines directly to a Redis list
+        while True:
+            char = process.stdout.read(1)
+            
+            if not char and process.poll() is not None:
+                break
+            
+            if char:
+                if char == '\n' or char == '\r':
+                    line_text = "".join(current_line).strip()
+                    if line_text:
+                        print(f"[Subprocess Stream]: {line_text}", flush=True)
+                        
+                        # CRITICAL: Append the log line directly to Redis List
+                        redis_client.rpush(redis_log_key, line_text)
+                        
+                    current_line = []
+                else:
+                    current_line.append(char)
 
-            if current_line:
-                line_text = "".join(current_line).strip()
-                if line_text:
-                    log_file.write(line_text + "\n")
-                    log_file.flush()
+        if current_line:
+            line_text = "".join(current_line).strip()
+            if line_text:
+                redis_client.rpush(redis_log_key, line_text)
 
         return_code = process.wait()
         
-        # Update status on disk
-        with open(status_file_path, "w") as sf:
-            if return_code == 0:
-                sf.write("completed")
-            else:
-                sf.write("failed")
+        # Update status in Redis
+        if return_code == 0:
+            redis_client.set(redis_status_key, "completed")
+        else:
+            redis_client.set(redis_status_key, "failed")
 
     except Exception as e:
         print(f"[Thread-{task_id}] CRITICAL THREAD EXCEPTION: {str(e)}", flush=True)
@@ -164,21 +181,21 @@ def start_task():
 @app.route('/task-status/<task_id>')
 def task_status(task_id):
     """Endpoint for JavaScript to check task completion, pulling clean values out of flat keys."""
-    log_file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{task_id}.log")
-    status_file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{task_id}.status")
-    
+
+    redis_log_key = f"task:{task_id}:log"
+    redis_status_key = f"task:{task_id}:status"
+
     status = "pending"
     logs = []
     
-    # Read status from disk
-    if os.path.exists(status_file_path):
-        with open(status_file_path, "r") as sf:
-            status = sf.read().strip()
+    # Read status from Redis
+    redis_status = redis_client.get(redis_status_key)
+    if redis_status is not None:
+        status = redis_status.strip()
             
-    # Read logs from disk
-    if os.path.exists(log_file_path):
-        with open(log_file_path, "r") as lf:
-            logs = lf.read().splitlines()
+    # Read logs from Redis list (0 to -1 fetches all elements)
+    if redis_client.exists(redis_log_key):
+        logs = redis_client.lrange(redis_log_key, 0, -1)
             
     return jsonify({
         "status": status,
@@ -211,11 +228,29 @@ def download_file(task_id):
         mimetype=mimetype
     )
 
+def cleanup_reddis_inflight(task_id)
+    redis_log_key = f"task:{task_id}:log"
+    redis_status_key = f"task:{task_id}:status"
+    redis_download_key = f"task:{task_id}:downloads"
+
+    # 1. Increment download count (Starts at 1 if key didn't exist)
+    download_count = redis_client.incr(redis_download_key)
+
+    # Ensure the counter key also inherits the 7-day TTL if it's the first download
+    if download_count == 1:
+        redis_client.expire(redis_download_key, 7 * 24 * 60 * 60)
+
+    # 2. Check if this is the 3rd download
+    if download_count >= 3:
+        # Delete all keys associated with this task ID immediately
+        redis_client.delete(redis_status_key, redis_log_key, redis_download_key)
+        print(f"[Redis Cleanup]: Task keys for {task_id} purged after 3 downloads.", flush=True)
 
 @app.route('/download-lbrn2/<task_id>')
 def download_lbrn2(task_id):
     """Locates and downloads the matching LightBurn vector layout file."""
     import glob
+
     search_pattern = os.path.join(app.config['UPLOAD_FOLDER'], f"output_{task_id}_*.lbrn2")
     matching_files = glob.glob(search_pattern)
     
@@ -223,7 +258,7 @@ def download_lbrn2(task_id):
         return jsonify({"status": "error", "message": "LightBurn file (.lbrn2) not found on disk"}), 404
         
     lbrn2_file = os.path.basename(matching_files[0])
-    
+    cleanup_reddis_inflight(task_id)
     return send_from_directory(
         directory=app.config['UPLOAD_FOLDER'],
         path=lbrn2_file,
