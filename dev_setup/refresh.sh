@@ -18,7 +18,6 @@ sudo kubectl set image deployment/mopa-laser-rasterizer mopa-laser-rasterizer=mo
 sudo kubectl rollout restart deployment/mopa-laser-rasterizer
 sudo sudo kubectl logs -f deployment/mopa-laser-rasterizer
 
-
 echo "===================================================="
 echo "🏗️ REBUILDING INFRASTRUCTURE COMPONENT LAYERS"
 echo "===================================================="
