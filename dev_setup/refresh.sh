@@ -30,7 +30,7 @@ sudo kubectl set image deployment/mopa-laser-rasterizer mopa-laser-rasterizer=mo
 
 # 9. Wait for the fresh Redis database engine to move into a Running status
 echo "⏳ Waiting for fresh Redis StatefulSet to initialize..."
-until [ "$(sudo kubectl get pod redis-state-set-0 -o jsonpath='{.status.phase}' 2>/dev/null)" == "Running" ]; do
+until [ "$(sudo kubectl get pod redis-state-set-0 -o jsonpath='{.status.phase}' 2>/dev/null)" = "Running" ]; do
     echo "   -> Redis is still pending or creating... retrying in 3 seconds..."
     sleep 3
 done
