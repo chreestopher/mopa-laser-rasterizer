@@ -175,15 +175,15 @@
     </div>
     <div>
       <label for="pixel_square_mm">pixel_square_mm:</label> 
-      <input type="text" id="pixel_square_mm" name="pixel_square_mm" placeholder="size in decimal of mm for pixels to be drawn"> 
+      <input type="number" id="pixel_square_mm" name="pixel_square_mm" step="any"> 
     </div>
     <div>
       <label for="new_width">new_width:</label> 
-      <input type="text" id="new_width" name="new_width" placeholder="new width to resize to, respecting aspect ration"> 
+      <input type="number" id="new_width" name="new_width" value="0"> 
     </div>
     <div>
       <label for="new_height">new_height:</label> 
-      <input type="text" id="new_height" name="new_height" placeholder="new height to resize to, respecting aspect ration"> 
+      <input type="number" id="new_height" name="new_height" value="0"> 
     </div>
     <div>
 
@@ -195,45 +195,46 @@
       <label for="vectorize">vectorize:</label> 
       <input type="checkbox" id="vectorize" name="vectorize"> 
     </div>    
-
-    <button type="submit">Process Raster</button>
-<h3>All colors of lightburn layers included by default, pick the colors you want toggle on / off , when a color is toggled off it means both the lightburn color layer will not be used for the engraving, as well as that color will not be included in the "find closest lightburn layer color" logic, so excluding a color not only exludes the settings but also the color itself from being used in the project file, the next closest color that is not exlcluded will be used instead </h3>
-  <!-- Lightburn Color Palette Grid Section -->
-  <div class="palette-section">
-    <label style="font-size: 0.9rem; font-weight: 600;">Lightburn Color Reference Grid</label>
-    <div class="color-grid">
-      <div class="color-card"><span class="color-name">black</span><div class="color-square" style="background-color: #000000;"></div><span class="color-hex">#000000</span></div>
-      <div class="color-card"><span class="color-name">blue</span><div class="color-square" style="background-color: #0000FF;"></div><span class="color-hex">#0000FF</span></div>
-      <div class="color-card"><span class="color-name">red</span><div class="color-square" style="background-color: #FF0000;"></div><span class="color-hex">#FF0000</span></div>
-      <div class="color-card"><span class="color-name">green</span><div class="color-square" style="background-color: #00E000;"></div><span class="color-hex">#00E000</span></div>
-      <div class="color-card"><span class="color-name">yellow</span><div class="color-square" style="background-color: #D0D000;"></div><span class="color-hex">#D0D000</span></div>
-      <div class="color-card"><span class="color-name">orange</span><div class="color-square" style="background-color: #FF8000;"></div><span class="color-hex">#FF8000</span></div>
-      <div class="color-card"><span class="color-name">cyan</span><div class="color-square" style="background-color: #00E0E0;"></div><span class="color-hex">#00E0E0</span></div>
-      <div class="color-card"><span class="color-name">magenta</span><div class="color-square" style="background-color: #FF00FF;"></div><span class="color-hex">#FF00FF</span></div>
-      <div class="color-card"><span class="color-name">light-gray</span><div class="color-square" style="background-color: #B4B4B4;"></div><span class="color-hex">#B4B4B4</span></div>
-      <div class="color-card"><span class="color-name">dark-blue</span><div class="color-square" style="background-color: #0000A0;"></div><span class="color-hex">#0000A0</span></div>
-      <div class="color-card"><span class="color-name">dark-red</span><div class="color-square" style="background-color: #A00000;"></div><span class="color-hex">#A00000</span></div>
-      <div class="color-card"><span class="color-name">dark-green</span><div class="color-square" style="background-color: #00A000;"></div><span class="color-hex">#00A000</span></div>
-      <div class="color-card"><span class="color-name">dark-yellow</span><div class="color-square" style="background-color: #A0A000;"></div><span class="color-hex">#A0A000</span></div>
-      <div class="color-card"><span class="color-name">dark-orange</span><div class="color-square" style="background-color: #C08000;"></div><span class="color-hex">#C08000</span></div>
-      <div class="color-card"><span class="color-name">light-blue</span><div class="color-square" style="background-color: #00A0FF;"></div><span class="color-hex">#00A0FF</span></div>
-      <div class="color-card"><span class="color-name">dark-magenta</span><div class="color-square" style="background-color: #A000A0;"></div><span class="color-hex">#A000A0</span></div>
-      <div class="color-card"><span class="color-name">medium-gray</span><div class="color-square" style="background-color: #808080;"></div><span class="color-hex">#808080</span></div>
-      <div class="color-card"><span class="color-name">slate-blue</span><div class="color-square" style="background-color: #7D87B9;"></div><span class="color-hex">#7D87B9</span></div>
-      <div class="color-card"><span class="color-name">rose</span><div class="color-square" style="background-color: #BB7784;"></div><span class="color-hex">#BB7784</span></div>
-      <div class="color-card"><span class="color-name">periwinkle-blue</span><div class="color-square" style="background-color: #4A6FE3;"></div><span class="color-hex">#4A6FE3</span></div>
-      <div class="color-card"><span class="color-name">raspberry</span><div class="color-square" style="background-color: #D33F6A;"></div><span class="color-hex">#D33F6A</span></div>
-      <div class="color-card"><span class="color-name">sage-green</span><div class="color-square" style="background-color: #8CD78C;"></div><span class="color-hex">#8CD78C</span></div>
-      <div class="color-card"><span class="color-name">peach</span><div class="color-square" style="background-color: #F0B98D;"></div><span class="color-hex">#F0B98D</span></div>
-      <div class="color-card"><span class="color-name">light-pink</span><div class="color-square" style="background-color: #F6C4E1;"></div><span class="color-hex">#F6C4E1</span></div>
-      <div class="color-card"><span class="color-name">orchid-pink</span><div class="color-square" style="background-color: #FA9ED4;"></div><span class="color-hex">#FA9ED4</span></div>
-      <div class="color-card"><span class="color-name">deep-purple</span><div class="color-square" style="background-color: #500A78;"></div><span class="color-hex">#500A78</span></div>
-      <div class="color-card"><span class="color-name">rust-brown</span><div class="color-square" style="background-color: #B45A00;"></div><span class="color-hex">#B45A00</span></div>
-      <div class="color-card"><span class="color-name">teal</span><div class="color-square" style="background-color: #004754;"></div><span class="color-hex">#004754</span></div>
-      <div class="color-card"><span class="color-name">bright-mint-green</span><div class="color-square" style="background-color: #86FA88;"></div><span class="color-hex">#86FA88</span></div>
-      <div class="color-card"><span class="color-name">light-gold</span><div class="color-square" style="background-color: #FFDB66;"></div><span class="color-hex">#FFDB66</span></div>
+    <div>
+      <h3>All colors of lightburn layers included by default, pick the colors you want toggle on / off , when a color is toggled off it means both the lightburn color layer will not be used for the engraving, as well as that color will not be included in the "find closest lightburn layer color" logic, so excluding a color not only exludes the settings but also the color itself from being used in the project file, the next closest color that is not exlcluded will be used instead </h3>
+      <!-- Lightburn Color Palette Grid Section -->
+      <div class="palette-section">
+        <label style="font-size: 0.9rem; font-weight: 600;">Lightburn Color Reference Grid</label>
+        <div class="color-grid">
+          <div class="color-card"><span class="color-name">black</span><div class="color-square" style="background-color: #000000;"></div><span class="color-hex">#000000</span></div>
+          <div class="color-card"><span class="color-name">blue</span><div class="color-square" style="background-color: #0000FF;"></div><span class="color-hex">#0000FF</span></div>
+          <div class="color-card"><span class="color-name">red</span><div class="color-square" style="background-color: #FF0000;"></div><span class="color-hex">#FF0000</span></div>
+          <div class="color-card"><span class="color-name">green</span><div class="color-square" style="background-color: #00E000;"></div><span class="color-hex">#00E000</span></div>
+          <div class="color-card"><span class="color-name">yellow</span><div class="color-square" style="background-color: #D0D000;"></div><span class="color-hex">#D0D000</span></div>
+          <div class="color-card"><span class="color-name">orange</span><div class="color-square" style="background-color: #FF8000;"></div><span class="color-hex">#FF8000</span></div>
+          <div class="color-card"><span class="color-name">cyan</span><div class="color-square" style="background-color: #00E0E0;"></div><span class="color-hex">#00E0E0</span></div>
+          <div class="color-card"><span class="color-name">magenta</span><div class="color-square" style="background-color: #FF00FF;"></div><span class="color-hex">#FF00FF</span></div>
+          <div class="color-card"><span class="color-name">light-gray</span><div class="color-square" style="background-color: #B4B4B4;"></div><span class="color-hex">#B4B4B4</span></div>
+          <div class="color-card"><span class="color-name">dark-blue</span><div class="color-square" style="background-color: #0000A0;"></div><span class="color-hex">#0000A0</span></div>
+          <div class="color-card"><span class="color-name">dark-red</span><div class="color-square" style="background-color: #A00000;"></div><span class="color-hex">#A00000</span></div>
+          <div class="color-card"><span class="color-name">dark-green</span><div class="color-square" style="background-color: #00A000;"></div><span class="color-hex">#00A000</span></div>
+          <div class="color-card"><span class="color-name">dark-yellow</span><div class="color-square" style="background-color: #A0A000;"></div><span class="color-hex">#A0A000</span></div>
+          <div class="color-card"><span class="color-name">dark-orange</span><div class="color-square" style="background-color: #C08000;"></div><span class="color-hex">#C08000</span></div>
+          <div class="color-card"><span class="color-name">light-blue</span><div class="color-square" style="background-color: #00A0FF;"></div><span class="color-hex">#00A0FF</span></div>
+          <div class="color-card"><span class="color-name">dark-magenta</span><div class="color-square" style="background-color: #A000A0;"></div><span class="color-hex">#A000A0</span></div>
+          <div class="color-card"><span class="color-name">medium-gray</span><div class="color-square" style="background-color: #808080;"></div><span class="color-hex">#808080</span></div>
+          <div class="color-card"><span class="color-name">slate-blue</span><div class="color-square" style="background-color: #7D87B9;"></div><span class="color-hex">#7D87B9</span></div>
+          <div class="color-card"><span class="color-name">rose</span><div class="color-square" style="background-color: #BB7784;"></div><span class="color-hex">#BB7784</span></div>
+          <div class="color-card"><span class="color-name">periwinkle-blue</span><div class="color-square" style="background-color: #4A6FE3;"></div><span class="color-hex">#4A6FE3</span></div>
+          <div class="color-card"><span class="color-name">raspberry</span><div class="color-square" style="background-color: #D33F6A;"></div><span class="color-hex">#D33F6A</span></div>
+          <div class="color-card"><span class="color-name">sage-green</span><div class="color-square" style="background-color: #8CD78C;"></div><span class="color-hex">#8CD78C</span></div>
+          <div class="color-card"><span class="color-name">peach</span><div class="color-square" style="background-color: #F0B98D;"></div><span class="color-hex">#F0B98D</span></div>
+          <div class="color-card"><span class="color-name">light-pink</span><div class="color-square" style="background-color: #F6C4E1;"></div><span class="color-hex">#F6C4E1</span></div>
+          <div class="color-card"><span class="color-name">orchid-pink</span><div class="color-square" style="background-color: #FA9ED4;"></div><span class="color-hex">#FA9ED4</span></div>
+          <div class="color-card"><span class="color-name">deep-purple</span><div class="color-square" style="background-color: #500A78;"></div><span class="color-hex">#500A78</span></div>
+          <div class="color-card"><span class="color-name">rust-brown</span><div class="color-square" style="background-color: #B45A00;"></div><span class="color-hex">#B45A00</span></div>
+          <div class="color-card"><span class="color-name">teal</span><div class="color-square" style="background-color: #004754;"></div><span class="color-hex">#004754</span></div>
+          <div class="color-card"><span class="color-name">bright-mint-green</span><div class="color-square" style="background-color: #86FA88;"></div><span class="color-hex">#86FA88</span></div>
+          <div class="color-card"><span class="color-name">light-gold</span><div class="color-square" style="background-color: #FFDB66;"></div><span class="color-hex">#FFDB66</span></div>
+        </div>
+      </div>  
     </div>
-  </div>  
+    <button type="submit">Process Raster</button>      
   </form>
 
   <script>
