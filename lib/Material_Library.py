@@ -20,33 +20,11 @@ def printLogMessage(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}", flush=True)
 
-import xml.etree.ElementTree as ET
-from collections import defaultdict
-from PIL import Image
-from shapely.geometry import box
-from shapely.ops import unary_union
-
-# Updated TARGET_COLORS layout: Key -> (RGB Tuple, LightBurn Layer ID)
-# def get_closest_target_hex(rgb_pixel):
-#     """Finds the closest target hex color using 3D Euclidean distance."""
-#     r, g, b = rgb_pixel[:3]
-#     min_dist = float('inf')
-#     closest_hex = "#ffffff"
-    
-#     for hex_code, (target_rgb, _) in TARGET_COLORS.items():
-#         dist = (r - target_rgb)[0]**2 + (g - target_rgb)[1]**2 + (b - target_rgb)[2]**2
-#         # Simple Euclidean calculation
-#         dist = (r - target_rgb[0])**2 + (g - target_rgb[1])**2 + (b - target_rgb[2])**2
-#         if dist < min_dist:
-#             min_dist = dist
-#             closest_hex = hex_code
-            
-#     return closest_hex
 
 def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_height, new_width, lb_project_instance, TARGET_COLORS, ignore_background_hex="#ffffff"):
     """
-    Parses a raster image, saves a gapless SVG, and pushes 
-    matching path coordinates directly into a LightBurn project instance.
+    Parses a raster image directly (no SVGs read), saves a gapless vector SVG,
+    and pushes path coordinates into a LightBurn project instance.
     """
     print(f"Opening raster image: {raster_image_path}")
     img = Image.open(raster_image_path).convert("RGB")
@@ -88,7 +66,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
                 add_geom_to_svg(sub_geom, fill_color)
 
     def push_geom_to_lightburn(geom, layer_id):
-        """Recursively breaks down shapely paths into LightBurn coordinates."""
+        """Breaks down shapely paths cleanly into LightBurn coordinates."""
         if geom.is_empty:
             return
             
@@ -97,7 +75,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
             exterior_coords = [[round(x, 3), round(y, 3)] for x, y in geom.exterior.coords]
             lb_project_instance.add(Path(exterior_coords).layer(layer_id))
             
-            # 2. Add inner holes/cutouts to LightBurn (assigned to the same layer)
+            # 2. Add inner cutouts
             for interior in geom.interiors:
                 interior_coords = [[round(x, 3), round(y, 3)] for x, y in interior.coords]
                 lb_project_instance.add(Path(interior_coords).layer(layer_id))
@@ -110,16 +88,16 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
     for color_hex, boxes in pixel_boxes_by_color.items():
         print(f"Processing layer for color: {color_hex}")
         
-        # Weld and isolate
+        # Weld individual pixel boundaries
         welded_layer = unary_union(boxes)
         final_puzzle_piece = welded_layer.buffer(0.001).buffer(-0.001)
         
         # Export Option 1: Add to SVG Tree
         add_geom_to_svg(final_puzzle_piece, color_hex)
         
-        # Export Option 2: Push to LightBurn Project File
+        # Export Option 2: Push to LightBurn
         if color_hex in TARGET_COLORS:
-            layer_id = TARGET_COLORS[color_hex][1]
+            layer_id = TARGET_COLORS[color_hex][1] # Safely grab index [1] layer id
             print(f"Pushing {color_hex} geometry into LightBurn Layer ID: {layer_id}")
             push_geom_to_lightburn(final_puzzle_piece, layer_id)
 
@@ -656,7 +634,6 @@ if __name__ == "__main__":
     TARGET_COLORS = parse_material_settings(lb, material_library_file, the_limit_colors_list, TARGET_COLORS)
     if vectorize:
         #trace_with_palette_mapping(TARGET_COLORS, INPUT_FILE, the_output_file, int(max_dimension))
-        #flatten_and_subtract_svg_in_place(the_output_file)
         raster_to_puzzle_and_lightburn(INPUT_FILE, the_output_file, new_height, new_width, lb, TARGET_COLORS)
     else:
         generate_pixel_svg(TARGET_COLORS, INPUT_FILE, the_output_file, square_mm, new_width, new_height)
