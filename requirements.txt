@@ -7,3 +7,5 @@ flask
 gunicorn
 pypotrace
 redis
+shapely
+svgelements
