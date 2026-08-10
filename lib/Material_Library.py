@@ -20,7 +20,7 @@ def printLogMessage(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}", flush=True)
 
-def raster_to_puzzle_svg(raster_image_path, output_svg_path, , new_height, new_width, TARGET_COLORS, ignore_background_hex="#ffffff"):
+def raster_to_puzzle_svg(raster_image_path, output_svg_path, new_height, new_width, TARGET_COLORS, ignore_background_hex="#ffffff"):
     """
     Parses a raster image, snaps pixels to a strict target palette,
     and builds non-overlapping vector puzzle pieces out of them.
