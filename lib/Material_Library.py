@@ -519,7 +519,8 @@ def init_lightburn(the_colors_limit):
         filtered_colors['#000000'] = (0, 0, 'Black')
     else:
         filtered_colors = TARGET_COLORS
-
+        filtered_colors['#B4B4B4'] = (0, 8, 'Light-Gray')
+        filtered_colors['#000000'] = (0, 0, 'Black')
     # Add it to sys.modules cache and execute the code within the module
     sys.modules[module_name] = lightburn
     spec.loader.exec_module(lightburn)
