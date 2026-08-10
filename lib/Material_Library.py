@@ -14,6 +14,7 @@ from collections import defaultdict
 from shapely.geometry import Polygon
 from shapely.ops import unary_union
 from svgelements import SVG, Path, Polygon as SVGPolygon
+import re
 
 def flatten_svg_for_lightburn(svg_path):
     # 1. Parse the document entirely into memory
@@ -251,7 +252,6 @@ def generate_pixel_svg(TARGET_COLORS, input_image_path, output_svg_path, square_
         print(f"Error writing SVG file: {e}", flush=True)
 
     try:
-        flatten_svg_for_lightburn(output_svg_path)
         lb.write(output_svg_path +".lbrn2")
         print(f"Success! lbrn2 saved to "+ output_svg_path +".lbrn2", flush=True)
     except Exception as e:
@@ -267,92 +267,6 @@ def rgb_to_hex(rgb):
     """Converts an (R, G, B) tuple to a #RRGGBB hex string."""
     return '#{:02x}{:02x}{:02x}'.format(*rgb)
 
-import re
-import cv2
-import numpy as np
-import potrace
-import svgwrite
-
-
-import cv2
-import numpy as np
-import potrace
-import svgwrite
-
-import cv2
-import numpy as np
-
-#region todo: finish faster implementation with numpy arrays
-# def trace_with_palette_mapping(
-#     TARGET_COLORS, image_path, svg_output_path, MAX_DIMENSION=None
-# ):
-#     # Setup configuration variables
-#     RESIZE_FACTOR = 1.0
-#     TURD_SIZE = 10
-
-#     # 1. Load and read image
-#     img = cv2.imread(image_path)
-#     if img is None:
-#         raise FileNotFoundError(f"Could not open or read image: {image_path}")
-
-#     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-#     orig_h, orig_w, _ = img_rgb.shape
-#     target_w, target_h = orig_w, orig_h
-
-#     if RESIZE_FACTOR != 1.0:
-#         target_w = int(orig_w * RESIZE_FACTOR)
-#         target_h = int(orig_h * RESIZE_FACTOR)
-#     if MAX_DIMENSION is not None and max(target_w, target_h) > MAX_DIMENSION:
-#         scale = MAX_DIMENSION / float(max(target_w, target_h))
-#         target_w = int(target_w * scale)
-#         target_h = int(target_h * scale)
-#     if (target_w, target_h) != (orig_w, orig_h):
-#         print(
-#             f"Resizing image from {orig_w}, {orig_h} to {target_w}, {target_h}",
-#             flush=True,
-#         )
-#         img_rgb = cv2.resize(
-#             img_rgb, (target_w, target_h), interpolation=cv2.INTER_AREA
-#         )
-#     else:
-#         print(
-#             f"Processing image at original dimension {orig_w}, {orig_h}",
-#             flush=True,
-#         )
-
-#     # 2. Reshape and convert image pixels to float32 for distance math
-#     pixels = img_rgb.reshape(-1, 3).astype(np.float32)
-
-#     # Convert TARGET_COLORS list of hex strings into a NumPy array of RGB values
-#     # (Replaces old hex_to_rgb loop)
-#     target_rgbs = np.array(
-#         [[int(h.lstrip("#")[i : i + 2], 16) for i in (0, 2, 4)] for h in TARGET_COLORS],
-#         dtype=np.float32,
-#     )
-
-#     # 3. Vectorized closest color calculation (No loops)
-#     # Uses NumPy broadcasting to find the squared Euclidean distance
-#     # shape: (num_pixels, 1, 3) - (1, num_colors, 3) -> (num_pixels, num_colors, 3)
-#     differences = pixels[:, None, :] - target_rgbs[None, :, :]
-#     distances = np.sum(differences**2, axis=2)
-
-#     # Find the index of the closest target color for every pixel
-#     closest_color_indices = np.argmin(distances, axis=1)
-
-#     # 4. Map the pixels to the target colors and reconstruct the image
-#     flattened_pixels = target_rgbs[closest_color_indices].astype(np.uint8)
-#     flattened_img = flattened_pixels.reshape(target_h, target_w, 3)
-
-#     print(
-#         f"Color flattening complete. Proceeding with SVG generation...",
-#         flush=True,
-#     )
-
-#     # 5. Pass flattened_img to your subprocess/SVG tracing tool below
-#     # (Insert your potrace/vtracer call or remaining logic here)
-
-#     return flattened_img
-#endregion todonew
 def trace_with_palette_mapping( TARGET_COLORS, image_path, svg_output_path, MAX_DIMENSION=None ):
     # Setup configuration variables
     RESIZE_FACTOR = 1.0
@@ -653,5 +567,6 @@ if __name__ == "__main__":
     TARGET_COLORS = parse_material_settings(lb, material_library_file, the_limit_colors_list, TARGET_COLORS)
     if vectorize:
         trace_with_palette_mapping(TARGET_COLORS, INPUT_FILE, f"{OUTPUT_FILE}.vector.svg", int(max_dimension))
+        flatten_svg_for_lightburn(f"{OUTPUT_FILE}.vector.svg")
     else:
         generate_pixel_svg(TARGET_COLORS, INPUT_FILE, f"{OUTPUT_FILE}.svg", square_mm, new_width, new_height)
