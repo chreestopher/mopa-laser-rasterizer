@@ -67,8 +67,8 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
 
     def push_geom_to_lightburn(geom, layer_id):
         """
-        Extracts coordinate lists from Shapely geometry and instantiates
-        your native LightBurn Path class directly, avoiding external library crashes.
+        Extracts coordinate paths from Shapely geometry and pipes them
+        into LightBurn using the exact working chaining syntax method.
         """
         if geom.is_empty:
             return
@@ -77,20 +77,21 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
             # 1. Process the outer boundary loop
             exterior_coords = [[round(x, 3), round(y, 3)] for x, y in geom.exterior.coords]
             if exterior_coords:
-                # Instantiate your custom Path class with points and layer directly
-                lb_path_obj = Path(points=exterior_coords, layer=layer_id)
-                
-                # If your base Obj class relies on setting _layer manually, uncomment below:
-                # lb_path_obj._layer = layer_id
-                
-                lb_project_instance.add(lb_path_obj)
+                # Use the exact working chained method structure
+                lb_shape = lightburn.Path(exterior_coords).layer(layer_id)
+                lb_project_instance.add(lb_shape)
             
-            # 2. Process any inner cutout holes as individual vector tracks on the same layer
+            # 2. Process any inner cutout holes on the exact same layer ID
             for interior in geom.interiors:
                 interior_coords = [[round(x, 3), round(y, 3)] for x, y in interior.coords]
                 if interior_coords:
-                    lb_hole_obj = Path(points=interior_coords, layer=layer_id)
-                    lb_project_instance.add(lb_hole_obj)
+                    lb_hole = lightburn.Path(interior_coords).layer(layer_id)
+                    lb_project_instance.add(lb_hole)
+                
+        elif geom.geom_type in ('MultiPolygon', 'GeometryCollection'):
+            for sub_geom in geom.geoms:
+                push_geom_to_lightburn(sub_geom, layer_id)
+
                 
         elif geom.geom_type in ('MultiPolygon', 'GeometryCollection'):
             for sub_geom in geom.geoms:
@@ -272,7 +273,7 @@ def generate_pixel_svg(TARGET_COLORS, input_image_path, output_svg_path, square_
         new_height: New Height to resize the image to, respecting the aspect ratio
             * only one of new_width or new_height can be used at a time
     """
-    printLogMessage(input_image_path, output_svg_path, square_size_mm, new_width, new_height)
+    printLogMessage((input_image_path, output_svg_path, square_size_mm, new_width, new_height))
     
     try:
         # Load the image and convert to RGB (to ensure consistent 3-channel access)
