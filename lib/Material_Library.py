@@ -20,17 +20,13 @@ def printLogMessage(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}", flush=True)
 
-
-def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_height, new_width, lb_project_instance, TARGET_COLORS, ignore_background_hex="#ffffff"):
+def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_height, new_width, lb_project_instance, TARGET_COLORS, scale_factor=1.0, ignore_background_hex="#ffffff"):
     """
-    Parses a raster image directly (no SVGs read), saves a gapless vector SVG,
-    and pushes path coordinates into a LightBurn project instance.
+    Parses a raster image, applies a structural vector scale_factor,
+    saves a gapless SVG puzzle file, and pushes matching paths into LightBurn.
     """
     printLogMessage(f"Opening raster image: {raster_image_path}")
     img = Image.open(raster_image_path).convert("RGB")
-    if max(int(new_width),int(new_height)) > 0:
-        img = resize_to_specific_height_or_width(image=img, height=int(new_height), width=int(new_width))
-
     width, height = img.size
     
     pixel_boxes_by_color = defaultdict(list)
@@ -47,29 +43,31 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
             pixel_poly = box(x, y, x + 1, y + 1)
             pixel_boxes_by_color[closest_hex].append(pixel_poly)
 
+    # Calculate new target viewport canvas dimensions for the SVG file
+    scaled_width = width * scale_factor
+    scaled_height = height * scale_factor
+
     # Rebuild standard flat SVG structure
     root = ET.Element('svg', xmlns="http://w3.org", version="1.1")
-    root.set('viewBox', f"0 0 {width} {height}")
-    root.set('width', str(width))
-    root.set('height', str(height))
+    root.set('viewBox', f"0 0 {scaled_width} {scaled_height}")
+    root.set('width', str(scaled_width))
+    root.set('height', str(scaled_height))
 
     def add_geom_to_svg(geom, fill_color):
         if geom.is_empty:
             return
         if geom.geom_type == 'Polygon':
-            d_path = "M " + " L ".join([f"{x:.1f},{y:.1f}" for x, y in geom.exterior.coords]) + " Z"
+            # Use up to 3 decimal places for highly accurate precision resizing scaling
+            d_path = "M " + " L ".join([f"{x:.3f},{y:.3f}" for x, y in geom.exterior.coords]) + " Z"
             for interior in geom.interiors:
-                d_path += " M " + " L ".join([f"{x:.1f},{y:.1f}" for x, y in interior.coords]) + " Z"
+                d_path += " M " + " L ".join([f"{x:.3f},{y:.3f}" for x, y in interior.coords]) + " Z"
             ET.SubElement(root, 'path', d=d_path, fill=fill_color, stroke="none")
         elif geom.geom_type in ('MultiPolygon', 'GeometryCollection'):
             for sub_geom in geom.geoms:
                 add_geom_to_svg(sub_geom, fill_color)
 
     def push_geom_to_lightburn(geom, layer_id):
-        """
-        Extracts coordinate paths from Shapely geometry and pipes them
-        into LightBurn using the exact working chaining syntax method.
-        """
+        """Extracts coordinate paths from Shapely geometry and pipes them into LightBurn."""
         if geom.is_empty:
             return
             
@@ -77,7 +75,6 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
             # 1. Process the outer boundary loop
             exterior_coords = [[round(x, 3), round(y, 3)] for x, y in geom.exterior.coords]
             if exterior_coords:
-                # Use the exact working chained method structure
                 lb_shape = lightburn.Path(exterior_coords).layer(layer_id)
                 lb_project_instance.add(lb_shape)
             
@@ -92,46 +89,46 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
             for sub_geom in geom.geoms:
                 push_geom_to_lightburn(sub_geom, layer_id)
 
-                
-        elif geom.geom_type in ('MultiPolygon', 'GeometryCollection'):
-            for sub_geom in geom.geoms:
-                push_geom_to_lightburn(sub_geom, layer_id)
-
-    # Process and export geometries
+    # Process, scale, and export geometries
     for color_hex, boxes in pixel_boxes_by_color.items():
-        printLogMessage(f"Processing layer for color: {color_hex}")
+        printLogMessage(f"Processing and welding layer for color: {color_hex}")
         
-        # Weld individual pixel boundaries
+        # 1. Weld individual pixel boundaries
         welded_layer = unary_union(boxes)
         final_puzzle_piece = welded_layer.buffer(0.001).buffer(-0.001)
+        
+        # 2. Apply Unified Scale Factor (Scaling from the top-left origin)
+        if scale_factor != 1.0:
+            printLogMessage(f"Scaling {color_hex} geometry by a factor of {scale_factor}x")
+            final_puzzle_piece = scale(final_puzzle_piece, xfact=scale_factor, yfact=scale_factor, origin=(0, 0))
         
         # Export Option 1: Add to SVG Tree
         add_geom_to_svg(final_puzzle_piece, color_hex)
         
         # Export Option 2: Push to LightBurn
         if color_hex in TARGET_COLORS:
-            layer_id = TARGET_COLORS[color_hex][1] # Safely grab index [1] layer id
-            printLogMessage(f"Pushing {color_hex} geometry into LightBurn Layer ID: {layer_id}")
+            layer_id = TARGET_COLORS[color_hex][1]
+            printLogMessage(f"Pushing scaled {color_hex} geometry into LightBurn Layer ID: {layer_id}")
             push_geom_to_lightburn(final_puzzle_piece, layer_id)
 
     # Save SVG to disk
     tree = ET.ElementTree(root)
-    printLogMessage(f"Writing finalized zero-overlap SVG to: {output_svg_path}")
+    printLogMessage(f"Writing finalized scaled zero-overlap SVG to: {output_svg_path}")
     tree.write(output_svg_path, encoding='utf-8', xml_declaration=True)
     lb.write(output_svg_path +".lbrn2")
 
-#GOOD 
-# def raster_to_puzzle_svg(raster_image_path, output_svg_path, new_height, new_width, TARGET_COLORS, ignore_background_hex="#ffffff"):
+# def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_height, new_width, lb_project_instance, TARGET_COLORS, ignore_background_hex="#ffffff"):
 #     """
-#     Parses a raster image, snaps pixels to a strict target palette,
-#     and builds non-overlapping vector puzzle pieces out of them.
+#     Parses a raster image directly (no SVGs read), saves a gapless vector SVG,
+#     and pushes path coordinates into a LightBurn project instance.
 #     """
 #     printLogMessage(f"Opening raster image: {raster_image_path}")
 #     img = Image.open(raster_image_path).convert("RGB")
-#     img = resize_to_specific_height_or_width(image=img, height=int(new_height), width=int(new_width))
+#     if max(int(new_width),int(new_height)) > 0:
+#         img = resize_to_specific_height_or_width(image=img, height=int(new_height), width=int(new_width))
+
 #     width, height = img.size
     
-#     # Map to hold pixel coordinate bounding boxes grouped by snapped color
 #     pixel_boxes_by_color = defaultdict(list)
     
 #     printLogMessage("Analyzing pixels and snapping colors...")
@@ -140,12 +137,9 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
 #             pixel_rgb = img.getpixel((x, y))
 #             closest_hex = get_closest_color(*pixel_rgb, TARGET_COLORS)
             
-#             # Skip background color completely if requested (e.g. white background)
 #             if closest_hex == ignore_background_hex:
 #                 continue
                 
-#             # Create a 1x1 box polygon matching this pixel's boundaries
-#             # In SVGs, Y goes down, so we construct coordinate boxes matching pixel grids
 #             pixel_poly = box(x, y, x + 1, y + 1)
 #             pixel_boxes_by_color[closest_hex].append(pixel_poly)
 
@@ -159,7 +153,6 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
 #         if geom.is_empty:
 #             return
 #         if geom.geom_type == 'Polygon':
-#             # Format points to 1 decimal place since pixel grids are highly uniform
 #             d_path = "M " + " L ".join([f"{x:.1f},{y:.1f}" for x, y in geom.exterior.coords]) + " Z"
 #             for interior in geom.interiors:
 #                 d_path += " M " + " L ".join([f"{x:.1f},{y:.1f}" for x, y in interior.coords]) + " Z"
@@ -168,23 +161,60 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
 #             for sub_geom in geom.geoms:
 #                 add_geom_to_svg(sub_geom, fill_color)
 
-#     # Weld pixel boxes into solid composite vector layers
+#     def push_geom_to_lightburn(geom, layer_id):
+#         """
+#         Extracts coordinate paths from Shapely geometry and pipes them
+#         into LightBurn using the exact working chaining syntax method.
+#         """
+#         if geom.is_empty:
+#             return
+            
+#         if geom.geom_type == 'Polygon':
+#             # 1. Process the outer boundary loop
+#             exterior_coords = [[round(x, 3), round(y, 3)] for x, y in geom.exterior.coords]
+#             if exterior_coords:
+#                 # Use the exact working chained method structure
+#                 lb_shape = lightburn.Path(exterior_coords).layer(layer_id)
+#                 lb_project_instance.add(lb_shape)
+            
+#             # 2. Process any inner cutout holes on the exact same layer ID
+#             for interior in geom.interiors:
+#                 interior_coords = [[round(x, 3), round(y, 3)] for x, y in interior.coords]
+#                 if interior_coords:
+#                     lb_hole = lightburn.Path(interior_coords).layer(layer_id)
+#                     lb_project_instance.add(lb_hole)
+                
+#         elif geom.geom_type in ('MultiPolygon', 'GeometryCollection'):
+#             for sub_geom in geom.geoms:
+#                 push_geom_to_lightburn(sub_geom, layer_id)
+
+                
+#         elif geom.geom_type in ('MultiPolygon', 'GeometryCollection'):
+#             for sub_geom in geom.geoms:
+#                 push_geom_to_lightburn(sub_geom, layer_id)
+
+#     # Process and export geometries
 #     for color_hex, boxes in pixel_boxes_by_color.items():
-#         printLogMessage(f"Welding and smoothing interlocking vector layer for color: {color_hex}")
+#         printLogMessage(f"Processing layer for color: {color_hex}")
         
-#         # Merge all individual pixel squares into single contiguous shapes
+#         # Weld individual pixel boundaries
 #         welded_layer = unary_union(boxes)
-        
-#         # Micro-buffer ensures alignment rounding errors don't present fake gaps in renderers
 #         final_puzzle_piece = welded_layer.buffer(0.001).buffer(-0.001)
         
-#         # Write to our target SVG structure
+#         # Export Option 1: Add to SVG Tree
 #         add_geom_to_svg(final_puzzle_piece, color_hex)
+        
+#         # Export Option 2: Push to LightBurn
+#         if color_hex in TARGET_COLORS:
+#             layer_id = TARGET_COLORS[color_hex][1] # Safely grab index [1] layer id
+#             printLogMessage(f"Pushing {color_hex} geometry into LightBurn Layer ID: {layer_id}")
+#             push_geom_to_lightburn(final_puzzle_piece, layer_id)
 
-#     # Save to disk
+#     # Save SVG to disk
 #     tree = ET.ElementTree(root)
 #     printLogMessage(f"Writing finalized zero-overlap SVG to: {output_svg_path}")
 #     tree.write(output_svg_path, encoding='utf-8', xml_declaration=True)
+#     lb.write(output_svg_path +".lbrn2")
 
 
 def str_to_bool(value: str) -> bool:
