@@ -15,7 +15,7 @@ from shapely.geometry import Polygon
 from shapely.ops import unary_union
 from svgelements import SVG, Path, Polygon as SVGPolygon
 
-def flatten_svg_for_lightburn(input_svg_path):
+def flatten_svg_for_lightburn(svg_path):
     # 1. Parse the document entirely into memory
     svg_data = SVG.parse(svg_path)
     
@@ -359,6 +359,7 @@ def trace_with_palette_mapping( TARGET_COLORS, image_path, svg_output_path, MAX_
     TURD_SIZE = 10
 
     # 1. Load and read image
+    
     img = cv2.imread(image_path)
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     orig_h, orig_w, _ = img_rgb.shape
