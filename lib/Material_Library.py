@@ -338,16 +338,14 @@ def trace_with_palette_mapping( TARGET_COLORS, image_path, svg_output_path, MAX_
         target_h = int(target_h * scale)
     if (target_w, target_h) != (orig_w, orig_h):
         printLogMessage(
-            f"Resizing image from {orig_w}, {orig_h} to {target_w}, {target_h}",
-            flush=True,
+            f"Resizing image from {orig_w}, {orig_h} to {target_w}, {target_h}"
         )
         img_rgb = cv2.resize(
             img_rgb, (target_w, target_h), interpolation=cv2.INTER_AREA
         )
     else:
         printLogMessage(
-            f"Processing image at original dimension {orig_w}, {orig_h}",
-            flush=True,
+            f"Processing image at original dimension {orig_w}, {orig_h}"
         )
 
     # 2. Extract unique colors present in the original image to build a cache
@@ -478,13 +476,11 @@ def trace_with_palette_mapping( TARGET_COLORS, image_path, svg_output_path, MAX_
 
     printLogMessage(
         f"Vector tracing complete. Output saved to: {svg_output_path}",
-        flush=True,
     )
     try:
         lb.write(svg_output_path + ".lbrn2")
         printLogMessage(
-            f"Success! lbrn2 saved to " + svg_output_path + ".lbrn2",
-            flush=True,
+            f"Success! lbrn2 saved to " + svg_output_path + ".lbrn2"
         )
     except Exception as e:
         printLogMessage(f"Error writing LightBurn file: {e}")
