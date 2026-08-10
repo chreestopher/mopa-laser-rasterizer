@@ -118,7 +118,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
     tree = ET.ElementTree(root)
     printLogMessage(f"Writing finalized zero-overlap SVG to: {output_svg_path}")
     tree.write(output_svg_path, encoding='utf-8', xml_declaration=True)
-
+    lb.write(output_svg_path +".lbrn2")
 
 #GOOD 
 # def raster_to_puzzle_svg(raster_image_path, output_svg_path, new_height, new_width, TARGET_COLORS, ignore_background_hex="#ffffff"):
