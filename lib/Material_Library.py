@@ -15,10 +15,10 @@ from shapely.geometry import Polygon, box
 from shapely.ops import unary_union
 from svgelements import SVG, Path, Polygon as SVGPolygon
 
-def flatten_svg_for_lightburn(input_svg_path):
+def flatten_svg_for_lightburn(svg_path):
     # 1. Parse the document entirely into memory
-    svg_data = SVG.parse(input_svg_path)
-    print(f"flattenning svg: {input_svg_path}")
+    svg_data = SVG.parse(svg_path)
+    print(f"flattenning svg: {svg_path}")
     
     # Track only genuine, non-black colored layers
     color_groups = defaultdict(list)
