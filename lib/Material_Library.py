@@ -429,10 +429,10 @@ if __name__ == "__main__":
     the_limit_colors = sys.argv[7]    
     max_dimension = max(new_width, new_height)
     image_preset= sys.argv[8]
-    quantize_colors=image_preset["quantize_colors"],        # Keeps original target palette colors intact
-    min_island_area=image_preset["min_island_area"],           # Retains small details and sharp lines
-    simplification_factor=image_preset["simplification_factor"],   # Retains crisp pixel-perfect boundaries
-    smoothing_radius=image_preset["smoothing_radius"]       # Baseline vector weld setting    
+    quantize_colors=PHOTO_TYPE_PRESETS[image_preset]["quantize_colors"],        # Keeps original target palette colors intact
+    min_island_area=PHOTO_TYPE_PRESETS[image_preset]["min_island_area"],           # Retains small details and sharp lines
+    simplification_factor=PHOTO_TYPE_PRESETS[image_preset]["simplification_factor"],   # Retains crisp pixel-perfect boundaries
+    smoothing_radius=PHOTO_TYPE_PRESETS[image_preset]["smoothing_radius"]       # Baseline vector weld setting    
 
     the_limit_colors_list = [item.strip() for item in the_limit_colors.split(",")]
     printLogMessage(f"\nusing material library settings: {material_library_file}")
