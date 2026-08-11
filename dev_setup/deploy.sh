@@ -21,6 +21,9 @@ fi
 
 FULL_TAG="$IMAGE_NAME:$IMAGE_TAG"
 
+echo "pulling current branch"
+git pull
+
 echo "Building Docker image $FULL_TAG ..."
 docker build -t "$FULL_TAG" -f "$DOCKERFILE" "$CONTEXT"
 
