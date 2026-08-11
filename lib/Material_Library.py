@@ -255,14 +255,42 @@ def raster_to_puzzle_and_lightburn(
         processed_layers[color_hex] = final_puzzle_piece
 
 
-
-    # Inject the solid outer canvas boundary frame directly into the black layer dictionary item
     canvas_frame = box(0, 0, width, height)
+    
+    # 1. Apply the abstract filter transformations to the black frame here
+    if abstract_filter is not None and not canvas_frame.is_empty:
+        from shapely.affinity import affine_transform
+        import math
+        
+        if str(abstract_filter).lower() == "wave":
+            def wave_transform(x, y, z=None):
+                return (x + math.sin(y * 0.1) * 4.0, y + math.cos(x * 0.1) * 4.0)
+            from shapely.ops import transform
+            canvas_frame = transform(wave_transform, canvas_frame)
+            
+        elif str(abstract_filter).lower() == "voronoi":
+            from shapely.ops import voronoi_diagram
+            from shapely.geometry import MultiPoint
+            bounds = canvas_frame.bounds
+            points = []
+            for gx in range(int(bounds[0]), int(bounds[2]) + 15, 15):
+                for gy in range(int(bounds[1]), int(bounds[3]) + 15, 15):
+                    points.append((gx + (gx % 7) - 3.5, gy + (gy % 5) - 2.5))
+            if len(points) >= 3:
+                canvas_frame = canvas_frame.intersection(voronoi_diagram(MultiPoint(points)))
+
+        elif str(abstract_filter).lower() == "shear":
+            canvas_frame = affine_transform(canvas_frame, [1.0, 0.5, 0.0, 0.8, 0.0, 0.0])
+
+    # 2. Store the newly transformed black frame in your registry
     processed_layers[black_hex] = canvas_frame
 
     printLogMessage("Vector generation complete. Sorting and formatting log history...")
 
-    # --- PASS 3: Sort the finished layers by Layer ID ---
+    # =========================================================================
+    # --- PASS 4: Sort the finished layers by Layer ID ---
+    # =========================================================================
+
     sorted_layers = sorted(
         processed_layers.items(),
         key=lambda item: TARGET_COLORS[item[0]][1]
