@@ -47,7 +47,8 @@ PHOTO_TYPE_PRESETS = {
         "quantize_colors": 6,           # posterized chunk colors
         "min_island_area": 36,          # Erases tiny geometric detail frames
         "simplification_factor": 1.8,   # High morph curve reshaping
-        "smoothing_radius": 4.5         # Round out geometric loops
+        "smoothing_radius": 4.5,        # Round out geometric loops
+        "abstract_filter": "wave"
     }
 }
 
@@ -59,7 +60,8 @@ def raster_to_puzzle_and_lightburn(
     quantize_colors=None,       # Reduces color counts in photos (e.g., 8, 16, 32)
     min_island_area=0,          # Removes noise particles smaller than this pixel area threshold
     simplification_factor=0.0,  # Straightens jagged stair-stepped lines (e.g., 0.3 to 0.7)
-    smoothing_radius=0.001      # Performs morphological opening to round corners and snap gaps
+    smoothing_radius=0.001,      # Performs morphological opening to round corners and snap gaps
+    abstract_filter=None 
 ):
     """
     Parses a raster image, applies a structural vector scale_factor, saves a gapless SVG puzzle file, 
@@ -197,7 +199,62 @@ def raster_to_puzzle_and_lightburn(
         if simplification_factor > 0.0:
             final_puzzle_piece = final_puzzle_piece.simplify(simplification_factor, preserve_topology=True)
             
+        # =========================================================================
+        # NEW GEOMETRIC TRANSFORMATIONS FOR THE ABSTRACT PRESET
+        # =========================================================================
+        if abstract_filter is not None and not final_puzzle_piece.is_empty:
+            from shapely.affinity import affine_transform
+            import math
+            
+            # STRATEGY 1: Wavy Fluid Distortion
+            if str(abstract_filter).lower() == "wave":
+                def wave_transform(x, y, z=None):
+                    # Period (frequency) and amplitude coefficients
+                    # Adjust these to change the frequency and depth of the waves
+                    freq_x, amp_x = 0.1, 4.0
+                    freq_y, amp_y = 0.1, 4.0
+                    new_x = x + math.sin(y * freq_y) * amp_x
+                    new_y = y + math.cos(x * freq_x) * amp_y
+                    return (new_x, new_y)
+                
+                from shapely.ops import transform
+                final_puzzle_piece = transform(wave_transform, final_puzzle_piece)
+                
+            # STRATEGY 2: Shattered Voronoi / Cellular Sharding
+            elif str(abstract_filter).lower() == "voronoi":
+                from shapely.ops import voronoi_diagram
+                from shapely.geometry import MultiPoint
+                
+                bounds = final_puzzle_piece.bounds # (minx, miny, maxx, maxy)
+                # Generate a scatter grid of point anchors across the shape's footprint
+                points = []
+                step = 15 # Distance between shard centers (lower = more shards, higher = fewer shards)
+                for gx in range(int(bounds[0]), int(bounds[2]) + step, step):
+                    for gy in range(int(bounds[1]), int(bounds[3]) + step, step):
+                        # Slight pseudo-random jiggle so it doesn't look like a perfect chess grid
+                        jiggle_x = (gx % 7) - 3.5
+                        jiggle_y = (gy % 5) - 2.5
+                        points.append((gx + jiggle_x, gy + jiggle_y))
+                
+                if len(points) >= 3:
+                    mp = MultiPoint(points)
+                    # Generate the raw infinite voronoi cell map
+                    vd = voronoi_diagram(mp)
+                    # Intersect the voronoi cells with our colored shape to slice it into shards
+                    final_puzzle_piece = final_puzzle_piece.intersection(vd)
+
+            # STRATEGY 3: Directional Perspective Shear / Glitch Skew
+            elif str(abstract_filter).lower() == "shear":
+                # Matrix: [a, b, d, e, xoff, yoff] -> x' = ax + by + xoff, y' = dx + ey + yoff
+                # This skews the shapes 30 degrees horizontally and compresses them vertically
+                final_puzzle_piece = affine_transform(final_puzzle_piece, [1.0, 0.5, 0.0, 0.8, 0.0, 0.0])
+
+        # =========================================================================
+
+        # Save the finalized, warped piece to the layer registry
         processed_layers[color_hex] = final_puzzle_piece
+
+
 
     # Inject the solid outer canvas boundary frame directly into the black layer dictionary item
     canvas_frame = box(0, 0, width, height)
@@ -448,11 +505,13 @@ if __name__ == "__main__":
     the_limit_colors = sys.argv[7]    
     max_dimension = max(new_width, new_height)
     image_preset= sys.argv[8]
+    abstract_filter = sys.argv[9]
+    
     quantize_colors=PHOTO_TYPE_PRESETS[image_preset]["quantize_colors"],        # Keeps original target palette colors intact
     min_island_area=PHOTO_TYPE_PRESETS[image_preset]["min_island_area"],           # Retains small details and sharp lines
     simplification_factor=PHOTO_TYPE_PRESETS[image_preset]["simplification_factor"],   # Retains crisp pixel-perfect boundaries
     smoothing_radius=PHOTO_TYPE_PRESETS[image_preset]["smoothing_radius"]       # Baseline vector weld setting    
-
+    
     the_limit_colors_list = [item.strip() for item in the_limit_colors.split(",")]
     printLogMessage(f"\nusing material library settings: {material_library_file}")
     printLogMessage(f"\nusing colors: {the_limit_colors}")
@@ -479,5 +538,6 @@ if __name__ == "__main__":
         quantize_colors=quantize_colors,
         min_island_area=min_island_area,
         simplification_factor=simplification_factor,
-        smoothing_radius=smoothing_radius
+        smoothing_radius=smoothing_radius,
+        abstract_filter=abstract_filter
     )

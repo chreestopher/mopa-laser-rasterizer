@@ -132,7 +132,11 @@ def long_running_script(task_id, data, image_path, material_settings_path):
         new_height = data.get('new_height', '100')
         colors = data.get('colors', '')
         image_preset = data.get('image_preset', "cartoon")
-        
+        abstract_filter = data.get('abstract_filter', "None")
+        try:
+            abstract_filter 
+        except NameError as ne:
+            abstract_filter = None
         
         output_filename = tasks[f"{task_id}_filename"]
         output_file_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
@@ -151,7 +155,8 @@ def long_running_script(task_id, data, image_path, material_settings_path):
                 str(new_height), 
                 material_settings_path, 
                 str(colors), 
-                image_preset
+                image_preset,
+                abstract_filter: abstract_filter
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,  # Merges stderr into stdout cleanly

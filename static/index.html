@@ -253,12 +253,37 @@
         <option value="bw_dither_photograph">Black and White Photo</option>
         <option value="abstract">Abstract</option>
       </select>
+     
+  <!-- Wrapped the label and select in a container to toggle them together easily -->
+      <div id="abstract_filter_container" style="display: none;">
+        <label for="abstract_filter">Abstract Filter Selection </label>
+        <select id="abstract_filter" name="abstract_filter">
+          <option value="wave" selected> Wave</option>
+          <option value="voronoi">Voronoi</option>
+          <option value="shear">Shear</option>
+          <option value="None">None</option>
+        </select>            
+      </div>
+    </div>    
     </div>    
     <button type="submit">Process Raster</button>      
   </div>
   </form>
 
-  <script>
+
+
+  <script>    
+    function toggleAbstractFilter() {
+        const presetSelect = document.getElementById('image_preset');
+        const filterContainer = document.getElementById('abstract_filter_container');
+        
+        // Show the container only if the selected value is exactly 'abstract'
+        if (presetSelect.value === 'abstract') {
+            filterContainer.style.display = 'block';
+        } else {
+            filterContainer.style.display = 'none';
+        }
+    }
     const squares = document.querySelectorAll('.color-square');
     const colorInput = document.getElementById('colorList');
     
