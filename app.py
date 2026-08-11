@@ -7,12 +7,37 @@ import time
 from flask import Flask, render_template, jsonify, request, send_from_directory, redirect
 from werkzeug.utils import secure_filename
 import redis
+import boto3
+from botocore.exceptions import ClientError
 
 redis_client = redis.Redis(
     host=os.environ.get('REDIS_HOST', 'localhost'),
     port=int(os.environ.get('REDIS_PORT', 6379)),
     decode_responses=True # Automatically decodes Redis bytes into Python strings
 )
+
+
+# Initialize the S3 client
+s3_client = boto3.client('s3')
+
+BUCKET_NAME = 'mopa-laser-rasterizer.com'
+
+def upload_local_file(local_file_path: str, object_key: str):
+  """Uploads an existing file from disk to S3."""
+  try:
+    s3_client.upload_file(local_file_path, BUCKET_NAME, object_key)
+    print(f'Successfully uploaded {local_file_path} to {object_key}')
+  except ClientError as e:
+    print(f'Error uploading file: {e}')
+
+
+def download_s3_file(object_key: str, local_download_path: str):
+  """Downloads an S3 object down to the local disk/pod storage."""
+  try:
+    s3_client.download_file(BUCKET_NAME, object_key, local_download_path)
+    print(f'Successfully downloaded {object_key} to {local_download_path}')
+  except ClientError as e:
+    print(f'Error downloading file: {e}')
 
 def start_disk_cleanup_worker(app, redis_client, interval_seconds=3600):
     """
@@ -106,6 +131,7 @@ def long_running_script(task_id, data, image_path, material_settings_path):
         new_width = data.get('new_width', '100')
         new_height = data.get('new_height', '100')
         colors = data.get('colors', '')
+        image_preset = data.get('image_preset', "cartoon")
         
         
         output_filename = tasks[f"{task_id}_filename"]
@@ -124,7 +150,8 @@ def long_running_script(task_id, data, image_path, material_settings_path):
                 str(new_width), 
                 str(new_height), 
                 material_settings_path, 
-                str(colors)
+                str(colors), 
+                image_preset
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,  # Merges stderr into stdout cleanly

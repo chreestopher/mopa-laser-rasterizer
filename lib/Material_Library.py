@@ -21,12 +21,52 @@ def printLogMessage(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}", flush=True)
 
-def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_height, new_width, lb_project_instance, TARGET_COLORS, scale_factor=1.0, ignore_background_hex="#ffffff"):
+PHOTO_TYPE_PRESETS = {
+    "cartoon": {
+        "quantize_colors": None,        # Preserves the strict original color mappings
+        "min_island_area": 0,           # Retains every individual pixel box and sharp edge
+        "simplification_factor": 0.0,   # No vector path smoothing (sharp pixel-art edges)
+        "smoothing_radius": 0.001       # Baseline vector weld padding from the original function
+    },
+    
+    "color_photograph": {
+        "quantize_colors": 24,          # Groups color tones into clean bands matching common MOPA color layers
+        "min_island_area": 8,           # Discards tiny laser-confetti artifacts under ~3x3 pixel clusters
+        "simplification_factor": 0.35,  # Smooths out harsh stair-stepped lines into flowing, cuttable paths
+        "smoothing_radius": 0.5         # Blends edge gaps while maintaining overall facial/object details
+    },
+    
+    "bw_dither_photograph": {
+        "quantize_colors": 2,           # Hard threshold binary split (forces pure black and white)
+        "min_island_area": 2,           # Extremely low area floor to preserve high-frequency dither dots
+        "simplification_factor": 0.1,   # Minimal smoothing to retain the distinct pointillism structural look
+        "smoothing_radius": 0.1         # Tightest possible weld to avoid blurring the dither pattern away
+    },
+    
+    "abstract": {
+        "quantize_colors": 6,           # Drastically limits the palette to create surreal, posterized color chunks
+        "min_island_area": 36,          # Erases moderate details, forcing only massive geometric zones to survive
+        "simplification_factor": 1.8,   # Aggressive line smoothing that reshapes paths into wavy, fluid curves
+        "smoothing_radius": 4.5         # High radius opening that bubbles corners and creates melted geometric blooms
+    }
+}
+
+
+def raster_to_puzzle_and_lightburn(
+    raster_image_path, output_svg_path, new_height, new_width, lb_project_instance, TARGET_COLORS, 
+    scale_factor=1.0, ignore_background_hex="#ffffff",
+    # --- Adaptive Parameters for Non-Cartoon Images ---
+    quantize_colors=None,       # Reduces color counts in photos (e.g., 8, 16, 32)
+    min_island_area=0,          # Removes noise particles smaller than this pixel area threshold
+    simplification_factor=0.0,  # Straightens jagged stair-stepped lines (e.g., 0.3 to 0.7)
+    smoothing_radius=0.001      # Performs morphological opening to round corners and snap gaps
+):
     """
     Parses a raster image, applies a structural vector scale_factor, saves a gapless SVG puzzle file, 
     and pushes matching paths into LightBurn.
-    Forces LightBurn to handle subtraction natively by establishing an outer canvas frame on the black layer 
-    and nesting all non-black foreground geometries inside it as cutout holes.
+    Forces LightBurn to handle subtraction natively via a black canvas overlay frame.
+    Includes quantization, area filtering, path simplification, and variable smoothing parameters 
+    to handle gradients, photorealistic images, or cartoon assets dynamically.
     """
     printLogMessage(f"Opening raster image: {raster_image_path}")
     img = Image.open(raster_image_path).convert("RGB")
@@ -34,6 +74,12 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
     printLogMessage(f"Original Image Pixel Size: {orig_width}, {orig_height}")
     
     img = resize_to_specific_height_or_width(image=img, height=int(new_height), width=int(new_width))
+    
+    # 1. OPTIMIZATION: Reduce gradient colors down to clean bands if quantize_colors is set
+    if quantize_colors is not None:
+        printLogMessage(f"Quantizing photo colors down to a maximum pool of {quantize_colors} levels...")
+        img = img.quantize(colors=quantize_colors, method=Image.MEDIANCUT).convert("RGB")
+        
     width, height = img.size
     
     pixel_boxes_by_color = defaultdict(list)
@@ -115,11 +161,26 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
         printLogMessage(f" -> Merging color boundaries... (Layer math step {idx}/{len(pixel_boxes_by_color)} - Layer: {layer_id} [{layer_color_name}])")
         
         welded_layer = unary_union(boxes)
-        final_puzzle_piece = welded_layer.buffer(0.001).buffer(-0.001)
+        
+        # 2. OPTIMIZATION: Custom Morphological opening via user parameter
+        final_puzzle_piece = welded_layer.buffer(smoothing_radius).buffer(-smoothing_radius)
+        
+        # 3. OPTIMIZATION: Filter out tiny noise island fragments from high-contrast photo clusters
+        if min_island_area > 0:
+            if final_puzzle_piece.geom_type == 'Polygon':
+                if final_puzzle_piece.area < min_island_area:
+                    final_puzzle_piece = box(0, 0, 0, 0)
+            elif final_puzzle_piece.geom_type in ('MultiPolygon', 'GeometryCollection'):
+                valid_polys = [p for p in final_puzzle_piece.geoms if p.area >= min_island_area]
+                final_puzzle_piece = unary_union(valid_polys) if valid_polys else box(0, 0, 0, 0)
+                
+        # 4. OPTIMIZATION: Smooth out jagged stair-stepped vector edges using the Douglas-Peucker method
+        if simplification_factor > 0.0:
+            final_puzzle_piece = final_puzzle_piece.simplify(simplification_factor, preserve_topology=True)
+            
         processed_layers[color_hex] = final_puzzle_piece
 
     # Inject the solid outer canvas boundary frame directly into the black layer dictionary item
-    # This acts as the outer plate that all subsequent color shapes will cut holes out of
     canvas_frame = box(0, 0, width, height)
     processed_layers[black_hex] = canvas_frame
 
@@ -159,7 +220,6 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
             push_geom_to_lightburn(final_puzzle_piece, color_hex)
             
             # 2. If this shape is NOT the black frame itself, also push it onto the black layer.
-            # LightBurn automatically subtracts shapes nested inside the canvas frame on the same layer ID.
             if color_hex != black_hex:
                 printLogMessage(f" -> Overlaying cutout path onto Black Layer ID: {black_layer_id}")
                 push_geom_to_lightburn(final_puzzle_piece, color_hex, override_layer_id=black_layer_id)
@@ -368,6 +428,11 @@ if __name__ == "__main__":
     material_library_file=sys.argv[6]
     the_limit_colors = sys.argv[7]    
     max_dimension = max(new_width, new_height)
+    image_preset= sys.argv[8]
+    quantize_colors=image_preset["quantize_colors"],        # Keeps original target palette colors intact
+    min_island_area=image_preset["min_island_area"],           # Retains small details and sharp lines
+    simplification_factor=image_preset["simplification_factor"],   # Retains crisp pixel-perfect boundaries
+    smoothing_radius=image_preset["smoothing_radius"]       # Baseline vector weld setting    
 
     the_limit_colors_list = [item.strip() for item in the_limit_colors.split(",")]
     printLogMessage(f"\nusing material library settings: {material_library_file}")
@@ -383,4 +448,17 @@ if __name__ == "__main__":
     printLogMessage(f"\nusing TARGET_COLORS: {TARGET_COLORS}")
     printLogMessage(f"\nusing LIMIT COLORS: {','.join(the_limit_colors_list)}")
     TARGET_COLORS = parse_material_settings(lb, material_library_file, the_limit_colors_list, TARGET_COLORS)
-    raster_to_puzzle_and_lightburn(INPUT_FILE, the_output_file, new_height, new_width, lb, TARGET_COLORS, square_mm)
+    raster_to_puzzle_and_lightburn(
+        raster_image_path=INPUT_FILE,
+        output_svg_path=the_output_file,
+        new_height=new_height,
+        new_width=new_width,
+        lb_project_instance=lb,
+        TARGET_COLORS=TARGET_COLORS,
+        scale_factor=float(square_mm),
+        ignore_background_hex="#ffffff",
+        quantize_colors=None,        # Keeps original target palette colors intact
+        min_island_area=0,           # Retains small details and sharp lines
+        simplification_factor=0.0,   # Retains crisp pixel-perfect boundaries
+        smoothing_radius=0.001       # Baseline vector weld setting
+    )

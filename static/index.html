@@ -183,7 +183,7 @@
     <div>
       <div><label for="material_settings">Choose material settings file:</label></div> 
       <div><input type="file" id="material_settings" name="material_settings" required></div>
-    </div>
+    </div>    
     <div>
       <div><label for="pixel_square_mm">pixel_square_mm:</label> </div>
       <div><input type="number" id="pixel_square_mm" name="pixel_square_mm" step=".0625"></div>
@@ -242,8 +242,20 @@
         </div>
       </div>  
     </div>
-    </div>
+    </div>    
+
+  <div>
+    <div>
+      <label for="image_preset">Choose Image Type Preset Setting</label>
+      <select id="image_preset" name="image_preset">
+        <option value="cartoon" selected>Cartoon</option>
+        <option value="color_photograph">Color Photo</option>
+        <option value="bw_dither_photograph">Black and White Photo</option>
+        <option value="abstract">Abstract</option>
+      </select>
+    </div>    
     <button type="submit">Process Raster</button>      
+  </div>
   </form>
 
   <script>
