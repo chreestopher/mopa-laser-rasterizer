@@ -21,6 +21,9 @@ fi
 
 FULL_TAG="$IMAGE_NAME:$IMAGE_TAG"
 
+echo "pulling current branch"
+git pull
+
 echo "Building Docker image $FULL_TAG ..."
 docker build -t "$FULL_TAG" -f "$DOCKERFILE" "$CONTEXT"
 
@@ -54,6 +57,8 @@ if [[ "$IMPORT_SUCCESS" -ne 0 ]]; then
 fi
 echo "Success. Image $FULL_TAG is loaded into the runtime."
 echo "Use this image tag in your Kubernetes resources, for example:"
-echo "  kubectl set image deployment/mopa-laser-rasterizer mopa-laser-rasterizer=$FULL_TAG"
-echo "Then restart the deployment with: kubectl rollout restart deployment/mopa-laser-rasterizer"
-
+echo "running kubectl set image deployment/mopa-laser-rasterizer mopa-laser-rasterizer=$FULL_TAG"
+sudo kubectl set image deployment/mopa-laser-rasterizer mopa-laser-rasterizer=$FULL_TAG
+echo "restarting the deployment with: kubectl rollout restart deployment/mopa-laser-rasterizer"
+sudo kubectl rollout restart deployment/mopa-laser-rasterizer
+sudo kubectl logs -l app=mopa-laser-rasterizer -f --max-log-requests 20

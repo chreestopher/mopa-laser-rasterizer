@@ -1,0 +1,41 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mopa-laser-rasterizer
+  namespace: default
+  labels:
+    app: mopa-laser-rasterizer
+  annotations:
+    kubernetes.io/ingress.class: traefik
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+
+    # 1. Enable Sticky Sessions for Traefik
+    # This keeps your browser locked to the exact pod running the subprocess
+    traefik.ingress.kubernetes.io/service.sticky.cookie: "true"
+    traefik.ingress.kubernetes.io/service.sticky.cookie.name: "MOPA_ROUTE"
+
+    # 2. Disable Traefik Buffering & Enable Streaming
+    # This prevents Traefik from holding back data until the subprocess finishes
+    traefik.ingress.kubernetes.io/router.buffering: "false"
+
+    # 3. Increase Timeout for Long-Running Operations (1 hour / 3600 seconds)
+    # This stops Traefik from closing the connection while processing heavy files
+    traefik.ingress.kubernetes.io/router.timeout: "3600s"
+
+spec:
+  ingressClassName: traefik
+  tls:
+  - hosts:
+    - mopa-laser-rasterizer.com
+    secretName: mopa-laser-rasterizer-tls
+  rules:
+  - host: mopa-laser-rasterizer.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: mopa-laser-rasterizer
+            port:
+              number: 80

@@ -9,6 +9,333 @@ import cv2
 import numpy as np 
 import svgwrite
 import potrace
+import xml.etree.ElementTree as ET
+from collections import defaultdict
+from shapely.geometry import Polygon, box
+from shapely.ops import unary_union
+from shapely.affinity import scale
+from svgelements import SVG, Path, Polygon as SVGPolygon
+from datetime import datetime
+
+def printLogMessage(message):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{timestamp}] {message}", flush=True)
+
+PHOTO_TYPE_PRESETS = {
+    "cartoon": {
+        "quantize_colors": None,
+        "min_island_area": 0,
+        "simplification_factor": 0.0,
+        "smoothing_radius": 0.001
+    },
+    
+    "color_photograph": {
+        "quantize_colors": 24,          # Tonal color band limit
+        "min_island_area": 8,           # Drops tiny laser fragments
+        "simplification_factor": 0.35,  # Straightens jagged lines
+        "smoothing_radius": 0.5         # Blends edge spaces
+    },
+    
+    "bw_dither_photograph": {
+        "quantize_colors": 2,           # Forced black and white output
+        "min_island_area": 2,           # Retains high frequency dither dots
+        "simplification_factor": 0.1,   # Drops line reshaping entirely
+        "smoothing_radius": 0.1         # Locks tight boundaries
+    },
+    
+    "abstract": {
+        "quantize_colors": 12,           # posterized chunk colors
+        "min_island_area": 25,          # Erases tiny geometric detail frames
+        "simplification_factor": 1.8,   # High morph curve reshaping
+        "smoothing_radius": 5,        # Round out geometric loops
+        "abstract_filter": "wave"
+    }
+}
+
+
+def raster_to_puzzle_and_lightburn(
+    raster_image_path, output_svg_path, new_height, new_width, lb_project_instance, TARGET_COLORS, 
+    scale_factor=1.0, ignore_background_hex="#ffffff",
+    # --- Adaptive Parameters for Non-Cartoon Images ---
+    quantize_colors=None,       # Reduces color counts in photos (e.g., 8, 16, 32)
+    min_island_area=0,          # Removes noise particles smaller than this pixel area threshold
+    simplification_factor=0.0,  # Straightens jagged stair-stepped lines (e.g., 0.3 to 0.7)
+    smoothing_radius=0.001,      # Performs morphological opening to round corners and snap gaps
+    abstract_filter=None 
+):
+    """
+    Parses a raster image, applies a structural vector scale_factor, saves a gapless SVG puzzle file, 
+    and pushes matching paths into LightBurn.
+    Forces LightBurn to handle subtraction natively via a black canvas overlay frame.
+    Includes quantization, area filtering, path simplification, and variable smoothing parameters 
+    to handle gradients, photorealistic images, or cartoon assets dynamically.
+    """
+    
+    if isinstance(quantize_colors, (tuple, list)):
+        quantize_colors = quantize_colors[0] if quantize_colors else None
+    if quantize_colors is not None:
+        quantize_colors = int(quantize_colors)
+        max_allowable_colors = len(TARGET_COLORS)
+        if quantize_colors > max_allowable_colors:
+            quantize_colors = max_allowable_colors            
+
+    if isinstance(min_island_area, (tuple, list)):
+        min_island_area = min_island_area[0] if min_island_area else 0
+    min_island_area = float(min_island_area)
+
+    if isinstance(simplification_factor, (tuple, list)):
+        simplification_factor = simplification_factor[0] if simplification_factor else 0.0
+    simplification_factor = float(simplification_factor)
+
+    if isinstance(smoothing_radius, (tuple, list)):
+        smoothing_radius = smoothing_radius[0] if smoothing_radius else 0.001
+    smoothing_radius = float(smoothing_radius)
+    # =========================================================================
+
+    printLogMessage(f"Opening raster image: {raster_image_path}")
+    img = Image.open(raster_image_path).convert("RGB")
+    orig_width, orig_height = img.size
+    printLogMessage(f"Original Image Pixel Size: {orig_width}, {orig_height}")
+    
+    img = resize_to_specific_height_or_width(image=img, height=int(new_height), width=int(new_width))
+    
+    # 1. OPTIMIZATION: Reduce gradient colors down to clean bands if quantize_colors is set
+    if quantize_colors is not None:
+        printLogMessage(f"Quantizing photo colors down to a maximum pool of {quantize_colors} levels...")
+        img = img.quantize(colors=quantize_colors, method=0).convert("RGB")
+        
+    width, height = img.size
+    
+    pixel_boxes_by_color = defaultdict(list)
+    
+    # Dynamically locate the black hex and its corresponding Layer ID
+    black_hex = next((h for h, meta in TARGET_COLORS.items() if "black" in str(meta).lower() or h == "#000000"), "#000000")
+    black_layer_id = TARGET_COLORS.get(black_hex, [0, 0, "black"])[1]
+
+    printLogMessage("Analyzing pixels and snapping colors...")
+    
+    # --- PASS 1: Build pixel maps for NON-BLACK colors ONLY ---
+    for y in range(height):
+        for x in range(width):
+            pixel_rgb = img.getpixel((x, y))
+            closest_hex = get_closest_color(*pixel_rgb, TARGET_COLORS)
+            if closest_hex == ignore_background_hex:
+                continue
+                
+            # Skip black pixels here; we define the black layer using a geometric frame instead
+            if closest_hex == black_hex:
+                continue
+                
+            pixel_poly = box(x, y, x + 1, y + 1)
+            pixel_boxes_by_color[closest_hex].append(pixel_poly)
+
+    # Rebuild standard flat SVG structure
+    root = ET.Element('svg', xmlns="http://w3.org", version="1.1")
+    root.set('viewBox', f"0 0 {new_width} {new_height}")
+    root.set('width', f"{str(width)}mm")
+    root.set('height', f"{str(height)}mm")
+
+    def add_geom_to_svg(geom, fill_color):
+        if geom.is_empty:
+            return
+        if geom.geom_type == 'Polygon':
+            d_path = "M " + " L ".join([f"{x:.3f},{y:.3f}" for x, y in geom.exterior.coords]) + " Z"
+            for interior in geom.interiors:
+                d_path += " M " + " L ".join([f"{x:.3f},{y:.3f}" for x, y in interior.coords]) + " Z"
+            ET.SubElement(root, 'path', d=d_path, fill=fill_color, stroke="none")
+        elif geom.geom_type in ('MultiPolygon', 'GeometryCollection'):
+            for sub_geom in geom.geoms:
+                add_geom_to_svg(sub_geom, fill_color)
+
+    def push_geom_to_lightburn(geom, color_hex, override_layer_id=None):
+        """Extracts coordinate paths from Shapely geometry and pipes them into a designated LightBurn layer."""
+        if geom.is_empty:
+            return
+            
+        layer_meta = TARGET_COLORS[color_hex]
+        layer_id = override_layer_id if override_layer_id is not None else layer_meta[1]
+        layer_color_name = layer_meta[2]
+        
+        if geom.geom_type == 'Polygon':
+            exterior_coords = [[round(x, 3), round(y, 3)] for x, y in geom.exterior.coords]
+            if exterior_coords:
+                lb_shape = lightburn.Path(exterior_coords).layer(layer_id)
+                lb_project_instance.add(lb_shape)
+            for interior in geom.interiors:
+                interior_coords = [[round(x, 3), round(y, 3)] for x, y in interior.coords]
+                if interior_coords:
+                    lb_hole = lightburn.Path(interior_coords).layer(layer_id)
+                    lb_project_instance.add(lb_hole)
+        elif geom.geom_type in ('MultiPolygon', 'GeometryCollection'):
+            for sub_geom in geom.geoms:
+                push_geom_to_lightburn(sub_geom, color_hex, override_layer_id=layer_id)
+
+    # --- PASS 2: Heavy Vector Geometry Consolidation ---
+    processed_layers = {}
+    printLogMessage(f"Beginning vector union math for {len(pixel_boxes_by_color)} unique layers...")
+    
+    for idx, (color_hex, boxes) in enumerate(pixel_boxes_by_color.items(), 1):
+        if not boxes:
+            continue
+        
+        layer_meta = TARGET_COLORS[color_hex]
+        layer_id = layer_meta[1]
+        layer_color_name = layer_meta[2]
+        
+        printLogMessage(f" -> Merging color boundaries... (Layer math step {idx}/{len(pixel_boxes_by_color)} - Layer: {layer_id} [{layer_color_name}])")
+        
+        welded_layer = unary_union(boxes)
+        
+        # 2. OPTIMIZATION: Custom Morphological opening via user parameter
+        final_puzzle_piece = welded_layer.buffer(smoothing_radius).buffer(-smoothing_radius)
+        
+        # 3. OPTIMIZATION: Filter out tiny noise island fragments from high-contrast photo clusters
+        if min_island_area > 0:
+            if final_puzzle_piece.geom_type == 'Polygon':
+                if final_puzzle_piece.area < min_island_area:
+                    final_puzzle_piece = box(0, 0, 0, 0)
+            elif final_puzzle_piece.geom_type in ('MultiPolygon', 'GeometryCollection'):
+                valid_polys = [p for p in final_puzzle_piece.geoms if p.area >= min_island_area]
+                final_puzzle_piece = unary_union(valid_polys) if valid_polys else box(0, 0, 0, 0)
+                
+        # 4. OPTIMIZATION: Smooth out jagged stair-stepped vector edges using the Douglas-Peucker method
+        if simplification_factor > 0.0:
+            final_puzzle_piece = final_puzzle_piece.simplify(simplification_factor, preserve_topology=True)
+            
+        # =========================================================================
+        # NEW GEOMETRIC TRANSFORMATIONS FOR THE ABSTRACT PRESET
+        # =========================================================================
+        if abstract_filter is not None and not final_puzzle_piece.is_empty:
+            from shapely.affinity import affine_transform
+            import math
+            
+            # STRATEGY 1: Wavy Fluid Distortion
+            if str(abstract_filter).lower() == "wave":
+                def wave_transform(x, y, z=None):
+                    # Period (frequency) and amplitude coefficients
+                    # Adjust these to change the frequency and depth of the waves
+                    freq_x, amp_x = 0.1, 4.0
+                    freq_y, amp_y = 0.1, 4.0
+                    new_x = x + math.sin(y * freq_y) * amp_x
+                    new_y = y + math.cos(x * freq_x) * amp_y
+                    return (new_x, new_y)
+                
+                from shapely.ops import transform
+                final_puzzle_piece = transform(wave_transform, final_puzzle_piece)
+                
+            # STRATEGY 2: Shattered Voronoi / Cellular Sharding
+            elif str(abstract_filter).lower() == "voronoi":
+                from shapely.ops import voronoi_diagram
+                from shapely.geometry import MultiPoint
+                
+                bounds = final_puzzle_piece.bounds # (minx, miny, maxx, maxy)
+                # Generate a scatter grid of point anchors across the shape's footprint
+                points = []
+                step = 15 # Distance between shard centers (lower = more shards, higher = fewer shards)
+                for gx in range(int(bounds[0]), int(bounds[2]) + step, step):
+                    for gy in range(int(bounds[1]), int(bounds[3]) + step, step):
+                        # Slight pseudo-random jiggle so it doesn't look like a perfect chess grid
+                        jiggle_x = (gx % 7) - 3.5
+                        jiggle_y = (gy % 5) - 2.5
+                        points.append((gx + jiggle_x, gy + jiggle_y))
+                
+                if len(points) >= 3:
+                    mp = MultiPoint(points)
+                    # Generate the raw infinite voronoi cell map
+                    vd = voronoi_diagram(mp)
+                    # Intersect the voronoi cells with our colored shape to slice it into shards
+                    final_puzzle_piece = final_puzzle_piece.intersection(vd)
+
+            # STRATEGY 3: Directional Perspective Shear / Glitch Skew
+            elif str(abstract_filter).lower() == "shear":
+                # Matrix: [a, b, d, e, xoff, yoff] -> x' = ax + by + xoff, y' = dx + ey + yoff
+                # This skews the shapes 30 degrees horizontally and compresses them vertically
+                final_puzzle_piece = affine_transform(final_puzzle_piece, [1.0, 0.5, 0.0, 0.8, 0.0, 0.0])
+
+        # =========================================================================
+
+        # Save the finalized, warped piece to the layer registry
+        processed_layers[color_hex] = final_puzzle_piece
+
+
+    canvas_frame = box(0, 0, width, height)
+    
+    # 1. Apply the abstract filter transformations to the black frame here
+    if abstract_filter is not None and not canvas_frame.is_empty:
+        from shapely.affinity import affine_transform
+        import math
+        
+        if str(abstract_filter).lower() == "wave":
+            def wave_transform(x, y, z=None):
+                return (x + math.sin(y * 0.1) * 4.0, y + math.cos(x * 0.1) * 4.0)
+            from shapely.ops import transform
+            canvas_frame = transform(wave_transform, canvas_frame)
+            
+        elif str(abstract_filter).lower() == "voronoi":
+            from shapely.ops import voronoi_diagram
+            from shapely.geometry import MultiPoint
+            bounds = canvas_frame.bounds
+            points = []
+            for gx in range(int(bounds[0]), int(bounds[2]) + 15, 15):
+                for gy in range(int(bounds[1]), int(bounds[3]) + 15, 15):
+                    points.append((gx + (gx % 7) - 3.5, gy + (gy % 5) - 2.5))
+            if len(points) >= 3:
+                canvas_frame = canvas_frame.intersection(voronoi_diagram(MultiPoint(points)))
+
+        elif str(abstract_filter).lower() == "shear":
+            canvas_frame = affine_transform(canvas_frame, [1.0, 0.5, 0.0, 0.8, 0.0, 0.0])
+
+    # 2. Store the newly transformed black frame in your registry
+    processed_layers[black_hex] = canvas_frame
+
+    printLogMessage("Vector generation complete. Sorting and formatting log history...")
+
+    # =========================================================================
+    # --- PASS 4: Sort the finished layers by Layer ID ---
+    # =========================================================================
+
+    sorted_layers = sorted(
+        processed_layers.items(),
+        key=lambda item: TARGET_COLORS[item[0]][1]
+    )
+
+    # --- PASS 4: Log, Scale, and Export in Order ---
+    printLogMessage("==============================================")
+    printLogMessage("      LAYER EXPORT AND PROCESS LOG SUMMARY     ")
+    printLogMessage("==============================================")
+    for color_hex, final_puzzle_piece in sorted_layers:
+        if final_puzzle_piece.is_empty:
+            continue
+            
+        layer_meta = TARGET_COLORS[color_hex]
+        layer_id = layer_meta[1]
+        layer_color_name = layer_meta[2]
+        
+        printLogMessage(f"Processing and welding layer {layer_id} color: {layer_color_name}")
+        
+        if scale_factor != 1.0:
+            printLogMessage(f"Scaling {layer_color_name} geometry by a factor of {scale_factor}x")
+            final_puzzle_piece = scale(final_puzzle_piece, xfact=scale_factor, yfact=scale_factor, origin=(0, 0))
+            
+        # Export Option 1: Add to SVG Tree
+        add_geom_to_svg(final_puzzle_piece, color_hex)
+        
+        # Export Option 2: Push to LightBurn
+        if color_hex in TARGET_COLORS:
+            # 1. Push the shape to its native colored layer
+            printLogMessage(f"Pushing scaled {layer_color_name} geometry into LightBurn Layer ID: {layer_id}")
+            push_geom_to_lightburn(final_puzzle_piece, color_hex)
+            
+            # 2. If this shape is NOT the black frame itself, also push it onto the black layer.
+            if color_hex != black_hex:
+                printLogMessage(f" -> Overlaying cutout path onto Black Layer ID: {black_layer_id}")
+                push_geom_to_lightburn(final_puzzle_piece, color_hex, override_layer_id=black_layer_id)
+
+    # Save SVG to disk
+    tree = ET.ElementTree(root)
+    printLogMessage(f"Writing finalized scaled zero-overlap SVG to: {output_svg_path}")
+    tree.write(output_svg_path, encoding='utf-8', xml_declaration=True)
+    lb.write(output_svg_path + ".lbrn2")
 
 def str_to_bool(value: str) -> bool:
     # Convert to lowercase and strip whitespace
@@ -21,148 +348,73 @@ def resize_to_specific_height_or_width( image, width=0, height=0 ):
     if (height == 0 and width != 0):
         width_percent = float(width) / float(image.size[0])
         new_height = int(float(image.size[1]) * float(width_percent))
-        print("resizing image to width: " + str(width) + " height: "+ str(new_height), flush=True)
+        printLogMessage("resizing image to width: " + str(width) + " height: "+ str(new_height))
         resized_img = image.resize((width, int(new_height)), Image.Resampling.LANCZOS)
     elif (width == 0 and height != 0) :
         height_percent = float(height) / float(image.size[1])
         new_width = int(float(image.size[0]) * float(height_percent))
-        print("resizing image to width: " + str(new_width) + " height: "+ str(height), flush=True)
+        printLogMessage("resizing image to width: " + str(new_width) + " height: "+ str(height))
         resized_img = image.resize((int(new_width),int(height) ), Image.Resampling.LANCZOS)
     else:
         return image
     return resized_img
+
+found_lb_hex = {}
 
 def get_closest_color(r, g, b, TARGET_COLORS):
     """
     Determines the output color based on the input pixel's value (luminance) and hue.
     """
     # 1. Calculate Value (V) for thresholding (using max component for simplicity)
-    r=int(r)
-    g=int(g)
-    b=int(b)
-    V = max(r, g, b)
+    try:
+        return found_lb_hex[(r,g,b)]
+    except KeyError as ke:
+        r=int(r)
+        g=int(g)
+        b=int(b)
+        V = max(r, g, b)
 
-    # 2. Apply Luminance Threshold Rules
-    if V < 25:
-        return "#000000"  # Black
-    
-    # if (V > 250):
-    #     return "#B4B4B4"  # Light Gray
-
-    # 3. Apply Hue Matching Rule (between 25 and 200)
-    
-    # Normalize RGB to 0-1 range for colorsys
-    r_norm, g_norm, b_norm = r / 255.0, g / 255.0, b / 255.0
-    
-    # Convert RGB to HSV. colorsys hue is 0-1, so multiply by 360
-    h_float, s_float, v_float = colorsys.rgb_to_hsv(r_norm, g_norm, b_norm)
-    pixel_hue = h_float * 360
-
-    # Ensure the pixel has enough saturation/value to be considered a 'color'
-    # If the pixel is too grayish or dark, the hue is meaningless.
-    # We proceed with hue matching only if saturation/value is decent.
-    if s_float < 0.45 or v_float < 0.15:
-         # If not colorful enough, treat it as a shade of gray based on its value
-         return "#B4B4B4" if v_float > 0.5 else "#000000"
-         
-    
-    min_diff = 360
-    closest_hex = ""
-
-    # Iterate through target hues to find the minimum angular difference
-    for hex_code, (target_hue, layer_index, layer_name) in TARGET_COLORS.items():
-        # Calculate the angular difference, handling the wrap-around at 0/360 degrees
-        diff = abs(pixel_hue - target_hue)
+        # 2. Apply Luminance Threshold Rules
+        if V < 25:
+            return "#000000"  # Black
         
-        # Check the shortest path around the circle (e.g., 350 vs 10 is 20, not 340)
-        angular_diff = min(diff, 360 - diff)
+        # if (V > 250):
+        #     return "#B4B4B4"  # Light Gray
+
+        # 3. Apply Hue Matching Rule (between 25 and 200)
         
-        if angular_diff < min_diff:
-            min_diff = angular_diff
-            closest_hex = hex_code
+        # Normalize RGB to 0-1 range for colorsys
+        r_norm, g_norm, b_norm = r / 255.0, g / 255.0, b / 255.0
+        
+        # Convert RGB to HSV. colorsys hue is 0-1, so multiply by 360
+        h_float, s_float, v_float = colorsys.rgb_to_hsv(r_norm, g_norm, b_norm)
+        pixel_hue = h_float * 360
 
-    my_color = closest_hex
-    return my_color
-
-def generate_pixel_svg(TARGET_COLORS, input_image_path, output_svg_path, square_size_mm=0.25, new_width=0, new_height=0):
-    """
-    Loads an image, processes pixels, and generates an SVG file and lightbhurn file
-    
-    Args:
-        input_image_path (str): Path to the source image file.
-        output_svg_path (str): Path where the SVG file will be saved.
-        square_size_mm (float): The size of each square in millimeters.
-        new_width: New Width to resize the image to, respecting the aspect ratio
-        new_height: New Height to resize the image to, respecting the aspect ratio
-            * only one of new_width or new_height can be used at a time
-    """
-    print(input_image_path, output_svg_path, square_size_mm, new_width, new_height, flush=True)
-    
-    try:
-        # Load the image and convert to RGB (to ensure consistent 3-channel access)
-        img = Image.open(input_image_path).convert("RGB")
-    except FileNotFoundError:
-        print(f"Error: Input file not found at '{input_image_path}'", flush=True)
-        return
-    except Exception as e:
-        print(f"Error loading image: {e}", flush=True)
-        return
-
-    img = resize_to_specific_height_or_width(image=img, height=int(new_height), width=int(new_width))
-    width, height = img.size
-    
-    # Calculate the total SVG dimensions in millimeters
-    svg_width_mm = width * square_size_mm
-    svg_height_mm = height * square_size_mm
-    
-    # Constants for the SVG output
-    STROKE_WIDTH_MM = 0.01
-
-    print(f"Processing image: {width}x{height} pixels.", flush=True)
-    print(f"Output SVG size: {svg_width_mm:.2f}mm x {svg_height_mm:.2f}mm.", flush=True)
-    
-    svg_content = []
-
-    # 1. SVG Header
-    svg_content.append(f"""<svg width="{svg_width_mm}mm" height="{svg_height_mm}mm" viewBox="0 0 {svg_width_mm} {svg_height_mm}" xmlns="http://www.w3.org/2000/svg">""")
-    
-    # 2. Generate Rectangles
-    # Iterate over all pixels
-    for y in range(height):
-        for x in range(width):
-            # Get RGB tuple for the current pixel
-            r, g, b = img.getpixel((x, y))
+        # Ensure the pixel has enough saturation/value to be considered a 'color'
+        # If the pixel is too grayish or dark, the hue is meaningless.
+        # We proceed with hue matching only if saturation/value is decent.
+        if s_float < 0.45 or v_float < 0.15:
+            # If not colorful enough, treat it as a shade of gray based on its value
+            return "#B4B4B4" if v_float > 0.5 else "#000000"
             
-            # Determine the color based on the rules
-            color = get_closest_color(r, g, b, TARGET_COLORS)
-            # Calculate the position of the square in millimeters
-            x_mm = x * square_size_mm
-            y_mm = y * square_size_mm
-            
-            # Generate the SVG <rect> element
-            rect = (
-                f'<rect x="{x_mm:.4f}" y="{y_mm:.4f}" width="{square_size_mm:.4f}" height="{square_size_mm:.4f}" '
-                f'fill="{color}" stroke="{color}" stroke-width="{STROKE_WIDTH_MM:.4f}" />'
-            )
-            svg_content.append(rect)
-            lb.add(lightburn.Square(square_size_mm, square_size_mm).layer(TARGET_COLORS[color][1]).translate(x_mm, y_mm))
-            
-    # 3. SVG Footer
-    svg_content.append("</svg>")
-    
-    # Write the content to the file
-    try:
-        with open(output_svg_path, "w") as f:
-            f.write("\n".join(svg_content))
-        print(f"Success! SVG saved to '{output_svg_path}'", flush=True)
-    except Exception as e:
-        print(f"Error writing SVG file: {e}", flush=True)
-    try:
-        lb.write(output_svg_path +".lbrn2")
-        print(f"Success! lbrn2 saved to "+ output_svg_path +".lbrn2", flush=True)
-    except Exception as e:
-        print(f"Error writing LightBurn file: {e}", flush=True)
+        
+        min_diff = 360
+        closest_hex = ""
 
+        # Iterate through target hues to find the minimum angular difference
+        for hex_code, (target_hue, layer_index, layer_name) in TARGET_COLORS.items():
+            # Calculate the angular difference, handling the wrap-around at 0/360 degrees
+            diff = abs(pixel_hue - target_hue)
+            
+            # Check the shortest path around the circle (e.g., 350 vs 10 is 20, not 340)
+            angular_diff = min(diff, 360 - diff)
+            
+            if angular_diff < min_diff:
+                min_diff = angular_diff
+                closest_hex = hex_code
+
+        found_lb_hex[(r,g,b)]=closest_hex
+        return found_lb_hex[(r,g,b)]
 
 def hex_to_rgb(hex_str):
     """Helper to convert #R_G_B or R_G_B hex string to a Numpy RGB tuple."""
@@ -172,263 +424,6 @@ def hex_to_rgb(hex_str):
 def rgb_to_hex(rgb):
     """Converts an (R, G, B) tuple to a #RRGGBB hex string."""
     return '#{:02x}{:02x}{:02x}'.format(*rgb)
-
-import re
-import cv2
-import numpy as np
-import potrace
-import svgwrite
-
-
-import cv2
-import numpy as np
-import potrace
-import svgwrite
-
-import cv2
-import numpy as np
-
-#region todo: finish faster implementation with numpy arrays
-# def trace_with_palette_mapping(
-#     TARGET_COLORS, image_path, svg_output_path, MAX_DIMENSION=None
-# ):
-#     # Setup configuration variables
-#     RESIZE_FACTOR = 1.0
-#     TURD_SIZE = 10
-
-#     # 1. Load and read image
-#     img = cv2.imread(image_path)
-#     if img is None:
-#         raise FileNotFoundError(f"Could not open or read image: {image_path}")
-
-#     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-#     orig_h, orig_w, _ = img_rgb.shape
-#     target_w, target_h = orig_w, orig_h
-
-#     if RESIZE_FACTOR != 1.0:
-#         target_w = int(orig_w * RESIZE_FACTOR)
-#         target_h = int(orig_h * RESIZE_FACTOR)
-#     if MAX_DIMENSION is not None and max(target_w, target_h) > MAX_DIMENSION:
-#         scale = MAX_DIMENSION / float(max(target_w, target_h))
-#         target_w = int(target_w * scale)
-#         target_h = int(target_h * scale)
-#     if (target_w, target_h) != (orig_w, orig_h):
-#         print(
-#             f"Resizing image from {orig_w}, {orig_h} to {target_w}, {target_h}",
-#             flush=True,
-#         )
-#         img_rgb = cv2.resize(
-#             img_rgb, (target_w, target_h), interpolation=cv2.INTER_AREA
-#         )
-#     else:
-#         print(
-#             f"Processing image at original dimension {orig_w}, {orig_h}",
-#             flush=True,
-#         )
-
-#     # 2. Reshape and convert image pixels to float32 for distance math
-#     pixels = img_rgb.reshape(-1, 3).astype(np.float32)
-
-#     # Convert TARGET_COLORS list of hex strings into a NumPy array of RGB values
-#     # (Replaces old hex_to_rgb loop)
-#     target_rgbs = np.array(
-#         [[int(h.lstrip("#")[i : i + 2], 16) for i in (0, 2, 4)] for h in TARGET_COLORS],
-#         dtype=np.float32,
-#     )
-
-#     # 3. Vectorized closest color calculation (No loops)
-#     # Uses NumPy broadcasting to find the squared Euclidean distance
-#     # shape: (num_pixels, 1, 3) - (1, num_colors, 3) -> (num_pixels, num_colors, 3)
-#     differences = pixels[:, None, :] - target_rgbs[None, :, :]
-#     distances = np.sum(differences**2, axis=2)
-
-#     # Find the index of the closest target color for every pixel
-#     closest_color_indices = np.argmin(distances, axis=1)
-
-#     # 4. Map the pixels to the target colors and reconstruct the image
-#     flattened_pixels = target_rgbs[closest_color_indices].astype(np.uint8)
-#     flattened_img = flattened_pixels.reshape(target_h, target_w, 3)
-
-#     print(
-#         f"Color flattening complete. Proceeding with SVG generation...",
-#         flush=True,
-#     )
-
-#     # 5. Pass flattened_img to your subprocess/SVG tracing tool below
-#     # (Insert your potrace/vtracer call or remaining logic here)
-
-#     return flattened_img
-#endregion todonew
-def trace_with_palette_mapping( TARGET_COLORS, image_path, svg_output_path, MAX_DIMENSION=None ):
-    # Setup configuration variables
-    RESIZE_FACTOR = 1.0
-    TURD_SIZE = 10
-
-    # 1. Load and read image
-    img = cv2.imread(image_path)
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    orig_h, orig_w, _ = img_rgb.shape
-    target_w, target_h = orig_w, orig_h
-
-    if RESIZE_FACTOR != 1.0:
-        target_w = int(orig_w * RESIZE_FACTOR)
-        target_h = int(orig_h * RESIZE_FACTOR)
-    if MAX_DIMENSION is not None and max(target_w, target_h) > MAX_DIMENSION:
-        scale = MAX_DIMENSION / float(max(target_w, target_h))
-        target_w = int(target_w * scale)
-        target_h = int(target_h * scale)
-    if (target_w, target_h) != (orig_w, orig_h):
-        print(
-            f"Resizing image from {orig_w}, {orig_h} to {target_w}, {target_h}",
-            flush=True,
-        )
-        img_rgb = cv2.resize(
-            img_rgb, (target_w, target_h), interpolation=cv2.INTER_AREA
-        )
-    else:
-        print(
-            f"Processing image at original dimension {orig_w}, {orig_h}",
-            flush=True,
-        )
-
-    # 2. Extract unique colors present in the original image to build a cache
-    pixels = img_rgb.reshape(-1, 3)
-    unique_src_colors = np.unique(pixels, axis=0)
-
-    # 3. Build a fast lookup dictionary using your get_closest_color function
-    color_lut = {}
-    for color in unique_src_colors:
-        src_hex = rgb_to_hex(color)
-        src_color = hex_to_rgb(src_hex)
-        r, g, b = src_color
-
-        close_color = get_closest_color(r, g, b, TARGET_COLORS)
-        target_hex = close_color
-        color_lut[tuple(color)] = hex_to_rgb(target_hex)
-
-    # 4. Apply the color mapping to flatten the entire image
-    flattened_img = np.zeros_like(img_rgb)
-    for src_rgb, target_rgb in color_lut.items():
-        mask = (img_rgb == src_rgb).all(axis=-1)
-        flattened_img[mask] = target_rgb
-
-    # 5. Initialize SVG canvas
-    dwg = svgwrite.Drawing(svg_output_path, size=(target_w, target_h))
-
-    # 6. Extract unique target colors that actually ended up in the flattened image
-    final_palette_colors = np.unique(flattened_img.reshape(-1, 3), axis=0)
-
-    # 7. Trace each individual color layer
-    for color in final_palette_colors:
-        hex_color = "#{:02x}{:02x}{:02x}".format(*color)
-
-        if hex_color.lower() == "#ffffff":
-            continue
-        init_color = hex_to_rgb(hex_color)
-        initr, initg, initb = init_color
-        lb_color = get_closest_color(initr, initg, initb, TARGET_COLORS)
-
-        # Create binary mask for this specific allowed palette color
-        mask = cv2.inRange(flattened_img, color, color)
-
-        # Use morphology to close tiny gaps created by flattening smooth gradients
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-
-        # Convert the clean mask to a Potrace bitmap
-        bitmap = potrace.Bitmap(mask > 0)
-
-        # Trace paths with smooth curves (alphamax=1.0) and ignore noise (turdsize=15)
-        path = bitmap.trace(
-            turnpolicy=potrace.TURNPOLICY_MINORITY,
-            alphamax=1.0,
-            turdsize=TURD_SIZE,
-        )
-
-        # 8. Build the SVG path string and LightBurn data geometry concurrently
-        svg_path_data = ""
-        lb_points = []
-
-        for curve in path:
-            start = curve.start_point
-            svg_path_data += f"M {start[0]:.4f},{start[1]:.4f} "
-
-            # Append the absolute starting position tracking node
-            lb_points.append((start[0], start[1]))
-
-            for segment in curve:
-                end = segment.end_point
-
-                if segment.is_corner:
-                    c = segment.c
-                    svg_path_data += (
-                        f"L {c[0]:.4f},{c[1]:.4f} L {end[0]:.4f},{end[1]:.4f} "
-                    )
-
-                    # Gather corner vector anchors
-                    lb_points.append((c[0], c[1]))
-                    lb_points.append((end[0], end[1]))
-                else:
-                    c1 = segment.c1
-                    c2 = segment.c2
-                    svg_path_data += f"C {c1[0]:.4f},{c1[1]:.4f} {c2[0]:.4f},{c2[1]:.4f} {end[0]:.4f},{end[1]:.4f} "
-
-                    # Interpolate the Bezier curve into straight linear subdivisions for LightBurn path arrays
-                    # This ensures curve smoothness without requiring native curve builders
-                    STEPS = 12
-                    for step in range(1, STEPS + 1):
-                        t = step / STEPS
-                        # Standard Cubic Bezier mathematical calculation
-                        x_t = (
-                            (1 - t) ** 3 * start[0]
-                            + 3 * (1 - t) ** 2 * t * c1[0]
-                            + 3 * (1 - t) * t**2 * c2[0]
-                            + t**3 * end[0]
-                        )
-                        y_t = (
-                            (1 - t) ** 3 * start[1]
-                            + 3 * (1 - t) ** 2 * t * c1[1]
-                            + 3 * (1 - t) * t**2 * c2[1]
-                            + t**3 * end[1]
-                        )
-                        lb_points.append((x_t, y_t))
-
-                # Update the starting node reference for the next consecutive segment tracking loop
-                start = end
-
-            svg_path_data += "Z "
-
-        # Write data layers to both vector canvases sequentially
-        if svg_path_data:
-            # 1. Add path to the standard SVG object canvas instance
-            dwg.add(dwg.path(d=svg_path_data, fill=hex_color, stroke="none"))
-
-            # 2. Instantiate LightBurn path cleanly with our compiled coordinate array
-            # If your custom lightburn module requires an alternative geometry constructor
-            # (like lightburn.Path(d=svg_path_data)), swap this instantiation safely.
-            lb_shape = lightburn.Path(lb_points).layer(
-                TARGET_COLORS[lb_color][1]
-            )
-            lb.add(lb_shape)
-
-    try:
-        # Save final vector file
-        dwg.save()
-    except Exception as e:
-        print(f"Error writing SVG file: {e}", flush=True)
-
-    print(
-        f"Vector tracing complete. Output saved to: {svg_output_path}",
-        flush=True,
-    )
-    try:
-        lb.write(svg_output_path + ".lbrn2")
-        print(
-            f"Success! lbrn2 saved to " + svg_output_path + ".lbrn2",
-            flush=True,
-        )
-    except Exception as e:
-        print(f"Error writing LightBurn file: {e}", flush=True)
 
 def parse_material_settings(lb, material_settings_path, limit_colors, TARGET_COLORS):
     """
@@ -453,10 +448,11 @@ def parse_material_settings(lb, material_settings_path, limit_colors, TARGET_COL
                 matched_settings[target_key[0]] = TARGET_COLORS[target_key[0]]
                 item.index = target_touple[-2]
                 lb.add_layer(item)
-                print(f"added Layer: {item.name}", flush=True)
+                printLogMessage(f"added Layer: {item.name}")
 
             else:
-                print(f"unable to add layer: {item.name}, name not in lightburn target colors", flush=True)
+                printLogMessage(f"unable to add layer: {item.name}, name not in lightburn target colors")
+
     return matched_settings    
 
 def init_lightburn(the_colors_limit):
@@ -519,7 +515,8 @@ def init_lightburn(the_colors_limit):
         filtered_colors['#000000'] = (0, 0, 'Black')
     else:
         filtered_colors = TARGET_COLORS
-
+        filtered_colors['#B4B4B4'] = (0, 8, 'Light-Gray')
+        filtered_colors['#000000'] = (0, 0, 'Black')
     # Add it to sys.modules cache and execute the code within the module
     sys.modules[module_name] = lightburn
     spec.loader.exec_module(lightburn)
@@ -537,21 +534,41 @@ if __name__ == "__main__":
     new_height=sys.argv[5]
     material_library_file=sys.argv[6]
     the_limit_colors = sys.argv[7]    
-    vectorize = str_to_bool(sys.argv[8]) 
     max_dimension = max(new_width, new_height)
-
+    image_preset= sys.argv[8]
+    abstract_filter = sys.argv[9]
+    
+    quantize_colors=PHOTO_TYPE_PRESETS[image_preset]["quantize_colors"],        # Keeps original target palette colors intact
+    min_island_area=PHOTO_TYPE_PRESETS[image_preset]["min_island_area"],           # Retains small details and sharp lines
+    simplification_factor=PHOTO_TYPE_PRESETS[image_preset]["simplification_factor"],   # Retains crisp pixel-perfect boundaries
+    smoothing_radius=PHOTO_TYPE_PRESETS[image_preset]["smoothing_radius"]       # Baseline vector weld setting    
+    
     the_limit_colors_list = [item.strip() for item in the_limit_colors.split(",")]
-    print(f"\nusing material library settings: {material_library_file}", flush=True)
-    print(f"\nusing colors: {the_limit_colors}", flush=True)
+    printLogMessage(f"\nusing material library settings: {material_library_file}")
+    printLogMessage(f"\nusing colors: {the_limit_colors}")
     TARGET_COLORS , lb, lightburn = init_lightburn(the_limit_colors)
+    TARGET_COLORS['#B4B4B4'] = (0, 8, 'Light-Gray')
+    TARGET_COLORS['#000000'] = (0, 0, 'Black')
     if len(the_limit_colors_list) <= 1:
         the_limit_colors_list = [cv[-1].lower() for cn,cv in TARGET_COLORS.items()]
-
-    print(f"\nusing TARGET_COLORS: {TARGET_COLORS}", flush=True)
-    print(f"\nusing LIMIT COLORS: {','.join(the_limit_colors_list)}", flush=True)
-
+    the_limit_colors_list.append("black")
+    the_limit_colors_list.append("light-gray")
+    the_output_file = f"{OUTPUT_FILE}.vector.svg"
+    printLogMessage(f"\nusing TARGET_COLORS: {TARGET_COLORS}")
+    printLogMessage(f"\nusing LIMIT COLORS: {','.join(the_limit_colors_list)}")
     TARGET_COLORS = parse_material_settings(lb, material_library_file, the_limit_colors_list, TARGET_COLORS)
-    if vectorize:
-        trace_with_palette_mapping(TARGET_COLORS, INPUT_FILE, f"{OUTPUT_FILE}.vector.svg", int(max_dimension))
-    else:
-        generate_pixel_svg(TARGET_COLORS, INPUT_FILE, f"{OUTPUT_FILE}.svg", square_mm, new_width, new_height)
+    raster_to_puzzle_and_lightburn(
+        raster_image_path=INPUT_FILE,
+        output_svg_path=the_output_file,
+        new_height=new_height,
+        new_width=new_width,
+        lb_project_instance=lb,
+        TARGET_COLORS=TARGET_COLORS,
+        scale_factor=float(square_mm),
+        ignore_background_hex="#ffffff",
+        quantize_colors=quantize_colors,
+        min_island_area=min_island_area,
+        simplification_factor=simplification_factor,
+        smoothing_radius=smoothing_radius,
+        abstract_filter=abstract_filter
+    )

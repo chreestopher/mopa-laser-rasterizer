@@ -7,7 +7,7 @@ metadata:
     app: mopa-laser-rasterizer
     version: v1
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       app: mopa-laser-rasterizer
@@ -16,37 +16,32 @@ spec:
       labels:
         app: mopa-laser-rasterizer
     spec:
+      # --- NEW: This blocks the Flask container until Redis is fully running ---
+      initContainers:
+      - name: wait-for-redis
+        image: alpine:latest
+        command: ["sh", "-c", "until nc -zvw1 redis-service 6379; do echo waiting for redis; sleep 2; done;"]
+      
       containers:
       - name: mopa-laser-rasterizer
-        image: mopa-laser-rasterizer:local
+        image: mopa-laser-rasterizer:com
         imagePullPolicy: IfNotPresent
+        env:
+        - name: REDIS_HOST
+          value: "redis-service"
+        - name: REDIS_PORT
+          value: "6379"
         ports:
         - name: http
           containerPort: 8000
           protocol: TCP
         resources:
           requests:
-            memory: "64Mi"
+            memory: "256Mi"
             cpu: "100m"
           limits:
-            memory: "2048Mi"
+            memory: "4096Mi"
             cpu: "500m"
-#        livenessProbe:
-#          httpGet:
-#            path: /
-#            port: http
-#          initialDelaySeconds: 10
-#          periodSeconds: 6
-#          timeoutSeconds: 60
-#          failureThreshold: 3
-#        readinessProbe:
-#          httpGet:
-#            path: /
-#            port: http
-#          initialDelaySeconds: 5
-#          periodSeconds: 6
-#          timeoutSeconds: 60
-#          failureThreshold: 150
         volumeMounts:
         - name: static
           mountPath: /app/static

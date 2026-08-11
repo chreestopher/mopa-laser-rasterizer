@@ -21,11 +21,15 @@
             padding: 20px;
             border-radius: 8px;
             text-align: left;
-            width: 90%;
-            max-width: 600px;
-            height: 300px;
+            /* width: 90%; */
+            /* max-width: 600px; */
+            /* height: 300px; */
             overflow-y: auto;
             box-shadow: inset 0 0 15px #000, 0 8px 30px rgba(0,0,0,0.15);
+            width: 95%;           /* Fills 95% of the screen width */
+            max-width: 1200px;    /* Optional: Prevents it from getting too wide on massive screens */
+            height: 90vh;         /* Fills 90% of the screen height */
+            margin: 2vh auto;     /* Centers the box vertically and horizontally */            
         }
         .log-list {
             list-style: none;
@@ -52,66 +56,75 @@
         </ul>
     </div>
 
-    <script>
-        const taskId = "{{ task_id }}";
-        const logContainer = document.getElementById("log-container");
-        const terminalBox = document.getElementById("terminal");
-        const visibleLogs = new Set(["Connecting to script pipeline..."]);
+<script>
+    const taskId = "{{ task_id }}";
+    const logContainer = document.getElementById("log-container");
+    const terminalBox = document.getElementById("terminal");
+    
+    let logIndex = 0; 
 
-        function appendLogMessage(message) {
-            const cleanMessage = message ? message.trim() : "";
-            if (!cleanMessage || cleanMessage === "" || cleanMessage === "Waiting to start..." || visibleLogs.has(cleanMessage)) {
-                return; 
-            }
-            visibleLogs.add(cleanMessage);
-
-            const li = document.createElement("li");
-            li.className = "log-item";
-            li.innerHTML = `<span class="log-prefix">$</span>${cleanMessage}`;
-            logContainer.appendChild(li);
-            terminalBox.scrollTop = terminalBox.scrollHeight;
+    function appendLogMessage(message) {
+        const cleanMessage = message ? message.trim() : "";
+        if (!cleanMessage || cleanMessage === "Waiting to start...") {
+            return; 
         }
 
-        setTimeout(() => {
-            const checkStatus = setInterval(async () => {
-                try {
-                    const response = await fetch(`/task-status/${taskId}`);
-                    if (!response.ok) return;
+        const li = document.createElement("li");
+        li.className = "log-item";
+        li.innerHTML = `<span class="log-prefix">$</span>${cleanMessage}`;
+        logContainer.appendChild(li);
+        
+        terminalBox.scrollTop = terminalBox.scrollHeight;
+    }
 
-                    const data = await response.json();
+    // Start checking logs immediately, but handle connection lags robustly
+    const checkStatus = setInterval(async () => {
+        try {
+            const response = await fetch(`/task-status/${taskId}`);
+            
+            // FIX 1: If the server is busy/booting, don't crash or freeze. Log it and retry.
+            if (!response.ok) {
+                console.warn(`Server booting task or unavailable. Status: ${response.status}`);
+                return; 
+            }
 
-                    if (data.current_log) {
-                        if (Array.isArray(data.current_log)) {
-                            data.current_log.forEach((logMessage) => {
-                                appendLogMessage(logMessage);
-                            });
-                        } else if (typeof data.current_log === 'string') {
-                            appendLogMessage(data.current_log);
-                        }
-                    }
+            const data = await response.json();
 
-                    // FIX: Bypass browser drive-by download blocks by redirecting 
-                    // immediately to the success page instead of clicking hidden tags!
-                    if (data.status === "completed") {
-                        clearInterval(checkStatus);
-                        appendLogMessage("Task completed successfully! Redirecting to dashboard...");
-                        
-                        // Navigate directly to your final template screen layout
-                        window.location.href = "/success/" + taskId;
-                    }
-                    else if (data.status === "failed") {
-                        clearInterval(checkStatus);
-                        appendLogMessage(`CRITICAL FAILURE: ${data.error || 'Check server logs'}`);
-                        const errorLine = logContainer.lastChild;
-                        if (errorLine) errorLine.style.color = "#ff3333";
-                    }
-                } catch (err) {
-                    console.error("Polling stream exception error:", err);
-                }
-            }, 1000); 
+            // FIX 2: Ensure data parsing fallback arrays exist to prevent undefined breaks
+            const currentLogs = data.logs || [];
 
-        }, 1500);
-    </script>
+            // Process and append new logs
+            if (currentLogs.length > logIndex) {
+                const newLines = currentLogs.slice(logIndex);
+                newLines.forEach((logMessage) => {
+                    appendLogMessage(logMessage);
+                });
+                logIndex = currentLogs.length;
+            }
+
+            // Evaluate completion statuses cleanly after logs are checked
+            if (data.status === "completed") {
+                clearInterval(checkStatus);
+                appendLogMessage("Task completed successfully! Redirecting to dashboard...");
+                
+                setTimeout(() => {
+                    window.location.href = "/success/" + taskId;
+                }, 500);
+            }
+            else if (data.status === "failed") {
+                clearInterval(checkStatus);
+                appendLogMessage(`CRITICAL FAILURE: ${data.error || 'Check server logs'}`);
+                const errorLine = logContainer.lastChild;
+                if (errorLine) errorLine.style.color = "#ff3333";
+            }
+            
+        } catch (err) {
+            // FIX 3: Catch local network disconnects cleanly without killing the timer
+            console.error("Polling interval encountered a connection drop:", err);
+        }
+    }, 1000); // Check every 1000ms from the very beginning
+
+</script>
 
 </body>
 </html>

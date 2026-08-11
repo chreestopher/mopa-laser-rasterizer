@@ -6,3 +6,8 @@ svgwrite
 flask
 gunicorn
 pypotrace
+redis
+shapely
+svgelements
+datetime
+boto3

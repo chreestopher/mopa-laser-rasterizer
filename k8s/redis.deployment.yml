@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-state-deployment
+  namespace: default
+  labels:
+    app: redis-state
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-state
+  template:
+    metadata:
+      labels:
+        app: redis-state
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 6379
+          name: redis
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
