@@ -156,7 +156,7 @@ def long_running_script(task_id, data, image_path, material_settings_path):
                 material_settings_path, 
                 str(colors), 
                 image_preset,
-                abstract_filter: abstract_filter
+                abstract_filter
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,  # Merges stderr into stdout cleanly
