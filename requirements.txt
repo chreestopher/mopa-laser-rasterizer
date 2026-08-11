@@ -10,3 +10,4 @@ redis
 shapely
 svgelements
 datetime
+boto3
