@@ -157,8 +157,8 @@ def get_closest_color(r, g, b, TARGET_COLORS):
     Determines the output color based on the input pixel's value (luminance) and hue.
     """
     # 1. Calculate Value (V) for thresholding (using max component for simplicity)
-    if found_lb_hex[(r,g,b)] 
-        return found_lb_hex[(r,g,b)]:
+    if found_lb_hex[(r,g,b)]:
+        return found_lb_hex[(r,g,b)]
     r=int(r)
     g=int(g)
     b=int(b)
