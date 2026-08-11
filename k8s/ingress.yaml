@@ -19,7 +19,7 @@ spec:
   ingressClassName: traefik
   tls:
   - hosts:
-    - mopa-laser-rasterizer.local
+    - mopa-laser-rasterizer.com
     secretName: mopa-laser-rasterizer-tls
   rules:
   - host: mopa-laser-rasterizer.com

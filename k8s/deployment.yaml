@@ -55,13 +55,13 @@ spec:
       volumes:
       - name: static
         hostPath:
-          path: /mnt/c/Users/chree/Desktop/mopa-laser-rasterizer/static
+          path: /home/ubuntu/mopa-laser-rasterizer/static
           type: Directory
       - name: templates
         hostPath:
-          path: /mnt/c/Users/chree/Desktop/mopa-laser-rasterizer/templates
+          path: /home/ubuntu/mopa-laser-rasterizer/templates
           type: Directory
       - name: uploads
         hostPath:
-          path: /mnt/c/Users/chree/Desktop/mopa-laser-rasterizer/uploads
+          path: /home/ubuntu/mopa-laser-rasterizer/uploads
           type: DirectoryOrCreate
