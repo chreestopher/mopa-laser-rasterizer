@@ -23,31 +23,31 @@ def printLogMessage(message):
 
 PHOTO_TYPE_PRESETS = {
     "cartoon": {
-        "quantize_colors": None,        # Preserves the strict original color mappings
-        "min_island_area": 0,           # Retains every individual pixel box and sharp edge
-        "simplification_factor": 0.0,   # No vector path smoothing (sharp pixel-art edges)
-        "smoothing_radius": 0.001       # Baseline vector weld padding from the original function
+        "quantize_colors": None,
+        "min_island_area": 0,
+        "simplification_factor": 0.0,
+        "smoothing_radius": 0.001
     },
     
     "color_photograph": {
-        "quantize_colors": 24,          # Groups color tones into clean bands matching common MOPA color layers
-        "min_island_area": 8,           # Discards tiny laser-confetti artifacts under ~3x3 pixel clusters
-        "simplification_factor": 0.35,  # Smooths out harsh stair-stepped lines into flowing, cuttable paths
-        "smoothing_radius": 0.5         # Blends edge gaps while maintaining overall facial/object details
+        "quantize_colors": 24,          # Tonal color band limit
+        "min_island_area": 8,           # Drops tiny laser fragments
+        "simplification_factor": 0.35,  # Straightens jagged lines
+        "smoothing_radius": 0.5         # Blends edge spaces
     },
     
     "bw_dither_photograph": {
-        "quantize_colors": 2,           # Hard threshold binary split (forces pure black and white)
-        "min_island_area": 2,           # Extremely low area floor to preserve high-frequency dither dots
-        "simplification_factor": 0.1,   # Minimal smoothing to retain the distinct pointillism structural look
-        "smoothing_radius": 0.1         # Tightest possible weld to avoid blurring the dither pattern away
+        "quantize_colors": 2,           # Forced black and white output
+        "min_island_area": 2,           # Retains high frequency dither dots
+        "simplification_factor": 0.1,   # Drops line reshaping entirely
+        "smoothing_radius": 0.1         # Locks tight boundaries
     },
     
     "abstract": {
-        "quantize_colors": 6,           # Drastically limits the palette to create surreal, posterized color chunks
-        "min_island_area": 36,          # Erases moderate details, forcing only massive geometric zones to survive
-        "simplification_factor": 1.8,   # Aggressive line smoothing that reshapes paths into wavy, fluid curves
-        "smoothing_radius": 4.5         # High radius opening that bubbles corners and creates melted geometric blooms
+        "quantize_colors": 6,           # posterized chunk colors
+        "min_island_area": 36,          # Erases tiny geometric detail frames
+        "simplification_factor": 1.8,   # High morph curve reshaping
+        "smoothing_radius": 4.5         # Round out geometric loops
     }
 }
 
@@ -78,7 +78,8 @@ def raster_to_puzzle_and_lightburn(
     # 1. OPTIMIZATION: Reduce gradient colors down to clean bands if quantize_colors is set
     if quantize_colors is not None:
         printLogMessage(f"Quantizing photo colors down to a maximum pool of {quantize_colors} levels...")
-        img = img.quantize(colors=quantize_colors, method=Image.MEDIANCUT).convert("RGB")
+        # Method 0 represents Image.MEDIANCUT explicitly as an expected integer parameter
+        img = img.quantize(colors=quantize_colors, method=0).convert("RGB")
         
     width, height = img.size
     
