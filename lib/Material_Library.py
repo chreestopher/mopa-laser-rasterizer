@@ -28,6 +28,8 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
     """
     printLogMessage(f"Opening raster image: {raster_image_path}")
     img = Image.open(raster_image_path).convert("RGB")
+    orig_width, orig_height = img.size
+    printLogMessage(f"Original Image PIxel Size: {orig_width}, {orig_height}")
     img = resize_to_specific_height_or_width(image=img, height=int(new_height), width=int(new_width))
     width, height = img.size
     
@@ -148,11 +150,15 @@ def resize_to_specific_height_or_width( image, width=0, height=0 ):
         return image
     return resized_img
 
+found_lb_hex = {}
+
 def get_closest_color(r, g, b, TARGET_COLORS):
     """
     Determines the output color based on the input pixel's value (luminance) and hue.
     """
     # 1. Calculate Value (V) for thresholding (using max component for simplicity)
+    if found_lb_hex[(r,g,b)] 
+        return found_lb_hex[(r,g,b)] 
     r=int(r)
     g=int(g)
     b=int(b)
@@ -198,6 +204,7 @@ def get_closest_color(r, g, b, TARGET_COLORS):
             closest_hex = hex_code
 
     my_color = closest_hex
+    found_lb_hex[(r,g,b)]=my_color
     return my_color
 
 def hex_to_rgb(hex_str):
