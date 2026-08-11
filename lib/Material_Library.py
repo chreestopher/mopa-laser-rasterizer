@@ -25,7 +25,8 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
     """
     Parses a raster image, applies a structural vector scale_factor, saves a gapless SVG puzzle file, 
     and pushes matching paths into LightBurn. 
-    Guarantees the black layer is entirely hollowed out everywhere another color exists.
+    Guarantees the black layer is perfectly sparse by generating it purely from the negative space 
+    left behind by all other color geometries.
     """
     printLogMessage(f"Opening raster image: {raster_image_path}")
     img = Image.open(raster_image_path).convert("RGB")
@@ -35,8 +36,6 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
     img = resize_to_specific_height_or_width(image=img, height=int(new_height), width=int(new_width))
     width, height = img.size
     
-    # Track non-black pixel coordinates to mask out the black layer instantly
-    non_black_pixel_coords = set()
     pixel_boxes_by_color = defaultdict(list)
     
     # Dynamically find the black hex key from TARGET_COLORS map
@@ -44,7 +43,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
     
     printLogMessage("Analyzing pixels and snapping colors...")
     
-    # --- PASS 1: Pixel-level Separation ---
+    # --- PASS 1: Group all non-black pixels ---
     for y in range(height):
         for x in range(width):
             pixel_rgb = img.getpixel((x, y))
@@ -52,27 +51,10 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
             if closest_hex == ignore_background_hex:
                 continue
                 
+            # Skip black completely here; we will generate it programmatically from space left over
             if closest_hex != black_hex:
-                # Store this pixel coordinate as occupied by a foreground color
-                non_black_pixel_coords.add((x, y))
                 pixel_poly = box(x, y, x + 1, y + 1)
                 pixel_boxes_by_color[closest_hex].append(pixel_poly)
-            else:
-                # We defer black box building to a second quick pass to ensure 
-                # absolutely no overlapping pixels are registered.
-                pass
-
-    # --- PASS 2: Sparse Black Box Building ---
-    # Re-verify and build black shapes ONLY where no other colors claimed the coordinate
-    for y in range(height):
-        for x in range(width):
-            pixel_rgb = img.getpixel((x, y))
-            closest_hex = get_closest_color(*pixel_rgb, TARGET_COLORS)
-            
-            if closest_hex == black_hex:
-                if (x, y) not in non_black_pixel_coords:
-                    pixel_poly = box(x, y, x + 1, y + 1)
-                    pixel_boxes_by_color[black_hex].append(pixel_poly)
 
     # Rebuild standard flat SVG structure
     root = ET.Element('svg', xmlns="http://w3.org", version="1.1")
@@ -92,7 +74,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
             for sub_geom in geom.geoms:
                 add_geom_to_svg(sub_geom, fill_color)
 
-    def push_geom_to_lightburn(geom, layer_id):
+    def push_geom_to_lightburn(geom, color_hex):
         """Extracts coordinate paths from Shapely geometry and pipes them into LightBurn."""
         if geom.is_empty:
             return
@@ -113,19 +95,44 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
         elif geom.geom_type in ('MultiPolygon', 'GeometryCollection'):
             printLogMessage(f"Add {len(geom.geoms)} shapes on Layer: {layer_id} color: {layer_color_name}")
             for sub_geom in geom.geoms:
-                push_geom_to_lightburn(sub_geom, layer_id)
+                push_geom_to_lightburn(sub_geom, color_hex)
 
-    # --- PASS 3: Heavy Vector Geometry Consolidation ---
+    # --- PASS 2: Heavy Vector Geometry Consolidation for Foreground Colors ---
     processed_layers = {}
-    printLogMessage(f"Beginning vector union math for {len(pixel_boxes_by_color)} unique layers...")
+    non_black_geometries = []
+    
+    printLogMessage(f"Beginning vector union math for foreground layers...")
     
     for idx, (color_hex, boxes) in enumerate(pixel_boxes_by_color.items(), 1):
-        printLogMessage(f" -> Merging color boundaries... (Layer math step {idx}/{len(pixel_boxes_by_color)})")
         if not boxes:
             continue
+        
+        layer_meta = TARGET_COLORS[color_hex]
+        layer_id = layer_meta[1]
+        layer_color_name = layer_meta[2]
+        
+        printLogMessage(f" -> Merging color boundaries... (Layer math step {idx} - Layer: {layer_id} [{layer_color_name}])")
+        
         welded_layer = unary_union(boxes)
         final_puzzle_piece = welded_layer.buffer(0.001).buffer(-0.001)
+        
         processed_layers[color_hex] = final_puzzle_piece
+        non_black_geometries.append(final_puzzle_piece)
+
+    # --- PASS 3: Programmatically Generate the Negative Space Black Layer ---
+    printLogMessage("Generating sparse black geometry from canvas negative space...")
+    
+    # 1. Create a single combined boundary map of all foreground colors
+    all_colors_union = unary_union(non_black_geometries) if non_black_geometries else box(0, 0, 0, 0)
+    
+    # 2. Define the full bounding block of the entire canvas workspace grid
+    canvas_boundary = box(0, 0, width, height)
+    
+    # 3. Black is exactly equal to the total canvas MINUS all foreground items
+    raw_black_negative_space = canvas_boundary.difference(all_colors_union)
+    
+    # 4. Apply clean edge buffer filtering to keep puzzle logic uniform
+    processed_layers[black_hex] = raw_black_negative_space.buffer(0.001).buffer(-0.001)
 
     printLogMessage("Vector generation complete. Sorting and formatting log history...")
 
@@ -159,7 +166,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
         # Export Option 2: Push to LightBurn
         if color_hex in TARGET_COLORS:
             printLogMessage(f"Pushing scaled {layer_color_name} geometry into LightBurn Layer ID: {layer_id}")
-            push_geom_to_lightburn(final_puzzle_piece, layer_id)
+            push_geom_to_lightburn(final_puzzle_piece, color_hex)
 
     # Save SVG to disk
     tree = ET.ElementTree(root)
