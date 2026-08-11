@@ -104,10 +104,10 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
         welded_layer = unary_union(boxes)
         final_puzzle_piece = welded_layer.buffer(0.001).buffer(-0.001)
         
-        # 2. Apply Unified Scale Factor (Scaling from the top-left origin)
-        if scale_factor != 1.0:
-            printLogMessage(f"Scaling {layer_color_name} geometry by a factor of {scale_factor}x")
-            final_puzzle_piece = scale(final_puzzle_piece, xfact=scale_factor, yfact=scale_factor, origin=(0, 0))
+        # # 2. Apply Unified Scale Factor (Scaling from the top-left origin)
+        # if scale_factor != 1.0:
+        #     printLogMessage(f"Scaling {layer_color_name} geometry by a factor of {scale_factor}x")
+        #     final_puzzle_piece = scale(final_puzzle_piece, xfact=scale_factor, yfact=scale_factor, origin=(0, 0))
         
         # Export Option 1: Add to SVG Tree
         add_geom_to_svg(final_puzzle_piece, color_hex)
