@@ -24,7 +24,7 @@ spec:
       
       containers:
       - name: mopa-laser-rasterizer
-        image: mopa-laser-rasterizer:local
+        image: mopa-laser-rasterizer:com
         imagePullPolicy: IfNotPresent
         env:
         - name: REDIS_HOST
