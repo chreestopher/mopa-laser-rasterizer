@@ -157,55 +157,55 @@ def get_closest_color(r, g, b, TARGET_COLORS):
     Determines the output color based on the input pixel's value (luminance) and hue.
     """
     # 1. Calculate Value (V) for thresholding (using max component for simplicity)
-    if (r,g,b) in found_lb_hex.keys():
+    try:
         return found_lb_hex[(r,g,b)]
-    r=int(r)
-    g=int(g)
-    b=int(b)
-    V = max(r, g, b)
+    except KeyError as ke:
+        r=int(r)
+        g=int(g)
+        b=int(b)
+        V = max(r, g, b)
 
-    # 2. Apply Luminance Threshold Rules
-    if V < 25:
-        return "#000000"  # Black
-    
-    # if (V > 250):
-    #     return "#B4B4B4"  # Light Gray
-
-    # 3. Apply Hue Matching Rule (between 25 and 200)
-    
-    # Normalize RGB to 0-1 range for colorsys
-    r_norm, g_norm, b_norm = r / 255.0, g / 255.0, b / 255.0
-    
-    # Convert RGB to HSV. colorsys hue is 0-1, so multiply by 360
-    h_float, s_float, v_float = colorsys.rgb_to_hsv(r_norm, g_norm, b_norm)
-    pixel_hue = h_float * 360
-
-    # Ensure the pixel has enough saturation/value to be considered a 'color'
-    # If the pixel is too grayish or dark, the hue is meaningless.
-    # We proceed with hue matching only if saturation/value is decent.
-    if s_float < 0.45 or v_float < 0.15:
-         # If not colorful enough, treat it as a shade of gray based on its value
-         return "#B4B4B4" if v_float > 0.5 else "#000000"
-         
-    
-    min_diff = 360
-    closest_hex = ""
-
-    # Iterate through target hues to find the minimum angular difference
-    for hex_code, (target_hue, layer_index, layer_name) in TARGET_COLORS.items():
-        # Calculate the angular difference, handling the wrap-around at 0/360 degrees
-        diff = abs(pixel_hue - target_hue)
+        # 2. Apply Luminance Threshold Rules
+        if V < 25:
+            return "#000000"  # Black
         
-        # Check the shortest path around the circle (e.g., 350 vs 10 is 20, not 340)
-        angular_diff = min(diff, 360 - diff)
-        
-        if angular_diff < min_diff:
-            min_diff = angular_diff
-            closest_hex = hex_code
+        # if (V > 250):
+        #     return "#B4B4B4"  # Light Gray
 
-    my_color = closest_hex
-    found_lb_hex[(r,g,b)]=my_color
-    return my_color
+        # 3. Apply Hue Matching Rule (between 25 and 200)
+        
+        # Normalize RGB to 0-1 range for colorsys
+        r_norm, g_norm, b_norm = r / 255.0, g / 255.0, b / 255.0
+        
+        # Convert RGB to HSV. colorsys hue is 0-1, so multiply by 360
+        h_float, s_float, v_float = colorsys.rgb_to_hsv(r_norm, g_norm, b_norm)
+        pixel_hue = h_float * 360
+
+        # Ensure the pixel has enough saturation/value to be considered a 'color'
+        # If the pixel is too grayish or dark, the hue is meaningless.
+        # We proceed with hue matching only if saturation/value is decent.
+        if s_float < 0.45 or v_float < 0.15:
+            # If not colorful enough, treat it as a shade of gray based on its value
+            return "#B4B4B4" if v_float > 0.5 else "#000000"
+            
+        
+        min_diff = 360
+        closest_hex = ""
+
+        # Iterate through target hues to find the minimum angular difference
+        for hex_code, (target_hue, layer_index, layer_name) in TARGET_COLORS.items():
+            # Calculate the angular difference, handling the wrap-around at 0/360 degrees
+            diff = abs(pixel_hue - target_hue)
+            
+            # Check the shortest path around the circle (e.g., 350 vs 10 is 20, not 340)
+            angular_diff = min(diff, 360 - diff)
+            
+            if angular_diff < min_diff:
+                min_diff = angular_diff
+                closest_hex = hex_code
+
+        found_lb_hex[(r,g,b)]=closest_hex
+        return found_lb_hex[(r,g,b)]
 
 def hex_to_rgb(hex_str):
     """Helper to convert #R_G_B or R_G_B hex string to a Numpy RGB tuple."""
