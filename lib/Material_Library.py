@@ -26,7 +26,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
     Parses a raster image, applies a structural vector scale_factor, saves a gapless SVG puzzle file, 
     and pushes matching paths into LightBurn.
     Forces LightBurn to handle the cutout subtraction natively by overlaying all non-black 
-    foreground geometries directly onto the black cutting layer.
+    foreground geometries directly onto the black cutting layer without generating a duplicate solid background.
     """
     printLogMessage(f"Opening raster image: {raster_image_path}")
     img = Image.open(raster_image_path).convert("RGB")
@@ -44,13 +44,18 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
     
     printLogMessage("Analyzing pixels and snapping colors...")
     
-    # --- PASS 1: Build pixel maps normally ---
+    # --- PASS 1: Build pixel maps for NON-BLACK colors ONLY ---
     for y in range(height):
         for x in range(width):
             pixel_rgb = img.getpixel((x, y))
             closest_hex = get_closest_color(*pixel_rgb, TARGET_COLORS)
             if closest_hex == ignore_background_hex:
                 continue
+                
+            # CRITICAL FIX: Skip collecting black pixels to eliminate the duplicate solid backing box
+            if closest_hex == black_hex:
+                continue
+                
             pixel_poly = box(x, y, x + 1, y + 1)
             pixel_boxes_by_color[closest_hex].append(pixel_poly)
 
@@ -78,7 +83,6 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
             return
             
         layer_meta = TARGET_COLORS[color_hex]
-        # Use the override layer ID if provided (for pushing cutout shapes onto the black layer)
         layer_id = override_layer_id if override_layer_id is not None else layer_meta[1]
         layer_color_name = layer_meta[2]
         
@@ -145,15 +149,13 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
         
         # Export Option 2: Push to LightBurn
         if color_hex in TARGET_COLORS:
-            # 1. Always push the shape to its native colored layer
+            # 1. Push the shape to its native colored layer
             printLogMessage(f"Pushing scaled {layer_color_name} geometry into LightBurn Layer ID: {layer_id}")
             push_geom_to_lightburn(final_puzzle_piece, color_hex)
             
-            # 2. If this shape is NOT black, also push it directly onto the black layer
-            # This triggers LightBurn's nested path algorithm to turn the shape into a cutout hole
-            if color_hex != black_hex:
-                printLogMessage(f" -> Overlaying cutout path onto Black Layer ID: {black_layer_id}")
-                push_geom_to_lightburn(final_puzzle_piece, color_hex, override_layer_id=black_layer_id)
+            # 2. Push it directly onto the black layer to trigger native cutout holes
+            printLogMessage(f" -> Overlaying cutout path onto Black Layer ID: {black_layer_id}")
+            push_geom_to_lightburn(final_puzzle_piece, color_hex, override_layer_id=black_layer_id)
 
     # Save SVG to disk
     tree = ET.ElementTree(root)
