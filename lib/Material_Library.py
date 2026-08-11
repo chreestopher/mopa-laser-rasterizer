@@ -45,13 +45,13 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
             pixel_poly = box(x, y, x + 1, y + 1)
             pixel_boxes_by_color[closest_hex].append(pixel_poly)
 
-    # Calculate new target viewport canvas dimensions for the SVG file
-    scaled_width = width * scale_factor
-    scaled_height = height * scale_factor
+    # # Calculate new target viewport canvas dimensions for the SVG file
+    # scaled_width = width * scale_factor
+    # scaled_height = height * scale_factor
 
     # Rebuild standard flat SVG structure
     root = ET.Element('svg', xmlns="http://w3.org", version="1.1")
-    root.set('viewBox', f"0 0 {scaled_width} {scaled_height}")
+    root.set('viewBox', f"0 0 {width} {height}")
     root.set('width', str(width))
     root.set('height', str(height))
 
