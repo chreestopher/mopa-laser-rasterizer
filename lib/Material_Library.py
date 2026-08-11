@@ -75,6 +75,9 @@ def raster_to_puzzle_and_lightburn(
         quantize_colors = quantize_colors[0] if quantize_colors else None
     if quantize_colors is not None:
         quantize_colors = int(quantize_colors)
+        max_allowable_colors = len(TARGET_COLORS)
+        if quantize_colors > max_allowable_colors:
+            quantize_colors = max_allowable_colors            
 
     if isinstance(min_island_area, (tuple, list)):
         min_island_area = min_island_area[0] if min_island_area else 0
