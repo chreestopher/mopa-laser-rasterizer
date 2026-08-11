@@ -25,8 +25,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
     """
     Parses a raster image, applies a structural vector scale_factor, saves a gapless SVG puzzle file, 
     and pushes matching paths into LightBurn. 
-    Guarantees the black layer is perfectly sparse by generating it purely from the negative space 
-    left behind by all other color geometries.
+    Guarantees the black layer is perfectly sparse by accurately identifying black pixels through metadata properties.
     """
     printLogMessage(f"Opening raster image: {raster_image_path}")
     img = Image.open(raster_image_path).convert("RGB")
@@ -38,12 +37,16 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
     
     pixel_boxes_by_color = defaultdict(list)
     
-    # Dynamically find the black hex key from TARGET_COLORS map
-    black_hex = next((h for h, meta in TARGET_COLORS.items() if "black" in str(meta).lower() or h == "#000000"), "#000000")
-    
+    # Track the explicit hex key used for black to populate the final processed_layers dict correctly
+    detected_black_hex_key = "#000000"
+    for h, meta in TARGET_COLORS.items():
+        if "black" in str(meta).lower() or h == "#000000":
+            detected_black_hex_key = h
+            break
+            
     printLogMessage("Analyzing pixels and snapping colors...")
     
-    # --- PASS 1: Group all non-black pixels ---
+    # --- PASS 1: Group all strictly non-black pixels ---
     for y in range(height):
         for x in range(width):
             pixel_rgb = img.getpixel((x, y))
@@ -51,8 +54,12 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
             if closest_hex == ignore_background_hex:
                 continue
                 
-            # Skip black completely here; we will generate it programmatically from space left over
-            if closest_hex != black_hex:
+            # Safely check metadata instead of hex string equality
+            meta = TARGET_COLORS.get(closest_hex, [])
+            is_black_pixel = "black" in str(meta).lower() or closest_hex == "#000000"
+            
+            # Skip black completely here; we generate it programmatically from leftover space
+            if not is_black_pixel:
                 pixel_poly = box(x, y, x + 1, y + 1)
                 pixel_boxes_by_color[closest_hex].append(pixel_poly)
 
@@ -131,15 +138,15 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
     # 3. Black is exactly equal to the total canvas MINUS all foreground items
     raw_black_negative_space = canvas_boundary.difference(all_colors_union)
     
-    # 4. Apply clean edge buffer filtering to keep puzzle logic uniform
-    processed_layers[black_hex] = raw_black_negative_space.buffer(0.001).buffer(-0.001)
+    # 4. Apply clean edge buffer filtering to keep puzzle logic uniform and assign to detected key
+    processed_layers[detected_black_hex_key] = raw_black_negative_space.buffer(0.001).buffer(-0.001)
 
     printLogMessage("Vector generation complete. Sorting and formatting log history...")
 
     # --- PASS 4: Sort the finished layers by Layer ID ---
     sorted_layers = sorted(
         processed_layers.items(),
-        key=lambda item: TARGET_COLORS[item[0]]
+        key=lambda item: TARGET_COLORS[item[0]][1]
     )
 
     # --- PASS 5: Log, Scale, and Export in Order ---
