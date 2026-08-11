@@ -457,8 +457,8 @@ if __name__ == "__main__":
         TARGET_COLORS=TARGET_COLORS,
         scale_factor=float(square_mm),
         ignore_background_hex="#ffffff",
-        quantize_colors=None,        # Keeps original target palette colors intact
-        min_island_area=0,           # Retains small details and sharp lines
-        simplification_factor=0.0,   # Retains crisp pixel-perfect boundaries
-        smoothing_radius=0.001       # Baseline vector weld setting
+        quantize_colors=quantize_colors,
+        min_island_area=min_island_area,
+        simplification_factor=simplification_factor,
+        smoothing_radius=smoothing_radius
     )
