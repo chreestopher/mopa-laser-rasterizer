@@ -45,9 +45,9 @@ PHOTO_TYPE_PRESETS = {
     
     "abstract": {
         "quantize_colors": 12,           # posterized chunk colors
-        "min_island_area": 50,          # Erases tiny geometric detail frames
+        "min_island_area": 25,          # Erases tiny geometric detail frames
         "simplification_factor": 1.8,   # High morph curve reshaping
-        "smoothing_radius": 10,        # Round out geometric loops
+        "smoothing_radius": 5,        # Round out geometric loops
         "abstract_filter": "wave"
     }
 }
