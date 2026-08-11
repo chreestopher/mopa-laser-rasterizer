@@ -68,6 +68,25 @@ def raster_to_puzzle_and_lightburn(
     Includes quantization, area filtering, path simplification, and variable smoothing parameters 
     to handle gradients, photorealistic images, or cartoon assets dynamically.
     """
+    
+    if isinstance(quantize_colors, (tuple, list)):
+        quantize_colors = quantize_colors[0] if quantize_colors else None
+    if quantize_colors is not None:
+        quantize_colors = int(quantize_colors)
+
+    if isinstance(min_island_area, (tuple, list)):
+        min_island_area = min_island_area[0] if min_island_area else 0
+    min_island_area = float(min_island_area)
+
+    if isinstance(simplification_factor, (tuple, list)):
+        simplification_factor = simplification_factor[0] if simplification_factor else 0.0
+    simplification_factor = float(simplification_factor)
+
+    if isinstance(smoothing_radius, (tuple, list)):
+        smoothing_radius = smoothing_radius[0] if smoothing_radius else 0.001
+    smoothing_radius = float(smoothing_radius)
+    # =========================================================================
+
     printLogMessage(f"Opening raster image: {raster_image_path}")
     img = Image.open(raster_image_path).convert("RGB")
     orig_width, orig_height = img.size
@@ -77,16 +96,8 @@ def raster_to_puzzle_and_lightburn(
     
     # 1. OPTIMIZATION: Reduce gradient colors down to clean bands if quantize_colors is set
     if quantize_colors is not None:
-        # CRITICAL FIX: If a tuple wrapper leaked into this parameter, strip it out and force a raw integer
-        if isinstance(quantize_colors, (tuple, list)):
-            quantize_colors = quantize_colors[0]
-            
-        try:
-            quantize_colors = int(quantize_colors)
-            printLogMessage(f"Quantizing photo colors down to a maximum pool of {quantize_colors} levels...")
-            img = img.quantize(colors=quantize_colors, method=0).convert("RGB")
-        except (ValueError, TypeError) as e:
-            printLogMessage(f"Warning: Failed to quantize image due to type mismatch ({e}). Skipping quantization pass.")
+        printLogMessage(f"Quantizing photo colors down to a maximum pool of {quantize_colors} levels...")
+        img = img.quantize(colors=quantize_colors, method=0).convert("RGB")
         
     width, height = img.size
     
@@ -95,7 +106,7 @@ def raster_to_puzzle_and_lightburn(
     # Dynamically locate the black hex and its corresponding Layer ID
     black_hex = next((h for h, meta in TARGET_COLORS.items() if "black" in str(meta).lower() or h == "#000000"), "#000000")
     black_layer_id = TARGET_COLORS.get(black_hex, [0, 0, "black"])[1]
-    
+
     printLogMessage("Analyzing pixels and snapping colors...")
     
     # --- PASS 1: Build pixel maps for NON-BLACK colors ONLY ---
