@@ -52,8 +52,8 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
     # Rebuild standard flat SVG structure
     root = ET.Element('svg', xmlns="http://w3.org", version="1.1")
     root.set('viewBox', f"0 0 {scaled_width} {scaled_height}")
-    root.set('width', str(scaled_width))
-    root.set('height', str(scaled_height))
+    root.set('width', str(width))
+    root.set('height', str(height))
 
     def add_geom_to_svg(geom, fill_color):
         if geom.is_empty:
@@ -111,12 +111,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
         
         # Export Option 1: Add to SVG Tree
         add_geom_to_svg(final_puzzle_piece, color_hex)
-
-        # 2. Apply lightburn de-Scale Factor
-        if scale_factor != 1.0:
-            printLogMessage(f"Scaling lightburn specific {layer_color_name} geometry by a factor of {scale_factor}x")
-            final_puzzle_piece = scale(final_puzzle_piece, xfact=scale_factor, yfact=scale_factor, origin=(0, 0))
-                
+               
         # Export Option 2: Push to LightBurn
         if color_hex in TARGET_COLORS:
             layer_meta = TARGET_COLORS[color_hex]
