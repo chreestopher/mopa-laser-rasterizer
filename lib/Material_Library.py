@@ -77,9 +77,16 @@ def raster_to_puzzle_and_lightburn(
     
     # 1. OPTIMIZATION: Reduce gradient colors down to clean bands if quantize_colors is set
     if quantize_colors is not None:
-        printLogMessage(f"Quantizing photo colors down to a maximum pool of {quantize_colors} levels...")
-        # Method 0 represents Image.MEDIANCUT explicitly as an expected integer parameter
-        img = img.quantize(colors=quantize_colors, method=0).convert("RGB")
+        # CRITICAL FIX: If a tuple wrapper leaked into this parameter, strip it out and force a raw integer
+        if isinstance(quantize_colors, (tuple, list)):
+            quantize_colors = quantize_colors[0]
+            
+        try:
+            quantize_colors = int(quantize_colors)
+            printLogMessage(f"Quantizing photo colors down to a maximum pool of {quantize_colors} levels...")
+            img = img.quantize(colors=quantize_colors, method=0).convert("RGB")
+        except (ValueError, TypeError) as e:
+            printLogMessage(f"Warning: Failed to quantize image due to type mismatch ({e}). Skipping quantization pass.")
         
     width, height = img.size
     
