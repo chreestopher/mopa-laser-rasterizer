@@ -46,14 +46,14 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
             pixel_boxes_by_color[closest_hex].append(pixel_poly)
 
     # # Calculate new target viewport canvas dimensions for the SVG file
-    # scaled_width = width * scale_factor
-    # scaled_height = height * scale_factor
+    scaled_width = width * scale_factor
+    scaled_height = height * scale_factor
 
     # Rebuild standard flat SVG structure
     root = ET.Element('svg', xmlns="http://w3.org", version="1.1")
-    root.set('viewBox', f"0 0 {width} {height}")
-    root.set('width', str(width))
-    root.set('height', str(height))
+    root.set('viewBox', f"0 0 {new_width} {new_height}")
+    root.set('width', str(new_width))
+    root.set('height', str(new_height))
 
     def add_geom_to_svg(geom, fill_color):
         if geom.is_empty:
@@ -200,87 +200,6 @@ def get_closest_color(r, g, b, TARGET_COLORS):
     my_color = closest_hex
     return my_color
 
-def generate_pixel_svg(TARGET_COLORS, input_image_path, output_svg_path, square_size_mm=0.25, new_width=0, new_height=0):
-    """
-    Loads an image, processes pixels, and generates an SVG file and lightbhurn file
-    
-    Args:
-        input_image_path (str): Path to the source image file.
-        output_svg_path (str): Path where the SVG file will be saved.
-        square_size_mm (float): The size of each square in millimeters.
-        new_width: New Width to resize the image to, respecting the aspect ratio
-        new_height: New Height to resize the image to, respecting the aspect ratio
-            * only one of new_width or new_height can be used at a time
-    """
-    printLogMessage((input_image_path, output_svg_path, square_size_mm, new_width, new_height))
-    
-    try:
-        # Load the image and convert to RGB (to ensure consistent 3-channel access)
-        img = Image.open(input_image_path).convert("RGB")
-    except FileNotFoundError:
-        printLogMessage(f"Error: Input file not found at '{input_image_path}'")
-        return
-    except Exception as e:
-        printLogMessage(f"Error loading image: {e}")
-        return
-
-    img = resize_to_specific_height_or_width(image=img, height=int(new_height), width=int(new_width))
-    width, height = img.size
-    
-    # Calculate the total SVG dimensions in millimeters
-    svg_width_mm = width * square_size_mm
-    svg_height_mm = height * square_size_mm
-    
-    # Constants for the SVG output
-    STROKE_WIDTH_MM = 0.01
-
-    printLogMessage(f"Processing image: {width}x{height} pixels.")
-    printLogMessage(f"Output SVG size: {svg_width_mm:.2f}mm x {svg_height_mm:.2f}mm.")
-    
-    svg_content = []
-
-    # 1. SVG Header
-    svg_content.append(f"""<svg width="{svg_width_mm}mm" height="{svg_height_mm}mm" viewBox="0 0 {svg_width_mm} {svg_height_mm}" xmlns="http://www.w3.org/2000/svg">""")
-    
-    # 2. Generate Rectangles
-    # Iterate over all pixels
-    for y in range(height):
-        for x in range(width):
-            # Get RGB tuple for the current pixel
-            r, g, b = img.getpixel((x, y))
-            
-            # Determine the color based on the rules
-            color = get_closest_color(r, g, b, TARGET_COLORS)
-            # Calculate the position of the square in millimeters
-            x_mm = x * square_size_mm
-            y_mm = y * square_size_mm
-            
-            # Generate the SVG <rect> element
-            rect = (
-                f'<rect x="{x_mm:.4f}" y="{y_mm:.4f}" width="{square_size_mm:.4f}" height="{square_size_mm:.4f}" '
-                f'fill="{color}" stroke="{color}" stroke-width="{STROKE_WIDTH_MM:.4f}" />'
-            )
-            svg_content.append(rect)
-            lb.add(lightburn.Square(square_size_mm, square_size_mm).layer( TARGET_COLORS[color][1] ).translate(x_mm, y_mm))
-            
-    # 3. SVG Footer
-    svg_content.append("</svg>")
-    
-    # Write the content to the file
-    try:
-        with open(output_svg_path, "w") as f:
-            f.write("\n".join(svg_content))
-        printLogMessage(f"Success! SVG saved to '{output_svg_path}'")
-    except Exception as e:
-        printLogMessage(f"Error writing SVG file: {e}")
-
-    try:
-        lb.write(output_svg_path +".lbrn2")
-        printLogMessage(f"Success! lbrn2 saved to "+ output_svg_path +".lbrn2")
-    except Exception as e:
-        printLogMessage(f"Error writing LightBurn file: {e}")
-
-
 def hex_to_rgb(hex_str):
     """Helper to convert #R_G_B or R_G_B hex string to a Numpy RGB tuple."""
     hex_str = hex_str.lstrip('#')
@@ -399,7 +318,6 @@ if __name__ == "__main__":
     new_height=sys.argv[5]
     material_library_file=sys.argv[6]
     the_limit_colors = sys.argv[7]    
-    vectorize = str_to_bool(sys.argv[8]) 
     max_dimension = max(new_width, new_height)
 
     the_limit_colors_list = [item.strip() for item in the_limit_colors.split(",")]
@@ -415,10 +333,5 @@ if __name__ == "__main__":
     the_output_file = f"{OUTPUT_FILE}.vector.svg"
     printLogMessage(f"\nusing TARGET_COLORS: {TARGET_COLORS}")
     printLogMessage(f"\nusing LIMIT COLORS: {','.join(the_limit_colors_list)}")
-    
     TARGET_COLORS = parse_material_settings(lb, material_library_file, the_limit_colors_list, TARGET_COLORS)
-    if vectorize:
-        #trace_with_palette_mapping(TARGET_COLORS, INPUT_FILE, the_output_file, int(max_dimension))
-        raster_to_puzzle_and_lightburn(INPUT_FILE, the_output_file, new_height, new_width, lb, TARGET_COLORS, square_mm)
-    else:
-        generate_pixel_svg(TARGET_COLORS, INPUT_FILE, the_output_file, square_mm, new_width, new_height)
+    raster_to_puzzle_and_lightburn(INPUT_FILE, the_output_file, new_height, new_width, lb, TARGET_COLORS, square_mm)

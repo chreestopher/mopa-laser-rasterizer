@@ -106,7 +106,7 @@ def long_running_script(task_id, data, image_path, material_settings_path):
         new_width = data.get('new_width', '100')
         new_height = data.get('new_height', '100')
         colors = data.get('colors', '')
-        vectorize_string = data.get('vectorize', 'false')
+        
         
         output_filename = tasks[f"{task_id}_filename"]
         output_file_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
@@ -124,8 +124,7 @@ def long_running_script(task_id, data, image_path, material_settings_path):
                 str(new_width), 
                 str(new_height), 
                 material_settings_path, 
-                str(colors), 
-                str(vectorize_string)
+                str(colors)
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,  # Merges stderr into stdout cleanly
