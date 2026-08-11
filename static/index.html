@@ -246,15 +246,13 @@
 
   <div>
     <div>
-      <label for="image_preset">Choose Image Type Preset Setting</label>
-      <select id="image_preset" name="image_preset">
+      <select id="image_preset" name="image_preset" onchange="toggleAbstractFilter()">
         <option value="cartoon" selected>Cartoon</option>
         <option value="color_photograph">Color Photo</option>
         <option value="bw_dither_photograph">Black and White Photo</option>
         <option value="abstract">Abstract</option>
       </select>
      
-  <!-- Wrapped the label and select in a container to toggle them together easily -->
       <div id="abstract_filter_container" style="display: none;">
         <label for="abstract_filter">Abstract Filter Selection </label>
         <select id="abstract_filter" name="abstract_filter">
@@ -265,12 +263,25 @@
         </select>            
       </div>
     </div>    
-    </div>    
-    <button type="submit">Process Raster</button>      
-  </div>
-  </form>
+  </div>    
+  <button type="submit">Process Raster</button>      
+</form>
 
+  <script>    
+    function toggleAbstractFilter() {
+        const presetSelect = document.getElementById('image_preset');
+        const filterContainer = document.getElementById('abstract_filter_container');
+        
+        if (presetSelect.value === 'abstract') {
+            filterContainer.style.display = 'block';
+        } else {
+            filterContainer.style.display = 'none';
+        }
+    }
 
+    // FIX 2: Run the function immediately on page load to handle defaults
+    document.addEventListener("DOMContentLoaded", toggleAbstractFilter);
+  </script>
 
   <script>    
     function toggleAbstractFilter() {
