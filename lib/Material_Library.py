@@ -25,8 +25,8 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
     """
     Parses a raster image, applies a structural vector scale_factor, saves a gapless SVG puzzle file, 
     and pushes matching paths into LightBurn.
-    Forces LightBurn to handle the cutout subtraction natively by overlaying all non-black 
-    foreground geometries directly onto the black cutting layer without generating a duplicate solid background.
+    Forces LightBurn to handle subtraction natively by establishing an outer canvas frame on the black layer 
+    and nesting all non-black foreground geometries inside it as cutout holes.
     """
     printLogMessage(f"Opening raster image: {raster_image_path}")
     img = Image.open(raster_image_path).convert("RGB")
@@ -52,7 +52,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
             if closest_hex == ignore_background_hex:
                 continue
                 
-            # CRITICAL FIX: Skip collecting black pixels to eliminate the duplicate solid backing box
+            # Skip black pixels here; we define the black layer using a geometric frame instead
             if closest_hex == black_hex:
                 continue
                 
@@ -118,6 +118,11 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
         final_puzzle_piece = welded_layer.buffer(0.001).buffer(-0.001)
         processed_layers[color_hex] = final_puzzle_piece
 
+    # Inject the solid outer canvas boundary frame directly into the black layer dictionary item
+    # This acts as the outer plate that all subsequent color shapes will cut holes out of
+    canvas_frame = box(0, 0, width, height)
+    processed_layers[black_hex] = canvas_frame
+
     printLogMessage("Vector generation complete. Sorting and formatting log history...")
 
     # --- PASS 3: Sort the finished layers by Layer ID ---
@@ -153,9 +158,11 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
             printLogMessage(f"Pushing scaled {layer_color_name} geometry into LightBurn Layer ID: {layer_id}")
             push_geom_to_lightburn(final_puzzle_piece, color_hex)
             
-            # 2. Push it directly onto the black layer to trigger native cutout holes
-            printLogMessage(f" -> Overlaying cutout path onto Black Layer ID: {black_layer_id}")
-            push_geom_to_lightburn(final_puzzle_piece, color_hex, override_layer_id=black_layer_id)
+            # 2. If this shape is NOT the black frame itself, also push it onto the black layer.
+            # LightBurn automatically subtracts shapes nested inside the canvas frame on the same layer ID.
+            if color_hex != black_hex:
+                printLogMessage(f" -> Overlaying cutout path onto Black Layer ID: {black_layer_id}")
+                push_geom_to_lightburn(final_puzzle_piece, color_hex, override_layer_id=black_layer_id)
 
     # Save SVG to disk
     tree = ET.ElementTree(root)
