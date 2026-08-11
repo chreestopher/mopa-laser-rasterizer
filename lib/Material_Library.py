@@ -132,7 +132,7 @@ def raster_to_puzzle_and_lightburn(raster_image_path, output_svg_path, new_heigh
     # --- PASS 4: Sort the finished layers by Layer ID ---
     sorted_layers = sorted(
         processed_layers.items(),
-        key=lambda item: TARGET_COLORS[item]
+        key=lambda item: TARGET_COLORS[item[0]]
     )
 
     # --- PASS 5: Log, Scale, and Export in Order ---
