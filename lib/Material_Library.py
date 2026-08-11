@@ -158,7 +158,7 @@ def get_closest_color(r, g, b, TARGET_COLORS):
     """
     # 1. Calculate Value (V) for thresholding (using max component for simplicity)
     if found_lb_hex[(r,g,b)] 
-        return found_lb_hex[(r,g,b)] 
+        return found_lb_hex[(r,g,b)]:
     r=int(r)
     g=int(g)
     b=int(b)
