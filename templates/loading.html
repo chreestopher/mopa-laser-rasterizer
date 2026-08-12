@@ -46,6 +46,64 @@
             margin-right: 8px;
             user-select: none;
         }
+        .btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+        /* 
+           MATCHING LOGIC STYLES:
+           These properties mirror a standard high-utility submission element setup.
+        */
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 14px 20px;
+            box-sizing: border-box;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+            text-align: center;
+            transition: background-color 0.15s ease, transform 0.1s ease;
+        }
+        /* Primary actions (Like your main page submit action background setup) */
+        .btn-primary { 
+            background-color: #3498db; 
+            color: white; 
+        }
+        .btn-primary:hover { 
+            background-color: #2980b9; 
+        }
+        .btn-primary:active {
+            transform: scale(0.98);
+        }
+        /* Accent Laser file action variant */
+        .btn-accent {
+            background-color: #e67e22;
+            color: white;
+        }
+        .btn-accent:hover {
+            background-color: #d35400;
+        }
+        .btn-accent:active {
+            transform: scale(0.98);
+        }
+        /* Secondary home actions fallback */
+        .btn-secondary { 
+            background-color: #e2e8f0; 
+            color: #4a5568; 
+        }
+        .btn-secondary:hover { 
+            background-color: #cbd5e1; 
+        }
+        .btn-secondary:active {
+            transform: scale(0.98);
+        }        
     </style>
 </head>
 <body>
@@ -61,24 +119,11 @@
             <ul id="download-list" class="download-list">
                 
                 <!-- Check if the files variable exists and has items -->
-                {% if files %}
-                    {% for file_url in files %}
-                        <li class="download-item">
-                            <!-- Check the string path to determine a user-friendly label -->
-                            <span>
-                                {% if 'lbrn2' in file_url %}
-                                    LightBurn File (.lbrn2)
-                                {% else %}
-                                    Standard Processed File
-                                {% endif %}
-                            </span>
-                            <a href="{{ file_url }}" class="download-link" download>Download</a>
-                        </li>
-                    {% endfor %}
-                {% else %}
-                    <!-- Fallback text if no active task files exist on load -->
-                    <li class="no-files-text">No files processed in this session yet.</li>
-                {% endif %}
+            <div class="btn-group">
+                <a href="/download/{{ task_id }}" class="btn btn-accent">Download SVG file)</a>                
+                <a href="/download-lbrn2/{{ task_id }}" class="btn btn-accent">Download LightBurn File (.lbrn2)</a>
+                <a href="/" class="btn btn-secondary">Process Another Image</a>
+            </div>                
                 
             </ul>
         </aside>
