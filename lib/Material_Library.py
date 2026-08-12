@@ -16,7 +16,9 @@ from shapely.ops import unary_union, voronoi_diagram, transform
 from shapely.affinity import scale, affine_transform
 from svgelements import SVG, Path, Polygon as SVGPolygon
 from datetime import datetime
- 
+
+
+
 def printLogMessage(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}", flush=True)
@@ -260,18 +262,14 @@ def raster_to_puzzle_and_lightburn(
     
     # 1. Apply the abstract filter transformations to the black frame here
     if abstract_filter is not None and not canvas_frame.is_empty and image_preset == "abstract":
-        from shapely.affinity import affine_transform
-        import math
         
         if str(abstract_filter).lower() == "wave":
             def wave_transform(x, y, z=None):
                 return (x + math.sin(y * 0.1) * 4.0, y + math.cos(x * 0.1) * 4.0)
-            from shapely.ops import transform
+            
             canvas_frame = transform(wave_transform, canvas_frame)
             
         elif str(abstract_filter).lower() == "voronoi":
-            from shapely.ops import voronoi_diagram
-            from shapely.geometry import MultiPoint
             bounds = canvas_frame.bounds
             points = []
             for gx in range(int(bounds[0]), int(bounds[2]) + 15, 15):
