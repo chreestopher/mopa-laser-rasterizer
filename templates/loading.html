@@ -156,6 +156,75 @@
         .file-actions { width: 100%; }
         .download-button { flex: 1; text-align: center; }
     }
+    :root {
+        --metal-dark: #1b1e18;
+        --metal: #34382e;
+        --metal-edge: #777864;
+        --cream: #d8d1ad;
+        --phosphor: #83f06a;
+        --orange: #ad4f1d;
+    }
+    body {
+        position: relative;
+        color: var(--cream);
+        background:
+            repeating-linear-gradient(90deg, rgba(255,255,255,.014) 0 1px, transparent 1px 4px),
+            radial-gradient(circle at 50% 15%, #4a4e3e 0, #292d25 45%, #151713 100%);
+        border: 3px solid #686957;
+        border-radius: 32px;
+        box-shadow: inset 0 0 0 5px #171914, inset 0 0 55px #000, 0 0 0 1px #96977d;
+    }
+    body::before, body::after {
+        content: "✦";
+        position: fixed;
+        top: 18px;
+        color: #8e8e73;
+        font-size: 18px;
+        text-shadow: 0 2px 2px #000;
+    }
+    body::before { left: 22px; }
+    body::after { right: 22px; }
+    .page-header { flex-direction: column; min-height: 72px; }
+    .page-header h1 {
+        color: var(--cream);
+        font-family: Impact, "Arial Narrow", sans-serif;
+        font-weight: 500;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        text-shadow: 0 3px #111;
+    }
+    .page-header::after {
+        content: "VECTOR PROCESSING CONSOLE · SERIES 79";
+        margin-top: 7px;
+        color: #bdb58f;
+        font: 700 12px "Courier New", monospace;
+        letter-spacing: .16em;
+    }
+    .terminal-box, .files-panel {
+        position: relative;
+        background:
+            repeating-linear-gradient(0deg, rgba(130,255,100,.025) 0 1px, transparent 1px 4px),
+            radial-gradient(ellipse at center, #172516 0, #0b110b 78%);
+        border: 3px solid var(--metal-edge);
+        border-radius: 24px;
+        color: var(--phosphor);
+        box-shadow: inset 0 0 0 5px #23271f, inset 0 0 36px rgba(90,255,70,.12), inset 0 0 75px #000, 0 7px 0 #11140f, 0 12px 22px rgba(0,0,0,.5);
+    }
+    .terminal-box { text-shadow: 0 0 7px rgba(131,240,106,.4); }
+    .files-panel { color: #d5d1b4; }
+    .files-header { border-color: #536347; }
+    .files-header h2 { color: var(--cream); letter-spacing: .08em; }
+    .file-status { color: #e1a63b; }
+    .download-button, .another-button {
+        border: 2px solid #d07b48;
+        background: linear-gradient(#c46730, var(--orange));
+        color: #fff1cd;
+        box-shadow: inset 0 1px rgba(255,255,255,.25), 0 3px 0 #55270f;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+    }
+    .download-button:hover, .another-button:hover { background: linear-gradient(#dc7940, #bd5a28); }
+    .log-prefix { color: #55794c; }
     </style>
 </head>
 <body>
