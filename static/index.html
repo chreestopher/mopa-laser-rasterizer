@@ -657,10 +657,13 @@
         localStorage.setItem('mopa-machine-theme', themeSwitch.checked ? 'light' : 'dark');
       });
       const sessionFromLink = new URLSearchParams(window.location.search).get('history_session');
+      const savedHistorySession = sessionStorage.getItem('mopa-history-session');
       const newSession = crypto.randomUUID
         ? crypto.randomUUID()
         : `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`;
-      document.getElementById('history_session').value = sessionFromLink || newSession;
+      const historySession = sessionFromLink || savedHistorySession || newSession;
+      document.getElementById('history_session').value = historySession;
+      sessionStorage.setItem('mopa-history-session', historySession);
       toggleAbstractFilter();
       renderFilterControls();
     });

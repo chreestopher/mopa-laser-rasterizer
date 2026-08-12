@@ -258,7 +258,7 @@
             <ul id="download-list" class="download-list">
                 {% for file in history_files %}
                 <li class="file-item" data-task-id="{{ file.task_id }}">
-                    <div class="file-name">{{ file.source_name }} <span class="file-status">[{{ file.status }}]</span></div>
+                    <div class="file-name"><span class="source-name">{{ file.source_name }}</span> <span class="file-time" data-created-at="{{ file.created_at }}"></span> <span class="file-status">[{{ file.status }}]</span></div>
                     <div class="file-actions">
                         <a class="download-button{% if file.status != 'completed' %} disabled{% endif %}" href="{{ file.svg_url }}">SVG</a>
                         <a class="download-button{% if file.status != 'completed' %} disabled{% endif %}" href="{{ file.lightburn_url }}">LightBurn</a>
@@ -279,6 +279,7 @@
 <script>
 const taskId = "{{ task_id }}";
 const historySession = "{{ history_session }}";
+if (historySession) sessionStorage.setItem('mopa-history-session', historySession);
 const logContainer = document.getElementById("log-container");
 const terminalBox = document.getElementById("terminal");
 
@@ -304,7 +305,10 @@ function fileRowHtml(file) {
     const ready = file.status === 'completed';
     const disabled = ready ? '' : ' disabled';
     const name = escapeHtml(file.source_name || 'processed image');
-    return `<div class="file-name"><span class="source-name">${name}</span> <span class="file-status">[${file.status}]</span></div>` +
+    const timestamp = file.created_at
+      ? new Date(file.created_at * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'})
+      : '';
+    return `<div class="file-name"><span class="source-name">${name}</span> <span class="file-time">${timestamp}</span> <span class="file-status">[${file.status}]</span></div>` +
       `<div class="file-actions"><a class="download-button${disabled}" href="${file.svg_url}">SVG</a>` +
       `<a class="download-button${disabled}" href="${file.lightburn_url}">LightBurn</a></div>`;
 }
@@ -331,7 +335,7 @@ async function refreshFileHistory() {
         return;
     }
     try {
-      const response = await fetch(`/file-history/${encodeURIComponent(historySession)}`);
+      const response = await fetch(`/file-history/${encodeURIComponent(historySession)}`, {cache: 'no-store'});
       if (!response.ok) throw new Error(`History request returned ${response.status}`);
       const data = await response.json();
       const files = data.files || [];
@@ -345,6 +349,10 @@ async function refreshFileHistory() {
 }
 
 refreshFileHistory();
+document.querySelectorAll('.file-time[data-created-at]').forEach(element => {
+    const timestamp = Number(element.dataset.createdAt);
+    if (timestamp) element.textContent = new Date(timestamp * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+});
 
 function appendLogMessage(message) {
     const cleanMessage = message ? message.trim() : "";

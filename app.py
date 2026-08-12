@@ -6,7 +6,7 @@ import multiprocessing
 import time
 import json
 import re
-from flask import Flask, render_template, jsonify, request, send_from_directory, redirect
+from flask import Flask, render_template, jsonify, request, send_from_directory, redirect, make_response
 from werkzeug.utils import secure_filename
 import redis
 import boto3
@@ -324,7 +324,11 @@ def start_task():
     material_settings.save(material_settings_path)
 
     user_data = request.form.to_dict()
-    history_session = valid_history_session(user_data.get('history_session'))
+    history_session = (
+        valid_history_session(user_data.get('history_session'))
+        or valid_history_session(request.cookies.get('mopa_history_session'))
+        or str(uuid.uuid4())
+    )
     try:
         filter_name = str(user_data.get('abstract_filter', 'none')).strip().lower()
         if filter_name not in ABSTRACT_FILTER_NAMES:
@@ -342,6 +346,17 @@ def start_task():
     tasks[f"{task_id}_error"] = None
     add_history_entry(history_session, task_id, base_name)
 
+    history_files = get_history_entries(history_session)
+    if not any(item.get("task_id") == task_id for item in history_files):
+        history_files.insert(0, {
+            "task_id": task_id,
+            "source_name": base_name,
+            "created_at": int(time.time()),
+            "status": "pending",
+            "svg_url": f"/download/{task_id}",
+            "lightburn_url": f"/download-lbrn2/{task_id}",
+        })
+
     thread = threading.Thread(
         target=long_running_script, 
         args=(task_id, user_data, image_path, material_settings_path)
@@ -351,14 +366,23 @@ def start_task():
         f"/download-lbrn2/{task_id}",
         f"/download/{task_id}"
     ]        
-    return render_template(
+    response = make_response(render_template(
         'loading.html', 
         task_id=task_id, 
         files=download_urls,
         history_session=history_session or "",
-        history_files=get_history_entries(history_session),
+        history_files=history_files,
         current_source_name=base_name
+    ))
+    response.set_cookie(
+        'mopa_history_session',
+        history_session,
+        max_age=HISTORY_TTL_SECONDS,
+        secure=request.is_secure,
+        httponly=True,
+        samesite='Lax',
     )
+    return response
 
 
 @app.route('/file-history/<session_id>')
