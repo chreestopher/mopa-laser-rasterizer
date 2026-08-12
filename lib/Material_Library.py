@@ -603,7 +603,7 @@ ABSTRACT_FILTER_DEFAULTS = {
                    "light_areas_transparent": True, "light_threshold": 225},
 }
 
-PALETTE_LIMITING_FILTERS = {
+FULL_PALETTE_FILTERS = {
     "wave", "voronoi", "shear", "spiral", "mosaic", "crystal", "ripple", "xenoglyph"
 }
 
@@ -1683,11 +1683,17 @@ def raster_to_puzzle_and_lightburn(
     filter_name, normalized_filter_settings = normalize_abstract_settings(
         abstract_filter, filter_parameters
     )
-    if filter_name in PALETTE_LIMITING_FILTERS:
-        quantize_colors = max(2, len(TARGET_COLORS))
+    if filter_name in FULL_PALETTE_FILTERS:
+        # Pillow's adaptive quantizer creates its own intermediate palette;
+        # asking it for N colors does not make those colors the N selected
+        # LightBurn layers. It can therefore erase hues before closest-layer
+        # matching. Preserve source RGB here and let get_closest_color() match
+        # every pixel directly against the complete filtered TARGET_COLORS.
+        quantize_colors = None
         printLogMessage(
-            f"{filter_name.title()} filter using all {len(TARGET_COLORS)} "
-            "colors available after UI and material-library filtering."
+            f"{filter_name.title()} filter bypassing intermediate palette "
+            f"reduction and matching directly to all {len(TARGET_COLORS)} "
+            "available LightBurn colors."
         )
 
     # =========================================================================
