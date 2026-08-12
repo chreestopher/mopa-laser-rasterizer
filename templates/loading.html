@@ -49,14 +49,18 @@
         .btn-group {
             display: flex;
             flex-direction: row;
+            flex-wrap: wrap;
             gap: 12px;
-            max-width: 400px;
+            width: 66.67%;
+            max-width: 1200px;
             margin: 0 auto;
             justify-content: center;
         }
+
         .btn {
             display: block;
-            width: 100%;
+            flex: 1 1 160px;
+            min-width: 160px;
             padding: 14px 20px;
             box-sizing: border-box;
             border: none;
