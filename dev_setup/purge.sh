@@ -12,3 +12,4 @@ sudo docker builder prune -a -f
 
 # 2. Force delete all unused or dangling docker system volumes and containers
 sudo docker system prune -a --volumes -f
+echo "done"
