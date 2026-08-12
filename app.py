@@ -25,7 +25,7 @@ BUCKET_NAME = 'mopa-laser-rasterizer.com'
 
 ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
-    "crystal", "ripple"
+    "crystal", "ripple", "centerline", "tumbler"
 }
 
 
@@ -43,6 +43,9 @@ def parse_abstract_filter_parameters(raw_value):
     for key, value in parameters.items():
         if not isinstance(key, str) or not key.replace("_", "").isalnum():
             raise ValueError("An abstract filter setting has an invalid name")
+        if key == "material" and value in ("metal", "powdercoat"):
+            clean[key] = value
+            continue
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError(f"Abstract filter setting '{key}' must be numeric")
         clean[key] = value

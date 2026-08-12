@@ -340,6 +340,8 @@
           <option value="mosaic">Staggered Mosaic</option>
           <option value="crystal">Crystal Tessellation</option>
           <option value="ripple">Topographic Ripple</option>
+          <option value="centerline">Centerline Drawing</option>
+          <option value="tumbler">Tumbler Wrap</option>
           <option value="none">None</option>
         </select>
         <p id="filter_description" class="filter-description"></p>
@@ -390,6 +392,19 @@
         controls: [['amplitude', 3, -30, 30, .5], ['frequency', .18, .01, 1, .01],
           ['phase', 0, 0, 6.283, .05], ['center_x', .5, 0, 1, .01], ['center_y', .5, 0, 1, .01]]
       },
+      centerline: {
+        description: 'Reduces each color region to a single open medial-axis path for line engraving instead of outlined or filled shapes.',
+        controls: [['line_simplification', .35, 0, 3, .05], ['min_branch_length', 2, 0, 30, 1]]
+      },
+      tumbler: {
+        description: 'Sizes and progressively warps artwork for a straight, tapered, bulged, or waisted rotary tumbler. Measure diameters across the engraving zone.',
+        controls: [['top_diameter_mm', 75, 20, 200, .1], ['middle_diameter_mm', 75, 20, 200, .1],
+          ['bottom_diameter_mm', 70, 20, 200, .1], ['artwork_height_mm', 100, 5, 300, 1],
+          ['wrap_angle', 180, 10, 360, 1], ['profile_curve', 0, -1, 1, .05],
+          ['horizontal_anchor', .5, 0, 1, .05], ['powdercoat_gap_mm', .35, 0, 3, .05],
+          ['powdercoat_simplification_mm', .3, 0, 3, .05], ['foreground_min_percent', .15, 0, 5, .05]],
+        material: true
+      },
       none: { description: 'Uses the abstract vector settings without an additional geometric transformation.', controls: [] }
     };
 
@@ -398,11 +413,34 @@
 
     function updateFilterParameters() {
       const values = {};
-      document.querySelectorAll('#filter_controls input').forEach(input => {
-        values[input.dataset.parameter] = Number(input.value);
-        input.closest('.filter-control').querySelector('output').value = input.value;
+      document.querySelectorAll('#filter_controls input, #filter_controls select').forEach(input => {
+        values[input.dataset.parameter] = input.tagName === 'SELECT' ? input.value : Number(input.value);
+        const output = input.closest('.filter-control').querySelector('output');
+        if (output) output.value = input.value;
       });
       document.getElementById('abstract_filter_parameters').value = JSON.stringify(values);
+      updateTumblerReadout(values);
+    }
+
+    function updateTumblerReadout(values) {
+      let readout = document.getElementById('tumbler_readout');
+      if (document.getElementById('abstract_filter').value !== 'tumbler') {
+        if (readout) readout.remove();
+        return;
+      }
+      if (!readout) {
+        readout = document.createElement('p');
+        readout.id = 'tumbler_readout';
+        readout.className = 'filter-description';
+        document.getElementById('filter_controls').after(readout);
+      }
+      const angle = values.wrap_angle / 360;
+      const circumference = d => Math.PI * d;
+      const span = d => circumference(d) * angle;
+      readout.textContent = `Circumference — top: ${circumference(values.top_diameter_mm).toFixed(1)} mm, ` +
+        `middle: ${circumference(values.middle_diameter_mm).toFixed(1)} mm, bottom: ${circumference(values.bottom_diameter_mm).toFixed(1)} mm. ` +
+        `Artwork width across the selected ${values.wrap_angle}° wrap: ${span(values.top_diameter_mm).toFixed(1)} / ` +
+        `${span(values.middle_diameter_mm).toFixed(1)} / ${span(values.bottom_diameter_mm).toFixed(1)} mm.`;
     }
 
     function renderFilterControls() {
@@ -410,6 +448,18 @@
       const controls = document.getElementById('filter_controls');
       document.getElementById('filter_description').textContent = filter.description;
       controls.replaceChildren();
+      if (filter.material) {
+        const row = document.createElement('div');
+        row.className = 'filter-control';
+        row.innerHTML = '<label for="tumbler_material"><span>Material</span></label>' +
+          '<select id="tumbler_material" data-parameter="material"><option value="metal">Bare metal</option>' +
+          '<option value="powdercoat">Powder coat</option></select>';
+        row.querySelector('select').addEventListener('change', () => {
+          updateFilterParameters();
+          updatePowdercoatVisibility();
+        });
+        controls.appendChild(row);
+      }
       filter.controls.forEach(([name, value, min, max, step]) => {
         const row = document.createElement('div');
         row.className = 'filter-control';
@@ -421,6 +471,16 @@
       document.getElementById('randomize_filter').style.display = filter.controls.length ? 'block' : 'none';
       document.getElementById('reset_filter').style.display = filter.controls.length ? 'block' : 'none';
       updateFilterParameters();
+      updatePowdercoatVisibility();
+    }
+
+    function updatePowdercoatVisibility() {
+      const material = document.getElementById('tumbler_material');
+      const show = material && material.value === 'powdercoat';
+      ['powdercoat_gap_mm', 'powdercoat_simplification_mm', 'foreground_min_percent'].forEach(name => {
+        const input = document.querySelector(`[data-parameter="${name}"]`);
+        if (input) input.closest('.filter-control').style.display = show ? 'block' : 'none';
+      });
     }
 
     function toggleAbstractFilter() {

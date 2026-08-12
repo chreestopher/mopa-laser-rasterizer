@@ -11,7 +11,7 @@ import svgwrite
 import potrace
 import xml.etree.ElementTree as ET
 from collections import defaultdict
-from shapely.geometry import Polygon, box, MultiPoint
+from shapely.geometry import Polygon, box, MultiPoint, LineString, MultiLineString
 from shapely.ops import unary_union, voronoi_diagram, transform
 from shapely.affinity import scale, affine_transform
 from shapely.validation import make_valid
@@ -184,7 +184,23 @@ def init_lightburn(the_colors_limit):
     """
     # Define the module name and its exact absolute file path
     module_name = "lightburn"
-    file_path = "/app/lib/lightburn.py"
+    module_dir = os.path.dirname(os.path.abspath(__file__))
+    lightburn_candidates = [
+        os.environ.get("LIGHTBURN_MODULE"),
+        os.path.join(module_dir, "lightburn.py"),
+        os.path.join(module_dir, "lib", "lightburn.py"),
+        os.path.join(os.path.dirname(module_dir), "lib", "lightburn.py"),
+        "/app/lib/lightburn.py"
+    ]
+    file_path = next(
+        (path for path in lightburn_candidates if path and os.path.isfile(path)),
+        None
+    )
+    if file_path is None:
+        raise FileNotFoundError(
+            "lightburn.py was not found. Place it beside Material_Library.py, "
+            "under lib/, or set LIGHTBURN_MODULE=/path/to/lightburn.py"
+        )
 
     # Create a module spec from the file location
     spec = importlib.util.spec_from_file_location(module_name, file_path)
@@ -386,7 +402,8 @@ def classify_raster_pixels(
     img,
     target_colors,
     black_hex,
-    ignore_background_hex
+    ignore_background_hex,
+    include_black=False
 ):
     """
     Convert raster pixels into 1x1 Shapely boxes grouped by color.
@@ -426,7 +443,7 @@ def classify_raster_pixels(
             #
             #     canvas - all colored geometry
             #
-            if closest_hex == black_hex:
+            if closest_hex == black_hex and not include_black:
                 continue
 
             pixel_poly = box(
@@ -445,6 +462,114 @@ def classify_raster_pixels(
     return pixel_boxes_by_color
 
 
+def boxes_to_centerlines(boxes, settings):
+    """Reduce a raster color region to open, one-pixel-wide medial-axis paths."""
+    if not boxes:
+        return MultiLineString([])
+    min_x = math.floor(min(item.bounds[0] for item in boxes))
+    min_y = math.floor(min(item.bounds[1] for item in boxes))
+    max_x = math.ceil(max(item.bounds[2] for item in boxes))
+    max_y = math.ceil(max(item.bounds[3] for item in boxes))
+    mask = np.zeros((max_y - min_y + 2, max_x - min_x + 2), dtype=np.uint8)
+    for item in boxes:
+        x, y = int(item.bounds[0]) - min_x + 1, int(item.bounds[1]) - min_y + 1
+        mask[y, x] = 255
+
+    # Morphological skeletonization uses only core OpenCV and converges to a
+    # true one-pixel center axis without requiring opencv-contrib/ximgproc.
+    skeleton = np.zeros_like(mask)
+    working = mask.copy()
+    element = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
+    while cv2.countNonZero(working):
+        eroded = cv2.erode(working, element)
+        opened = cv2.dilate(eroded, element)
+        skeleton = cv2.bitwise_or(skeleton, cv2.subtract(working, opened))
+        working = eroded
+
+    pixels = {(int(x), int(y)) for y, x in np.argwhere(skeleton > 0)}
+    if not pixels:
+        return MultiLineString([])
+    offsets = ((-1, -1), (0, -1), (1, -1), (-1, 0),
+               (1, 0), (-1, 1), (0, 1), (1, 1))
+    neighbors = {p: {q for dx, dy in offsets if (q := (p[0] + dx, p[1] + dy)) in pixels}
+                 for p in pixels}
+    visited = set()
+    lines = []
+
+    def edge(a, b):
+        return tuple(sorted((a, b)))
+
+    def follow(start, nxt):
+        path = [start, nxt]
+        visited.add(edge(start, nxt))
+        previous, current = start, nxt
+        while len(neighbors[current]) == 2:
+            candidates = [p for p in neighbors[current] if p != previous]
+            if not candidates or edge(current, candidates[0]) in visited:
+                break
+            previous, current = current, candidates[0]
+            path.append(current)
+            visited.add(edge(previous, current))
+        return path
+
+    endpoints = [p for p in pixels if len(neighbors[p]) != 2]
+    for start in endpoints:
+        for nxt in neighbors[start]:
+            if edge(start, nxt) not in visited:
+                lines.append(follow(start, nxt))
+    # Closed loops have no endpoint/junction, so collect their remaining edge.
+    for start in pixels:
+        for nxt in neighbors[start]:
+            if edge(start, nxt) not in visited:
+                lines.append(follow(start, nxt))
+
+    tolerance = _number(settings.get("line_simplification"), .35, 0, 10)
+    minimum = _number(settings.get("min_branch_length"), 2, 0, 1000)
+    result = []
+    for points in lines:
+        if len(points) < 2:
+            continue
+        line = LineString([(x + min_x - .5, y + min_y - .5) for x, y in points])
+        if tolerance:
+            line = line.simplify(tolerance, preserve_topology=False)
+        if line.length >= minimum and len(line.coords) >= 2:
+            result.append(line)
+    return MultiLineString(result) if result else MultiLineString([])
+
+
+def retain_dominant_foreground(pixel_boxes_by_color, img, settings):
+    """Keep the largest connected non-background subject for powder-coat art."""
+    rgb = np.asarray(img.convert("RGB"), dtype=np.float32)
+    height, width = rgb.shape[:2]
+    border = np.concatenate((rgb[0], rgb[-1], rgb[:, 0], rgb[:, -1]), axis=0)
+    background = np.median(border, axis=0)
+    distance = np.linalg.norm(rgb - background, axis=2)
+    normalized = np.uint8(np.clip(distance / max(distance.max(), 1) * 255, 0, 255))
+    _, mask = cv2.threshold(normalized, 0, 1, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+    box_records = []
+    for color, boxes in pixel_boxes_by_color.items():
+        for item in boxes:
+            x, y = int(item.bounds[0]), int(item.bounds[1])
+            if 0 <= x < width and 0 <= y < height:
+                box_records.append((color, item, x, y))
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    if count <= 1:
+        return pixel_boxes_by_color
+    candidates = list(range(1, count))
+    min_percent = _number(settings.get("foreground_min_percent"), .15, 0, 100)
+    minimum_area = width * height * min_percent / 100
+    eligible = [label for label in candidates if stats[label, cv2.CC_STAT_AREA] >= minimum_area]
+    dominant = max(eligible or candidates, key=lambda label: stats[label, cv2.CC_STAT_AREA])
+    retained = defaultdict(list)
+    for color, item, x, y in box_records:
+        if labels[y, x] == dominant:
+            retained[color].append(item)
+    printLogMessage(f"Powder-coat subject isolation retained {stats[dominant, cv2.CC_STAT_AREA]} foreground pixels.")
+    return retained
+
+
 # ============================================================================
 # ABSTRACT FILTERS
 # ============================================================================
@@ -457,6 +582,12 @@ ABSTRACT_FILTER_DEFAULTS = {
     "mosaic": {"tile_size": 12, "gap": 1, "stagger": .5},
     "crystal": {"cell_size": 18, "gap": .7},
     "ripple": {"amplitude": 3, "frequency": .18, "phase": 0, "center_x": .5, "center_y": .5},
+    "centerline": {"line_simplification": .35, "min_branch_length": 2},
+    "tumbler": {"top_diameter_mm": 75, "middle_diameter_mm": 75,
+                "bottom_diameter_mm": 70, "artwork_height_mm": 100,
+                "wrap_angle": 180, "profile_curve": 0, "horizontal_anchor": .5,
+                "material": "metal", "powdercoat_gap_mm": .35,
+                "powdercoat_simplification_mm": .3, "foreground_min_percent": .15},
 }
 
 # Frontends can use this schema to build sliders without duplicating ranges.
@@ -474,6 +605,13 @@ ABSTRACT_FILTER_CONTROLS = {
     "crystal": (("cell_size", 3, 120, 1), ("gap", 0, 20, .1)),
     "ripple": (("amplitude", -30, 30, .5), ("frequency", .01, 1, .01),
                ("phase", 0, 6.283, .05), ("center_x", 0, 1, .01), ("center_y", 0, 1, .01)),
+    "centerline": (("line_simplification", 0, 3, .05), ("min_branch_length", 0, 30, 1)),
+    "tumbler": (("top_diameter_mm", 20, 200, .1), ("middle_diameter_mm", 20, 200, .1),
+                ("bottom_diameter_mm", 20, 200, .1), ("artwork_height_mm", 5, 300, 1),
+                ("wrap_angle", 10, 360, 1), ("profile_curve", -1, 1, .05),
+                ("horizontal_anchor", 0, 1, .05), ("powdercoat_gap_mm", 0, 3, .05),
+                ("powdercoat_simplification_mm", 0, 3, .05),
+                ("foreground_min_percent", 0, 5, .05)),
 }
 
 
@@ -621,6 +759,50 @@ def apply_crystal_filter(geometry, s):
     return _cell_union(geometry, cells, gap)
 
 
+def apply_tumbler_filter(geometry, s):
+    """
+    Unwrap artwork onto a variable-diameter rotary surface.
+
+    Each row spans the same requested angular sweep. Its physical width is
+    therefore local_circumference * wrap_angle / 360. Top/middle/bottom
+    diameters describe the vessel profile; profile_curve adds a smooth bulge
+    or waist between those measured stations.
+    """
+    bounds = s.get("_canvas_bounds") or geometry.bounds
+    x1, y1, x2, y2 = bounds
+    source_width, source_height = max(x2 - x1, 1e-9), max(y2 - y1, 1e-9)
+    pixel_mm = _number(s.get("_scale_factor"), 1, .0001, 1000)
+    top = _number(s.get("top_diameter_mm"), 75, 1, 1000)
+    middle = _number(s.get("middle_diameter_mm"), 75, 1, 1000)
+    bottom = _number(s.get("bottom_diameter_mm"), 70, 1, 1000)
+    height_mm = _number(s.get("artwork_height_mm"), source_height * pixel_mm, .1, 5000)
+    angle_fraction = _number(s.get("wrap_angle"), 180, 1, 360) / 360.0
+    curve = _number(s.get("profile_curve"), 0, -1, 1)
+    anchor = _number(s.get("horizontal_anchor"), .5, 0, 1)
+
+    def diameter_at(t):
+        # Quadratic interpolation through the three user measurements.
+        if t <= .5:
+            u = t * 2
+            diameter = top + (middle - top) * u
+        else:
+            u = (t - .5) * 2
+            diameter = middle + (bottom - middle) * u
+        diameter += curve * min(top, middle, bottom) * .12 * math.sin(math.pi * t)
+        return max(1, diameter)
+
+    def unwrap(x, y, z=None):
+        t = min(1, max(0, (y - y1) / source_height))
+        target_width_px = math.pi * diameter_at(t) * angle_fraction / pixel_mm
+        maximum_width_px = math.pi * max(top, middle, bottom) * (1 + max(0, curve) * .12) * angle_fraction / pixel_mm
+        normalized_x = (x - x1) / source_width
+        new_x = x1 + anchor * (maximum_width_px - target_width_px) + normalized_x * target_width_px
+        new_y = y1 + t * height_mm / pixel_mm
+        return new_x, new_y
+
+    return transform(unwrap, geometry)
+
+
 def apply_abstract_filter(
     geometry,
     abstract_filter,
@@ -637,7 +819,6 @@ def apply_abstract_filter(
     if (
         abstract_filter is None
         or geometry.is_empty
-        or globals().get("image_preset", "abstract") != "abstract"
     ):
         return geometry
 
@@ -672,6 +853,9 @@ def apply_abstract_filter(
 
     if filter_name in ("ripple", "topographic"):
         return apply_ripple_filter(geometry, settings)
+
+    if filter_name == "tumbler":
+        return apply_tumbler_filter(geometry, settings)
 
     return geometry
 
@@ -754,6 +938,10 @@ def process_color_geometry(
         5. Abstract transformation
     """
 
+    filter_name, settings = normalize_abstract_settings(abstract_filter, filter_parameters)
+    if filter_name == "centerline":
+        return boxes_to_centerlines(boxes, settings)
+
     # ------------------------------------------------------------------------
     # 1. Weld all same-color pixels together.
     # ------------------------------------------------------------------------
@@ -793,6 +981,19 @@ def process_color_geometry(
                 preserve_topology=True
             )
         )
+
+    if filter_name == "tumbler" and settings.get("material") == "powdercoat":
+        pixel_mm = _number(settings.get("_scale_factor"), 1, .0001, 1000)
+        gap = _number(settings.get("powdercoat_gap_mm"), .35, 0, 20) / pixel_mm
+        powder_simplification = _number(
+            settings.get("powdercoat_simplification_mm"), .3, 0, 20
+        ) / pixel_mm
+        if gap:
+            final_geometry = final_geometry.buffer(-gap / 2, join_style=2)
+        if powder_simplification and not final_geometry.is_empty:
+            final_geometry = final_geometry.simplify(
+                powder_simplification, preserve_topology=True
+            )
 
     # ------------------------------------------------------------------------
     # 5. Apply abstract transformation.
@@ -1072,8 +1273,17 @@ def add_geometry_to_svg(
             stroke="none"
         )
 
+    elif geometry.geom_type == "LineString":
+        coordinates = list(geometry.coords)
+        if len(coordinates) >= 2:
+            ET.SubElement(root, "path",
+                d="M " + " L ".join(f"{x:.3f},{y:.3f}" for x, y in coordinates),
+                fill="none", stroke=fill_color, **{"stroke-width": "0.1",
+                "stroke-linecap": "round", "stroke-linejoin": "round"})
+
     elif geometry.geom_type in (
         "MultiPolygon",
+        "MultiLineString",
         "GeometryCollection"
     ):
 
@@ -1172,8 +1382,14 @@ def push_geometry_to_lightburn(
                     lb_hole
                 )
 
+    elif geometry.geom_type == "LineString":
+        coordinates = [[round(x, 3), round(y, 3)] for x, y in geometry.coords]
+        if len(coordinates) >= 2:
+            lb_project_instance.add(lightburn.Path(coordinates).layer(layer_id))
+
     elif geometry.geom_type in (
         "MultiPolygon",
+        "MultiLineString",
         "GeometryCollection"
     ):
 
@@ -1435,6 +1651,9 @@ def raster_to_puzzle_and_lightburn(
     # crossing or drifting apart at formerly common boundaries.
     filter_parameters = dict(filter_parameters or {})
     filter_parameters["_canvas_bounds"] = (0, 0, width, height)
+    filter_parameters["_scale_factor"] = scale_factor
+    filter_name, _ = normalize_abstract_settings(abstract_filter, filter_parameters)
+    centerline_mode = filter_name == "centerline"
 
     # =========================================================================
     # 4. Convert pixels into color geometry buckets
@@ -1445,9 +1664,16 @@ def raster_to_puzzle_and_lightburn(
             img=img,
             target_colors=TARGET_COLORS,
             black_hex=black_hex,
-            ignore_background_hex=ignore_background_hex
+            ignore_background_hex=ignore_background_hex,
+            include_black=centerline_mode
         )
+
     )
+
+    if filter_name == "tumbler" and filter_parameters.get("material") == "powdercoat":
+        pixel_boxes_by_color = retain_dominant_foreground(
+            pixel_boxes_by_color, img, filter_parameters
+        )
 
     # =========================================================================
     # 5. Process every colored layer
@@ -1467,16 +1693,18 @@ def raster_to_puzzle_and_lightburn(
     # 6. Build the BLACK layer around the colored geometry
     # =========================================================================
 
-    processed_layers[
-        black_hex
-    ] = build_punched_black_layer(
-        width=width,
-        height=height,
-        processed_layers=processed_layers,
-        black_hex=black_hex,
-        abstract_filter=abstract_filter,
-        filter_parameters=filter_parameters
-    )
+    if not centerline_mode:
+        processed_layers[black_hex] = build_punched_black_layer(
+            width=width,
+            height=height,
+            processed_layers=processed_layers,
+            black_hex=black_hex,
+            abstract_filter=abstract_filter,
+            filter_parameters=filter_parameters
+        )
+
+    else:
+        printLogMessage("Centerline mode: exporting source-color medial axes as open paths.")
 
     # =========================================================================
     # 7. Create SVG document
