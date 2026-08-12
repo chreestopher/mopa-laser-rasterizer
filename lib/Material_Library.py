@@ -14,6 +14,7 @@ from collections import defaultdict
 from shapely.geometry import Polygon, box, MultiPoint
 from shapely.ops import unary_union, voronoi_diagram, transform
 from shapely.affinity import scale, affine_transform
+from shapely.validation import make_valid
 from svgelements import SVG, Path, Polygon as SVGPolygon
 from datetime import datetime
 
@@ -727,7 +728,9 @@ def process_color_geometry(
             "Repairing invalid geometry after processing..."
         )
 
-        final_geometry = final_geometry.make_valid()
+        final_geometry = make_valid(
+            final_geometry
+        )
 
     return final_geometry
 
@@ -843,7 +846,9 @@ def build_punched_black_layer(
                 f"{color_hex} before black-layer subtraction..."
             )
 
-            geometry = geometry.make_valid()
+            geometry = make_valid(
+                geometry
+            )
 
         if not geometry.is_empty:
             colored_geometries.append(
