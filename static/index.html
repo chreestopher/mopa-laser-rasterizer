@@ -273,6 +273,13 @@
   input[type="file"] {
     padding: 5px;
     cursor: pointer;
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
   input[type="file"]::file-selector-button,
   input[type="file"]::-webkit-file-upload-button {
@@ -302,7 +309,20 @@
   button:hover { background:linear-gradient(#dc7940,#bd5a28); }
   .filter-actions button { background:linear-gradient(#666957,#464a3d); border-color:#888a72; box-shadow:0 3px 0 #25271f; }
   .color-square { border-radius:8px; border:2px solid #777864; box-shadow:inset 0 0 0 2px rgba(0,0,0,.35),0 3px 0 #171913; }
-  @media (max-width:700px) { body { margin:0; padding:20px; border-radius:0; } h1 { font-size:25px; } form { padding:15px; } }
+  form > div, form > div > div, .form-group { min-width:0; max-width:100%; }
+  @media (max-width:700px) {
+    body { width:100%; max-width:100%; margin:0; padding:20px; border-radius:0; overflow-x:hidden; }
+    h1 { font-size:25px; }
+    form { width:100%; max-width:100%; padding:15px; overflow:hidden; }
+    input,select { max-width:100%; }
+    input[type="file"] {
+      box-sizing:border-box;
+      width:100%;
+      min-width:0;
+      max-width:100%;
+      font-size:12px;
+    }
+  }
   .theme-toggle { display:flex; justify-content:flex-end; margin-bottom:12px; }
   .theme-toggle label { display:flex; align-items:center; gap:9px; font:700 11px "Courier New",monospace; letter-spacing:.1em; text-transform:uppercase; }
   .theme-toggle input { position:absolute; opacity:0; }
