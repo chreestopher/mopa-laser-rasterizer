@@ -349,10 +349,7 @@ def listdownloads(task_id):
     # if not matching_files:
     #     return jsonify({"status": "error", "message": "LightBurn file (.lbrn2) not found on disk"}), 404
         
-    return render_template( "loading.html", jsonify{
-        "status": "success", 
-        "message": "LightBurn file (.lbrn2) not found on disk",
-        "files": [
+    return render_template("loading.html", status="success", files=[
             f"/download-lbrn2/{task_id}",
             f"/download/{task_id}"
         ]
