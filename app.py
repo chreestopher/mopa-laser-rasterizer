@@ -258,8 +258,16 @@ def start_task():
         args=(task_id, user_data, image_path, material_settings_path)
     )
     thread.start()
-    
-    return render_template('loading.html', task_id=task_id)
+    download_urls = [
+        f"/download-lbrn2/{task_id}",
+        f"/download/{task_id}"
+    ]        
+    return render_template(
+        'loading.html', 
+        task_id=task_id, 
+        files=download_urls 
+    )
+
 
 
 @app.route('/task-status/<task_id>')
@@ -341,7 +349,7 @@ def listdownloads(task_id):
     # if not matching_files:
     #     return jsonify({"status": "error", "message": "LightBurn file (.lbrn2) not found on disk"}), 404
         
-    return jsonify({
+    return render_template(, "loading.html", jsonify{
         "status": "success", 
         "message": "LightBurn file (.lbrn2) not found on disk",
         "files": [

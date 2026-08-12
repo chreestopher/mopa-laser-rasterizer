@@ -59,14 +59,27 @@
         <aside class="downloads-sidebar">
             <h2>Processed Files</h2>
             <ul id="download-list" class="download-list">
-                <!-- Items will be appended here dynamically via JS -->
-
-                    
-                <!-- <li class="download-item" id="task-123">
-                    <span>report_123.csv</span>
-                    <a href="'/downloads/{task_id} class="download-link">Download</a>
-                    <a href="'/download-lbrn2/{task_id} class="download-link">Download</a>         
-                </li> -->
+                
+                <!-- Check if the files variable exists and has items -->
+                {% if files %}
+                    {% for file_url in files %}
+                        <li class="download-item">
+                            <!-- Check the string path to determine a user-friendly label -->
+                            <span>
+                                {% if 'lbrn2' in file_url %}
+                                    LightBurn File (.lbrn2)
+                                {% else %}
+                                    Standard Processed File
+                                {% endif %}
+                            </span>
+                            <a href="{{ file_url }}" class="download-link" download>Download</a>
+                        </li>
+                    {% endfor %}
+                {% else %}
+                    <!-- Fallback text if no active task files exist on load -->
+                    <li class="no-files-text">No files processed in this session yet.</li>
+                {% endif %}
+                
             </ul>
         </aside>
 
