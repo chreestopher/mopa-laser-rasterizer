@@ -173,10 +173,13 @@
     gap: 12px;
     margin-bottom: 5px;
   }
-  .filter-control output {
+  .filter-control .value-input {
     color: #2563eb;
     font-family: monospace;
     font-weight: 700;
+    width: 78px;
+    padding: 4px 6px;
+    text-align: right;
   }
   .filter-control input[type="range"] {
     box-sizing: border-box;
@@ -263,7 +266,7 @@
     </div>    
     <div>
       <div><label for="pixel_square_mm">pixel_square_mm:</label> </div>
-      <div><input type="number" id="pixel_square_mm" name="pixel_square_mm" step=".0625"></div>
+      <div><input type="number" id="pixel_square_mm" name="pixel_square_mm" value="1" min="0.0625" step="0.0625" required></div>
     </div>
     <div>
       <div><label for="new_width">new_width:</label> </div>
@@ -413,10 +416,10 @@
 
     function updateFilterParameters() {
       const values = {};
-      document.querySelectorAll('#filter_controls input, #filter_controls select').forEach(input => {
+      document.querySelectorAll('#filter_controls [data-parameter]').forEach(input => {
         values[input.dataset.parameter] = input.tagName === 'SELECT' ? input.value : Number(input.value);
-        const output = input.closest('.filter-control').querySelector('output');
-        if (output) output.value = input.value;
+        const valueInput = input.closest('.filter-control').querySelector('.value-input');
+        if (valueInput && input.type === 'range') valueInput.value = input.value;
       });
       document.getElementById('abstract_filter_parameters').value = JSON.stringify(values);
       updateTumblerReadout(values);
@@ -463,9 +466,24 @@
       filter.controls.forEach(([name, value, min, max, step]) => {
         const row = document.createElement('div');
         row.className = 'filter-control';
-        row.innerHTML = `<label><span>${friendlyName(name)}</span><output>${value}</output></label>` +
+        row.innerHTML = `<label><span>${friendlyName(name)}</span>` +
+          `<input class="value-input" type="number" value="${value}" min="${min}" max="${max}" step="${step}" aria-label="${friendlyName(name)} value"></label>` +
           `<input type="range" data-parameter="${name}" value="${value}" min="${min}" max="${max}" step="${step}">`;
-        row.querySelector('input').addEventListener('input', updateFilterParameters);
+        const slider = row.querySelector('input[type="range"]');
+        const valueInput = row.querySelector('.value-input');
+        slider.addEventListener('input', updateFilterParameters);
+        valueInput.addEventListener('input', () => {
+          if (valueInput.value === '') return;
+          slider.value = valueInput.value;
+          valueInput.value = slider.value;
+          updateFilterParameters();
+        });
+        valueInput.addEventListener('change', () => {
+          if (valueInput.value === '') valueInput.value = slider.value;
+          slider.value = valueInput.value;
+          valueInput.value = slider.value;
+          updateFilterParameters();
+        });
         controls.appendChild(row);
       });
       document.getElementById('randomize_filter').style.display = filter.controls.length ? 'block' : 'none';
@@ -492,7 +510,7 @@
     document.getElementById('abstract_filter').addEventListener('change', renderFilterControls);
     document.getElementById('reset_filter').addEventListener('click', renderFilterControls);
     document.getElementById('randomize_filter').addEventListener('click', () => {
-      document.querySelectorAll('#filter_controls input').forEach(input => {
+      document.querySelectorAll('#filter_controls input[type="range"]').forEach(input => {
         const min = Number(input.min), max = Number(input.max), step = Number(input.step);
         const steps = Math.floor((max - min) / step);
         input.value = min + Math.floor(Math.random() * (steps + 1)) * step;
