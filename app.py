@@ -25,7 +25,7 @@ BUCKET_NAME = 'mopa-laser-rasterizer.com'
 
 ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
-    "crystal", "ripple", "centerline", "tumbler"
+    "crystal", "ripple", "centerline", "tumbler", "xenoglyph"
 }
 
 
@@ -37,13 +37,16 @@ def parse_abstract_filter_parameters(raw_value):
         parameters = json.loads(raw_value)
     except json.JSONDecodeError as error:
         raise ValueError("Abstract filter settings are not valid JSON") from error
-    if not isinstance(parameters, dict) or len(parameters) > 12:
+    if not isinstance(parameters, dict) or len(parameters) > 20:
         raise ValueError("Abstract filter settings must be a small object")
     clean = {}
     for key, value in parameters.items():
         if not isinstance(key, str) or not key.replace("_", "").isalnum():
             raise ValueError("An abstract filter setting has an invalid name")
         if key == "material" and value in ("metal", "powdercoat"):
+            clean[key] = value
+            continue
+        if key == "light_areas_transparent" and isinstance(value, bool):
             clean[key] = value
             continue
         if isinstance(value, bool) or not isinstance(value, (int, float)):

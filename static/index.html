@@ -186,6 +186,16 @@
     width: 100%;
     padding: 0;
   }
+  .checkbox-label {
+    align-items: center;
+    padding: 8px 0;
+  }
+  .checkbox-label input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    accent-color: #2563eb;
+  }
   .filter-actions {
     display: flex;
     gap: 8px;
@@ -345,6 +355,7 @@
           <option value="ripple">Topographic Ripple</option>
           <option value="centerline">Centerline Drawing</option>
           <option value="tumbler">Tumbler Wrap</option>
+          <option value="xenoglyph">Xenoglyph Matrix</option>
           <option value="none">None</option>
         </select>
         <p id="filter_description" class="filter-description"></p>
@@ -408,6 +419,16 @@
           ['powdercoat_simplification_mm', .3, 0, 3, .05], ['foreground_min_percent', .15, 0, 5, .05]],
         material: true
       },
+      xenoglyph: {
+        description: 'Reinterprets the source as an extraterrestrial signal artifact using concentric transmissions, glyph voids, circuit conduits, nodes, symmetry, and controlled erosion.',
+        controls: [['recognizability', .65, 0, 1, .05], ['glyph_density', .55, 0, 1, .05],
+          ['symmetry_order', 6, 1, 12, 1], ['signal_rings', 4, 0, 12, 1],
+          ['circuit_branching', .5, 0, 1, .05], ['angular_strangeness', .65, 0, 1, .05],
+          ['void_ratio', .18, 0, .6, .02], ['artifact_age', .15, 0, 1, .05],
+          ['signal_seed', 1, 0, 999999, 1], ['core_x', .5, 0, 1, .01],
+          ['core_y', .5, 0, 1, .01], ['light_threshold', 225, 128, 255, 1]],
+        lightTransparency: true
+      },
       none: { description: 'Uses the abstract vector settings without an additional geometric transformation.', controls: [] }
     };
 
@@ -417,7 +438,9 @@
     function updateFilterParameters() {
       const values = {};
       document.querySelectorAll('#filter_controls [data-parameter]').forEach(input => {
-        values[input.dataset.parameter] = input.tagName === 'SELECT' ? input.value : Number(input.value);
+        values[input.dataset.parameter] = input.type === 'checkbox'
+          ? input.checked
+          : (input.tagName === 'SELECT' ? input.value : Number(input.value));
         const valueInput = input.closest('.filter-control').querySelector('.value-input');
         if (valueInput && input.type === 'range') valueInput.value = input.value;
       });
@@ -461,6 +484,14 @@
           updateFilterParameters();
           updatePowdercoatVisibility();
         });
+        controls.appendChild(row);
+      }
+      if (filter.lightTransparency) {
+        const row = document.createElement('div');
+        row.className = 'filter-control';
+        row.innerHTML = '<label class="checkbox-label"><span>Light Areas Are Transparent</span>' +
+          '<input type="checkbox" data-parameter="light_areas_transparent" checked></label>';
+        row.querySelector('input').addEventListener('change', updateFilterParameters);
         controls.appendChild(row);
       }
       filter.controls.forEach(([name, value, min, max, step]) => {

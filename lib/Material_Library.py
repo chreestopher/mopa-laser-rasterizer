@@ -11,7 +11,7 @@ import svgwrite
 import potrace
 import xml.etree.ElementTree as ET
 from collections import defaultdict
-from shapely.geometry import Polygon, box, MultiPoint, LineString, MultiLineString
+from shapely.geometry import Polygon, box, Point, MultiPoint, LineString, MultiLineString
 from shapely.ops import unary_union, voronoi_diagram, transform
 from shapely.affinity import scale, affine_transform
 from shapely.validation import make_valid
@@ -403,7 +403,9 @@ def classify_raster_pixels(
     target_colors,
     black_hex,
     ignore_background_hex,
-    include_black=False
+    include_black=False,
+    light_areas_transparent=False,
+    light_threshold=225
 ):
     """
     Convert raster pixels into 1x1 Shapely boxes grouped by color.
@@ -427,6 +429,11 @@ def classify_raster_pixels(
             pixel_rgb = img.getpixel(
                 (x, y)
             )
+
+            if light_areas_transparent:
+                luminance = 0.2126 * pixel_rgb[0] + 0.7152 * pixel_rgb[1] + 0.0722 * pixel_rgb[2]
+                if luminance >= light_threshold:
+                    continue
 
             closest_hex = get_closest_color(
                 *pixel_rgb,
@@ -588,10 +595,16 @@ ABSTRACT_FILTER_DEFAULTS = {
                 "wrap_angle": 180, "profile_curve": 0, "horizontal_anchor": .5,
                 "material": "metal", "powdercoat_gap_mm": .35,
                 "powdercoat_simplification_mm": .3, "foreground_min_percent": .15},
+    "xenoglyph": {"recognizability": .65, "glyph_density": .55,
+                   "symmetry_order": 6, "signal_rings": 4,
+                   "circuit_branching": .5, "angular_strangeness": .65,
+                   "void_ratio": .18, "artifact_age": .15, "signal_seed": 1,
+                   "core_x": .5, "core_y": .5,
+                   "light_areas_transparent": True, "light_threshold": 225},
 }
 
 PALETTE_LIMITING_FILTERS = {
-    "wave", "voronoi", "shear", "spiral", "mosaic", "crystal", "ripple"
+    "wave", "voronoi", "shear", "spiral", "mosaic", "crystal", "ripple", "xenoglyph"
 }
 
 # Frontends can use this schema to build sliders without duplicating ranges.
@@ -616,6 +629,12 @@ ABSTRACT_FILTER_CONTROLS = {
                 ("horizontal_anchor", 0, 1, .05), ("powdercoat_gap_mm", 0, 3, .05),
                 ("powdercoat_simplification_mm", 0, 3, .05),
                 ("foreground_min_percent", 0, 5, .05)),
+    "xenoglyph": (("recognizability", 0, 1, .05), ("glyph_density", 0, 1, .05),
+                   ("symmetry_order", 1, 12, 1), ("signal_rings", 0, 12, 1),
+                   ("circuit_branching", 0, 1, .05), ("angular_strangeness", 0, 1, .05),
+                   ("void_ratio", 0, .6, .02), ("artifact_age", 0, 1, .05),
+                   ("signal_seed", 0, 999999, 1), ("core_x", 0, 1, .01),
+                   ("core_y", 0, 1, .01), ("light_threshold", 128, 255, 1)),
 }
 
 def get_abstract_filter_manifest():
@@ -806,6 +825,59 @@ def apply_tumbler_filter(geometry, s):
     return transform(unwrap, geometry)
 
 
+def apply_xenoglyph_filter(geometry, s):
+    """Carve a deterministic alien signal/glyph lattice into source geometry."""
+    bounds = s.get("_canvas_bounds") or geometry.bounds
+    x1, y1, x2, y2 = bounds
+    width, height = max(x2 - x1, 1), max(y2 - y1, 1)
+    cx = x1 + width * _number(s.get("core_x"), .5, 0, 1)
+    cy = y1 + height * _number(s.get("core_y"), .5, 0, 1)
+    radius = math.hypot(width, height)
+    recognition = _number(s.get("recognizability"), .65, 0, 1)
+    density = _number(s.get("glyph_density"), .55, 0, 1)
+    rings = int(_number(s.get("signal_rings"), 4, 0, 24))
+    branches = _number(s.get("circuit_branching"), .5, 0, 1)
+    strange = _number(s.get("angular_strangeness"), .65, 0, 1)
+    void_ratio = _number(s.get("void_ratio"), .18, 0, .75)
+    age = _number(s.get("artifact_age"), .15, 0, 1)
+    order = int(_number(s.get("symmetry_order"), 6, 1, 24))
+    seed = int(_number(s.get("signal_seed"), 1, 0, 2147483647))
+    rng = np.random.default_rng(seed)
+
+    cutters = []
+    line_width = max(.18, min(width, height) * (.002 + void_ratio * .018))
+    if rings:
+        spacing = radius * .48 / (rings + 1)
+        for index in range(1, rings + 1):
+            ring_radius = spacing * index * (1 + rng.uniform(-.08, .08) * strange)
+            outer = Point(cx, cy).buffer(ring_radius + line_width)
+            inner = Point(cx, cy).buffer(max(0, ring_radius - line_width))
+            cutters.append(outer.difference(inner))
+
+    spoke_count = max(order, int(order * (1 + density * 3)))
+    for index in range(spoke_count):
+        base_angle = 2 * math.pi * index / spoke_count
+        angle = base_angle + rng.uniform(-1, 1) * strange * math.pi / max(order, 1)
+        start = radius * rng.uniform(.03, .28)
+        end = radius * rng.uniform(.35, .72) * (0.5 + branches * .5)
+        p1 = (cx + math.cos(angle) * start, cy + math.sin(angle) * start)
+        p2 = (cx + math.cos(angle) * end, cy + math.sin(angle) * end)
+        cutters.append(LineString((p1, p2)).buffer(line_width, cap_style=2))
+        if rng.random() < density:
+            node_r = line_width * rng.uniform(1.5, 4)
+            cutters.append(Point(*p2).buffer(node_r))
+
+    cutter = unary_union(cutters) if cutters else geometry.intersection(box(0, 0, 0, 0))
+    carved = geometry.difference(cutter)
+    # Recognition controls how much of the original survives the glyph voids.
+    if recognition > .85:
+        carved = unary_union((carved, geometry.intersection(cutter).buffer(-line_width * recognition)))
+    if age:
+        erosion = line_width * age * .75
+        carved = carved.buffer(-erosion).buffer(erosion)
+    return carved
+
+
 def apply_abstract_filter(
     geometry,
     abstract_filter,
@@ -859,6 +931,9 @@ def apply_abstract_filter(
 
     if filter_name == "tumbler":
         return apply_tumbler_filter(geometry, settings)
+
+    if filter_name in ("xenoglyph", "alien"):
+        return apply_xenoglyph_filter(geometry, settings)
 
     return geometry
 
@@ -1671,7 +1746,13 @@ def raster_to_puzzle_and_lightburn(
         filter_name == "tumbler"
         and filter_parameters.get("material") == "powdercoat"
     )
-    preserve_source_black = centerline_mode or powdercoat_tumbler_mode
+    xenoglyph_transparent_mode = (
+        filter_name == "xenoglyph"
+        and bool(filter_parameters.get("light_areas_transparent", True))
+    )
+    preserve_source_black = (
+        centerline_mode or powdercoat_tumbler_mode or xenoglyph_transparent_mode
+    )
 
     # =========================================================================
     # 4. Convert pixels into color geometry buckets
@@ -1683,7 +1764,11 @@ def raster_to_puzzle_and_lightburn(
             target_colors=TARGET_COLORS,
             black_hex=black_hex,
             ignore_background_hex=ignore_background_hex,
-            include_black=preserve_source_black
+            include_black=preserve_source_black,
+            light_areas_transparent=xenoglyph_transparent_mode,
+            light_threshold=_number(
+                filter_parameters.get("light_threshold"), 225, 128, 255
+            )
         )
 
     )
@@ -1723,6 +1808,10 @@ def raster_to_puzzle_and_lightburn(
 
     elif centerline_mode:
         printLogMessage("Centerline mode: exporting source-color medial axes as open paths.")
+    elif xenoglyph_transparent_mode:
+        printLogMessage(
+            "Xenoglyph mode: light source areas remain transparent; no black canvas added."
+        )
     else:
         printLogMessage(
             "Powder-coat tumbler mode: exporting isolated foreground shapes "
