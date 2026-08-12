@@ -225,9 +225,22 @@
     }
     .download-button:hover, .another-button:hover { background: linear-gradient(#dc7940, #bd5a28); }
     .log-prefix { color: #55794c; }
+    .theme-toggle { position:absolute; top:22px; right:55px; z-index:2; display:flex; align-items:center; gap:8px; font:700 10px "Courier New",monospace; letter-spacing:.1em; text-transform:uppercase; }
+    .theme-toggle input { position:absolute; opacity:0; }
+    .toggle-track { position:relative; width:52px; height:25px; border:2px solid #777864; border-radius:14px; background:#171b15; box-shadow:inset 0 3px 6px #000; cursor:pointer; }
+    .toggle-track::after { content:""; position:absolute; top:3px; left:4px; width:15px; height:15px; border-radius:50%; background:#d3652e; box-shadow:0 0 7px #ed863d,0 2px 2px #000; transition:transform .2s; }
+    .theme-toggle input:checked + .toggle-track::after { transform:translateX(25px); background:#dad8ce; box-shadow:0 0 5px #fff,0 2px 2px #555; }
+    body.light-machine { color:#151613; background:repeating-linear-gradient(90deg,rgba(0,0,0,.025) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 15%,#f2f2ec,#c7c8c2 48%,#9ea09b 100%); border-color:#777974; box-shadow:inset 0 0 0 5px #a9aba6,inset 0 0 48px #777,0 0 0 1px #eee; }
+    body.light-machine .page-header h1 { color:#171815; text-shadow:0 1px #fff,0 -1px #777; }
+    body.light-machine .page-header::after,body.light-machine .theme-toggle { color:#292a26; text-shadow:0 1px #fff; }
+    body.light-machine .terminal-box,body.light-machine .files-panel { border-color:#777974; box-shadow:inset 0 0 0 5px #aaaCa6,inset 0 0 36px rgba(90,255,70,.1),inset 0 0 75px #000,0 7px 0 #696b66,0 12px 22px rgba(0,0,0,.4); }
+    body.light-machine .files-header h2 { color:#151613; text-shadow:0 1px #fff; }
+    body.light-machine .files-panel { color:#191a17; background:repeating-linear-gradient(0deg,rgba(0,0,0,.025) 0 1px,transparent 1px 4px),radial-gradient(ellipse at center,#dedfd9,#aeb0aa 90%); }
+    body.light-machine .file-item { border-color:#8b8d87; }
     </style>
 </head>
 <body>
+        <div class="theme-toggle"><span>Dark</span><label><input id="theme_switch" type="checkbox"><span class="toggle-track"></span></label><span>Light</span></div>
     
         <div class="page-header">
             <h1>MOPA-LASER-RASTERIZER</h1>
@@ -243,7 +256,23 @@
                 <a href="/?history_session={{ history_session }}" class="another-button">Process Another Image</a>
             </div>
             <ul id="download-list" class="download-list">
-                <li class="empty-files">Waiting for processed files...</li>
+                {% for file in history_files %}
+                <li class="file-item" data-task-id="{{ file.task_id }}">
+                    <div class="file-name">{{ file.source_name }} <span class="file-status">[{{ file.status }}]</span></div>
+                    <div class="file-actions">
+                        <a class="download-button{% if file.status != 'completed' %} disabled{% endif %}" href="{{ file.svg_url }}">SVG</a>
+                        <a class="download-button{% if file.status != 'completed' %} disabled{% endif %}" href="{{ file.lightburn_url }}">LightBurn</a>
+                    </div>
+                </li>
+                {% else %}
+                <li class="file-item" data-task-id="{{ task_id }}">
+                    <div class="file-name">Current processing job <span class="file-status">[pending]</span></div>
+                    <div class="file-actions">
+                        <a class="download-button disabled" href="/download/{{ task_id }}">SVG</a>
+                        <a class="download-button disabled" href="/download-lbrn2/{{ task_id }}">LightBurn</a>
+                    </div>
+                </li>
+                {% endfor %}
             </ul>
         </section>
 
@@ -252,6 +281,14 @@ const taskId = "{{ task_id }}";
 const historySession = "{{ history_session }}";
 const logContainer = document.getElementById("log-container");
 const terminalBox = document.getElementById("terminal");
+
+const themeSwitch = document.getElementById('theme_switch');
+themeSwitch.checked = (localStorage.getItem('mopa-machine-theme') || 'dark') === 'light';
+document.body.classList.toggle('light-machine', themeSwitch.checked);
+themeSwitch.addEventListener('change', () => {
+    document.body.classList.toggle('light-machine', themeSwitch.checked);
+    localStorage.setItem('mopa-machine-theme', themeSwitch.checked ? 'light' : 'dark');
+});
 
 let logIndex = 0;
 
@@ -264,23 +301,29 @@ function escapeHtml(value) {
 }
 
 async function refreshFileHistory() {
-    if (!historySession) return;
-    const response = await fetch(`/file-history/${historySession}`);
-    if (!response.ok) return;
-    const data = await response.json();
-    const files = data.files || [];
-    if (!files.length) {
-        downloadList.innerHTML = '<li class="empty-files">No processed files in this page session.</li>';
+    if (!historySession) {
+        console.warn('File history session was not carried to the loading page.');
         return;
     }
-    downloadList.innerHTML = files.map(file => {
+    try {
+      const response = await fetch(`/file-history/${encodeURIComponent(historySession)}`);
+      if (!response.ok) throw new Error(`History request returned ${response.status}`);
+      const data = await response.json();
+      const files = data.files || [];
+      if (!files.length) return;
+      downloadList.innerHTML = files.map(file => {
         const ready = file.status === 'completed';
         const disabled = ready ? '' : ' disabled';
         const name = escapeHtml(file.source_name || 'processed image');
         return `<li class="file-item"><div class="file-name">${name} <span class="file-status">[${file.status}]</span></div>` +
           `<div class="file-actions"><a class="download-button${disabled}" href="${file.svg_url}">SVG</a>` +
           `<a class="download-button${disabled}" href="${file.lightburn_url}">LightBurn</a></div></li>`;
-    }).join('');
+      }).join('');
+    } catch (error) {
+      console.error('Unable to refresh processed file history:', error);
+      const heading = document.getElementById('files-heading');
+      heading.title = error.message;
+    }
 }
 
 refreshFileHistory();
@@ -300,6 +343,16 @@ function appendLogMessage(message) {
     terminalBox.scrollTop = terminalBox.scrollHeight;
 }
 
+function updateCurrentFileRow(status) {
+    const row = downloadList.querySelector(`[data-task-id="${taskId}"]`);
+    if (!row) return;
+    const statusElement = row.querySelector('.file-status');
+    if (statusElement) statusElement.textContent = `[${status}]`;
+    row.querySelectorAll('.download-button').forEach(button => {
+        button.classList.toggle('disabled', status !== 'completed');
+    });
+}
+
 // Start checking logs immediately
 const checkStatus = setInterval(async () => {
     try {
@@ -313,6 +366,7 @@ const checkStatus = setInterval(async () => {
         }
 
         const data = await response.json();
+        updateCurrentFileRow(data.status || 'pending');
 
         const currentLogs = data.logs || [];
 

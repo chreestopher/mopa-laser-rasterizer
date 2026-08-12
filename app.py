@@ -53,6 +53,29 @@ def add_history_entry(session_id, task_id, source_name):
     pipeline.execute()
 
 
+def get_history_entries(session_id):
+    if not session_id:
+        return []
+    entries = []
+    for raw_entry in redis_client.lrange(f"history:{session_id}", 0, 98):
+        try:
+            entry = json.loads(raw_entry)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        task_id = entry.get("task_id")
+        if not task_id:
+            continue
+        entries.append({
+            "task_id": task_id,
+            "source_name": entry.get("source_name", "processed image"),
+            "created_at": entry.get("created_at"),
+            "status": redis_client.get(f"task:{task_id}:status") or "pending",
+            "svg_url": f"/download/{task_id}",
+            "lightburn_url": f"/download-lbrn2/{task_id}",
+        })
+    return entries
+
+
 def parse_abstract_filter_parameters(raw_value):
     """Validate the small JSON object supplied by the abstract-filter UI."""
     if not raw_value:
@@ -332,7 +355,8 @@ def start_task():
         'loading.html', 
         task_id=task_id, 
         files=download_urls,
-        history_session=history_session or ""
+        history_session=history_session or "",
+        history_files=get_history_entries(history_session)
     )
 
 
@@ -342,25 +366,7 @@ def file_history(session_id):
     session_id = valid_history_session(session_id)
     if not session_id:
         return jsonify({"files": []}), 400
-    entries = []
-    for raw_entry in redis_client.lrange(f"history:{session_id}", 0, 98):
-        try:
-            entry = json.loads(raw_entry)
-        except (TypeError, json.JSONDecodeError):
-            continue
-        task_id = entry.get("task_id")
-        if not task_id:
-            continue
-        status = redis_client.get(f"task:{task_id}:status") or "pending"
-        entries.append({
-            "task_id": task_id,
-            "source_name": entry.get("source_name", "processed image"),
-            "created_at": entry.get("created_at"),
-            "status": status,
-            "svg_url": f"/download/{task_id}",
-            "lightburn_url": f"/download-lbrn2/{task_id}",
-        })
-    return jsonify({"files": entries})
+    return jsonify({"files": get_history_entries(session_id)})
 
 
 
