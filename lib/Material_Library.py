@@ -449,110 +449,182 @@ def classify_raster_pixels(
 # ABSTRACT FILTERS
 # ============================================================================
 
-def apply_wave_filter(geometry):
-    """
-    Apply the original wavy fluid distortion.
-    """
+ABSTRACT_FILTER_DEFAULTS = {
+    "wave": {"amplitude_x": 4, "amplitude_y": 4, "frequency_x": .1, "frequency_y": .1, "phase": 0},
+    "voronoi": {"cell_size": 15, "jitter": .45, "gap": .8, "seed": 1},
+    "shear": {"shear_x": .5, "shear_y": 0, "scale_x": 1, "scale_y": .8},
+    "spiral": {"twist": 2.25, "falloff": 1, "center_x": .5, "center_y": .5},
+    "mosaic": {"tile_size": 12, "gap": 1, "stagger": .5},
+    "crystal": {"cell_size": 18, "gap": .7},
+    "ripple": {"amplitude": 3, "frequency": .18, "phase": 0, "center_x": .5, "center_y": .5},
+}
 
-    def wave_transform(x, y, z=None):
-
-        freq_x = 0.1
-        amp_x = 4.0
-
-        freq_y = 0.1
-        amp_y = 4.0
-
-        new_x = (
-            x
-            + math.sin(y * freq_y) * amp_x
-        )
-
-        new_y = (
-            y
-            + math.cos(x * freq_x) * amp_y
-        )
-
-        return (
-            new_x,
-            new_y
-        )
-
-    return transform(
-        wave_transform,
-        geometry
-    )
+# Frontends can use this schema to build sliders without duplicating ranges.
+# ``seed`` should be rendered as a number input plus a randomize button.
+ABSTRACT_FILTER_CONTROLS = {
+    "wave": (("amplitude_x", -50, 50, .5), ("amplitude_y", -50, 50, .5),
+             ("frequency_x", .01, 1, .01), ("frequency_y", .01, 1, .01), ("phase", 0, 6.283, .05)),
+    "voronoi": (("cell_size", 3, 100, 1), ("jitter", 0, .95, .01),
+                ("gap", 0, 12, .1), ("seed", 0, 999999, 1)),
+    "shear": (("shear_x", -2, 2, .05), ("shear_y", -2, 2, .05),
+              ("scale_x", .25, 3, .05), ("scale_y", .25, 3, .05)),
+    "spiral": (("twist", -8, 8, .1), ("falloff", .1, 5, .1),
+               ("center_x", 0, 1, .01), ("center_y", 0, 1, .01)),
+    "mosaic": (("tile_size", 2, 100, 1), ("gap", 0, 20, .1), ("stagger", 0, 1, .05)),
+    "crystal": (("cell_size", 3, 120, 1), ("gap", 0, 20, .1)),
+    "ripple": (("amplitude", -30, 30, .5), ("frequency", .01, 1, .01),
+               ("phase", 0, 6.283, .05), ("center_x", 0, 1, .01), ("center_y", 0, 1, .01)),
+}
 
 
-def apply_voronoi_filter(geometry):
-    """
-    Apply the original cellular/Voronoi sharding effect.
-    """
+def get_abstract_filter_manifest():
+    """Return JSON-ready filter defaults and slider metadata for the web UI."""
+    return {
+        name: {
+            "defaults": dict(defaults),
+            "controls": [dict(name=n, min=low, max=high, step=step)
+                         for n, low, high, step in ABSTRACT_FILTER_CONTROLS[name]]
+        }
+        for name, defaults in ABSTRACT_FILTER_DEFAULTS.items()
+    }
 
+
+def _number(value, default, low=None, high=None):
+    """Coerce and clamp untrusted UI values."""
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        value = float(default)
+    if not math.isfinite(value):
+        value = float(default)
+    return min(high, max(low, value)) if low is not None and high is not None else value
+
+
+def normalize_abstract_settings(abstract_filter, filter_parameters=None):
+    supplied = {}
+    if isinstance(abstract_filter, dict):
+        supplied.update(abstract_filter)
+        name = supplied.pop("name", supplied.pop("filter", "none"))
+    else:
+        name = abstract_filter or "none"
+    if isinstance(filter_parameters, dict):
+        supplied.update(filter_parameters)
+    name = str(name).strip().lower()
+    settings = dict(ABSTRACT_FILTER_DEFAULTS.get(name, {}))
+    settings.update(supplied)
+    return name, settings
+
+
+def apply_wave_filter(geometry, s):
+    ax = _number(s.get("amplitude_x"), 4, -200, 200)
+    ay = _number(s.get("amplitude_y"), 4, -200, 200)
+    fx = _number(s.get("frequency_x"), .1, .001, 5)
+    fy = _number(s.get("frequency_y"), .1, .001, 5)
+    # Keep the warp one-to-one so layers cannot fold across each other.
+    ax = max(-.9 / fy, min(.9 / fy, ax))
+    ay = max(-.9 / fx, min(.9 / fx, ay))
+    phase = _number(s.get("phase"), 0, -100, 100)
+    return transform(lambda x, y, z=None: (x + math.sin(y * fy + phase) * ax,
+                                           y + math.cos(x * fx + phase) * ay), geometry)
+
+
+def _cell_union(geometry, cells, gap):
+    pieces = []
+    for cell in cells:
+        tile = cell.buffer(-gap / 2, join_style=2) if gap else cell
+        clipped = geometry.intersection(tile)
+        if not clipped.is_empty:
+            pieces.append(clipped)
+    return unary_union(pieces) if pieces else geometry.intersection(box(0, 0, 0, 0))
+
+
+def apply_voronoi_filter(geometry, s):
     bounds = geometry.bounds
-
-    points = []
-
-    step = 15
-
-    for gx in range(
-        int(bounds[0]),
-        int(bounds[2]) + step,
-        step
-    ):
-
-        for gy in range(
-            int(bounds[1]),
-            int(bounds[3]) + step,
-            step
-        ):
-
-            jiggle_x = (
-                (gx % 7) - 3.5
-            )
-
-            jiggle_y = (
-                (gy % 5) - 2.5
-            )
-
-            points.append(
-                (
-                    gx + jiggle_x,
-                    gy + jiggle_y
-                )
-            )
-
-    if len(points) >= 3:
-
-        mp = MultiPoint(points)
-
-        vd = voronoi_diagram(mp)
-
-        return geometry.intersection(vd)
-
-    return geometry
+    step = _number(s.get("cell_size"), 15, 3, 500)
+    jitter = _number(s.get("jitter"), .45, 0, .95)
+    gap = _number(s.get("gap"), .8, 0, step * .45)
+    rng = np.random.default_rng(int(_number(s.get("seed"), 1, -2147483648, 2147483647)))
+    points = [(x * step + rng.uniform(-jitter, jitter) * step,
+               y * step + rng.uniform(-jitter, jitter) * step)
+              for x in range(math.floor(bounds[0] / step) - 2, math.ceil(bounds[2] / step) + 3)
+              for y in range(math.floor(bounds[1] / step) - 2, math.ceil(bounds[3] / step) + 3)]
+    cells = voronoi_diagram(MultiPoint(points), envelope=box(*bounds).buffer(step * 2)).geoms
+    return _cell_union(geometry, cells, gap)
 
 
-def apply_shear_filter(geometry):
-    """
-    Apply the original directional perspective shear/glitch skew.
-    """
+def apply_shear_filter(geometry, s):
+    sx, sy = _number(s.get("scale_x"), 1, .05, 10), _number(s.get("scale_y"), .8, .05, 10)
+    shx, shy = _number(s.get("shear_x"), .5, -5, 5), _number(s.get("shear_y"), 0, -5, 5)
+    if abs(sx * sy - shx * shy) < .01:
+        sy += .01
+    return affine_transform(geometry, [sx, shx, shy, sy, 0, 0])
 
-    return affine_transform(
-        geometry,
-        [
-            1.0,
-            0.5,
-            0.0,
-            0.8,
-            0.0,
-            0.0
-        ]
-    )
+
+def _center(geometry, s):
+    canvas_bounds = s.get("_canvas_bounds")
+    x1, y1, x2, y2 = canvas_bounds if canvas_bounds and len(canvas_bounds) == 4 else geometry.bounds
+    cx = x1 + (x2 - x1) * _number(s.get("center_x"), .5, -1, 2)
+    cy = y1 + (y2 - y1) * _number(s.get("center_y"), .5, -1, 2)
+    radius = max(math.hypot(x - cx, y - cy) for x, y in ((x1, y1), (x2, y1), (x2, y2), (x1, y2))) or 1
+    return cx, cy, radius
+
+
+def apply_spiral_filter(geometry, s):
+    cx, cy, radius = _center(geometry, s)
+    twist = _number(s.get("twist"), 2.25, -20, 20) * math.pi
+    falloff = _number(s.get("falloff"), 1, .05, 8)
+    def warp(x, y, z=None):
+        dx, dy = x - cx, y - cy
+        r = math.hypot(dx, dy)
+        a = math.atan2(dy, dx) + twist * (r / radius) ** falloff
+        return cx + r * math.cos(a), cy + r * math.sin(a)
+    return transform(warp, geometry)
+
+
+def apply_ripple_filter(geometry, s):
+    cx, cy, _ = _center(geometry, s)
+    amp = _number(s.get("amplitude"), 3, -100, 100)
+    freq = _number(s.get("frequency"), .18, .001, 5)
+    amp = max(-.95 / freq, min(.95 / freq, amp))
+    phase = _number(s.get("phase"), 0, -100, 100)
+    def warp(x, y, z=None):
+        dx, dy = x - cx, y - cy
+        r = math.hypot(dx, dy)
+        ratio = max(0, r + amp * math.sin(r * freq + phase)) / r if r else 1
+        return cx + dx * ratio, cy + dy * ratio
+    return transform(warp, geometry)
+
+
+def apply_mosaic_filter(geometry, s):
+    x1, y1, x2, y2 = geometry.bounds
+    size = _number(s.get("tile_size"), 12, 2, 500)
+    gap = _number(s.get("gap"), 1, 0, size * .8)
+    stagger = _number(s.get("stagger"), .5, 0, 1)
+    cells = (box(col * size + (row & 1) * stagger * size, row * size,
+                 col * size + (row & 1) * stagger * size + size, row * size + size)
+             for row in range(math.floor(y1 / size) - 1, math.ceil(y2 / size) + 2)
+             for col in range(math.floor(x1 / size) - 2, math.ceil(x2 / size) + 2))
+    return _cell_union(geometry, cells, gap)
+
+
+def apply_crystal_filter(geometry, s):
+    x1, y1, x2, y2 = geometry.bounds
+    size = _number(s.get("cell_size"), 18, 3, 500)
+    height = size * math.sqrt(3) / 2
+    gap = _number(s.get("gap"), .7, 0, size * .35)
+    cells = []
+    for row in range(math.floor(y1 / height) - 2, math.ceil(y2 / height) + 3):
+        for col in range(math.floor(x1 / size) - 2, math.ceil(x2 / size) + 3):
+            x, y = col * size + (row & 1) * size / 2, row * height
+            cells.extend((Polygon(((x, y), (x + size, y), (x + size / 2, y + height))),
+                          Polygon(((x, y), (x + size / 2, y - height), (x + size, y)))))
+    return _cell_union(geometry, cells, gap)
 
 
 def apply_abstract_filter(
     geometry,
-    abstract_filter
+    abstract_filter,
+    filter_parameters=None
 ):
     """
     Apply the selected abstract filter.
@@ -565,31 +637,41 @@ def apply_abstract_filter(
     if (
         abstract_filter is None
         or geometry.is_empty
-        or image_preset != "abstract"
+        or globals().get("image_preset", "abstract") != "abstract"
     ):
         return geometry
 
-    filter_name = str(
-        abstract_filter
-    ).lower()
+    filter_name, settings = normalize_abstract_settings(abstract_filter, filter_parameters)
 
     if filter_name == "wave":
 
         return apply_wave_filter(
-            geometry
+            geometry, settings
         )
 
     if filter_name == "voronoi":
 
         return apply_voronoi_filter(
-            geometry
+            geometry, settings
         )
 
     if filter_name == "shear":
 
         return apply_shear_filter(
-            geometry
+            geometry, settings
         )
+
+    if filter_name == "spiral":
+        return apply_spiral_filter(geometry, settings)
+
+    if filter_name == "mosaic":
+        return apply_mosaic_filter(geometry, settings)
+
+    if filter_name in ("crystal", "tessellation", "triangles"):
+        return apply_crystal_filter(geometry, settings)
+
+    if filter_name in ("ripple", "topographic"):
+        return apply_ripple_filter(geometry, settings)
 
     return geometry
 
@@ -657,7 +739,8 @@ def process_color_geometry(
     min_island_area,
     simplification_factor,
     smoothing_radius,
-    abstract_filter
+    abstract_filter,
+    filter_parameters=None
 ):
     """
     Convert a collection of pixel boxes into finalized vector geometry.
@@ -717,7 +800,8 @@ def process_color_geometry(
 
     final_geometry = apply_abstract_filter(
         final_geometry,
-        abstract_filter
+        abstract_filter,
+        filter_parameters
     )
 
     # Final topology repair before this geometry is used
@@ -741,7 +825,8 @@ def process_color_layers(
     min_island_area,
     simplification_factor,
     smoothing_radius,
-    abstract_filter
+    abstract_filter,
+    filter_parameters=None
 ):
     """
     Convert all raster color groups into finalized Shapely geometries.
@@ -786,7 +871,8 @@ def process_color_layers(
             min_island_area=min_island_area,
             simplification_factor=simplification_factor,
             smoothing_radius=smoothing_radius,
-            abstract_filter=abstract_filter
+            abstract_filter=abstract_filter,
+            filter_parameters=filter_parameters
         )
 
         processed_layers[
@@ -805,7 +891,8 @@ def build_punched_black_layer(
     height,
     processed_layers,
     black_hex,
-    abstract_filter
+    abstract_filter,
+    filter_parameters=None
 ):
     """
     Build the black layer as the canvas minus all colored geometry.
@@ -822,7 +909,8 @@ def build_punched_black_layer(
 
     canvas_frame = apply_abstract_filter(
         canvas_frame,
-        abstract_filter
+        abstract_filter,
+        filter_parameters
     )
 
     colored_geometries = []
@@ -1273,7 +1361,8 @@ def raster_to_puzzle_and_lightburn(
     min_island_area=0,
     simplification_factor=0.0,
     smoothing_radius=0.001,
-    abstract_filter=None
+    abstract_filter=None,
+    filter_parameters=None
 ):
     """
     Parses a raster image, applies a structural vector scale_factor,
@@ -1341,6 +1430,12 @@ def raster_to_puzzle_and_lightburn(
 
     width, height = img.size
 
+    # Every color layer must use the same radial center and extent.  Keeping
+    # this internal value shared prevents independently warped layers from
+    # crossing or drifting apart at formerly common boundaries.
+    filter_parameters = dict(filter_parameters or {})
+    filter_parameters["_canvas_bounds"] = (0, 0, width, height)
+
     # =========================================================================
     # 4. Convert pixels into color geometry buckets
     # =========================================================================
@@ -1364,7 +1459,8 @@ def raster_to_puzzle_and_lightburn(
         min_island_area=min_island_area,
         simplification_factor=simplification_factor,
         smoothing_radius=smoothing_radius,
-        abstract_filter=abstract_filter
+        abstract_filter=abstract_filter,
+        filter_parameters=filter_parameters
     )
 
     # =========================================================================
@@ -1378,7 +1474,8 @@ def raster_to_puzzle_and_lightburn(
         height=height,
         processed_layers=processed_layers,
         black_hex=black_hex,
-        abstract_filter=abstract_filter
+        abstract_filter=abstract_filter,
+        filter_parameters=filter_parameters
     )
 
     # =========================================================================
@@ -1428,10 +1525,18 @@ if __name__ == "__main__":
     max_dimension = max(new_width, new_height)
     image_preset= sys.argv[8]
     abstract_filter = sys.argv[9]
+    filter_parameters = {}
+    if len(sys.argv) > 10 and sys.argv[10].strip():
+        try:
+            filter_parameters = json.loads(sys.argv[10])
+            if not isinstance(filter_parameters, dict):
+                raise ValueError("filter parameters must be a JSON object")
+        except (json.JSONDecodeError, ValueError) as error:
+            raise SystemExit(f"Invalid abstract filter parameters: {error}")
     
-    quantize_colors=PHOTO_TYPE_PRESETS[image_preset]["quantize_colors"],        # Keeps original target palette colors intact
-    min_island_area=PHOTO_TYPE_PRESETS[image_preset]["min_island_area"],           # Retains small details and sharp lines
-    simplification_factor=PHOTO_TYPE_PRESETS[image_preset]["simplification_factor"],   # Retains crisp pixel-perfect boundaries
+    quantize_colors=PHOTO_TYPE_PRESETS[image_preset]["quantize_colors"]        # Keeps original target palette colors intact
+    min_island_area=PHOTO_TYPE_PRESETS[image_preset]["min_island_area"]           # Retains small details and sharp lines
+    simplification_factor=PHOTO_TYPE_PRESETS[image_preset]["simplification_factor"]   # Retains crisp pixel-perfect boundaries
     smoothing_radius=PHOTO_TYPE_PRESETS[image_preset]["smoothing_radius"]       # Baseline vector weld setting    
     
     the_limit_colors_list = [item.strip() for item in the_limit_colors.split(",")]
@@ -1461,5 +1566,6 @@ if __name__ == "__main__":
         min_island_area=min_island_area,
         simplification_factor=simplification_factor,
         smoothing_radius=smoothing_radius,
-        abstract_filter=abstract_filter
+        abstract_filter=abstract_filter,
+        filter_parameters=filter_parameters
     )

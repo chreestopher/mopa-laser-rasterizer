@@ -4,6 +4,7 @@ import uuid
 import subprocess
 import multiprocessing
 import time
+import json
 from flask import Flask, render_template, jsonify, request, send_from_directory, redirect
 from werkzeug.utils import secure_filename
 import redis
@@ -21,6 +22,31 @@ redis_client = redis.Redis(
 s3_client = boto3.client('s3')
 
 BUCKET_NAME = 'mopa-laser-rasterizer.com'
+
+ABSTRACT_FILTER_NAMES = {
+    "none", "wave", "voronoi", "shear", "spiral", "mosaic",
+    "crystal", "ripple"
+}
+
+
+def parse_abstract_filter_parameters(raw_value):
+    """Validate the small JSON object supplied by the abstract-filter UI."""
+    if not raw_value:
+        return {}
+    try:
+        parameters = json.loads(raw_value)
+    except json.JSONDecodeError as error:
+        raise ValueError("Abstract filter settings are not valid JSON") from error
+    if not isinstance(parameters, dict) or len(parameters) > 12:
+        raise ValueError("Abstract filter settings must be a small object")
+    clean = {}
+    for key, value in parameters.items():
+        if not isinstance(key, str) or not key.replace("_", "").isalnum():
+            raise ValueError("An abstract filter setting has an invalid name")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"Abstract filter setting '{key}' must be numeric")
+        clean[key] = value
+    return clean
 
 def upload_local_file(local_file_path: str, object_key: str):
   """Uploads an existing file from disk to S3."""
@@ -132,11 +158,12 @@ def long_running_script(task_id, data, image_path, material_settings_path):
         new_height = data.get('new_height', '100')
         colors = data.get('colors', '')
         image_preset = data.get('image_preset', "cartoon")
-        abstract_filter = data.get('abstract_filter', "None")
-        try:
-            abstract_filter 
-        except NameError as ne:
-            abstract_filter = None
+        abstract_filter = str(data.get('abstract_filter', "none")).strip().lower()
+        if image_preset != "abstract" or abstract_filter not in ABSTRACT_FILTER_NAMES:
+            abstract_filter = "none"
+        filter_parameters = parse_abstract_filter_parameters(
+            data.get('abstract_filter_parameters', '{}')
+        )
         
         output_filename = tasks[f"{task_id}_filename"]
         output_file_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
@@ -156,7 +183,8 @@ def long_running_script(task_id, data, image_path, material_settings_path):
                 material_settings_path, 
                 str(colors), 
                 image_preset,
-                abstract_filter
+                abstract_filter,
+                json.dumps(filter_parameters, separators=(",", ":"))
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,  # Merges stderr into stdout cleanly
@@ -246,6 +274,15 @@ def start_task():
     material_settings.save(material_settings_path)
 
     user_data = request.form.to_dict()
+    try:
+        filter_name = str(user_data.get('abstract_filter', 'none')).strip().lower()
+        if filter_name not in ABSTRACT_FILTER_NAMES:
+            raise ValueError("Unknown abstract filter")
+        parse_abstract_filter_parameters(
+            user_data.get('abstract_filter_parameters', '{}')
+        )
+    except ValueError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
 
     # Clear top-level keys initialize cleanly
     tasks[f"{task_id}_status"] = "pending"

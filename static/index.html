@@ -150,6 +150,49 @@
   button:hover {
     background-color: #1d4ed8;
   }
+  .abstract-panel {
+    margin-top: 12px;
+    padding: 14px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #f8fafc;
+  }
+  .filter-description {
+    margin: 8px 0 14px;
+    color: #64748b;
+    font-size: 0.78rem;
+    line-height: 1.4;
+  }
+  .filter-controls {
+    display: grid;
+    gap: 12px;
+  }
+  .filter-control label {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 5px;
+  }
+  .filter-control output {
+    color: #2563eb;
+    font-family: monospace;
+    font-weight: 700;
+  }
+  .filter-control input[type="range"] {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 0;
+  }
+  .filter-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .filter-actions button {
+    flex: 1;
+    margin-top: 2px;
+    padding: 7px 10px;
+    background: #475569;
+  }
   {
     padding: 10px 16px;
     font-size: 0.875rem;
@@ -287,14 +330,25 @@
         <option value="abstract">Abstract</option>
       </select>
      
-      <div id="abstract_filter_container" style="display: none;">
+      <div id="abstract_filter_container" class="abstract-panel" style="display: none;">
         <label for="abstract_filter">Abstract Filter Selection </label>
-        <select id="abstract_filter" name="abstract_filter">
-          <option value="wave" selected> Wave</option>
+        <select id="abstract_filter" name="abstract_filter" style="width: 100%;">
+          <option value="wave" selected>Wave Flow</option>
           <option value="voronoi">Voronoi</option>
           <option value="shear">Shear</option>
-          <option value="None">None</option>
-        </select>            
+          <option value="spiral">Spiral Vortex</option>
+          <option value="mosaic">Staggered Mosaic</option>
+          <option value="crystal">Crystal Tessellation</option>
+          <option value="ripple">Topographic Ripple</option>
+          <option value="none">None</option>
+        </select>
+        <p id="filter_description" class="filter-description"></p>
+        <div id="filter_controls" class="filter-controls"></div>
+        <div class="filter-actions">
+          <button type="button" id="reset_filter">Reset settings</button>
+          <button type="button" id="randomize_filter">Randomize</button>
+        </div>
+        <input type="hidden" id="abstract_filter_parameters" name="abstract_filter_parameters" value="{}">
       </div>
     </div>    
   </div>    
@@ -302,33 +356,94 @@
 </form>
 
   <script>    
+    const FILTERS = {
+      wave: {
+        description: 'Bends every boundary into synchronized liquid waves.',
+        controls: [['amplitude_x', 4, -30, 30, .5], ['amplitude_y', 4, -30, 30, .5],
+          ['frequency_x', .1, .01, 1, .01], ['frequency_y', .1, .01, 1, .01], ['phase', 0, 0, 6.283, .05]]
+      },
+      voronoi: {
+        description: 'Cuts the image into irregular cellular shards with optional engraving gaps.',
+        controls: [['cell_size', 15, 3, 100, 1], ['jitter', .45, 0, .95, .01],
+          ['gap', .8, 0, 12, .1], ['seed', 1, 0, 999999, 1]]
+      },
+      shear: {
+        description: 'Creates directional skew, perspective, and glitch-like stretching.',
+        controls: [['shear_x', .5, -2, 2, .05], ['shear_y', 0, -2, 2, .05],
+          ['scale_x', 1, .25, 3, .05], ['scale_y', .8, .25, 3, .05]]
+      },
+      spiral: {
+        description: 'Twists the full image around a movable vortex while preserving shared boundaries.',
+        controls: [['twist', 2.25, -8, 8, .1], ['falloff', 1, .1, 5, .1],
+          ['center_x', .5, 0, 1, .01], ['center_y', .5, 0, 1, .01]]
+      },
+      mosaic: {
+        description: 'Breaks color regions into clean, staggered rectangular tiles.',
+        controls: [['tile_size', 12, 2, 100, 1], ['gap', 1, 0, 20, .1], ['stagger', .5, 0, 1, .05]]
+      },
+      crystal: {
+        description: 'Forms a triangular low-poly tessellation reminiscent of cut crystal.',
+        controls: [['cell_size', 18, 3, 120, 1], ['gap', .7, 0, 20, .1]]
+      },
+      ripple: {
+        description: 'Pushes geometry through concentric topographic rings from a movable center.',
+        controls: [['amplitude', 3, -30, 30, .5], ['frequency', .18, .01, 1, .01],
+          ['phase', 0, 0, 6.283, .05], ['center_x', .5, 0, 1, .01], ['center_y', .5, 0, 1, .01]]
+      },
+      none: { description: 'Uses the abstract vector settings without an additional geometric transformation.', controls: [] }
+    };
+
+    const friendlyName = name => name.split('_').map(word =>
+      word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+
+    function updateFilterParameters() {
+      const values = {};
+      document.querySelectorAll('#filter_controls input').forEach(input => {
+        values[input.dataset.parameter] = Number(input.value);
+        input.closest('.filter-control').querySelector('output').value = input.value;
+      });
+      document.getElementById('abstract_filter_parameters').value = JSON.stringify(values);
+    }
+
+    function renderFilterControls() {
+      const filter = FILTERS[document.getElementById('abstract_filter').value];
+      const controls = document.getElementById('filter_controls');
+      document.getElementById('filter_description').textContent = filter.description;
+      controls.replaceChildren();
+      filter.controls.forEach(([name, value, min, max, step]) => {
+        const row = document.createElement('div');
+        row.className = 'filter-control';
+        row.innerHTML = `<label><span>${friendlyName(name)}</span><output>${value}</output></label>` +
+          `<input type="range" data-parameter="${name}" value="${value}" min="${min}" max="${max}" step="${step}">`;
+        row.querySelector('input').addEventListener('input', updateFilterParameters);
+        controls.appendChild(row);
+      });
+      document.getElementById('randomize_filter').style.display = filter.controls.length ? 'block' : 'none';
+      document.getElementById('reset_filter').style.display = filter.controls.length ? 'block' : 'none';
+      updateFilterParameters();
+    }
+
     function toggleAbstractFilter() {
         const presetSelect = document.getElementById('image_preset');
         const filterContainer = document.getElementById('abstract_filter_container');
-        
-        if (presetSelect.value === 'abstract') {
-            filterContainer.style.display = 'block';
-        } else {
-            filterContainer.style.display = 'none';
-        }
+        filterContainer.style.display = presetSelect.value === 'abstract' ? 'block' : 'none';
     }
 
-    // FIX 2: Run the function immediately on page load to handle defaults
-    document.addEventListener("DOMContentLoaded", toggleAbstractFilter);
-  </script>
+    document.getElementById('abstract_filter').addEventListener('change', renderFilterControls);
+    document.getElementById('reset_filter').addEventListener('click', renderFilterControls);
+    document.getElementById('randomize_filter').addEventListener('click', () => {
+      document.querySelectorAll('#filter_controls input').forEach(input => {
+        const min = Number(input.min), max = Number(input.max), step = Number(input.step);
+        const steps = Math.floor((max - min) / step);
+        input.value = min + Math.floor(Math.random() * (steps + 1)) * step;
+      });
+      updateFilterParameters();
+    });
+    document.addEventListener('DOMContentLoaded', () => {
+      toggleAbstractFilter();
+      renderFilterControls();
+    });
 
-  <script>    
-    function toggleAbstractFilter() {
-        const presetSelect = document.getElementById('image_preset');
-        const filterContainer = document.getElementById('abstract_filter_container');
-        
-        // Show the container only if the selected value is exactly 'abstract'
-        if (presetSelect.value === 'abstract') {
-            filterContainer.style.display = 'block';
-        } else {
-            filterContainer.style.display = 'none';
-        }
-    }
     const squares = document.querySelectorAll('.color-square');
     const colorInput = document.getElementById('colorList');
     
