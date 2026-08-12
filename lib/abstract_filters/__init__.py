@@ -1,12 +1,12 @@
-from . import centerline, crystal, mosaic, ripple, shear, spiral, tumbler, voronoi, wave, xenoglyph
+from . import centerline, crystal, mosaic, ripple, shattered, shear, spiral, tumbler, voronoi, wave
 
 MODULES={
     "wave":wave,"voronoi":voronoi,"shear":shear,"spiral":spiral,
     "mosaic":mosaic,"crystal":crystal,"ripple":ripple,
-    "centerline":centerline,"tumbler":tumbler,"xenoglyph":xenoglyph,
+    "centerline":centerline,"tumbler":tumbler,"shattered":shattered,
 }
-ALIASES={"tessellation":"crystal","triangles":"crystal","topographic":"ripple","alien":"xenoglyph"}
-FULL_PALETTE_FILTERS={"wave","voronoi","shear","spiral","mosaic","crystal","ripple","xenoglyph"}
+ALIASES={"tessellation":"crystal","triangles":"crystal","topographic":"ripple","xenoglyph":"shattered","alien":"shattered"}
+FULL_PALETTE_FILTERS={"wave","voronoi","shear","spiral","mosaic","crystal","ripple","shattered"}
 
 def canonical_name(name):
     name=str(name or "none").strip().lower()

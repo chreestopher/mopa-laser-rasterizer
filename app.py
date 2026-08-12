@@ -25,7 +25,7 @@ BUCKET_NAME = 'mopa-laser-rasterizer.com'
 
 ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
-    "crystal", "ripple", "centerline", "tumbler", "xenoglyph"
+    "crystal", "ripple", "centerline", "tumbler", "shattered"
 }
 
 
@@ -44,9 +44,6 @@ def parse_abstract_filter_parameters(raw_value):
         if not isinstance(key, str) or not key.replace("_", "").isalnum():
             raise ValueError("An abstract filter setting has an invalid name")
         if key == "material" and value in ("metal", "powdercoat"):
-            clean[key] = value
-            continue
-        if key == "light_areas_transparent" and isinstance(value, bool):
             clean[key] = value
             continue
         if isinstance(value, bool) or not isinstance(value, (int, float)):

@@ -1427,12 +1427,9 @@ def raster_to_puzzle_and_lightburn(
         filter_name == "tumbler"
         and filter_parameters.get("material") == "powdercoat"
     )
-    xenoglyph_transparent_mode = (
-        filter_name == "xenoglyph"
-        and bool(filter_parameters.get("light_areas_transparent", True))
-    )
+    shattered_mode = filter_name == "shattered"
     preserve_source_black = (
-        centerline_mode or powdercoat_tumbler_mode or xenoglyph_transparent_mode
+        centerline_mode or powdercoat_tumbler_mode or shattered_mode
     )
 
     # =========================================================================
@@ -1446,10 +1443,7 @@ def raster_to_puzzle_and_lightburn(
             black_hex=black_hex,
             ignore_background_hex=ignore_background_hex,
             include_black=preserve_source_black,
-            light_areas_transparent=xenoglyph_transparent_mode,
-            light_threshold=_number(
-                filter_parameters.get("light_threshold"), 225, 128, 255
-            )
+            light_areas_transparent=False
         )
 
     )
@@ -1489,9 +1483,9 @@ def raster_to_puzzle_and_lightburn(
 
     elif centerline_mode:
         printLogMessage("Centerline mode: exporting source-color medial axes as open paths.")
-    elif xenoglyph_transparent_mode:
+    elif shattered_mode:
         printLogMessage(
-            "Xenoglyph mode: light source areas remain transparent; no black canvas added."
+            "Shattered mode: exporting separated source-derived shards without a black canvas."
         )
     else:
         printLogMessage(
