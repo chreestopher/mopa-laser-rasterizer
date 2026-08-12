@@ -356,7 +356,8 @@ def start_task():
         task_id=task_id, 
         files=download_urls,
         history_session=history_session or "",
-        history_files=get_history_entries(history_session)
+        history_files=get_history_entries(history_session),
+        current_source_name=base_name
     )
 
 

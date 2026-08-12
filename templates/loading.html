@@ -266,7 +266,7 @@
                 </li>
                 {% else %}
                 <li class="file-item" data-task-id="{{ task_id }}">
-                    <div class="file-name">Current processing job <span class="file-status">[pending]</span></div>
+                    <div class="file-name"><span class="source-name">{{ current_source_name }}</span> <span class="file-status">[pending]</span></div>
                     <div class="file-actions">
                         <a class="download-button disabled" href="/download/{{ task_id }}">SVG</a>
                         <a class="download-button disabled" href="/download-lbrn2/{{ task_id }}">LightBurn</a>
@@ -300,6 +300,31 @@ function escapeHtml(value) {
     return span.innerHTML;
 }
 
+function fileRowHtml(file) {
+    const ready = file.status === 'completed';
+    const disabled = ready ? '' : ' disabled';
+    const name = escapeHtml(file.source_name || 'processed image');
+    return `<div class="file-name"><span class="source-name">${name}</span> <span class="file-status">[${file.status}]</span></div>` +
+      `<div class="file-actions"><a class="download-button${disabled}" href="${file.svg_url}">SVG</a>` +
+      `<a class="download-button${disabled}" href="${file.lightburn_url}">LightBurn</a></div>`;
+}
+
+function upsertFileRows(files) {
+    const emptyRow = downloadList.querySelector('.empty-files');
+    if (emptyRow) emptyRow.remove();
+    // Iterate oldest-to-newest and prepend, leaving the newest job at top.
+    [...files].reverse().forEach(file => {
+        let row = downloadList.querySelector(`[data-task-id="${file.task_id}"]`);
+        if (!row) {
+            row = document.createElement('li');
+            row.className = 'file-item';
+            row.dataset.taskId = file.task_id;
+            downloadList.prepend(row);
+        }
+        row.innerHTML = fileRowHtml(file);
+    });
+}
+
 async function refreshFileHistory() {
     if (!historySession) {
         console.warn('File history session was not carried to the loading page.');
@@ -311,14 +336,7 @@ async function refreshFileHistory() {
       const data = await response.json();
       const files = data.files || [];
       if (!files.length) return;
-      downloadList.innerHTML = files.map(file => {
-        const ready = file.status === 'completed';
-        const disabled = ready ? '' : ' disabled';
-        const name = escapeHtml(file.source_name || 'processed image');
-        return `<li class="file-item"><div class="file-name">${name} <span class="file-status">[${file.status}]</span></div>` +
-          `<div class="file-actions"><a class="download-button${disabled}" href="${file.svg_url}">SVG</a>` +
-          `<a class="download-button${disabled}" href="${file.lightburn_url}">LightBurn</a></div></li>`;
-      }).join('');
+      upsertFileRows(files);
     } catch (error) {
       console.error('Unable to refresh processed file history:', error);
       const heading = document.getElementById('files-heading');
