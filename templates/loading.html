@@ -140,30 +140,42 @@
                         // 2. Parse the response into a readable JavaScript object
                         const fileData = await dl_list.json(); 
                         
-                        // 3. Extract the variables sent by your Flask backend
-                        // (Adjust 'filename' to match whatever key your JSON uses, e.g., fileData.name)
-                        const fileName = fileData.files; 
+                        // 3. Extract the array of file links sent by your Flask backend
+                        const filesArray = fileData.files; // This contains your list of links
 
                         // 4. Target your right-hand sidebar list container
                         const listContainer = document.getElementById('download-list');
 
-                        // 5. Create the new list item element
-                        const listItem = document.createElement('li');
-                        listItem.className = 'download-item';
+                        // 5. Create a parent list item wrapper for this specific task execution
+                        const taskItem = document.createElement('li');
+                        taskItem.className = 'download-item';
+                        taskItem.style.display = 'block'; // Keeps nested elements structured neatly
 
-                        // 6. Populate the list item with your backend variables
-                        for file in files:
-                            listItem.innerHTML = `
-                                <span>${file}</span>
-                                <a href="${file}" class="download-link" download>Download</a>
-                        `;
+                        // 6. Loop through your file links using valid JavaScript syntax
+                        let innerHTMLContent = `<strong>Task ${taskId} Links:</strong><br>`;
+                        
+                        filesArray.forEach((fileUrl) => {
+                            // Extract a clean name from the URL path for display (e.g., "download-lbrn2")
+                            const label = fileUrl.includes('lbrn2') ? 'LightBurn File' : 'Standard Download';
+                            
+                            innerHTMLContent += `
+                                <div style="margin-top: 5px; display: flex; justify-content: space-between;">
+                                    <span>${label}</span>
+                                    <a href="${fileUrl}" class="download-link" download>Download</a>
+                                </div>
+                            `;
+                        });
 
-                        // 7. Inject the item at the very top of your processed files list
-                        listContainer.insertBefore(listItem, listContainer.firstChild);
+                        // Assign the built HTML content to your single task row item
+                        taskItem.innerHTML = innerHTMLContent;
+
+                        // 7. Inject the grouped links at the very top of your processed files list
+                        listContainer.insertBefore(taskItem, listContainer.firstChild);
 
                     } catch (error) {
                         console.error("Failed to fetch download details:", error);
                     }
+
 
 
 
