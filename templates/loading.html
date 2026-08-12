@@ -26,9 +26,9 @@
             /* height: 300px; */
             overflow-y: auto;
             box-shadow: inset 0 0 15px #000, 0 8px 30px rgba(0,0,0,0.15);
-            width: 95%;           /* Fills 95% of the screen width */
+            width: 75%;           /* Fills 95% of the screen width */
             max-width: 1200px;    /* Optional: Prevents it from getting too wide on massive screens */
-            height: 90vh;         /* Fills 90% of the screen height */
+            height: 75vh;         /* Fills 90% of the screen height */
             margin: 2vh auto;     /* Centers the box vertically and horizontally */            
         }
         .log-list {
@@ -49,12 +49,25 @@
     </style>
 </head>
 <body>
+    
+        <div class="terminal-box" id="terminal">
+            <ul class="log-list" id="log-container">
+                <li class="log-item"><span class="log-prefix">$</span>Connecting to script pipeline...</li>
+            </ul>
+        </div>
+        <!-- Right Side: Live Processed Files History -->
+        <aside class="downloads-sidebar">
+            <h2>Processed Files</h2>
+            <ul id="download-list" class="download-list">
+                <!-- Items will be appended here dynamically via JS -->
 
-    <div class="terminal-box" id="terminal">
-        <ul class="log-list" id="log-container">
-            <li class="log-item"><span class="log-prefix">$</span>Connecting to script pipeline...</li>
-        </ul>
-    </div>
+                    
+                <!-- <li class="download-item" id="task-123">
+                    <span>report_123.csv</span>
+                    <a href="'/downloads/<task_id> class="download-link">Download</a>
+                </li> -->
+            </ul>
+        </aside>
 
 <script>
     const taskId = "{{ task_id }}";
@@ -101,13 +114,60 @@
                 });
                 logIndex = currentLogs.length;
             }
-
+   
             // Evaluate completion statuses cleanly after logs are checked
             if (data.status === "completed") {
                 clearInterval(checkStatus);
                 appendLogMessage("Task completed successfully! Redirecting to dashboard...");
-                
                 setTimeout(() => {
+                    const listContainer = document.getElementById('download-list');
+
+                    // 1. Create a list item structure for this specific task
+                    const listItem = document.createElement('li');
+                    listItem.className = 'download-item';
+                    listItem.id = `task-${taskId}`; // Unique ID to find it later
+
+                    // 2. Add placeholder contents while processing
+                    listItem.innerHTML = `
+                        <span class="file-name">Processing task ${taskId}...</span>
+                        <span class="status-tag" style="background: #ffeeba; color: #856404;">Pending</span>
+                    `;
+
+                    try {
+                        // 1. Fetch the download details from your endpoint
+                        const dl_list = await fetch(`/downl-list/${taskId}`);
+                        
+                        // 2. Parse the response into a readable JavaScript object
+                        const fileData = await dl_list.json(); 
+                        
+                        // 3. Extract the variables sent by your Flask backend
+                        // (Adjust 'filename' to match whatever key your JSON uses, e.g., fileData.name)
+                        const fileName = fileData.files; 
+
+                        // 4. Target your right-hand sidebar list container
+                        const listContainer = document.getElementById('download-list');
+
+                        // 5. Create the new list item element
+                        const listItem = document.createElement('li');
+                        listItem.className = 'download-item';
+
+                        // 6. Populate the list item with your backend variables
+                        for file in files:
+                            listItem.innerHTML = `
+                                <span>${file}</span>
+                                <a href="${file}" class="download-link" download>Download</a>
+                        `;
+
+                        // 7. Inject the item at the very top of your processed files list
+                        listContainer.insertBefore(listItem, listContainer.firstChild);
+
+                    } catch (error) {
+                        console.error("Failed to fetch download details:", error);
+                    }
+
+
+
+
                     window.location.href = "/success/" + taskId;
                 }, 500);
             }

@@ -330,6 +330,28 @@ def cleanup_reddis_inflight(task_id):
         redis_client.delete(redis_status_key, redis_log_key, redis_download_key)
         print(f"[Redis Cleanup]: Task keys for {task_id} purged after 3 downloads.", flush=True)
 
+@app.route('/list-downloads/<task_id>')
+def listdownloads(task_id):
+    """Locates and downloads returns the filenames."""
+    # import glob
+
+    # search_pattern = os.path.join(app.config['UPLOAD_FOLDER'], f"output_{task_id}_*.lbrn2")
+    # matching_files = glob.glob(search_pattern)
+    
+    # if not matching_files:
+    #     return jsonify({"status": "error", "message": "LightBurn file (.lbrn2) not found on disk"}), 404
+        
+    )return return jsonify({
+        "status": "success", 
+        "message": "LightBurn file (.lbrn2) not found on disk"
+        "files":  [
+            f"/download-lbrn2/{task_id}",
+            f"/download/{task_id}"
+        ]
+    }
+    ), 200
+
+
 @app.route('/download-lbrn2/<task_id>')
 def download_lbrn2(task_id):
     """Locates and downloads the matching LightBurn vector layout file."""
