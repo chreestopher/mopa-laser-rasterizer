@@ -2,6 +2,10 @@
 # RASTER -> VECTOR HELPER FUNCTIONS
 # ============================================================================
 
+def printLogMessage(message):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{timestamp}] {message}", flush=True)
+
 def normalize_vector_parameters(
     quantize_colors,
     min_island_area,
