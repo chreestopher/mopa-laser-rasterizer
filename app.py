@@ -5,6 +5,7 @@ import subprocess
 import multiprocessing
 import time
 import json
+import re
 from flask import Flask, render_template, jsonify, request, send_from_directory, redirect
 from werkzeug.utils import secure_filename
 import redis
@@ -27,6 +28,29 @@ ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
     "crystal", "ripple", "centerline", "tumbler", "shattered"
 }
+HISTORY_SESSION_RE = re.compile(r"^[a-f0-9-]{32,36}$")
+HISTORY_TTL_SECONDS = 7 * 24 * 60 * 60
+
+
+def valid_history_session(value):
+    value = str(value or "").strip().lower()
+    return value if HISTORY_SESSION_RE.fullmatch(value) else None
+
+
+def add_history_entry(session_id, task_id, source_name):
+    if not session_id:
+        return
+    key = f"history:{session_id}"
+    entry = json.dumps({
+        "task_id": task_id,
+        "source_name": source_name,
+        "created_at": int(time.time()),
+    }, separators=(",", ":"))
+    pipeline = redis_client.pipeline()
+    pipeline.lpush(key, entry)
+    pipeline.ltrim(key, 0, 98)
+    pipeline.expire(key, HISTORY_TTL_SECONDS)
+    pipeline.execute()
 
 
 def parse_abstract_filter_parameters(raw_value):
@@ -277,6 +301,7 @@ def start_task():
     material_settings.save(material_settings_path)
 
     user_data = request.form.to_dict()
+    history_session = valid_history_session(user_data.get('history_session'))
     try:
         filter_name = str(user_data.get('abstract_filter', 'none')).strip().lower()
         if filter_name not in ABSTRACT_FILTER_NAMES:
@@ -292,6 +317,7 @@ def start_task():
     tasks[f"{task_id}_logs"] = ["Waiting to start..."]
     tasks[f"{task_id}_filename"] = custom_output_name
     tasks[f"{task_id}_error"] = None
+    add_history_entry(history_session, task_id, base_name)
 
     thread = threading.Thread(
         target=long_running_script, 
@@ -305,8 +331,36 @@ def start_task():
     return render_template(
         'loading.html', 
         task_id=task_id, 
-        files=download_urls 
+        files=download_urls,
+        history_session=history_session or ""
     )
+
+
+@app.route('/file-history/<session_id>')
+def file_history(session_id):
+    """Return up to 99 jobs created through the explicit in-page flow."""
+    session_id = valid_history_session(session_id)
+    if not session_id:
+        return jsonify({"files": []}), 400
+    entries = []
+    for raw_entry in redis_client.lrange(f"history:{session_id}", 0, 98):
+        try:
+            entry = json.loads(raw_entry)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        task_id = entry.get("task_id")
+        if not task_id:
+            continue
+        status = redis_client.get(f"task:{task_id}:status") or "pending"
+        entries.append({
+            "task_id": task_id,
+            "source_name": entry.get("source_name", "processed image"),
+            "created_at": entry.get("created_at"),
+            "status": status,
+            "svg_url": f"/download/{task_id}",
+            "lightburn_url": f"/download-lbrn2/{task_id}",
+        })
+    return jsonify({"files": entries})
 
 
 
@@ -372,11 +426,11 @@ def cleanup_reddis_inflight(task_id):
     if download_count == 1:
         redis_client.expire(redis_download_key, 7 * 24 * 60 * 60)
 
-    # 2. Check if this is the 3rd download
-    if download_count >= 3:
-        # Delete all keys associated with this task ID immediately
-        redis_client.delete(redis_status_key, redis_log_key, redis_download_key)
-        print(f"[Redis Cleanup]: Task keys for {task_id} purged after 3 downloads.", flush=True)
+    # Keep task metadata available for the page-flow file history. Disk and
+    # Redis cleanup are governed by the existing seven-day TTL instead of a
+    # download count, so history buttons remain usable more than once.
+    redis_client.expire(redis_status_key, HISTORY_TTL_SECONDS)
+    redis_client.expire(redis_log_key, HISTORY_TTL_SECONDS)
 
 @app.route('/list-downloads/<task_id>')
 def listdownloads(task_id):

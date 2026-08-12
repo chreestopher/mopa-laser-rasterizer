@@ -265,6 +265,7 @@
      
   <!-- Form Section -->
   <form action="/upload" method="post" enctype="multipart/form-data"> 
+    <input type="hidden" id="history_session" name="history_session">
     <div class="form-group"></div>
     <div>
       <div><label for="image">Choose a raster image file:</label></div>
@@ -562,6 +563,11 @@
       updateFilterParameters();
     });
     document.addEventListener('DOMContentLoaded', () => {
+      const sessionFromLink = new URLSearchParams(window.location.search).get('history_session');
+      const newSession = crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`;
+      document.getElementById('history_session').value = sessionFromLink || newSession;
       toggleAbstractFilter();
       renderFilterControls();
     });
