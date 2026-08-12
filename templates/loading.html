@@ -175,9 +175,9 @@
                 clearInterval(checkStatus);
                 
                 appendLogMessage("Task completed successfully! Redirecting to dashboard...");
-                setTimeout(( ) => {
-                    window.location.href = "/success/" + taskId;
-                }, 500);
+                // setTimeout(( ) => {
+                //     window.location.href = "/success/" + taskId;
+                // }, 500);
             }
             else if (data.status === "failed") {
                 clearInterval(checkStatus);
