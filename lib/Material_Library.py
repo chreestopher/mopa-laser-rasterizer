@@ -43,7 +43,10 @@ def main(argv=None):
     vector_processing.image_preset = image_preset
 
     limit_list = [item.strip() for item in limit_colors.split(",") if item.strip()]
-    target_colors, lb, _ = vector_processing.init_lightburn(limit_colors)
+    target_colors, lb, lightburn_module = vector_processing.init_lightburn(limit_colors)
+    # Keep the exporter dependency explicit at the compatibility boundary.
+    # init_lightburn also registers it internally for direct API callers.
+    vector_processing.lightburn = lightburn_module
     target_colors["#B4B4B4"] = (0, 8, "Light-Gray")
     target_colors["#000000"] = (0, 0, "Black")
     if len(limit_list) <= 1:

@@ -191,6 +191,8 @@ def init_lightburn(the_colors_limit):
             3) filters the lightburn layer colors so it only contains colors in limit_colors list
             4) returns the initialized objects to be used by other functions
     """
+    global lightburn
+
     # Define the module name and its exact absolute file path
     module_name = "lightburn"
     module_dir = os.path.dirname(os.path.abspath(__file__))
