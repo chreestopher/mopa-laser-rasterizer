@@ -1,18 +1,91 @@
+import sys
+import os
+import importlib.util
+import json
+from PIL import Image
+import colorsys
 import math
+import cv2
+import numpy as np 
+import svgwrite
+import potrace
 import xml.etree.ElementTree as ET
 from collections import defaultdict
+from shapely.geometry import Polygon, box, Point, MultiPoint, LineString, MultiLineString
+from shapely.ops import unary_union, voronoi_diagram, transform
+from shapely.affinity import scale, affine_transform
+from shapely.validation import make_valid
+from svgelements import SVG, Path, Polygon as SVGPolygon
+from datetime import datetime
+from abstract_filters import (
+    FULL_PALETTE_FILTERS,
+    MODULES as ABSTRACT_FILTER_MODULES,
+    apply as apply_registered_filter,
+    canonical_name,
+    manifest as filter_manifest,
+    settings as registered_filter_settings,
+)
+from abstract_filters.common import number as _number
 
-from PIL import Image
+# from vector_processing import raster_to_puzzle_and_lightburn
 
-from shapely.geometry import box, MultiPoint
-from shapely.ops import unary_union, transform, voronoi_diagram
-from shapely.affinity import affine_transform, scale
-import lightburn
 
-from datetime import datetime 
 def printLogMessage(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}", flush=True)
+
+PHOTO_TYPE_PRESETS = {
+    "cartoon": {
+        "quantize_colors": None,
+        "min_island_area": 0,
+        "simplification_factor": 0.0,
+        "smoothing_radius": 0.001
+    },
+    
+    "color_photograph": {
+        "quantize_colors": 24,          # Tonal color band limit
+        "min_island_area": 8,           # Drops tiny laser fragments
+        "simplification_factor": 0.35,  # Straightens jagged lines
+        "smoothing_radius": 0.5         # Blends edge spaces
+    },
+    
+    "bw_dither_photograph": {
+        "quantize_colors": 2,           # Forced black and white output
+        "min_island_area": 2,           # Retains high frequency dither dots
+        "simplification_factor": 0.1,   # Drops line reshaping entirely
+        "smoothing_radius": 0.1         # Locks tight boundaries
+    },
+    
+    "abstract": {
+        "quantize_colors": 12,           # posterized chunk colors
+        "min_island_area": 25,          # Erases tiny geometric detail frames
+        "simplification_factor": 1.8,   # High morph curve reshaping
+        "smoothing_radius": 5,        # Round out geometric loops
+        "abstract_filter": "wave"
+    }
+}
+
+def str_to_bool(value: str) -> bool:
+    # Convert to lowercase and strip whitespace
+    clean_val = value.strip().lower()
+    
+    # Return True if it matches truthy terms
+    return clean_val in ("true", "1", "yes", "on", "t")
+
+def resize_to_specific_height_or_width( image, width=0, height=0 ):
+    if (height == 0 and width != 0):
+        width_percent = float(width) / float(image.size[0])
+        new_height = int(float(image.size[1]) * float(width_percent))
+        printLogMessage("resizing image to width: " + str(width) + " height: "+ str(new_height))
+        resized_img = image.resize((width, int(new_height)), Image.Resampling.LANCZOS)
+    elif (width == 0 and height != 0) :
+        height_percent = float(height) / float(image.size[1])
+        new_width = int(float(image.size[0]) * float(height_percent))
+        printLogMessage("resizing image to width: " + str(new_width) + " height: "+ str(height))
+        resized_img = image.resize((int(new_width),int(height) ), Image.Resampling.LANCZOS)
+    else:
+        return image
+    return resized_img
 
 found_lb_hex = {}
 
@@ -71,21 +144,131 @@ def get_closest_color(r, g, b, TARGET_COLORS):
         found_lb_hex[(r,g,b)]=closest_hex
         return found_lb_hex[(r,g,b)]
 
+def hex_to_rgb(hex_str):
+    """Helper to convert #R_G_B or R_G_B hex string to a Numpy RGB tuple."""
+    hex_str = hex_str.lstrip('#')
+    return tuple(int(hex_str[i:i+2], 16) for i in (0, 2, 4))
 
-def resize_to_specific_height_or_width( image, width=0, height=0 ):
-    if (height == 0 and width != 0):
-        width_percent = float(width) / float(image.size[0])
-        new_height = int(float(image.size[1]) * float(width_percent))
-        printLogMessage("resizing image to width: " + str(width) + " height: "+ str(new_height))
-        resized_img = image.resize((width, int(new_height)), Image.Resampling.LANCZOS)
-    elif (width == 0 and height != 0) :
-        height_percent = float(height) / float(image.size[1])
-        new_width = int(float(image.size[0]) * float(height_percent))
-        printLogMessage("resizing image to width: " + str(new_width) + " height: "+ str(height))
-        resized_img = image.resize((int(new_width),int(height) ), Image.Resampling.LANCZOS)
+def rgb_to_hex(rgb):
+    """Converts an (R, G, B) tuple to a #RRGGBB hex string."""
+    return '#{:02x}{:02x}{:02x}'.format(*rgb)
+
+def parse_material_settings(lb, material_settings_path, limit_colors, TARGET_COLORS):
+    """
+    This function:
+        1) parses the material settings file
+        2) filters the materials based on the limit colors passed in
+        3) filters the lightburn layer TARGET_COLORS:
+            to only include colors that exist in the material setings list
+        4) returns the new lightburn layer TARGET_COLORS for use in pixel generation=
+            this ensures that we only find the closest lightburn layer color that exists in our material settings
+    """
+    new_color_settings = lb.parse_material_library(material_settings_path)
+    matched_settings = {}
+    for item in new_color_settings:
+        if item.materialName == "colors - stainless steel":
+            item.frequency = int(item.frequency)
+            item.name = item.entryDesc
+            if item.name.lower() in [cv[-1].lower() for cn,cv in TARGET_COLORS.items() if cv[-1].lower() in limit_colors]:
+                target_item = [cv for cn,cv in TARGET_COLORS.items() if cv[-1].lower() == item.name.lower()] 
+                target_touple = target_item[0]
+                target_key = [cn for cn,cv in TARGET_COLORS.items() if cv[-1].lower() == item.name.lower()] 
+                matched_settings[target_key[0]] = TARGET_COLORS[target_key[0]]
+                item.index = target_touple[-2]
+                lb.add_layer(item)
+                printLogMessage(f"added Layer: {item.name}")
+
+            else:
+                printLogMessage(f"unable to add layer: {item.name}, name not in lightburn target colors")
+
+    return matched_settings    
+
+def init_lightburn(the_colors_limit):
+    """
+        This Function:
+            1) initializes lightburn module
+            2) initiallizes the full list of lighburn layer colors
+            3) filters the lightburn layer colors so it only contains colors in limit_colors list
+            4) returns the initialized objects to be used by other functions
+    """
+    # Define the module name and its exact absolute file path
+    module_name = "lightburn"
+    module_dir = os.path.dirname(os.path.abspath(__file__))
+    lightburn_candidates = [
+        os.environ.get("LIGHTBURN_MODULE"),
+        os.path.join(module_dir, "lightburn.py"),
+        os.path.join(module_dir, "lib", "lightburn.py"),
+        os.path.join(os.path.dirname(module_dir), "lib", "lightburn.py"),
+        "/app/lib/lightburn.py"
+    ]
+    file_path = next(
+        (path for path in lightburn_candidates if path and os.path.isfile(path)),
+        None
+    )
+    if file_path is None:
+        raise FileNotFoundError(
+            "lightburn.py was not found. Place it beside Material_Library.py, "
+            "under lib/, or set LIGHTBURN_MODULE=/path/to/lightburn.py"
+        )
+
+    # Create a module spec from the file location
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    lightburn = importlib.util.module_from_spec(spec)
+    TARGET_COLORS = {
+        '#B4B4B4': (0, 8, 'Light-Gray'),
+        '#000000': (0, 0, 'Black'),
+        '#0000FF': (240, 1, 'Blue'),
+        '#FF0000': (1, 2, 'Red'),
+        '#00E000': (120, 3, 'Green'),
+        '#D0D000': (60, 4, 'Yellow'),
+        '#FF8000': (30, 5, 'Orange'),
+        '#00E0E0': (180, 6, 'Cyan'),
+        '#FF00FF': (300, 7, 'Magenta'),
+        '#0000A0': (240, 9, 'Dark-Blue'),
+        '#A00000': (359, 10, 'Dark-Red'),
+        '#00A000': (120, 11, 'Dark-Green'),
+        '#A0A000': (60, 12, 'Dark-Yellow'),
+        '#C08000': (40, 13, 'Dark-Orange'),
+        '#00A0FF': (202, 14, 'Light-Blue'),
+        '#A000A0': (300, 15, 'Dark-Magenta'),
+        '#808080': (2, 16, 'Medium-Gray'),
+        '#7D87B9': (230, 17, 'Slate-Blue'),
+        '#BB7784': (349, 18, 'Rose'),
+        '#4A6FE3': (225, 19, 'Periwinkle-Blue'),
+        '#D33F6A': (343, 20, 'Raspberry'),
+        '#8CD78C': (120, 21, 'Sage-Green'),
+        '#F0B98D': (27, 22, 'Peach'),
+        '#F6C4E1': (325, 23, 'Light-Pink'),
+        '#FA9ED4': (325, 24, 'Orchid-Pink'),
+        '#500A78': (278, 25, 'Deep-Purple'),
+        '#B45A00': (30, 26, 'Rust-Brown'),
+        '#004754': (189, 27, 'Teal'),
+        '#86FA88': (121, 28, 'Bright-Mint-Green'),
+        '#FFDB66': (46, 29, 'Light-Gold')
+    }
+    if len(the_colors_limit) > 0:
+        filtered_colors = {
+            hex_code: value_tuple 
+            for hex_code, value_tuple in TARGET_COLORS.items() 
+            for hex_code, value_tuple in TARGET_COLORS.items() 
+            if value_tuple[-1].lower() in the_colors_limit.lower()
+        }
+        # ensure light grey and black are always in the list 
+        # these colors get defaulted to when no color is close enough to the target pixel
+        filtered_colors['#B4B4B4'] = (0, 8, 'Light-Gray')
+        filtered_colors['#000000'] = (0, 0, 'Black')
     else:
-        return image
-    return resized_img
+        filtered_colors = TARGET_COLORS
+        filtered_colors['#B4B4B4'] = (0, 8, 'Light-Gray')
+        filtered_colors['#000000'] = (0, 0, 'Black')
+    # Add it to sys.modules cache and execute the code within the module
+    sys.modules[module_name] = lightburn
+    spec.loader.exec_module(lightburn)
+
+    # Create the lightburn object
+    lb = lightburn.Lightburn()
+    return filtered_colors, lb, lightburn
+
 
 def normalize_vector_parameters(
     quantize_colors,
@@ -228,7 +411,10 @@ def classify_raster_pixels(
     img,
     target_colors,
     black_hex,
-    ignore_background_hex
+    ignore_background_hex,
+    include_black=False,
+    light_areas_transparent=False,
+    light_threshold=225
 ):
     """
     Convert raster pixels into 1x1 Shapely boxes grouped by color.
@@ -253,6 +439,11 @@ def classify_raster_pixels(
                 (x, y)
             )
 
+            if light_areas_transparent:
+                luminance = 0.2126 * pixel_rgb[0] + 0.7152 * pixel_rgb[1] + 0.0722 * pixel_rgb[2]
+                if luminance >= light_threshold:
+                    continue
+
             closest_hex = get_closest_color(
                 *pixel_rgb,
                 target_colors
@@ -268,7 +459,7 @@ def classify_raster_pixels(
             #
             #     canvas - all colored geometry
             #
-            if closest_hex == black_hex:
+            if closest_hex == black_hex and not include_black:
                 continue
 
             pixel_poly = box(
@@ -287,158 +478,140 @@ def classify_raster_pixels(
     return pixel_boxes_by_color
 
 
+def boxes_to_centerlines(boxes, settings):
+    """Reduce a raster color region to open, one-pixel-wide medial-axis paths."""
+    if not boxes:
+        return MultiLineString([])
+    min_x = math.floor(min(item.bounds[0] for item in boxes))
+    min_y = math.floor(min(item.bounds[1] for item in boxes))
+    max_x = math.ceil(max(item.bounds[2] for item in boxes))
+    max_y = math.ceil(max(item.bounds[3] for item in boxes))
+    mask = np.zeros((max_y - min_y + 2, max_x - min_x + 2), dtype=np.uint8)
+    for item in boxes:
+        x, y = int(item.bounds[0]) - min_x + 1, int(item.bounds[1]) - min_y + 1
+        mask[y, x] = 255
+
+    # Morphological skeletonization uses only core OpenCV and converges to a
+    # true one-pixel center axis without requiring opencv-contrib/ximgproc.
+    skeleton = np.zeros_like(mask)
+    working = mask.copy()
+    element = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
+    while cv2.countNonZero(working):
+        eroded = cv2.erode(working, element)
+        opened = cv2.dilate(eroded, element)
+        skeleton = cv2.bitwise_or(skeleton, cv2.subtract(working, opened))
+        working = eroded
+
+    pixels = {(int(x), int(y)) for y, x in np.argwhere(skeleton > 0)}
+    if not pixels:
+        return MultiLineString([])
+    offsets = ((-1, -1), (0, -1), (1, -1), (-1, 0),
+               (1, 0), (-1, 1), (0, 1), (1, 1))
+    neighbors = {p: {q for dx, dy in offsets if (q := (p[0] + dx, p[1] + dy)) in pixels}
+                 for p in pixels}
+    visited = set()
+    lines = []
+
+    def edge(a, b):
+        return tuple(sorted((a, b)))
+
+    def follow(start, nxt):
+        path = [start, nxt]
+        visited.add(edge(start, nxt))
+        previous, current = start, nxt
+        while len(neighbors[current]) == 2:
+            candidates = [p for p in neighbors[current] if p != previous]
+            if not candidates or edge(current, candidates[0]) in visited:
+                break
+            previous, current = current, candidates[0]
+            path.append(current)
+            visited.add(edge(previous, current))
+        return path
+
+    endpoints = [p for p in pixels if len(neighbors[p]) != 2]
+    for start in endpoints:
+        for nxt in neighbors[start]:
+            if edge(start, nxt) not in visited:
+                lines.append(follow(start, nxt))
+    # Closed loops have no endpoint/junction, so collect their remaining edge.
+    for start in pixels:
+        for nxt in neighbors[start]:
+            if edge(start, nxt) not in visited:
+                lines.append(follow(start, nxt))
+
+    tolerance = _number(settings.get("line_simplification"), .35, 0, 10)
+    minimum = _number(settings.get("min_branch_length"), 2, 0, 1000)
+    result = []
+    for points in lines:
+        if len(points) < 2:
+            continue
+        line = LineString([(x + min_x - .5, y + min_y - .5) for x, y in points])
+        if tolerance:
+            line = line.simplify(tolerance, preserve_topology=False)
+        if line.length >= minimum and len(line.coords) >= 2:
+            result.append(line)
+    return MultiLineString(result) if result else MultiLineString([])
+
+
+def retain_dominant_foreground(pixel_boxes_by_color, img, settings):
+    """Keep the largest connected non-background subject for powder-coat art."""
+    rgb = np.asarray(img.convert("RGB"), dtype=np.float32)
+    height, width = rgb.shape[:2]
+    border = np.concatenate((rgb[0], rgb[-1], rgb[:, 0], rgb[:, -1]), axis=0)
+    background = np.median(border, axis=0)
+    distance = np.linalg.norm(rgb - background, axis=2)
+    normalized = np.uint8(np.clip(distance / max(distance.max(), 1) * 255, 0, 255))
+    _, mask = cv2.threshold(normalized, 0, 1, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+    box_records = []
+    for color, boxes in pixel_boxes_by_color.items():
+        for item in boxes:
+            x, y = int(item.bounds[0]), int(item.bounds[1])
+            if 0 <= x < width and 0 <= y < height:
+                box_records.append((color, item, x, y))
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    if count <= 1:
+        return pixel_boxes_by_color
+    candidates = list(range(1, count))
+    min_percent = _number(settings.get("foreground_min_percent"), .15, 0, 100)
+    minimum_area = width * height * min_percent / 100
+    eligible = [label for label in candidates if stats[label, cv2.CC_STAT_AREA] >= minimum_area]
+    dominant = max(eligible or candidates, key=lambda label: stats[label, cv2.CC_STAT_AREA])
+    retained = defaultdict(list)
+    for color, item, x, y in box_records:
+        if labels[y, x] == dominant:
+            retained[color].append(item)
+    printLogMessage(f"Powder-coat subject isolation retained {stats[dominant, cv2.CC_STAT_AREA]} foreground pixels.")
+    return retained
+
+
 # ============================================================================
 # ABSTRACT FILTERS
 # ============================================================================
 
-def apply_wave_filter(geometry):
-    """
-    Apply the original wavy fluid distortion.
-    """
-
-    def wave_transform(x, y, z=None):
-
-        freq_x = 0.1
-        amp_x = 4.0
-
-        freq_y = 0.1
-        amp_y = 4.0
-
-        new_x = (
-            x
-            + math.sin(y * freq_y) * amp_x
-        )
-
-        new_y = (
-            y
-            + math.cos(x * freq_x) * amp_y
-        )
-
-        return (
-            new_x,
-            new_y
-        )
-
-    return transform(
-        wave_transform,
-        geometry
-    )
+def normalize_abstract_settings(abstract_filter, filter_parameters=None):
+    supplied = {}
+    if isinstance(abstract_filter, dict):
+        supplied.update(abstract_filter)
+        name = supplied.pop("name", supplied.pop("filter", "none"))
+    else:
+        name = abstract_filter or "none"
+    if isinstance(filter_parameters, dict):
+        supplied.update(filter_parameters)
+    return registered_filter_settings(name, supplied)
 
 
-def apply_voronoi_filter(geometry):
-    """
-    Apply the original cellular/Voronoi sharding effect.
-    """
-
-    bounds = geometry.bounds
-
-    points = []
-
-    step = 15
-
-    for gx in range(
-        int(bounds[0]),
-        int(bounds[2]) + step,
-        step
-    ):
-
-        for gy in range(
-            int(bounds[1]),
-            int(bounds[3]) + step,
-            step
-        ):
-
-            jiggle_x = (
-                (gx % 7) - 3.5
-            )
-
-            jiggle_y = (
-                (gy % 5) - 2.5
-            )
-
-            points.append(
-                (
-                    gx + jiggle_x,
-                    gy + jiggle_y
-                )
-            )
-
-    if len(points) >= 3:
-
-        mp = MultiPoint(points)
-
-        vd = voronoi_diagram(mp)
-
-        return geometry.intersection(vd)
-
-    return geometry
+def get_abstract_filter_manifest():
+    return filter_manifest()
 
 
-def apply_shear_filter(geometry):
-    """
-    Apply the original directional perspective shear/glitch skew.
-    """
-
-    return affine_transform(
-        geometry,
-        [
-            1.0,
-            0.5,
-            0.0,
-            0.8,
-            0.0,
-            0.0
-        ]
-    )
-
-
-def apply_abstract_filter(
-    geometry,
-    abstract_filter
-):
-    """
-    Apply the selected abstract filter.
-
-    The original function depends on the existing global
-    `image_preset`, so that dependency is intentionally preserved
-    here to keep this a true drop-in replacement.
-    """
-
-    if (
-        abstract_filter is None
-        or geometry.is_empty
-        or image_preset != "abstract"
-    ):
+def apply_abstract_filter(geometry, abstract_filter, filter_parameters=None):
+    if abstract_filter is None or geometry.is_empty:
         return geometry
+    name, values = normalize_abstract_settings(abstract_filter, filter_parameters)
+    return apply_registered_filter(name, geometry, values)
 
-    filter_name = str(
-        abstract_filter
-    ).lower()
-
-    if filter_name == "wave":
-
-        return apply_wave_filter(
-            geometry
-        )
-
-    if filter_name == "voronoi":
-
-        return apply_voronoi_filter(
-            geometry
-        )
-
-    if filter_name == "shear":
-
-        return apply_shear_filter(
-            geometry
-        )
-
-    return geometry
-
-
-# ============================================================================
-# GEOMETRY CLEANUP
-# ============================================================================
 
 def remove_small_islands(
     geometry,
@@ -499,7 +672,8 @@ def process_color_geometry(
     min_island_area,
     simplification_factor,
     smoothing_radius,
-    abstract_filter
+    abstract_filter,
+    filter_parameters=None
 ):
     """
     Convert a collection of pixel boxes into finalized vector geometry.
@@ -512,6 +686,12 @@ def process_color_geometry(
         4. Douglas-Peucker simplification
         5. Abstract transformation
     """
+
+    filter_name, settings = normalize_abstract_settings(abstract_filter, filter_parameters)
+    if filter_name == "centerline":
+        return ABSTRACT_FILTER_MODULES["centerline"].process_boxes(
+            boxes, settings, boxes_to_centerlines
+        )
 
     # ------------------------------------------------------------------------
     # 1. Weld all same-color pixels together.
@@ -553,14 +733,40 @@ def process_color_geometry(
             )
         )
 
+    if filter_name == "tumbler" and settings.get("material") == "powdercoat":
+        pixel_mm = _number(settings.get("_scale_factor"), 1, .0001, 1000)
+        gap = _number(settings.get("powdercoat_gap_mm"), .35, 0, 20) / pixel_mm
+        powder_simplification = _number(
+            settings.get("powdercoat_simplification_mm"), .3, 0, 20
+        ) / pixel_mm
+        if gap:
+            final_geometry = final_geometry.buffer(-gap / 2, join_style=2)
+        if powder_simplification and not final_geometry.is_empty:
+            final_geometry = final_geometry.simplify(
+                powder_simplification, preserve_topology=True
+            )
+
     # ------------------------------------------------------------------------
     # 5. Apply abstract transformation.
     # ------------------------------------------------------------------------
 
     final_geometry = apply_abstract_filter(
         final_geometry,
-        abstract_filter
+        abstract_filter,
+        filter_parameters
     )
+
+    # Final topology repair before this geometry is used
+    # anywhere else in the pipeline.
+    if not final_geometry.is_valid:
+
+        printLogMessage(
+            "Repairing invalid geometry after processing..."
+        )
+
+        final_geometry = make_valid(
+            final_geometry
+        )
 
     return final_geometry
 
@@ -571,7 +777,8 @@ def process_color_layers(
     min_island_area,
     simplification_factor,
     smoothing_radius,
-    abstract_filter
+    abstract_filter,
+    filter_parameters=None
 ):
     """
     Convert all raster color groups into finalized Shapely geometries.
@@ -616,7 +823,8 @@ def process_color_layers(
             min_island_area=min_island_area,
             simplification_factor=simplification_factor,
             smoothing_radius=smoothing_radius,
-            abstract_filter=abstract_filter
+            abstract_filter=abstract_filter,
+            filter_parameters=filter_parameters
         )
 
         processed_layers[
@@ -635,14 +843,13 @@ def build_punched_black_layer(
     height,
     processed_layers,
     black_hex,
-    abstract_filter
+    abstract_filter,
+    filter_parameters=None
 ):
     """
     Build the black layer as the canvas minus all colored geometry.
 
-    This is the critical zero-overlap operation:
-
-        BLACK = CANVAS - ALL COLORED GEOMETRY
+    Invalid geometries are repaired before the union operation.
     """
 
     canvas_frame = box(
@@ -652,22 +859,41 @@ def build_punched_black_layer(
         height
     )
 
-    # Apply the same abstract transformation that the original
-    # function applied to the black canvas.
     canvas_frame = apply_abstract_filter(
         canvas_frame,
-        abstract_filter
+        abstract_filter,
+        filter_parameters
     )
 
-    colored_geometries = [
-        geometry
-        for color_hex, geometry
-        in processed_layers.items()
-        if (
-            color_hex != black_hex
-            and not geometry.is_empty
-        )
-    ]
+    colored_geometries = []
+
+    for color_hex, geometry in processed_layers.items():
+
+        if color_hex == black_hex:
+            continue
+
+        if geometry.is_empty:
+            continue
+
+        # ------------------------------------------------------------
+        # Repair invalid geometry before attempting the union.
+        # ------------------------------------------------------------
+
+        if not geometry.is_valid:
+
+            printLogMessage(
+                f"Repairing invalid geometry for color "
+                f"{color_hex} before black-layer subtraction..."
+            )
+
+            geometry = make_valid(
+                geometry
+            )
+
+        if not geometry.is_empty:
+            colored_geometries.append(
+                geometry
+            )
 
     if not colored_geometries:
 
@@ -683,15 +909,18 @@ def build_punched_black_layer(
         f"colored layer(s) out of black background..."
     )
 
-    # Combine all colored geometry into one geometry.
+    # ------------------------------------------------------------
+    # Combine all repaired colored geometry.
+    # ------------------------------------------------------------
+
     all_colored_geometry = unary_union(
         colored_geometries
     )
 
-    # THE IMPORTANT OPERATION:
-    #
-    # Remove every colored shape from the black canvas.
-    #
+    # ------------------------------------------------------------
+    # Subtract colored geometry from black canvas.
+    # ------------------------------------------------------------
+
     punched_black_layer = (
         canvas_frame.difference(
             all_colored_geometry
@@ -704,7 +933,6 @@ def build_punched_black_layer(
     )
 
     return punched_black_layer
-
 
 # ============================================================================
 # SVG
@@ -796,8 +1024,17 @@ def add_geometry_to_svg(
             stroke="none"
         )
 
+    elif geometry.geom_type == "LineString":
+        coordinates = list(geometry.coords)
+        if len(coordinates) >= 2:
+            ET.SubElement(root, "path",
+                d="M " + " L ".join(f"{x:.3f},{y:.3f}" for x, y in coordinates),
+                fill="none", stroke=fill_color, **{"stroke-width": "0.1",
+                "stroke-linecap": "round", "stroke-linejoin": "round"})
+
     elif geometry.geom_type in (
         "MultiPolygon",
+        "MultiLineString",
         "GeometryCollection"
     ):
 
@@ -896,8 +1133,14 @@ def push_geometry_to_lightburn(
                     lb_hole
                 )
 
+    elif geometry.geom_type == "LineString":
+        coordinates = [[round(x, 3), round(y, 3)] for x, y in geometry.coords]
+        if len(coordinates) >= 2:
+            lb_project_instance.add(lightburn.Path(coordinates).layer(layer_id))
+
     elif geometry.geom_type in (
         "MultiPolygon",
+        "MultiLineString",
         "GeometryCollection"
     ):
 
@@ -1085,7 +1328,8 @@ def raster_to_puzzle_and_lightburn(
     min_island_area=0,
     simplification_factor=0.0,
     smoothing_radius=0.001,
-    abstract_filter=None
+    abstract_filter=None,
+    filter_parameters=None
 ):
     """
     Parses a raster image, applies a structural vector scale_factor,
@@ -1108,6 +1352,22 @@ def raster_to_puzzle_and_lightburn(
         - SVG export
         - LightBurn export
     """
+
+    filter_name, normalized_filter_settings = normalize_abstract_settings(
+        abstract_filter, filter_parameters
+    )
+    if filter_name in FULL_PALETTE_FILTERS:
+        # Pillow's adaptive quantizer creates its own intermediate palette;
+        # asking it for N colors does not make those colors the N selected
+        # LightBurn layers. It can therefore erase hues before closest-layer
+        # matching. Preserve source RGB here and let get_closest_color() match
+        # every pixel directly against the complete filtered TARGET_COLORS.
+        quantize_colors = None
+        printLogMessage(
+            f"{filter_name.title()} filter bypassing intermediate palette "
+            f"reduction and matching directly to all {len(TARGET_COLORS)} "
+            "available LightBurn colors."
+        )
 
     # =========================================================================
     # 1. Normalize parameters
@@ -1153,6 +1413,26 @@ def raster_to_puzzle_and_lightburn(
 
     width, height = img.size
 
+    # Every color layer must use the same radial center and extent.  Keeping
+    # this internal value shared prevents independently warped layers from
+    # crossing or drifting apart at formerly common boundaries.
+    filter_parameters = dict(filter_parameters or {})
+    filter_parameters["_canvas_bounds"] = (0, 0, width, height)
+    filter_parameters["_scale_factor"] = scale_factor
+    filter_name, _ = normalize_abstract_settings(abstract_filter, filter_parameters)
+    centerline_mode = filter_name == "centerline"
+    powdercoat_tumbler_mode = (
+        filter_name == "tumbler"
+        and filter_parameters.get("material") == "powdercoat"
+    )
+    xenoglyph_transparent_mode = (
+        filter_name == "xenoglyph"
+        and bool(filter_parameters.get("light_areas_transparent", True))
+    )
+    preserve_source_black = (
+        centerline_mode or powdercoat_tumbler_mode or xenoglyph_transparent_mode
+    )
+
     # =========================================================================
     # 4. Convert pixels into color geometry buckets
     # =========================================================================
@@ -1162,9 +1442,20 @@ def raster_to_puzzle_and_lightburn(
             img=img,
             target_colors=TARGET_COLORS,
             black_hex=black_hex,
-            ignore_background_hex=ignore_background_hex
+            ignore_background_hex=ignore_background_hex,
+            include_black=preserve_source_black,
+            light_areas_transparent=xenoglyph_transparent_mode,
+            light_threshold=_number(
+                filter_parameters.get("light_threshold"), 225, 128, 255
+            )
         )
+
     )
+
+    if powdercoat_tumbler_mode:
+        pixel_boxes_by_color = retain_dominant_foreground(
+            pixel_boxes_by_color, img, filter_parameters
+        )
 
     # =========================================================================
     # 5. Process every colored layer
@@ -1176,22 +1467,35 @@ def raster_to_puzzle_and_lightburn(
         min_island_area=min_island_area,
         simplification_factor=simplification_factor,
         smoothing_radius=smoothing_radius,
-        abstract_filter=abstract_filter
+        abstract_filter=abstract_filter,
+        filter_parameters=filter_parameters
     )
 
     # =========================================================================
     # 6. Build the BLACK layer around the colored geometry
     # =========================================================================
 
-    processed_layers[
-        black_hex
-    ] = build_punched_black_layer(
-        width=width,
-        height=height,
-        processed_layers=processed_layers,
-        black_hex=black_hex,
-        abstract_filter=abstract_filter
-    )
+    if not preserve_source_black:
+        processed_layers[black_hex] = build_punched_black_layer(
+            width=width,
+            height=height,
+            processed_layers=processed_layers,
+            black_hex=black_hex,
+            abstract_filter=abstract_filter,
+            filter_parameters=filter_parameters
+        )
+
+    elif centerline_mode:
+        printLogMessage("Centerline mode: exporting source-color medial axes as open paths.")
+    elif xenoglyph_transparent_mode:
+        printLogMessage(
+            "Xenoglyph mode: light source areas remain transparent; no black canvas added."
+        )
+    else:
+        printLogMessage(
+            "Powder-coat tumbler mode: exporting isolated foreground shapes "
+            "without a synthetic black canvas."
+        )
 
     # =========================================================================
     # 7. Create SVG document
@@ -1226,3 +1530,6 @@ def raster_to_puzzle_and_lightburn(
         output_svg_path=output_svg_path,
         lb_project_instance=lb_project_instance
     )
+
+
+
