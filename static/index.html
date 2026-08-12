@@ -473,16 +473,38 @@
         const valueInput = row.querySelector('.value-input');
         slider.addEventListener('input', updateFilterParameters);
         valueInput.addEventListener('input', () => {
+          // Do not clamp partial typing (for example the first "1" in
+          // "115") to the slider minimum. Synchronize only complete values
+          // that already fall inside the slider's range.
           if (valueInput.value === '') return;
-          slider.value = valueInput.value;
-          valueInput.value = slider.value;
-          updateFilterParameters();
+          const value = Number(valueInput.value);
+          const min = Number(slider.min);
+          const max = Number(slider.max);
+          if (Number.isFinite(value) && value >= min && value <= max) {
+            slider.value = value;
+            updateFilterParameters();
+          }
         });
-        valueInput.addEventListener('change', () => {
-          if (valueInput.value === '') valueInput.value = slider.value;
-          slider.value = valueInput.value;
+
+        const commitTypedValue = () => {
+          let value = Number(valueInput.value);
+          const min = Number(slider.min);
+          const max = Number(slider.max);
+          if (!Number.isFinite(value)) value = Number(slider.value);
+          value = Math.min(max, Math.max(min, value));
+          slider.value = value;
           valueInput.value = slider.value;
           updateFilterParameters();
+        };
+
+        valueInput.addEventListener('change', commitTypedValue);
+        valueInput.addEventListener('focus', event => event.target.select());
+        valueInput.addEventListener('keydown', event => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            commitTypedValue();
+            valueInput.blur();
+          }
         });
         controls.appendChild(row);
       });
