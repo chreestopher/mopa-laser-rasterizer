@@ -37,13 +37,15 @@ def valid_history_session(value):
     return value if HISTORY_SESSION_RE.fullmatch(value) else None
 
 
-def add_history_entry(session_id, task_id, source_name):
+def add_history_entry(session_id, task_id, source_name, image_preset, abstract_filter):
     if not session_id:
         return
     key = f"history:{session_id}"
     entry = json.dumps({
         "task_id": task_id,
         "source_name": source_name,
+        "image_preset": image_preset,
+        "abstract_filter": abstract_filter if image_preset == "abstract" else None,
         "created_at": int(time.time()),
     }, separators=(",", ":"))
     pipeline = redis_client.pipeline()
@@ -68,6 +70,8 @@ def get_history_entries(session_id):
         entries.append({
             "task_id": task_id,
             "source_name": entry.get("source_name", "processed image"),
+            "image_preset": entry.get("image_preset"),
+            "abstract_filter": entry.get("abstract_filter"),
             "created_at": entry.get("created_at"),
             "status": redis_client.get(f"task:{task_id}:status") or "pending",
             "svg_url": f"/download/{task_id}",
@@ -344,13 +348,19 @@ def start_task():
     tasks[f"{task_id}_logs"] = ["Waiting to start..."]
     tasks[f"{task_id}_filename"] = custom_output_name
     tasks[f"{task_id}_error"] = None
-    add_history_entry(history_session, task_id, base_name)
+    submitted_preset = str(user_data.get('image_preset', 'cartoon')).strip().lower()
+    submitted_filter = str(user_data.get('abstract_filter', 'none')).strip().lower()
+    add_history_entry(
+        history_session, task_id, base_name, submitted_preset, submitted_filter
+    )
 
     history_files = get_history_entries(history_session)
     if not any(item.get("task_id") == task_id for item in history_files):
         history_files.insert(0, {
             "task_id": task_id,
             "source_name": base_name,
+            "image_preset": submitted_preset,
+            "abstract_filter": submitted_filter if submitted_preset == "abstract" else None,
             "created_at": int(time.time()),
             "status": "pending",
             "svg_url": f"/download/{task_id}",
@@ -372,7 +382,11 @@ def start_task():
         files=download_urls,
         history_session=history_session or "",
         history_files=history_files,
-        current_source_name=base_name
+        current_source_name=base_name,
+        current_image_preset=submitted_preset,
+        current_abstract_filter=(
+            submitted_filter if submitted_preset == "abstract" else None
+        )
     ))
     response.set_cookie(
         'mopa_history_session',

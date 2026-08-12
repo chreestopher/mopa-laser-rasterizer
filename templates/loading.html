@@ -132,6 +132,7 @@
         border-bottom: 1px solid #303b35;
     }
     .file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-meta { display:inline-block; margin-left:8px; padding:2px 6px; border:1px solid #68745d; border-radius:3px; color:#b9caa9; font-size:11px; text-transform:uppercase; letter-spacing:.05em; }
     .file-status { color: #94a3b8; font-size: 12px; }
     .file-actions { display: flex; flex: 0 0 auto; gap: 8px; }
     .download-button, .another-button {
@@ -258,7 +259,7 @@
             <ul id="download-list" class="download-list">
                 {% for file in history_files %}
                 <li class="file-item" data-task-id="{{ file.task_id }}">
-                    <div class="file-name"><span class="source-name">{{ file.source_name }}</span> <span class="file-time" data-created-at="{{ file.created_at }}"></span> <span class="file-status">[{{ file.status }}]</span></div>
+                    <div class="file-name"><span class="source-name">{{ file.source_name }}</span> <span class="file-meta">{{ file.image_preset|replace('_', ' ') }}{% if file.abstract_filter and file.abstract_filter != 'none' %} · {{ file.abstract_filter|replace('_', ' ') }}{% endif %}</span> <span class="file-time" data-created-at="{{ file.created_at }}"></span> <span class="file-status">[{{ file.status }}]</span></div>
                     <div class="file-actions">
                         <a class="download-button{% if file.status != 'completed' %} disabled{% endif %}" href="{{ file.svg_url }}">SVG</a>
                         <a class="download-button{% if file.status != 'completed' %} disabled{% endif %}" href="{{ file.lightburn_url }}">LightBurn</a>
@@ -266,7 +267,7 @@
                 </li>
                 {% else %}
                 <li class="file-item" data-task-id="{{ task_id }}">
-                    <div class="file-name"><span class="source-name">{{ current_source_name }}</span> <span class="file-status">[pending]</span></div>
+                    <div class="file-name"><span class="source-name">{{ current_source_name }}</span> <span class="file-meta">{{ current_image_preset|replace('_', ' ') }}{% if current_abstract_filter and current_abstract_filter != 'none' %} · {{ current_abstract_filter|replace('_', ' ') }}{% endif %}</span> <span class="file-status">[pending]</span></div>
                     <div class="file-actions">
                         <a class="download-button disabled" href="/download/{{ task_id }}">SVG</a>
                         <a class="download-button disabled" href="/download-lbrn2/{{ task_id }}">LightBurn</a>
@@ -305,10 +306,14 @@ function fileRowHtml(file) {
     const ready = file.status === 'completed';
     const disabled = ready ? '' : ' disabled';
     const name = escapeHtml(file.source_name || 'processed image');
+    const preset = escapeHtml((file.image_preset || 'unknown preset').replaceAll('_', ' '));
+    const filter = file.abstract_filter && file.abstract_filter !== 'none'
+      ? ` · ${escapeHtml(file.abstract_filter.replaceAll('_', ' '))}`
+      : '';
     const timestamp = file.created_at
       ? new Date(file.created_at * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'})
       : '';
-    return `<div class="file-name"><span class="source-name">${name}</span> <span class="file-time">${timestamp}</span> <span class="file-status">[${file.status}]</span></div>` +
+    return `<div class="file-name"><span class="source-name">${name}</span> <span class="file-meta">${preset}${filter}</span> <span class="file-time">${timestamp}</span> <span class="file-status">[${file.status}]</span></div>` +
       `<div class="file-actions"><a class="download-button${disabled}" href="${file.svg_url}">SVG</a>` +
       `<a class="download-button${disabled}" href="${file.lightburn_url}">LightBurn</a></div>`;
 }
