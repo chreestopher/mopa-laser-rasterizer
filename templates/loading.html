@@ -9,12 +9,11 @@
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         background-color: #f4f7f6;
         display: flex;
-        flex-direction: column; /* Stacks the terminal box and the list vertically */
-        justify-content: center;
-        align-items: center;
-        min-height: 100vh;      /* Prevents content cutting off if the page gets tall */
+        flex-direction: column;
+        min-height: 100vh;
+        box-sizing: border-box;
         margin: 0;
-        padding: 40px 20px;     /* Adds padding at the top and bottom of the screen */
+        padding: 6.25vh 6.25vw;
     }
     /* Terminal scrollbar */
     .terminal-box::-webkit-scrollbar {
@@ -44,10 +43,16 @@
         text-align: left;
         overflow-y: auto;
         box-shadow: inset 0 0 15px #000, 0 8px 30px rgba(0,0,0,0.15);
-        width: 100%;           
-        max-width: 1200px;    
-        height: 50vh;         
-        margin: 0 auto 30px auto; /* Centers the box and adds a 30px gap UNDER it */            
+
+        width: 100%;
+        max-width: none;
+        height: 75vh;
+        box-sizing: border-box;
+
+        margin: 0 0 30px 0;
+
+        scrollbar-width: thin;
+        scrollbar-color: #218c53 #151515;
     }
     .log-list {
         list-style: none;
