@@ -144,61 +144,73 @@
         </aside>
 
 <script>
+const taskId = "{{ task_id }}";
+const logContainer = document.getElementById("log-container");
+const terminalBox = document.getElementById("terminal");
+
+let logIndex = 0;
+
+// Disable download buttons initially
+const links = document.querySelectorAll('.downloads-sidebar .btn-group a');
+
+links.forEach(link => {
     link.classList.add('btn-disabled');
-    const taskId = "{{ task_id }}";
-    const logContainer = document.getElementById("log-container");
-    const terminalBox = document.getElementById("terminal");
-    
-    let logIndex = 0; 
+});
 
-    function appendLogMessage(message) {
-        const cleanMessage = message ? message.trim() : "";
-        if (!cleanMessage || cleanMessage === "Waiting to start...") {
-            return; 
-        }
+function appendLogMessage(message) {
+    const cleanMessage = message ? message.trim() : "";
 
-        const li = document.createElement("li");
-        li.className = "log-item";
-        li.innerHTML = `<span class="log-prefix">$</span>${cleanMessage}`;
-        logContainer.appendChild(li);
-        
-        terminalBox.scrollTop = terminalBox.scrollHeight;
+    if (!cleanMessage || cleanMessage === "Waiting to start...") {
+        return;
     }
 
-    // Start checking logs immediately, but handle connection lags robustly
-    const checkStatus = setInterval(async () => {
-        try {
-            const response = await fetch(`/task-status/${taskId}`);
-            
-            // FIX 1: If the server is busy/booting, don't crash or freeze. Log it and retry.
-            if (!response.ok) {
-                console.warn(`Server booting task or unavailable. Status: ${response.status}`);
-                return; 
-            }
+    const li = document.createElement("li");
+    li.className = "log-item";
+    li.innerHTML = `<span class="log-prefix">$</span>${cleanMessage}`;
+    logContainer.appendChild(li);
 
-            const data = await response.json();
+    terminalBox.scrollTop = terminalBox.scrollHeight;
+}
 
-            // FIX 2: Ensure data parsing fallback arrays exist to prevent undefined breaks
-            const currentLogs = data.logs || [];
+// Start checking logs immediately
+const checkStatus = setInterval(async () => {
+    try {
+        const response = await fetch(`/task-status/${taskId}`);
 
-            // Process and append new logs
-            if (currentLogs.length > logIndex) {
-                const newLines = currentLogs.slice(logIndex);
-                newLines.forEach((logMessage) => {
-                    appendLogMessage(logMessage);
-                });
-                logIndex = currentLogs.length;
-            }
-   
-            // Evaluate completion statuses cleanly after logs are checked
-            if (data.status === "completed") {
-                clearInterval(checkStatus);
+        if (!response.ok) {
+            console.warn(
+                `Server booting task or unavailable. Status: ${response.status}`
+            );
+            return;
+        }
 
-                appendLogMessage("Task completed successfully!");
+        const data = await response.json();
 
-                setTimeout(() => {
-                    const links = document.querySelectorAll('.downloads-sidebar .btn-group a');
+        const currentLogs = data.logs || [];
 
+        // Process and append new logs
+        if (currentLogs.length > logIndex) {
+            const newLines = currentLogs.slice(logIndex);
+
+            newLines.forEach((logMessage) => {
+                appendLogMessage(logMessage);
+            });
+
+            logIndex = currentLogs.length;
+        }
+
+        // Task completed successfully
+        if (data.status === "completed") {
+            clearInterval(checkStatus);
+
+            appendLogMessage("Task completed successfully!");
+
+            setTimeout(() => {
+                const links = document.querySelectorAll(
+                    '.downloads-sidebar .btn-group a'
+                );
+
+                links.forEach(link => {
                     link.classList.remove(
                         'btn-disabled',
                         'btn-primary',
@@ -207,22 +219,32 @@
                     );
 
                     link.classList.add('btn-success');
-
-                }, 500);
-            }
-            else if (data.status === "failed") {
-                clearInterval(checkStatus);
-                appendLogMessage(`CRITICAL FAILURE: ${data.error || 'Check server logs'}`);
-                const errorLine = logContainer.lastChild;
-                if (errorLine) errorLine.style.color = "#ff3333";
-            }
-            
-        } catch (err) {
-            // FIX 3: Catch local network disconnects cleanly without killing the timer
-            console.error("Polling interval encountered a connection drop:", err);
+                });
+            }, 500);
         }
-    }, 1000); // Check every 1000ms from the very beginning
 
+        // Task failed
+        else if (data.status === "failed") {
+            clearInterval(checkStatus);
+
+            appendLogMessage(
+                `CRITICAL FAILURE: ${data.error || 'Check server logs'}`
+            );
+
+            const errorLine = logContainer.lastChild;
+
+            if (errorLine) {
+                errorLine.style.color = "#ff3333";
+            }
+        }
+
+    } catch (err) {
+        console.error(
+            "Polling interval encountered a connection drop:",
+            err
+        );
+    }
+}, 1000);
 </script>
 
 </body>
