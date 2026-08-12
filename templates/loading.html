@@ -119,7 +119,7 @@
             if (data.status === "completed") {
                 clearInterval(checkStatus);
                 appendLogMessage("Task completed successfully! Redirecting to dashboard...");
-                setTimeout(() => {
+                setTimeout(( async ) => {
                     const listContainer = document.getElementById('download-list');
 
                     // 1. Create a list item structure for this specific task
