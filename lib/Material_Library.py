@@ -1667,6 +1667,11 @@ def raster_to_puzzle_and_lightburn(
     filter_parameters["_scale_factor"] = scale_factor
     filter_name, _ = normalize_abstract_settings(abstract_filter, filter_parameters)
     centerline_mode = filter_name == "centerline"
+    powdercoat_tumbler_mode = (
+        filter_name == "tumbler"
+        and filter_parameters.get("material") == "powdercoat"
+    )
+    preserve_source_black = centerline_mode or powdercoat_tumbler_mode
 
     # =========================================================================
     # 4. Convert pixels into color geometry buckets
@@ -1678,12 +1683,12 @@ def raster_to_puzzle_and_lightburn(
             target_colors=TARGET_COLORS,
             black_hex=black_hex,
             ignore_background_hex=ignore_background_hex,
-            include_black=centerline_mode
+            include_black=preserve_source_black
         )
 
     )
 
-    if filter_name == "tumbler" and filter_parameters.get("material") == "powdercoat":
+    if powdercoat_tumbler_mode:
         pixel_boxes_by_color = retain_dominant_foreground(
             pixel_boxes_by_color, img, filter_parameters
         )
@@ -1706,7 +1711,7 @@ def raster_to_puzzle_and_lightburn(
     # 6. Build the BLACK layer around the colored geometry
     # =========================================================================
 
-    if not centerline_mode:
+    if not preserve_source_black:
         processed_layers[black_hex] = build_punched_black_layer(
             width=width,
             height=height,
@@ -1716,8 +1721,13 @@ def raster_to_puzzle_and_lightburn(
             filter_parameters=filter_parameters
         )
 
-    else:
+    elif centerline_mode:
         printLogMessage("Centerline mode: exporting source-color medial axes as open paths.")
+    else:
+        printLogMessage(
+            "Powder-coat tumbler mode: exporting isolated foreground shapes "
+            "without a synthetic black canvas."
+        )
 
     # =========================================================================
     # 7. Create SVG document
