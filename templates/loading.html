@@ -104,6 +104,18 @@
         .btn-secondary:active {
             transform: scale(0.98);
         }        
+        .btn-success {
+            background-color: #27ae60 !important;
+            color: white !important;
+        }
+
+        .btn-success:hover {
+            background-color: #219150 !important;
+        }
+
+        .btn-success:active {
+            transform: scale(0.98);
+        }        
     </style>
 </head>
 <body>
@@ -173,14 +185,18 @@
             // Evaluate completion statuses cleanly after logs are checked
             if (data.status === "completed") {
                 clearInterval(checkStatus);
-                
+
                 appendLogMessage("Task completed successfully!");
-                setTimeout(( ) => {
+
+                setTimeout(() => {
                     const links = document.querySelectorAll('.downloads-sidebar .btn-group a');
+
                     links.forEach(link => {
-                        link.classList.add('btn-primary:active')
-                    )}
+                        link.classList.remove('btn-primary', 'btn-accent', 'btn-secondary');
+                        link.classList.add('btn-success');
+                    });
                 }, 500);
+            }
             else if (data.status === "failed") {
                 clearInterval(checkStatus);
                 appendLogMessage(`CRITICAL FAILURE: ${data.error || 'Check server logs'}`);
