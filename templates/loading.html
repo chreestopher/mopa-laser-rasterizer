@@ -64,7 +64,8 @@
                     
                 <!-- <li class="download-item" id="task-123">
                     <span>report_123.csv</span>
-                    <a href="'/downloads/<task_id> class="download-link">Download</a>
+                    <a href="'/downloads/{task_id} class="download-link">Download</a>
+                    <a href="'/download-lbrn2/{task_id} class="download-link">Download</a>         
                 </li> -->
             </ul>
         </aside>
@@ -119,67 +120,7 @@
             if (data.status === "completed") {
                 clearInterval(checkStatus);
                 appendLogMessage("Task completed successfully! Redirecting to dashboard...");
-                setTimeout(( async ) => {
-                    const listContainer = document.getElementById('download-list');
-
-                    // 1. Create a list item structure for this specific task
-                    const listItem = document.createElement('li');
-                    listItem.className = 'download-item';
-                    listItem.id = `task-${taskId}`; // Unique ID to find it later
-
-                    // 2. Add placeholder contents while processing
-                    listItem.innerHTML = `
-                        <span class="file-name">Processing task ${taskId}...</span>
-                        <span class="status-tag" style="background: #ffeeba; color: #856404;">Pending</span>
-                    `;
-
-                    try {
-                        // 1. Fetch the download details from your endpoint
-                        const dl_list = await fetch(`/downl-list/${taskId}`);
-                        
-                        // 2. Parse the response into a readable JavaScript object
-                        const fileData = await dl_list.json(); 
-                        
-                        // 3. Extract the array of file links sent by your Flask backend
-                        const filesArray = fileData.files; // This contains your list of links
-
-                        // 4. Target your right-hand sidebar list container
-                        const listContainer = document.getElementById('download-list');
-
-                        // 5. Create a parent list item wrapper for this specific task execution
-                        const taskItem = document.createElement('li');
-                        taskItem.className = 'download-item';
-                        taskItem.style.display = 'block'; // Keeps nested elements structured neatly
-
-                        // 6. Loop through your file links using valid JavaScript syntax
-                        let innerHTMLContent = `<strong>Task ${taskId} Links:</strong><br>`;
-                        
-                        filesArray.forEach((fileUrl) => {
-                            // Extract a clean name from the URL path for display (e.g., "download-lbrn2")
-                            const label = fileUrl.includes('lbrn2') ? 'LightBurn File' : 'Standard Download';
-                            
-                            innerHTMLContent += `
-                                <div style="margin-top: 5px; display: flex; justify-content: space-between;">
-                                    <span>${label}</span>
-                                    <a href="${fileUrl}" class="download-link" download>Download</a>
-                                </div>
-                            `;
-                        });
-
-                        // Assign the built HTML content to your single task row item
-                        taskItem.innerHTML = innerHTMLContent;
-
-                        // 7. Inject the grouped links at the very top of your processed files list
-                        listContainer.insertBefore(taskItem, listContainer.firstChild);
-
-                    } catch (error) {
-                        console.error("Failed to fetch download details:", error);
-                    }
-
-
-
-
-
+                setTimeout(( ) => {
                     window.location.href = "/success/" + taskId;
                 }, 500);
             }
