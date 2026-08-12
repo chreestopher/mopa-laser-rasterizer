@@ -16,7 +16,25 @@
         margin: 0;
         padding: 40px 20px;     /* Adds padding at the top and bottom of the screen */
     }
+    /* Terminal scrollbar */
+    .terminal-box::-webkit-scrollbar {
+        width: 10px;
+    }
 
+    .terminal-box::-webkit-scrollbar-track {
+        background: #151515;
+        border-radius: 8px;
+    }
+
+    .terminal-box::-webkit-scrollbar-thumb {
+        background: #218c53;
+        border-radius: 8px;
+        border: 2px solid #151515;
+    }
+
+    .terminal-box::-webkit-scrollbar-thumb:hover {
+        background: #1a7042;
+    }
     .terminal-box {
         background: #1e1e1e;
         color: #00ff00;
@@ -31,101 +49,101 @@
         height: 50vh;         
         margin: 0 auto 30px auto; /* Centers the box and adds a 30px gap UNDER it */            
     }
-        .log-list {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
-        .log-item {
-            margin-bottom: 8px;
-            line-height: 1.4;
-            word-break: break-all;
-        }
-        .log-prefix {
-            color: #666;
-            margin-right: 8px;
-            user-select: none;
-        }
-        @media (max-width: 768px) {
-            .btn-group {
-                width: 90%;
-            }
-        }        
+    .log-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    .log-item {
+        margin-bottom: 8px;
+        line-height: 1.4;
+        word-break: break-all;
+    }
+    .log-prefix {
+        color: #666;
+        margin-right: 8px;
+        user-select: none;
+    }
+    @media (max-width: 768px) {
         .btn-group {
-            display: flex;
-            flex-direction: row;
-            gap: 12px;
-            width: 66.67vw;
-            max-width: none;
-            margin: 0 auto;
-            box-sizing: border-box;
+            width: 90%;
         }
-        .btn {
-            flex: 1 1 0;
-            width: 0;
-            padding: 14px 20px;
-            box-sizing: border-box;
-            border: none;
-            border-radius: 6px;
-            font-size: 16px;
-            font-weight: 600;
-            text-decoration: none;
-            cursor: pointer;
-            text-align: center;
-            transition: background-color 0.15s ease, transform 0.1s ease;
-        }
-        /* Primary actions (Like your main page submit action background setup) */
-        .btn-primary { 
-            background-color: #3498db; 
-            color: white; 
-        }
-        .btn-primary:hover { 
-            background-color: #2980b9; 
-        }
-        .btn-primary:active {
-            transform: scale(0.98);
-        }
-        /* Accent Laser file action variant */
-        .btn-accent {
-            background-color: #e67e22;
-            color: white;
-        }
-        .btn-accent:hover {
-            background-color: #d35400;
-        }
-        .btn-accent:active {
-            transform: scale(0.98);
-        }
-        /* Secondary home actions fallback */
-        .btn-secondary { 
-            background-color: #e2e8f0; 
-            color: #4a5568; 
-        }
-        .btn-secondary:hover { 
-            background-color: #cbd5e1; 
-        }
-        .btn-secondary:active {
-            transform: scale(0.98);
-        }        
-        .btn-success {
-            background-color: #218c53 !important;
-            color: white !important;
-        }
+    }        
+    .btn-group {
+        display: flex;
+        flex-direction: row;
+        gap: 12px;
+        width: 66.67vw;
+        max-width: none;
+        margin: 0 auto;
+        box-sizing: border-box;
+    }
+    .btn {
+        flex: 1 1 0;
+        width: 0;
+        padding: 14px 20px;
+        box-sizing: border-box;
+        border: none;
+        border-radius: 6px;
+        font-size: 16px;
+        font-weight: 600;
+        text-decoration: none;
+        cursor: pointer;
+        text-align: center;
+        transition: background-color 0.15s ease, transform 0.1s ease;
+    }
+    /* Primary actions (Like your main page submit action background setup) */
+    .btn-primary { 
+        background-color: #3498db; 
+        color: white; 
+    }
+    .btn-primary:hover { 
+        background-color: #2980b9; 
+    }
+    .btn-primary:active {
+        transform: scale(0.98);
+    }
+    /* Accent Laser file action variant */
+    .btn-accent {
+        background-color: #e67e22;
+        color: white;
+    }
+    .btn-accent:hover {
+        background-color: #d35400;
+    }
+    .btn-accent:active {
+        transform: scale(0.98);
+    }
+    /* Secondary home actions fallback */
+    .btn-secondary { 
+        background-color: #e2e8f0; 
+        color: #4a5568; 
+    }
+    .btn-secondary:hover { 
+        background-color: #cbd5e1; 
+    }
+    .btn-secondary:active {
+        transform: scale(0.98);
+    }        
+    .btn-success {
+        background-color: #218c53 !important;
+        color: white !important;
+    }
 
-        .btn-success:hover {
-            background-color: #1a7042 !important;
-        }
+    .btn-success:hover {
+        background-color: #1a7042 !important;
+    }
 
-        .btn-success:active {
-            transform: scale(0.98);
-        }
-        .btn-disabled {
-            background-color: #6b7280 !important;
-            color: #d1d5db !important;
-            cursor: not-allowed !important;
-            opacity: 0.6;
-            pointer-events: none;
-        }        
+    .btn-success:active {
+        transform: scale(0.98);
+    }
+    .btn-disabled {
+        background-color: #6b7280 !important;
+        color: #d1d5db !important;
+        cursor: not-allowed !important;
+        opacity: 0.6;
+        pointer-events: none;
+    }        
     </style>
 </head>
 <body>
