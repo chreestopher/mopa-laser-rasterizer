@@ -11,12 +11,12 @@ import svgwrite
 import potrace
 import xml.etree.ElementTree as ET
 from collections import defaultdict
-from shapely.geometry import Polygon, box
-from shapely.ops import unary_union
-from shapely.affinity import scale
+from shapely.geometry import Polygon, box, MultiPoint
+from shapely.ops import unary_union, voronoi_diagram, transform
+from shapely.affinity import scale, affine_transform
 from svgelements import SVG, Path, Polygon as SVGPolygon
 from datetime import datetime
-
+ 
 def printLogMessage(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}", flush=True)
@@ -205,10 +205,9 @@ def raster_to_puzzle_and_lightburn(
         # =========================================================================
         # NEW GEOMETRIC TRANSFORMATIONS FOR THE ABSTRACT PRESET
         # =========================================================================
-        if abstract_filter is not None and not final_puzzle_piece.is_empty:
-            from shapely.affinity import affine_transform
-            import math
-            
+        if abstract_filter is not None and not final_puzzle_piece.is_empty and image_preset == "abstract":
+
+
             # STRATEGY 1: Wavy Fluid Distortion
             if str(abstract_filter).lower() == "wave":
                 def wave_transform(x, y, z=None):
@@ -220,13 +219,12 @@ def raster_to_puzzle_and_lightburn(
                     new_y = y + math.cos(x * freq_x) * amp_y
                     return (new_x, new_y)
                 
-                from shapely.ops import transform
+                
                 final_puzzle_piece = transform(wave_transform, final_puzzle_piece)
                 
             # STRATEGY 2: Shattered Voronoi / Cellular Sharding
             elif str(abstract_filter).lower() == "voronoi":
-                from shapely.ops import voronoi_diagram
-                from shapely.geometry import MultiPoint
+
                 
                 bounds = final_puzzle_piece.bounds # (minx, miny, maxx, maxy)
                 # Generate a scatter grid of point anchors across the shape's footprint
@@ -261,7 +259,7 @@ def raster_to_puzzle_and_lightburn(
     canvas_frame = box(0, 0, width, height)
     
     # 1. Apply the abstract filter transformations to the black frame here
-    if abstract_filter is not None and not canvas_frame.is_empty:
+    if abstract_filter is not None and not canvas_frame.is_empty and image_preset == "abstract":
         from shapely.affinity import affine_transform
         import math
         
