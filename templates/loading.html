@@ -5,32 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Processing Image</title>
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background-color: #f4f7f6;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-        }
-        .terminal-box {
-            background: #1e1e1e;
-            color: #00ff00;
-            font-family: 'Courier New', Courier, monospace;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: left;
-            /* width: 90%; */
-            /* max-width: 600px; */
-            /* height: 300px; */
-            overflow-y: auto;
-            box-shadow: inset 0 0 15px #000, 0 8px 30px rgba(0,0,0,0.15);
-            width: 100%;           /* Fills 95% of the screen width */
-            max-width: 1200px;    /* Optional: Prevents it from getting too wide on massive screens */
-            height: 50vh;         /* Fills 90% of the screen height */
-            margin: 2vh auto;     /* Centers the box vertically and horizontally */            
-        }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background-color: #f4f7f6;
+        display: flex;
+        flex-direction: column; /* Stacks the terminal box and the list vertically */
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;      /* Prevents content cutting off if the page gets tall */
+        margin: 0;
+        padding: 40px 20px;     /* Adds padding at the top and bottom of the screen */
+    }
+
+    .terminal-box {
+        background: #1e1e1e;
+        color: #00ff00;
+        font-family: 'Courier New', Courier, monospace;
+        padding: 20px;
+        border-radius: 8px;
+        text-align: left;
+        overflow-y: auto;
+        box-shadow: inset 0 0 15px #000, 0 8px 30px rgba(0,0,0,0.15);
+        width: 100%;           
+        max-width: 1200px;    
+        height: 50vh;         
+        margin: 0 auto 30px auto; /* Centers the box and adds a 30px gap UNDER it */            
+    }
         .log-list {
             list-style: none;
             padding: 0;
