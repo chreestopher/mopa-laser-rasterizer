@@ -590,6 +590,10 @@ ABSTRACT_FILTER_DEFAULTS = {
                 "powdercoat_simplification_mm": .3, "foreground_min_percent": .15},
 }
 
+PALETTE_LIMITING_FILTERS = {
+    "wave", "voronoi", "shear", "spiral", "mosaic", "crystal", "ripple"
+}
+
 # Frontends can use this schema to build sliders without duplicating ranges.
 # ``seed`` should be rendered as a number input plus a randomize button.
 ABSTRACT_FILTER_CONTROLS = {
@@ -613,7 +617,6 @@ ABSTRACT_FILTER_CONTROLS = {
                 ("powdercoat_simplification_mm", 0, 3, .05),
                 ("foreground_min_percent", 0, 5, .05)),
 }
-
 
 def get_abstract_filter_manifest():
     """Return JSON-ready filter defaults and slider metadata for the web UI."""
@@ -1601,6 +1604,16 @@ def raster_to_puzzle_and_lightburn(
         - SVG export
         - LightBurn export
     """
+
+    filter_name, normalized_filter_settings = normalize_abstract_settings(
+        abstract_filter, filter_parameters
+    )
+    if filter_name in PALETTE_LIMITING_FILTERS:
+        quantize_colors = max(2, len(TARGET_COLORS))
+        printLogMessage(
+            f"{filter_name.title()} filter using all {len(TARGET_COLORS)} "
+            "colors available after UI and material-library filtering."
+        )
 
     # =========================================================================
     # 1. Normalize parameters
