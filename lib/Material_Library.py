@@ -719,6 +719,16 @@ def process_color_geometry(
         abstract_filter
     )
 
+    # Final topology repair before this geometry is used
+    # anywhere else in the pipeline.
+    if not final_geometry.is_valid:
+
+        printLogMessage(
+            "Repairing invalid geometry after processing..."
+        )
+
+        final_geometry = final_geometry.make_valid()
+
     return final_geometry
 
 
@@ -797,9 +807,7 @@ def build_punched_black_layer(
     """
     Build the black layer as the canvas minus all colored geometry.
 
-    This is the critical zero-overlap operation:
-
-        BLACK = CANVAS - ALL COLORED GEOMETRY
+    Invalid geometries are repaired before the union operation.
     """
 
     canvas_frame = box(
@@ -809,22 +817,38 @@ def build_punched_black_layer(
         height
     )
 
-    # Apply the same abstract transformation that the original
-    # function applied to the black canvas.
     canvas_frame = apply_abstract_filter(
         canvas_frame,
         abstract_filter
     )
 
-    colored_geometries = [
-        geometry
-        for color_hex, geometry
-        in processed_layers.items()
-        if (
-            color_hex != black_hex
-            and not geometry.is_empty
-        )
-    ]
+    colored_geometries = []
+
+    for color_hex, geometry in processed_layers.items():
+
+        if color_hex == black_hex:
+            continue
+
+        if geometry.is_empty:
+            continue
+
+        # ------------------------------------------------------------
+        # Repair invalid geometry before attempting the union.
+        # ------------------------------------------------------------
+
+        if not geometry.is_valid:
+
+            printLogMessage(
+                f"Repairing invalid geometry for color "
+                f"{color_hex} before black-layer subtraction..."
+            )
+
+            geometry = geometry.make_valid()
+
+        if not geometry.is_empty:
+            colored_geometries.append(
+                geometry
+            )
 
     if not colored_geometries:
 
@@ -840,15 +864,18 @@ def build_punched_black_layer(
         f"colored layer(s) out of black background..."
     )
 
-    # Combine all colored geometry into one geometry.
+    # ------------------------------------------------------------
+    # Combine all repaired colored geometry.
+    # ------------------------------------------------------------
+
     all_colored_geometry = unary_union(
         colored_geometries
     )
 
-    # THE IMPORTANT OPERATION:
-    #
-    # Remove every colored shape from the black canvas.
-    #
+    # ------------------------------------------------------------
+    # Subtract colored geometry from black canvas.
+    # ------------------------------------------------------------
+
     punched_black_layer = (
         canvas_frame.difference(
             all_colored_geometry
@@ -861,7 +888,6 @@ def build_punched_black_layer(
     )
 
     return punched_black_layer
-
 
 # ============================================================================
 # SVG
