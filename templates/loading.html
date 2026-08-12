@@ -116,6 +116,13 @@
         .btn-success:active {
             transform: scale(0.98);
         }
+        .btn-disabled {
+            background-color: #6b7280 !important;
+            color: #d1d5db !important;
+            cursor: not-allowed !important;
+            opacity: 0.6;
+            pointer-events: none;
+        }        
     </style>
 </head>
 <body>
@@ -137,6 +144,7 @@
         </aside>
 
 <script>
+    link.classList.add('btn-disabled');
     const taskId = "{{ task_id }}";
     const logContainer = document.getElementById("log-container");
     const terminalBox = document.getElementById("terminal");
@@ -191,10 +199,15 @@
                 setTimeout(() => {
                     const links = document.querySelectorAll('.downloads-sidebar .btn-group a');
 
-                    links.forEach(link => {
-                        link.classList.remove('btn-primary', 'btn-accent', 'btn-secondary');
-                        link.classList.add('btn-success');
-                    });
+                    link.classList.remove(
+                        'btn-disabled',
+                        'btn-primary',
+                        'btn-accent',
+                        'btn-secondary'
+                    );
+
+                    link.classList.add('btn-success');
+
                 }, 500);
             }
             else if (data.status === "failed") {
