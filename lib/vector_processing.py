@@ -14,6 +14,21 @@ def printLogMessage(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}", flush=True)
 
+def resize_to_specific_height_or_width( image, width=0, height=0 ):
+    if (height == 0 and width != 0):
+        width_percent = float(width) / float(image.size[0])
+        new_height = int(float(image.size[1]) * float(width_percent))
+        printLogMessage("resizing image to width: " + str(width) + " height: "+ str(new_height))
+        resized_img = image.resize((width, int(new_height)), Image.Resampling.LANCZOS)
+    elif (width == 0 and height != 0) :
+        height_percent = float(height) / float(image.size[1])
+        new_width = int(float(image.size[0]) * float(height_percent))
+        printLogMessage("resizing image to width: " + str(new_width) + " height: "+ str(height))
+        resized_img = image.resize((int(new_width),int(height) ), Image.Resampling.LANCZOS)
+    else:
+        return image
+    return resized_img
+
 def normalize_vector_parameters(
     quantize_colors,
     min_island_area,
