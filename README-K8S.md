@@ -41,6 +41,17 @@ For local k3s development, use the helper script:
 ./load-k3s-image.sh mopa-laser-rasterizer local
 ```
 
+To deploy from WSL with the current checkout bind-mounted into `/app`:
+
+```bash
+sh ./deploy-local.sh
+```
+
+The script resolves the repository's WSL path at runtime, writes the ignored
+`k8s/deployment.local.yaml`, applies it, and restarts the deployment. After
+the image has been loaded once, edit files in the checkout and rerun this
+command; a source-only change does not need an image rebuild.
+
 ### Local environment sync
 
 The repo root contains the authoritative `.env.local` file for local path configuration.
