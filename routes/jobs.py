@@ -1,6 +1,7 @@
 """Job submission, status, history, preview, and download routes."""
 
 import glob
+import json
 import os
 import threading
 import time
@@ -30,26 +31,42 @@ from services import (
 def start_task():
     if request.method == "GET":
         return redirect("/")
-    if "image" not in request.files or "material_settings" not in request.files:
-        return jsonify({"status": "error", "message": "Missing required files"}), 400
-    image_file, material_settings = request.files["image"], request.files["material_settings"]
-    if not image_file.filename or not material_settings.filename:
-        return jsonify({"status": "error", "message": "Empty file names uploaded"}), 400
+    if "image" not in request.files or not request.files["image"].filename:
+        return jsonify({"status": "error", "message": "Choose an artwork file"}), 400
 
     task_id = str(uuid.uuid4())
-    base_name = secure_filename(image_file.filename)
-    output_name = f"output_{task_id}_{base_name}"
-    upload_folder = current_app.config["UPLOAD_FOLDER"]
-    image_path = os.path.join(upload_folder, f"{task_id}_{base_name}")
-    material_settings_path = os.path.join(upload_folder, f"{task_id}_{secure_filename(material_settings.filename)}")
-    image_file.save(image_path)
-    material_settings.save(material_settings_path)
-
     user_data = request.form.to_dict()
     user_data["new_width"] = str(normalize_dimension(user_data.get("new_width")))
     user_data["new_height"] = str(normalize_dimension(user_data.get("new_height")))
     history_session = (valid_history_session(user_data.get("history_session"))
         or valid_history_session(request.cookies.get("mopa_history_session")) or str(uuid.uuid4()))
+    image_file = request.files["image"]
+    material_settings = request.files.get("material_settings")
+    base_name = secure_filename(image_file.filename)
+    output_name = f"output_{task_id}_{base_name}"
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    image_path = os.path.join(upload_folder, f"{task_id}_{base_name}")
+    image_file.save(image_path)
+    material_cache_key = f"material-library:{history_session}"
+    if material_settings and material_settings.filename:
+        material_filename = secure_filename(material_settings.filename)
+        material_settings_path = os.path.join(
+            upload_folder, f"{task_id}_material_library_{material_filename}"
+        )
+        material_settings.save(material_settings_path)
+        redis_client.set(
+            material_cache_key,
+            json.dumps({"path": material_settings_path, "filename": material_filename}),
+            ex=HISTORY_TTL_SECONDS,
+        )
+    else:
+        try:
+            cached_material = json.loads(redis_client.get(material_cache_key) or "{}")
+            material_settings_path = cached_material.get("path")
+        except (TypeError, json.JSONDecodeError):
+            material_settings_path = None
+        if not material_settings_path or not os.path.isfile(material_settings_path):
+            return jsonify({"status": "error", "message": "Choose a LightBurn Material Library file"}), 400
     try:
         submitted_preset = str(user_data.get("image_preset", "cartoon")).strip().lower()
         material_name = str(user_data.get("material", "stainless - steel")).strip().lower()

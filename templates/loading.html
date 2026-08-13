@@ -458,7 +458,16 @@ function upsertFileRows(files) {
             row.tabIndex = 0;
             downloadList.prepend(row);
         }
+        const openMenu = row.classList.contains('menu-open');
+        const existingMenu = row.querySelector('.file-menu');
+        const menuLeft = existingMenu?.style.getPropertyValue('--file-menu-left');
+        const menuTop = existingMenu?.style.getPropertyValue('--file-menu-top');
         row.innerHTML = fileRowHtml(file);
+        if (openMenu) {
+            const refreshedMenu = row.querySelector('.file-menu');
+            if (menuLeft) refreshedMenu.style.setProperty('--file-menu-left', menuLeft);
+            if (menuTop) refreshedMenu.style.setProperty('--file-menu-top', menuTop);
+        }
         bindFileMenuPositioning(row);
     });
 }
