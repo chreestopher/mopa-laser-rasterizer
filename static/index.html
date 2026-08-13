@@ -46,7 +46,7 @@
   }
   .color-grid {
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(12, minmax(0, 1fr));
     gap: 16px 10px;
     margin-top: 14px;
   }
@@ -386,10 +386,10 @@
       max-width:100%;
       font-size:12px;
     }
-    .color-grid { grid-template-columns:repeat(4, minmax(0, 1fr)); gap:14px 8px; }
+    .color-grid { grid-template-columns:repeat(6, minmax(0, 1fr)); gap:14px 8px; }
   }
   @media (max-width:390px) {
-    .color-grid { grid-template-columns:repeat(3, minmax(0, 1fr)); }
+    .color-grid { grid-template-columns:repeat(4, minmax(0, 1fr)); }
   }
   .theme-toggle { display:flex; justify-content:flex-end; margin-bottom:12px; }
   .theme-toggle label { display:flex; align-items:center; gap:9px; font:700 11px "Courier New",monospace; letter-spacing:.1em; text-transform:uppercase; }
