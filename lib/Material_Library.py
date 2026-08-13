@@ -76,6 +76,7 @@ def main(argv=None):
         min_island_area=preset["min_island_area"],
         simplification_factor=preset["simplification_factor"],
         smoothing_radius=preset["smoothing_radius"],
+        image_preset=image_preset,
         abstract_filter=abstract_filter,
         filter_parameters=filter_parameters,
         job_settings={

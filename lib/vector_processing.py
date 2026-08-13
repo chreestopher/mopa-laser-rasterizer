@@ -1399,6 +1399,7 @@ def raster_to_puzzle_and_lightburn(
     min_island_area=0,
     simplification_factor=0.0,
     smoothing_radius=0.001,
+    image_preset=None,
     abstract_filter=None,
     filter_parameters=None,
     job_settings=None
@@ -1425,10 +1426,10 @@ def raster_to_puzzle_and_lightburn(
         - LightBurn export
     """
 
-    # Quantization must always use every available LightBurn target after the
-    # material library and requested color limits have filtered TARGET_COLORS.
-    # Presets and abstract filters do not control this count.
-    quantize_colors = len(TARGET_COLORS)
+    # Quantization uses every available LightBurn target after material and
+    # requested-color filtering. Black-and-white photos are the sole preset
+    # exception and deliberately reduce the source raster to two colors.
+    quantize_colors = 2 if image_preset == "bw_dither_photograph" else len(TARGET_COLORS)
 
     # Keep this at the beginning of the pipeline so the console records the
     # effective values used by the job before raster processing begins.
@@ -1441,7 +1442,10 @@ def raster_to_puzzle_and_lightburn(
         ignore_background_hex=ignore_background_hex,
         vector_settings={
             "quantize_colors": quantize_colors,
-            "quantize_color_source": "filtered_target_colors",
+            "quantize_color_source": (
+                "bw_dither_preset" if image_preset == "bw_dither_photograph"
+                else "filtered_target_colors"
+            ),
             "min_island_area": min_island_area,
             "simplification_factor": simplification_factor,
             "smoothing_radius": smoothing_radius,
