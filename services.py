@@ -110,6 +110,11 @@ def parse_abstract_filter_parameters(raw_value):
             clean[key] = value
         elif key == "transparent" and isinstance(value, bool):
             clean[key] = value
+        elif key == "transparent" and isinstance(value, str) and value.lower() in ("true", "false"):
+            # Form submissions from an older cached page can serialize a
+            # checkbox as text. Normalize it to the same boolean used by the
+            # current JSON-producing UI.
+            clean[key] = value.lower() == "true"
         elif isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError(f"Abstract filter setting '{key}' must be numeric")
         else:

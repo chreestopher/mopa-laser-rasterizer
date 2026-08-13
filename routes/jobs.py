@@ -50,8 +50,9 @@ def start_task():
     history_session = (valid_history_session(user_data.get("history_session"))
         or valid_history_session(request.cookies.get("mopa_history_session")) or str(uuid.uuid4()))
     try:
-        filter_name = str(user_data.get("abstract_filter", "none")).strip().lower()
-        if filter_name not in ABSTRACT_FILTER_NAMES:
+        submitted_preset = str(user_data.get("image_preset", "cartoon")).strip().lower()
+        filter_name = submitted_preset.removeprefix("abstract_")
+        if submitted_preset.startswith("abstract_") and filter_name not in ABSTRACT_FILTER_NAMES:
             raise ValueError("Unknown abstract filter")
         parse_abstract_filter_parameters(user_data.get("abstract_filter_parameters", "{}"))
     except ValueError as error:
@@ -62,13 +63,16 @@ def start_task():
     tasks[f"{task_id}_filename"] = output_name
     tasks[f"{task_id}_error"] = None
     submitted_preset = str(user_data.get("image_preset", "cartoon")).strip().lower()
-    submitted_filter = str(user_data.get("abstract_filter", "none")).strip().lower()
+    submitted_filter = (
+        submitted_preset.removeprefix("abstract_")
+        if submitted_preset.startswith("abstract_") else None
+    )
     add_history_entry(history_session, task_id, base_name, submitted_preset, submitted_filter)
     history_files = get_history_entries(history_session)
     if not any(item.get("task_id") == task_id for item in history_files):
         history_files.insert(0, {"task_id": task_id, "source_name": base_name,
             "image_preset": submitted_preset,
-            "abstract_filter": submitted_filter if submitted_preset == "abstract" else None,
+            "abstract_filter": submitted_filter,
             "created_at": int(time.time()), "status": "pending",
             "svg_url": f"/download/{task_id}", "lightburn_url": f"/download-lbrn2/{task_id}"})
     threading.Thread(target=long_running_script,
@@ -77,7 +81,7 @@ def start_task():
         files=[f"/download-lbrn2/{task_id}", f"/download/{task_id}"],
         history_session=history_session, history_files=history_files, current_source_name=base_name,
         current_image_preset=submitted_preset,
-        current_abstract_filter=submitted_filter if submitted_preset == "abstract" else None))
+        current_abstract_filter=submitted_filter))
     response.set_cookie("mopa_history_session", history_session, max_age=HISTORY_TTL_SECONDS,
         secure=request.is_secure, httponly=True, samesite="Lax")
     return response
