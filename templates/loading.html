@@ -57,7 +57,7 @@
         background: #1a7042;
     }
     .terminal-box {
-        flex: 7;
+        flex: 5 1 0;
         min-height: 0;
         background: #1e1e1e;
         color: #00ff00;
@@ -74,7 +74,7 @@
         max-width: none;
         box-sizing: border-box;
 
-        margin: 0 0 30px 0;
+        margin: 0;
 
         scrollbar-width: thin;
         scrollbar-color: #218c53 #151515;
@@ -95,9 +95,10 @@
         user-select: none;
     }
     .files-panel {
-        flex: 2;
+        flex: 1 1 0;
         min-height: 150px;
-        width: 100%;
+        min-width: 210px;
+        width: auto;
         padding: 16px 20px;
         background: #1e1e1e;
         color: #d1fae5;
@@ -108,15 +109,25 @@
         flex-direction: column;
         overflow: hidden;
     }
+    .machine-workspace {
+        flex: 8;
+        min-height: 0;
+        width: 100%;
+        display: flex;
+        flex-direction: row;
+        gap: 24px;
+        align-items: stretch;
+    }
     .files-header {
         display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 16px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
         padding-bottom: 10px;
         border-bottom: 1px solid #235438;
     }
     .files-header h2 { margin: 0; font-size: 16px; color: #00ff00; }
+    .files-header .another-button { text-align: center; }
     .download-list {
         list-style: none;
         padding: 0;
@@ -125,16 +136,17 @@
     }
     .file-item {
         display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 14px;
-        padding: 9px 0;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        padding: 11px 0;
         border-bottom: 1px solid #303b35;
     }
-    .file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-name { min-width: 0; overflow-wrap: anywhere; line-height: 1.35; }
     .file-meta { display:inline-block; margin-left:8px; padding:2px 6px; border:1px solid #68745d; border-radius:3px; color:#b9caa9; font-size:11px; text-transform:uppercase; letter-spacing:.05em; }
     .file-status { color: #94a3b8; font-size: 12px; }
-    .file-actions { display: flex; flex: 0 0 auto; gap: 8px; }
+    .file-actions { display: flex; flex: 0 0 auto; gap: 7px; }
+    .file-actions .download-button { flex: 1; text-align: center; padding-inline: 5px; }
     .download-button, .another-button {
         padding: 7px 11px;
         border-radius: 5px;
@@ -153,6 +165,9 @@
     .empty-files { color: #94a3b8; padding: 12px 0; }
     @media (max-width: 700px) {
         body { padding: 3vh 3vw; }
+        .machine-workspace { flex-direction: column; gap: 18px; overflow-y: auto; }
+        .terminal-box { flex: 0 0 55vh; min-height: 320px; }
+        .files-panel { flex: 0 0 auto; min-width: 0; min-height: 220px; overflow: visible; }
         .file-item { align-items: flex-start; flex-direction: column; }
         .file-actions { width: 100%; }
         .download-button { flex: 1; text-align: center; }
@@ -246,6 +261,7 @@
         <div class="page-header">
             <h1>MOPA-LASER-RASTERIZER</h1>
         </div>    
+        <main class="machine-workspace">
         <div class="terminal-box" id="terminal">
             <ul class="log-list" id="log-container">
                 <li class="log-item"><span class="log-prefix">$</span>Connecting to script pipeline...</li>
@@ -254,7 +270,7 @@
         <section class="files-panel" aria-labelledby="files-heading">
             <div class="files-header">
                 <h2 id="files-heading">$ processed_files --last 99</h2>
-                <a href="/?history_session={{ history_session }}" class="another-button">Process Another Image</a>
+                <a href="/?history_session={{ history_session }}" class="another-button">New Image</a>
             </div>
             <ul id="download-list" class="download-list">
                 {% for file in history_files %}
@@ -262,7 +278,7 @@
                     <div class="file-name"><span class="source-name">{{ file.source_name }}</span> <span class="file-meta">{{ file.image_preset|replace('_', ' ') }}{% if file.abstract_filter and file.abstract_filter != 'none' %} · {{ file.abstract_filter|replace('_', ' ') }}{% endif %}</span> <span class="file-time" data-created-at="{{ file.created_at }}"></span> <span class="file-status">[{{ file.status }}]</span></div>
                     <div class="file-actions">
                         <a class="download-button{% if file.status != 'completed' %} disabled{% endif %}" href="{{ file.svg_url }}">SVG</a>
-                        <a class="download-button{% if file.status != 'completed' %} disabled{% endif %}" href="{{ file.lightburn_url }}">LightBurn</a>
+                        <a class="download-button{% if file.status != 'completed' %} disabled{% endif %}" href="{{ file.lightburn_url }}">LBRN2</a>
                     </div>
                 </li>
                 {% else %}
@@ -270,12 +286,13 @@
                     <div class="file-name"><span class="source-name">{{ current_source_name }}</span> <span class="file-meta">{{ current_image_preset|replace('_', ' ') }}{% if current_abstract_filter and current_abstract_filter != 'none' %} · {{ current_abstract_filter|replace('_', ' ') }}{% endif %}</span> <span class="file-status">[pending]</span></div>
                     <div class="file-actions">
                         <a class="download-button disabled" href="/download/{{ task_id }}">SVG</a>
-                        <a class="download-button disabled" href="/download-lbrn2/{{ task_id }}">LightBurn</a>
+                        <a class="download-button disabled" href="/download-lbrn2/{{ task_id }}">LBRN2</a>
                     </div>
                 </li>
                 {% endfor %}
             </ul>
         </section>
+        </main>
 
 <script>
 const taskId = "{{ task_id }}";
@@ -315,7 +332,7 @@ function fileRowHtml(file) {
       : '';
     return `<div class="file-name"><span class="source-name">${name}</span> <span class="file-meta">${preset}${filter}</span> <span class="file-time">${timestamp}</span> <span class="file-status">[${file.status}]</span></div>` +
       `<div class="file-actions"><a class="download-button${disabled}" href="${file.svg_url}">SVG</a>` +
-      `<a class="download-button${disabled}" href="${file.lightburn_url}">LightBurn</a></div>`;
+      `<a class="download-button${disabled}" href="${file.lightburn_url}">LBRN2</a></div>`;
 }
 
 function upsertFileRows(files) {
