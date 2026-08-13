@@ -119,7 +119,7 @@
   </form>
   <form id="analysis_form" class="calibration-form">
     <h3>Recipe Measurement Console</h3>
-    <p class="form-note">This first analysis pass finds the grid, straightens it when it can see a clear border, samples the center of every numbered cell, and saves the observed photo color next to that cell’s interval and angle. Review the preview before treating it as a recipe map.</p>
+    <p class="form-note">This first analysis pass finds the grid, straightens it when it can see a clear border, samples the center of every numbered cell, and saves the observed photo color next to that cell’s interval and angle. Enter any crop value to make your crop the grid boundary, then trim tightly around the swatch. Review the preview before treating it as a recipe map.</p>
     <label>Calibration profile ID<input id="analysis_profile_id" name="profile_id" placeholder="Created automatically when you save a grid photo" required></label>
     <label>Photo rotation, degrees<input id="rotation_degrees" name="rotation_degrees" type="number" value="0" min="-180" max="180" step=".1"><span class="form-note">Positive rotates counterclockwise.</span></label>
     <label>Crop left, %<input name="crop_left" type="number" value="0" min="0" max="45" step=".1"></label>
@@ -200,7 +200,7 @@
         const response = await fetch('/holographic-etching/analyze-calibration', {method:'POST', body:new FormData(form)});
         const data = await response.json();
         if (!response.ok) throw new Error(data.message || 'Calibration analysis could not be completed.');
-        const correction = data.correction === 'rectified' ? 'Perspective correction applied.' : 'Grid border was not confidently found, so the rotated photo was sampled. Manual crop support is the next refinement if the overlay is off.';
+        const correction = data.correction === 'rectified' ? 'Perspective correction applied.' : data.correction === 'manual_crop' ? 'Your crop was used as the grid boundary.' : 'Grid border was not confidently found, so the rotated photo was sampled.';
         results.innerHTML = `${data.message} Rotation: ${data.rotation_degrees}°. Crop: L${data.crop.left}% T${data.crop.top}% R${data.crop.right}% B${data.crop.bottom}%. ${correction} <a href="${data.profile_url}">Download measured profile</a><a href="${data.preview_url}" target="_blank" rel="noopener noreferrer"><img class="analysis-preview" src="${data.preview_url}" alt="Numbered calibration-grid analysis preview"></a>`;
       } catch (error) {
         results.textContent = error.message;

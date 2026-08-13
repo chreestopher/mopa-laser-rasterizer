@@ -192,9 +192,16 @@ def _measure_grid_photo(photo_path, grid, rotation_degrees=0, crop=None, max_edg
     photo = cv2.imread(photo_path, cv2.IMREAD_COLOR)
     if photo is None:
         raise ValueError("The saved grid photo could not be opened for analysis.")
-    photo = _crop_and_resize_image(photo, crop or {"left": 0, "top": 0, "right": 0, "bottom": 0}, max_edge)
+    crop = crop or {"left": 0, "top": 0, "right": 0, "bottom": 0}
+    photo = _crop_and_resize_image(photo, crop, max_edge)
     photo = _rotate_image(photo, rotation_degrees)
-    rectified, correction, corners = _rectify_grid(photo)
+    # Once the operator supplies a crop, it is an intentional declaration of
+    # the grid bounds.  Do not let automatic contour detection replace that
+    # choice with a nearby photo edge or reflection.
+    if any(crop.values()):
+        rectified, correction, corners = photo, "manual_crop", None
+    else:
+        rectified, correction, corners = _rectify_grid(photo)
     rows, columns = int(grid["rows"]), int(grid["columns"])
     height, width = rectified.shape[:2]
     intervals, angles = grid["intervals_mm"], grid["angles_degrees"]
