@@ -183,6 +183,22 @@
   <p class="reference">This lab is informed by Ben Krasnow’s documented stainless-steel MOPA diffraction-grating work. We will build an original, calibration-first workflow around the same physical principles rather than integrate that project directly. <a href="https://github.com/benkrasnow/MOPA_Laser_Diffraction_Gratings" target="_blank" rel="noopener noreferrer">Review the reference project ↗</a></p>
   <script>
     const themeSwitch = document.getElementById('theme_switch');
+    // Keep repeat-use Holographic Lab settings for this browser session. File
+    // inputs are deliberately excluded because browsers do not permit a file
+    // selection to be restored programmatically.
+    const holographicSettingsKey = 'mopa-holographic-lab-settings';
+    let rememberedHolographicSettings = {};
+    try { rememberedHolographicSettings = JSON.parse(sessionStorage.getItem(holographicSettingsKey) || '{}'); } catch { rememberedHolographicSettings = {}; }
+    const rememberHolographicSettings = () => sessionStorage.setItem(holographicSettingsKey, JSON.stringify(rememberedHolographicSettings));
+    document.querySelectorAll('.calibration-form').forEach(form => {
+      form.querySelectorAll('input[name], select[name], textarea[name]').forEach(field => {
+        if (field.type === 'file' || field.type === 'hidden' || field.type === 'checkbox') return;
+        const key = `${form.id}:${field.name}`;
+        if (Object.hasOwn(rememberedHolographicSettings, key)) field.value = rememberedHolographicSettings[key];
+        field.addEventListener('input', () => { rememberedHolographicSettings[key] = field.value; rememberHolographicSettings(); });
+        field.addEventListener('change', () => { rememberedHolographicSettings[key] = field.value; rememberHolographicSettings(); });
+      });
+    });
     themeSwitch.checked = (localStorage.getItem('mopa-machine-theme') || 'dark') === 'light';
     document.body.classList.toggle('light-machine', themeSwitch.checked);
     themeSwitch.addEventListener('change', () => {
