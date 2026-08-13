@@ -365,6 +365,7 @@
     box-shadow: inset 0 1px rgba(255,255,255,.2),0 1px 0 #55270f;
   }
   .remembered-input-note { margin-top:7px; padding:7px 9px; border:1px solid #5e6853; border-radius:5px; color:#bdb58f; background:#11170f; box-shadow:inset 0 2px 6px #000; font:700 11px "Courier New",monospace; letter-spacing:.03em; }
+  .upload-error { margin:0 0 14px; padding:10px 12px; border:1px solid #d96452; border-radius:8px; color:#ffd5ca; background:#351510; box-shadow:inset 0 2px 6px #170503; font:700 12px "Courier New",monospace; line-height:1.45; }
   input[type="range"] { accent-color:#d16a32; box-shadow:none; }
   button { border:2px solid #d07b48; color:#fff1cd; background:linear-gradient(#c96b35,var(--orange)); box-shadow:inset 0 1px rgba(255,255,255,.28),0 4px 0 #55270f; text-transform:uppercase; letter-spacing:.06em; }
   button:hover { background:linear-gradient(#dc7940,#bd5a28); }
@@ -402,6 +403,7 @@
   body.light-machine h1,body.light-machine h2,body.light-machine label,body.light-machine .color-label { color:#151613; text-shadow:0 1px 0 #fff,0 -1px 0 #777; }
   body.light-machine .console-subtitle,body.light-machine h3,body.light-machine .filter-description,body.light-machine .color-name,body.light-machine .getting-started-list,body.light-machine .how-it-works-list,body.light-machine .rasterizer-checklist,body.light-machine .collapsible-info,body.light-machine .collapsible-info summary,body.light-machine .remembered-input-note,body.light-machine .holographic-lab-link { color:#343530; }
   body.light-machine .remembered-input-note { border-color:#777974; background:#dedfd9; box-shadow:inset 0 1px 5px #999; }
+  body.light-machine .upload-error { color:#781e11; background:#f8d8d1; border-color:#b84736; box-shadow:inset 0 1px 4px #d6a39a; }
   body.light-machine .how-it-works-intro { color:#343530; }
   @media (prefers-reduced-motion:reduce) { .status-lamp::before { animation:none; } }
   body.light-machine form { background:rgba(220,221,216,.5); border-color:#777974; box-shadow:inset 0 0 0 4px #b1b3ae,inset 0 0 20px #888,0 6px 0 #686a66; }
@@ -465,6 +467,7 @@
   <!-- Form Section -->
   <form action="/upload" method="post" enctype="multipart/form-data"> 
     <input type="hidden" id="history_session" name="history_session">
+    <div id="upload_error" class="upload-error" role="alert" hidden></div>
     <div class="form-group"></div>
     <div>
       <div><label for="image">1. Bring your own artwork:</label></div>
@@ -877,9 +880,13 @@
       } else {
         renderFilterControls();
       }
-      uploadForm.addEventListener('submit', event => {
+      uploadForm.addEventListener('submit', async event => {
+        event.preventDefault();
         const artworkFile = document.getElementById('image').files[0];
         const materialFile = materialLibraryInput.files[0];
+        const uploadError = document.getElementById('upload_error');
+        uploadError.hidden = true;
+        uploadError.textContent = '';
         const artworkLooksLikeImage = artworkFile && (
           artworkFile.type.startsWith('image/') || /\.(avif|bmp|gif|jpe?g|png|tiff?|webp)$/i.test(artworkFile.name)
         );
@@ -891,8 +898,33 @@
           materialLooksValid ? '' : 'Choose a LightBurn Material Library file before starting the job.'
         );
         if (!artworkLooksLikeImage || !materialLooksValid) {
-          event.preventDefault();
           (!artworkLooksLikeImage ? document.getElementById('image') : materialLibraryInput).reportValidity();
+          return;
+        }
+
+        try {
+          const response = await fetch(uploadForm.action, {
+            method: 'POST',
+            body: new FormData(uploadForm),
+            credentials: 'same-origin',
+          });
+          const contentType = response.headers.get('content-type') || '';
+          if (!response.ok || contentType.includes('application/json')) {
+            const data = contentType.includes('application/json')
+              ? await response.json()
+              : { message: `Could not start this job (HTTP ${response.status}).` };
+            uploadError.textContent = data.message || 'Could not start this job.';
+            uploadError.hidden = false;
+            uploadError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return;
+          }
+          const page = await response.text();
+          document.open();
+          document.write(page);
+          document.close();
+        } catch (error) {
+          uploadError.textContent = 'Unable to contact the Rasterizer. Check your connection and try again.';
+          uploadError.hidden = false;
         }
       });
     });
