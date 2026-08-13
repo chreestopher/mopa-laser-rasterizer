@@ -89,7 +89,7 @@ def start_task():
         filter_parameters = parse_abstract_filter_parameters(
             user_data.get("abstract_filter_parameters", "{}")
         )
-        parse_color_name_overrides(user_data.get("color_name_overrides", "{}"))
+        color_name_overrides = parse_color_name_overrides(user_data.get("color_name_overrides", "{}"))
     except ValueError as error:
         return jsonify({"status": "error", "message": str(error)}), 400
 
@@ -111,6 +111,13 @@ def start_task():
         "processing_width_px": user_data["new_width"],
         "processing_height_px": user_data["new_height"],
         "colors": [color.strip() for color in user_data.get("colors", "").split(",") if color.strip()],
+        "selected_color_hexes": [
+            color_hex for color_hex, color_name in color_name_overrides.items()
+            if color_name.casefold() in {
+                color.strip().casefold() for color in user_data.get("colors", "").split(",") if color.strip()
+            }
+        ],
+        "color_name_overrides": color_name_overrides,
         "filter_parameters": filter_parameters,
     }
     add_history_entry(history_session, task_id, base_name, submitted_preset, submitted_filter,

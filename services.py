@@ -1,12 +1,14 @@
 """Application services shared by HTTP route modules."""
 
 import json
+import base64
 import multiprocessing
 import os
 import re
 import subprocess
 import threading
 import time
+from urllib.parse import urlencode
 
 import boto3
 import redis
@@ -67,6 +69,26 @@ def add_history_entry(session_id, task_id, source_name, image_preset, abstract_f
     pipeline.execute()
 
 
+def reuse_settings_url(entry):
+    """Return a self-contained upload URL, with no task-history lookup."""
+    parameters = entry.get("run_parameters") or {}
+    settings = {
+        "material": entry.get("material_name", ""),
+        "pixel_square_mm": parameters.get("pixel_size_mm", "1"),
+        "new_width": parameters.get("processing_width_px", "0"),
+        "new_height": parameters.get("processing_height_px", "0"),
+        "image_preset": entry.get("image_preset", "cartoon"),
+        "colors": parameters.get("colors", []),
+        "selected_color_hexes": parameters.get("selected_color_hexes", []),
+        "color_name_overrides": parameters.get("color_name_overrides", {}),
+        "abstract_filter_parameters": parameters.get("filter_parameters", {}),
+    }
+    encoded = base64.urlsafe_b64encode(
+        json.dumps(settings, separators=(",", ":")).encode("utf-8")
+    ).decode("ascii").rstrip("=")
+    return f"/?{urlencode({'settings': encoded})}"
+
+
 def get_history_entries(session_id):
     if not session_id:
         return []
@@ -83,14 +105,16 @@ def get_history_entries(session_id):
             stale_records.append(raw_entry)
             continue
         status = redis_client.get(f"task:{task_id}:status") or "expired"
-        entries.append({
+        history_entry = {
             "task_id": task_id, "source_name": entry.get("source_name", "processed image"),
             "image_preset": entry.get("image_preset"), "abstract_filter": entry.get("abstract_filter"),
             "material_name": entry.get("material_name"),
             "run_parameters": entry.get("run_parameters") or {},
             "created_at": entry.get("created_at"), "status": status,
             "svg_url": f"/download/{task_id}", "lightburn_url": f"/download-lbrn2/{task_id}",
-        })
+        }
+        history_entry["reuse_url"] = reuse_settings_url(history_entry)
+        entries.append(history_entry)
     if stale_records:
         pipeline = redis_client.pipeline()
         for raw_entry in stale_records:

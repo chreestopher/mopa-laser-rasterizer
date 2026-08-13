@@ -809,6 +809,47 @@
         rememberedMaterialNote.hidden = false;
         rememberedMaterialNote.textContent = `Current Material Library: ${filename}. This file will replace the remembered library.`;
       });
+      const encodedSettings = new URLSearchParams(window.location.search).get('settings');
+      if (encodedSettings) {
+        try {
+          const paddedSettings = encodedSettings.replace(/-/g, '+').replace(/_/g, '/') +
+            '='.repeat((4 - encodedSettings.length % 4) % 4);
+          const bytes = Uint8Array.from(atob(paddedSettings), character => character.charCodeAt(0));
+          const settings = JSON.parse(new TextDecoder().decode(bytes));
+          materialInput.value = settings.material || materialInput.value;
+          document.getElementById('pixel_square_mm').value = settings.pixel_square_mm || '1';
+          newWidthInput.value = settings.new_width ?? '0';
+          newHeightInput.value = settings.new_height ?? '0';
+          document.getElementById('image_preset').value = settings.image_preset || 'cartoon';
+          sessionStorage.setItem(materialNameKey, materialInput.value.trim());
+          paletteCards.forEach(card => {
+            const hex = card.querySelector('.color-hex').textContent.trim().toUpperCase();
+            const savedName = settings.color_name_overrides?.[hex];
+            if (savedName) card.querySelector('.color-name').textContent = savedName;
+          });
+          selectedColorHexes.clear();
+          const selectedHexes = settings.selected_color_hexes || [];
+          paletteCards.forEach(card => {
+            const hex = card.querySelector('.color-hex').textContent.trim().toUpperCase();
+            const selected = selectedHexes.includes(hex);
+            if (selected) selectedColorHexes.add(hex);
+            card.querySelector('.color-square').classList.toggle('selected', !selected);
+          });
+          renderFilterControls();
+          Object.entries(settings.abstract_filter_parameters || {}).forEach(([name, value]) => {
+            const control = document.querySelector(`#filter_controls [data-parameter="${CSS.escape(name)}"]`);
+            if (!control) return;
+            if (control.type === 'checkbox') control.checked = Boolean(value);
+            else control.value = value;
+          });
+          updateFilterParameters();
+          updatePaletteFields();
+        } catch (error) {
+          console.warn('Unable to load settings from this URL:', error);
+        }
+      } else {
+        renderFilterControls();
+      }
       uploadForm.addEventListener('submit', event => {
         const artworkFile = document.getElementById('image').files[0];
         const materialFile = materialLibraryInput.files[0];
@@ -827,7 +868,6 @@
           (!artworkLooksLikeImage ? document.getElementById('image') : materialLibraryInput).reportValidity();
         }
       });
-      renderFilterControls();
     });
 
     const squares = document.querySelectorAll('.color-square');
