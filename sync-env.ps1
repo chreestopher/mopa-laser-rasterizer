@@ -22,6 +22,17 @@ Get-Content $source | ForEach-Object {
     }
 }
 
+# Preserve compatibility with existing local environment files that specify
+# the static directory. The repository root is its parent directory.
+if (-not $env.ContainsKey('HOST_APP_PATH') -and $env.ContainsKey('HOST_STATIC_PATH')) {
+    $env['HOST_APP_PATH'] = Split-Path -Parent $env['HOST_STATIC_PATH']
+}
+
+if (-not $env.ContainsKey('HOST_APP_PATH')) {
+    Write-Error "HOST_APP_PATH is required (the absolute repository path on the Kubernetes node)."
+    exit 1
+}
+
 $text = Get-Content $template -Raw
 foreach ($key in $env.Keys) {
     $value = $env[$key]

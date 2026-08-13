@@ -16,6 +16,10 @@ spec:
       labels:
         app: mopa-laser-rasterizer
     spec:
+      # hostPath is local to one Kubernetes node. Label the node containing the
+      # repository with: mopa-laser-rasterizer-host=true.
+      nodeSelector:
+        mopa-laser-rasterizer-host: "true"
       containers:
       - name: mopa-laser-rasterizer
         image: mopa-laser-rasterizer:local
@@ -48,33 +52,13 @@ spec:
 #          timeoutSeconds: 60
 #          failureThreshold: 150
         volumeMounts:
-        - name: static
-          mountPath: ${CONTAINER_STATIC_PATH}
-          readOnly: true
-        - name: templates
-          mountPath: ${CONTAINER_TEMPLATE_PATH}
-          readOnly: true
-        - name: uploads
-          mountPath: ${CONTAINER_UPLOADS_PATH}
-          readOnly: false
-        - name: local-script-volume
-          mountPath: ${CONTAINER_SCRIPT_PATH}
+        - name: application-source
+          mountPath: /app
           readOnly: false
 
       volumes:
-      - name: static
+      # Bind mount the checked-out repository from the selected EC2 node.
+      - name: application-source
         hostPath:
-          path: ${HOST_STATIC_PATH}
-          type: Directory
-      - name: templates
-        hostPath:
-          path: ${HOST_TEMPLATES_PATH}
-          type: Directory
-      - name: uploads
-        hostPath:
-          path: ${HOST_UPLOADS_PATH}
-          type: DirectoryOrCreate
-      - name: local-script-volume
-        hostPath:
-          path:  ${HOST_SCRIPT_PATH}
+          path: ${HOST_APP_PATH}
           type: Directory
