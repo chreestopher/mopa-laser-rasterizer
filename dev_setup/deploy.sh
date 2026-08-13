@@ -5,6 +5,7 @@ IMAGE_NAME="mopa-laser-rasterizer"
 IMAGE_TAG="com"
 DOCKERFILE="Dockerfile"
 CONTEXT="."
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 
 if [[ $# -ge 1 ]]; then
   IMAGE_NAME="$1"
@@ -56,9 +57,6 @@ if [[ "$IMPORT_SUCCESS" -ne 0 ]]; then
   exit 1
 fi
 echo "Success. Image $FULL_TAG is loaded into the runtime."
-echo "Use this image tag in your Kubernetes resources, for example:"
-echo "running kubectl set image deployment/mopa-laser-rasterizer mopa-laser-rasterizer=$FULL_TAG"
-sudo kubectl set image deployment/mopa-laser-rasterizer mopa-laser-rasterizer=$FULL_TAG
-echo "restarting the deployment with: kubectl rollout restart deployment/mopa-laser-rasterizer"
-sudo kubectl rollout restart deployment/mopa-laser-rasterizer
+echo "Applying the canonical AWS deployment and restarting it ..."
+"$SCRIPT_DIR/restart_rollout.sh" mopa-laser-rasterizer default "$FULL_TAG"
 sudo kubectl logs -l app=mopa-laser-rasterizer -f --max-log-requests 20

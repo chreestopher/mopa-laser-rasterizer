@@ -465,6 +465,7 @@ def classify_raster_pixels(
     ignore_background_hex,
     include_black=False,
     transparent=False,
+    transparent_rgb_values=None,
     light_threshold=225
 ):
     """
@@ -490,7 +491,13 @@ def classify_raster_pixels(
                 (x, y)
             )
 
-            if transparent:
+            if transparent_rgb_values is not None:
+                # Black-and-white photo mode is quantized to two exact RGB
+                # values.  Its transparent option removes the actual lighter
+                # swatch, not merely pixels above an arbitrary brightness.
+                if pixel_rgb in transparent_rgb_values:
+                    continue
+            elif transparent:
                 luminance = 0.2126 * pixel_rgb[0] + 0.7152 * pixel_rgb[1] + 0.0722 * pixel_rgb[2]
                 if luminance >= light_threshold:
                     continue
@@ -1527,6 +1534,23 @@ def raster_to_puzzle_and_lightburn(
     preserve_source_black = (
         centerline_mode or powdercoat_tumbler_mode or transparent_mode
     )
+    transparent_rgb_values = None
+    if image_preset == "bw_dither_photograph" and transparent_mode:
+        # ``Image.quantize(colors=2)`` produces two exact source colors. Pick
+        # the lighter one from this particular image so transparency follows
+        # the displayed light-gray swatch even if it is below a fixed luma
+        # cutoff (for example, on an overall dark photograph).
+        palette_colors = {tuple(pixel) for pixel in img.getdata()}
+        if len(palette_colors) > 1:
+            lightest_color = max(
+                palette_colors,
+                key=lambda rgb: 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
+            )
+            transparent_rgb_values = {lightest_color}
+            printLogMessage(
+                "Transparent mode: removing the lighter quantized BW color "
+                f"{lightest_color}."
+            )
 
     # =========================================================================
     # 4. Convert pixels into color geometry buckets
@@ -1540,6 +1564,7 @@ def raster_to_puzzle_and_lightburn(
             ignore_background_hex=ignore_background_hex,
             include_black=preserve_source_black,
             transparent=transparent_mode,
+            transparent_rgb_values=transparent_rgb_values,
             light_threshold=_number(
                 filter_parameters.get(
                     "light_threshold",
