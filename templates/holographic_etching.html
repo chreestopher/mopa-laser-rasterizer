@@ -48,6 +48,10 @@
     .form-note,.calibration-results { margin:0; color:#aaa98e; font-size:.9rem; line-height:1.45; }
     .calibration-results a { color:var(--phosphor); font-weight:700; }
     .analysis-preview { display:block; width:min(100%,620px); margin:13px 0 8px; border:2px solid #778a64; border-radius:9px; box-shadow:0 3px 10px #000; }
+    .corner-editor { grid-column:1 / -1; display:none; max-width:760px; padding:10px; border:2px solid #778a64; border-radius:10px; background:#0c110b; }
+    .corner-editor.active { display:block; }
+    .corner-editor canvas { display:block; width:100%; max-height:520px; cursor:crosshair; touch-action:none; }
+    .corner-editor p { margin:9px 0 0; color:#bdb58f; font:700 11px "Courier New",monospace; line-height:1.4; }
     .action-row { display:flex; flex-wrap:wrap; gap:10px; margin-top:25px; }
     .action { display:inline-block; padding:10px 14px; border:2px solid #d07b48; border-radius:7px; color:#fff1cd; background:linear-gradient(#c96b35,var(--orange)); box-shadow:inset 0 1px rgba(255,255,255,.28),0 4px 0 #55270f; font:700 12px system-ui,sans-serif; letter-spacing:.06em; text-decoration:none; text-transform:uppercase; cursor:pointer; transition:filter .15s,transform .15s,box-shadow .15s; }
     .action:hover { filter:brightness(1.12); }
@@ -68,6 +72,8 @@
     body.light-machine .calibration-form input[type="file"] { color:#343530; }
     body.light-machine .calibration-form input[type="file"]::file-selector-button { border-color:#79431f; color:#fff5da; background:linear-gradient(#bd7544,#8a4821); }
     body.light-machine .calibration-form textarea { color:#171815; background:#dedfd9; border-color:#777974; box-shadow:inset 0 1px 5px #999; }
+    body.light-machine .corner-editor { background:#d5d6cf; border-color:#777974; }
+    body.light-machine .corner-editor p { color:#343530; }
     @media (min-width:900px) and (hover:hover) { body { zoom:.8; } }
     @media (max-width:700px) { body { width:100%; margin:0; padding:20px; border-radius:0; } h1 { font-size:clamp(18px,6vw,25px); }.console-status-line { grid-template-columns:1fr; gap:7px; padding:0; }.console-subtitle { grid-row:1; }.status-lamps { grid-row:2; }.workflow { grid-template-columns:1fr; } }
   </style>
@@ -127,6 +133,8 @@
     <label>Crop right, %<input name="crop_right" type="number" value="0" min="0" max="45" step=".1"></label>
     <label>Crop bottom, %<input name="crop_bottom" type="number" value="0" min="0" max="45" step=".1"></label>
     <label class="full-width">Analysis maximum edge, px<input name="max_edge" type="number" value="1800" min="0" max="6000" step="100"><span class="form-note">Use 0 for the original size. 1800 px is normally plenty and keeps analysis brisk.</span></label>
+    <div class="action-row full-width"><button id="load_corner_editor" class="action secondary" type="button">Load Photo, Align Corners</button></div>
+    <div id="corner_editor" class="corner-editor"><canvas id="corner_canvas"></canvas><p>Drag the four green handles onto the outer corners of the etched grid. These corners override rotation and crop for the next analysis.</p></div>
     <div class="action-row"><button class="action" type="submit">Analyze Grid Photo</button></div>
     <p id="analysis_results" class="calibration-results" aria-live="polite"></p>
   </form>
@@ -189,6 +197,77 @@
     });
     const analysisProfileId = document.getElementById('analysis_profile_id');
     analysisProfileId.value = localStorage.getItem('holographic-profile-id') || '';
+    const cornerEditor = document.getElementById('corner_editor');
+    const cornerCanvas = document.getElementById('corner_canvas');
+    const cornerContext = cornerCanvas.getContext('2d');
+    const manualCornersInput = document.createElement('input');
+    manualCornersInput.type = 'hidden';
+    manualCornersInput.name = 'manual_corners';
+    document.getElementById('analysis_form').appendChild(manualCornersInput);
+    let cornerImage = null;
+    let cornerPoints = [];
+    let draggedCorner = null;
+    const redrawCornerEditor = () => {
+      if (!cornerImage) return;
+      cornerContext.clearRect(0, 0, cornerCanvas.width, cornerCanvas.height);
+      cornerContext.drawImage(cornerImage, 0, 0, cornerCanvas.width, cornerCanvas.height);
+      cornerContext.strokeStyle = '#83f06a';
+      cornerContext.lineWidth = 3;
+      cornerContext.beginPath();
+      cornerPoints.forEach(([x, y], index) => index ? cornerContext.lineTo(x, y) : cornerContext.moveTo(x, y));
+      cornerContext.closePath();
+      cornerContext.stroke();
+      cornerPoints.forEach(([x, y], index) => {
+        cornerContext.fillStyle = '#83f06a';
+        cornerContext.beginPath(); cornerContext.arc(x, y, 10, 0, Math.PI * 2); cornerContext.fill();
+        cornerContext.fillStyle = '#10140e';
+        cornerContext.font = 'bold 12px Courier New';
+        cornerContext.fillText(String(index + 1), x - 4, y + 4);
+      });
+      manualCornersInput.value = JSON.stringify(cornerPoints.map(([x, y]) => [x / cornerCanvas.width, y / cornerCanvas.height]));
+    };
+    const canvasPoint = event => {
+      const rect = cornerCanvas.getBoundingClientRect();
+      return [(event.clientX - rect.left) * cornerCanvas.width / rect.width, (event.clientY - rect.top) * cornerCanvas.height / rect.height];
+    };
+    document.getElementById('load_corner_editor').addEventListener('click', () => {
+      const profileId = analysisProfileId.value.trim();
+      const results = document.getElementById('analysis_results');
+      if (!profileId) { results.textContent = 'Enter the calibration profile ID first.'; return; }
+      results.textContent = 'Loading saved grid photo for corner alignment...';
+      const image = new Image();
+      image.onload = () => {
+        const scale = Math.min(720 / image.naturalWidth, 520 / image.naturalHeight, 1);
+        cornerCanvas.width = Math.round(image.naturalWidth * scale);
+        cornerCanvas.height = Math.round(image.naturalHeight * scale);
+        cornerImage = image;
+        const insetX = cornerCanvas.width * .08, insetY = cornerCanvas.height * .08;
+        cornerPoints = [[insetX, insetY], [cornerCanvas.width - insetX, insetY], [cornerCanvas.width - insetX, cornerCanvas.height - insetY], [insetX, cornerCanvas.height - insetY]];
+        cornerEditor.classList.add('active');
+        redrawCornerEditor();
+        results.textContent = 'Drag each green handle to the matching outer corner of the etched grid, then click Analyze Grid Photo.';
+      };
+      image.onerror = () => { results.textContent = 'Could not load that profile photo. Confirm the profile ID and try again.'; };
+      image.src = `/holographic-etching/profile-photo/${encodeURIComponent(profileId)}?t=${Date.now()}`;
+    });
+    cornerCanvas.addEventListener('pointerdown', event => {
+      if (!cornerImage) return;
+      const [x, y] = canvasPoint(event);
+      draggedCorner = cornerPoints.reduce((nearest, point, index) => {
+        const distance = Math.hypot(point[0] - x, point[1] - y);
+        return distance < nearest.distance ? {index, distance} : nearest;
+      }, {index: null, distance: Infinity}).index;
+      cornerCanvas.setPointerCapture(event.pointerId);
+    });
+    cornerCanvas.addEventListener('pointermove', event => {
+      if (draggedCorner === null) return;
+      const [x, y] = canvasPoint(event);
+      cornerPoints[draggedCorner] = [Math.max(0, Math.min(cornerCanvas.width, x)), Math.max(0, Math.min(cornerCanvas.height, y))];
+      redrawCornerEditor();
+    });
+    const stopCornerDrag = () => { draggedCorner = null; };
+    cornerCanvas.addEventListener('pointerup', stopCornerDrag);
+    cornerCanvas.addEventListener('pointercancel', stopCornerDrag);
     document.getElementById('analysis_form').addEventListener('submit', async event => {
       event.preventDefault();
       const form = event.currentTarget;

@@ -157,6 +157,17 @@ def _rectify_grid(photo):
     return cv2.warpPerspective(photo, cv2.getPerspectiveTransform(corners, destination), (target_width, target_height)), "rectified", corners.tolist()
 
 
+def _rectify_grid_from_corners(photo, corners):
+    corners = _order_corners(corners)
+    top = np.linalg.norm(corners[1] - corners[0])
+    bottom = np.linalg.norm(corners[2] - corners[3])
+    left = np.linalg.norm(corners[3] - corners[0])
+    right = np.linalg.norm(corners[2] - corners[1])
+    target_width, target_height = max(300, round(max(top, bottom))), max(300, round(max(left, right)))
+    destination = np.array([[0, 0], [target_width - 1, 0], [target_width - 1, target_height - 1], [0, target_height - 1]], dtype=np.float32)
+    return cv2.warpPerspective(photo, cv2.getPerspectiveTransform(corners, destination), (target_width, target_height)), corners.tolist()
+
+
 def _rotate_image(image, degrees):
     """Rotate without clipping the calibration sheet's corners."""
     if not degrees:
@@ -188,20 +199,24 @@ def _crop_and_resize_image(image, crop, max_edge):
     return cropped
 
 
-def _measure_grid_photo(photo_path, grid, rotation_degrees=0, crop=None, max_edge=0):
+def _measure_grid_photo(photo_path, grid, rotation_degrees=0, crop=None, max_edge=0, manual_corners=None):
     photo = cv2.imread(photo_path, cv2.IMREAD_COLOR)
     if photo is None:
         raise ValueError("The saved grid photo could not be opened for analysis.")
     crop = crop or {"left": 0, "top": 0, "right": 0, "bottom": 0}
-    photo = _crop_and_resize_image(photo, crop, max_edge)
-    photo = _rotate_image(photo, rotation_degrees)
+    if manual_corners:
+        rectified, corners = _rectify_grid_from_corners(photo, manual_corners)
+        correction = "manual_corners"
+    else:
+        photo = _crop_and_resize_image(photo, crop, max_edge)
+        photo = _rotate_image(photo, rotation_degrees)
     # Once the operator supplies a crop, it is an intentional declaration of
     # the grid bounds.  Do not let automatic contour detection replace that
     # choice with a nearby photo edge or reflection.
-    if any(crop.values()):
-        rectified, correction, corners = photo, "manual_crop", None
-    else:
-        rectified, correction, corners = _rectify_grid(photo)
+        if any(crop.values()):
+            rectified, correction, corners = photo, "manual_crop", None
+        else:
+            rectified, correction, corners = _rectify_grid(photo)
     rows, columns = int(grid["rows"]), int(grid["columns"])
     height, width = rectified.shape[:2]
     intervals, angles = grid["intervals_mm"], grid["angles_degrees"]
@@ -374,6 +389,7 @@ def save_calibration_profile():
 def analyze_calibration_profile():
     """Measure visible cell colors from a saved calibration-grid photograph."""
     profile_id = str(request.form.get("profile_id", "")).strip()
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
     try:
         rotation_degrees = max(-180, min(180, float(request.form.get("rotation_degrees", 0))))
         crop = {
@@ -383,15 +399,31 @@ def analyze_calibration_profile():
         if crop["left"] + crop["right"] >= 90 or crop["top"] + crop["bottom"] >= 90:
             raise ValueError("Opposing crop margins must leave visible image area.")
         max_edge = max(0, min(6000, int(request.form.get("max_edge", 1800))))
-    except ValueError:
+        manual_corners_raw = str(request.form.get("manual_corners", "")).strip()
+        manual_corners = None
+        if manual_corners_raw:
+            normalized_corners = json.loads(manual_corners_raw)
+            if (not isinstance(normalized_corners, list) or len(normalized_corners) != 4
+                    or any(not isinstance(corner, list) or len(corner) != 2 for corner in normalized_corners)):
+                raise ValueError("Four grid corners are required.")
+            manual_corners = normalized_corners
+    except (ValueError, TypeError, json.JSONDecodeError):
         return jsonify({"status": "error", "message": "Rotation, crop margins, and analysis size must be valid numbers."}), 400
-    upload_folder = current_app.config["UPLOAD_FOLDER"]
     try:
         profile_path = _profile_metadata_path(upload_folder, profile_id)
         with open(profile_path, encoding="utf-8") as profile_file:
             profile = json.load(profile_file)
+        if manual_corners is not None:
+            source = cv2.imread(os.path.join(upload_folder, profile["grid_photo"]), cv2.IMREAD_COLOR)
+            if source is None:
+                raise ValueError("The saved grid photo could not be opened for analysis.")
+            height, width = source.shape[:2]
+            manual_corners = [
+                [max(0, min(width - 1, float(corner[0]) * width)), max(0, min(height - 1, float(corner[1]) * height))]
+                for corner in manual_corners
+            ]
         cells, preview, correction, corners = _measure_grid_photo(
-            os.path.join(upload_folder, profile["grid_photo"]), profile["grid"], rotation_degrees, crop, max_edge
+            os.path.join(upload_folder, profile["grid_photo"]), profile["grid"], rotation_degrees, crop, max_edge, manual_corners
         )
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
         current_app.logger.exception("Holographic calibration analysis failed")
@@ -408,6 +440,7 @@ def analyze_calibration_profile():
         "source_rotation_degrees": rotation_degrees,
         "source_crop_percent": crop,
         "analysis_max_edge_px": max_edge,
+        "manual_grid_corners": corners if correction == "manual_corners" else None,
         "detected_grid_corners": corners,
         "preview": preview_name,
         "cells": cells,
@@ -426,6 +459,18 @@ def analyze_calibration_profile():
         "cells": cells,
         "message": "Grid sampled. Review the numbered preview, then keep this profile as the measured recipe source.",
     })
+
+
+@routes.route("/holographic-etching/profile-photo/<profile_id>")
+def calibration_profile_photo(profile_id):
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    try:
+        with open(_profile_metadata_path(upload_folder, profile_id), encoding="utf-8") as profile_file:
+            profile = json.load(profile_file)
+        photo_name = os.path.basename(profile["grid_photo"])
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        return jsonify({"status": "error", "message": "Calibration profile photo was not found."}), 404
+    return send_from_directory(upload_folder, photo_name)
 
 
 @routes.route("/holographic-etching/preview/<filename>")
