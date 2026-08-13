@@ -105,7 +105,13 @@ def get_history_entries(session_id):
         if not task_id:
             stale_records.append(raw_entry)
             continue
-        status = redis_client.get(f"task:{task_id}:status") or "expired"
+        stored_status = redis_client.get(f"task:{task_id}:status")
+        # A manually purged or lifecycle-expired S3 job must not leave a dead
+        # download row behind just because its browser-history record remains.
+        if not stored_status and not task_artifacts_exist(task_id):
+            stale_records.append(raw_entry)
+            continue
+        status = stored_status or "expired"
         history_entry = {
             "task_id": task_id, "source_name": entry.get("source_name", "processed image"),
             "image_preset": entry.get("image_preset"), "abstract_filter": entry.get("abstract_filter"),
@@ -223,6 +229,27 @@ def find_task_artifact(task_id, extension=None):
     else:
         keys = [key for key in keys if not key.lower().endswith(".lbrn2")]
     return sorted(keys)[0] if keys else None
+
+
+def task_artifacts_exist(task_id):
+    """Return whether a task still has any durable S3 object.
+
+    On an S3 error, preserve history rather than incorrectly hiding a job due
+    to a temporary AWS outage.  Local-only deployments retain their existing
+    Redis-based history behavior.
+    """
+    if not s3_artifacts_enabled():
+        return True
+    try:
+        response = s3_client.list_objects_v2(
+            Bucket=S3_BUCKET_NAME,
+            Prefix=f"jobs/{task_id}/",
+            MaxKeys=1,
+        )
+        return bool(response.get("Contents"))
+    except ClientError as error:
+        print(f"Unable to verify S3 history artifact for {task_id}: {error}", flush=True)
+        return True
 
 
 def get_s3_artifact(key):
