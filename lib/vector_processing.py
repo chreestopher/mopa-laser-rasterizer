@@ -248,20 +248,49 @@ def parse_material_settings(
         )
 
     matched_settings = {}
+    selected_targets = {
+        metadata[2].casefold(): (color_hex, metadata)
+        for color_hex, metadata in TARGET_COLORS.items()
+        if metadata[2].casefold() in {str(color).strip().casefold() for color in limit_colors}
+    }
     for item in matching_settings:
-            item.frequency = int(item.frequency)
-            item.name = item.entryDesc
-            if item.name.lower() in [cv[-1].lower() for cn,cv in TARGET_COLORS.items() if cv[-1].lower() in limit_colors]:
-                target_item = [cv for cn,cv in TARGET_COLORS.items() if cv[-1].lower() == item.name.lower()] 
-                target_touple = target_item[0]
-                target_key = [cn for cn,cv in TARGET_COLORS.items() if cv[-1].lower() == item.name.lower()] 
-                matched_settings[target_key[0]] = TARGET_COLORS[target_key[0]]
-                item.index = target_touple[-2]
-                lb.add_layer(item)
-                material_layer_report["loaded"].append(item.name)
+        # LightBurn stores both an Entry description and a cut-setting name.
+        # Accept either as the library-side label, then make the editable
+        # palette label authoritative for the generated project layer name.
+        library_labels = (getattr(item, "entryDesc", ""), getattr(item, "name", ""))
+        target = next(
+            (selected_targets.get(str(label or "").strip().casefold())
+             for label in library_labels
+             if str(label or "").strip().casefold() in selected_targets),
+            None,
+        )
+        if target is None:
+            material_layer_report["skipped"].append(str(getattr(item, "entryDesc", "") or item.name))
+            continue
 
-            else:
-                material_layer_report["skipped"].append(item.name)
+        target_hex, target_metadata = target
+        if target_hex in matched_settings:
+            existing_name = matched_settings[target_hex][2]
+            skipped_name = str(getattr(item, "entryDesc", "") or item.name)
+            material_layer_report["skipped"].append(skipped_name)
+            printLogMessage(
+                f"Material layer '{skipped_name}' skipped: '{existing_name}' already has "
+                f"a setting assigned for LightBurn layer {target_metadata[1]}."
+            )
+            continue
+
+        item.frequency = int(item.frequency)
+        item.index = target_metadata[1]
+        item.name = target_metadata[2]
+        matched_settings[target_hex] = target_metadata
+        lb.add_layer(item)
+        material_layer_report["loaded"].append(item.name)
+        printLogMessage(
+            f"Material layer '{item.entryDesc}' assigned to LightBurn layer "
+            f"{item.index}: {item.name} "
+            f"(min/max power {item.minPower}/{item.maxPower}, speed {item.speed}, "
+            f"frequency {item.frequency}, pulse width {item.QPulseWidth})"
+        )
 
     return matched_settings    
 
