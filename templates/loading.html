@@ -47,27 +47,27 @@
         margin: 0;
         padding: 6.25vh 6.25vw;
     }
-    /* Terminal and processed-files panel scrollbars */
+    /* Terminal and processed-files list scrollbars */
     .terminal-box::-webkit-scrollbar,
-    .files-panel::-webkit-scrollbar {
+    .download-list::-webkit-scrollbar {
         width: 10px;
     }
 
     .terminal-box::-webkit-scrollbar-track,
-    .files-panel::-webkit-scrollbar-track {
+    .download-list::-webkit-scrollbar-track {
         background: #151515;
         border-radius: 8px;
     }
 
     .terminal-box::-webkit-scrollbar-thumb,
-    .files-panel::-webkit-scrollbar-thumb {
+    .download-list::-webkit-scrollbar-thumb {
         background: #218c53;
         border-radius: 8px;
         border: 2px solid #151515;
     }
 
     .terminal-box::-webkit-scrollbar-thumb:hover,
-    .files-panel::-webkit-scrollbar-thumb:hover {
+    .download-list::-webkit-scrollbar-thumb:hover {
         background: #1a7042;
     }
     .terminal-box {
@@ -121,10 +121,7 @@
         font-family: 'Courier New', Courier, monospace;
         display: flex;
         flex-direction: column;
-        overflow-y: auto;
-        overflow-x: hidden;
-        scrollbar-width: thin;
-        scrollbar-color: #218c53 #151515;
+        overflow: hidden;
     }
     .machine-workspace {
         flex: 8;
@@ -142,12 +139,6 @@
         gap: 10px;
         padding-bottom: 10px;
         border-bottom: 1px solid #235438;
-        position: sticky;
-        top: -16px;
-        z-index: 4;
-        margin: -16px -20px 0;
-        padding: 16px 20px 10px;
-        background: #1e1e1e;
     }
     .files-header h2 { margin: 0; font-size: 16px; color: #00ff00; }
     .files-header .another-button { text-align: center; }
@@ -155,7 +146,12 @@
         list-style: none;
         padding: 0;
         margin: 10px 0 0;
-        overflow: visible;
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        scrollbar-width: thin;
+        scrollbar-color: #218c53 #151515;
     }
     .file-item { position:relative; padding:8px 4px; border-bottom:1px solid #303b35; outline:none; }
     .file-summary { display:flex; align-items:baseline; gap:8px; min-width:0; cursor:default; }
@@ -348,7 +344,6 @@
     body.light-machine .terminal-box,body.light-machine .files-panel { border-color:#777974; box-shadow:inset 0 0 0 5px #aaaCa6,inset 0 0 36px rgba(90,255,70,.1),inset 0 0 75px #000,0 7px 0 #696b66,0 12px 22px rgba(0,0,0,.4); }
     body.light-machine .files-header h2 { color:#151613; text-shadow:0 1px #fff; }
     body.light-machine .files-panel { color:#191a17; background:repeating-linear-gradient(0deg,rgba(0,0,0,.025) 0 1px,transparent 1px 4px),radial-gradient(ellipse at center,#dedfd9,#aeb0aa 90%); }
-    body.light-machine .files-header { background:#b9bbb5; }
     body.light-machine .file-item { border-color:#8b8d87; }
     </style>
 </head>
