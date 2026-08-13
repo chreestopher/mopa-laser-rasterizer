@@ -316,16 +316,39 @@ def _nearest_recipe(pixel, recipes):
     )
 
 
-def _write_holographic_svg(path, pixels, recipes_by_name, pixel_mm):
-    height, width = pixels.shape[:2]
+def _merge_recipe_pixels(layer_map, recipe_count):
+    """Greedily combine same-recipe pixels into non-overlapping rectangles."""
+    height, width = layer_map.shape
+    visited = np.zeros((height, width), dtype=bool)
+    rectangles = {index: [] for index in range(recipe_count)}
+    for y in range(height):
+        for x in range(width):
+            if visited[y, x]:
+                continue
+            recipe_index = layer_map[y, x]
+            rectangle_width = 1
+            while x + rectangle_width < width and not visited[y, x + rectangle_width] and layer_map[y, x + rectangle_width] == recipe_index:
+                rectangle_width += 1
+            rectangle_height = 1
+            while y + rectangle_height < height:
+                next_row = layer_map[y + rectangle_height, x:x + rectangle_width]
+                if visited[y + rectangle_height, x:x + rectangle_width].any() or not np.all(next_row == recipe_index):
+                    break
+                rectangle_height += 1
+            visited[y:y + rectangle_height, x:x + rectangle_width] = True
+            rectangles[int(recipe_index)].append((x, y, rectangle_width, rectangle_height))
+    return rectangles
+
+
+def _write_holographic_svg(path, width, height, recipes_by_name, pixel_mm):
     root = ET.Element("svg", xmlns="http://www.w3.org/2000/svg", width=f"{width * pixel_mm}mm",
                       height=f"{height * pixel_mm}mm", viewBox=f"0 0 {width * pixel_mm} {height * pixel_mm}")
     for name, coordinates in recipes_by_name.items():
         recipe = coordinates["recipe"]
         group = ET.SubElement(root, "g", id=f"recipe_{recipe['index']}", fill=recipe["observed_hex"])
-        for x, y in coordinates["pixels"]:
+        for x, y, rectangle_width, rectangle_height in coordinates["rectangles"]:
             ET.SubElement(group, "rect", x=str(x * pixel_mm), y=str(y * pixel_mm),
-                          width=str(pixel_mm), height=str(pixel_mm))
+                          width=str(rectangle_width * pixel_mm), height=str(rectangle_height * pixel_mm))
     ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
 
 
@@ -364,18 +387,23 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_f
             setattr(setting, SWEEP_SETTINGS[override["parameter"]], value)
         setting.subLayers = []
         project.add_layer(setting)
-        recipes_by_name[recipe["name"]] = {"recipe": recipe, "layer_index": layer_index, "pixels": []}
+        recipes_by_name[recipe["name"]] = {"recipe": recipe, "layer_index": layer_index, "rectangles": []}
 
+    layer_map = np.empty(pixels.shape[:2], dtype=np.int16)
     for y, row in enumerate(pixels):
         for x, pixel in enumerate(row):
             recipe = _nearest_recipe(pixel, profile["recipes"])
-            bucket = recipes_by_name[recipe["name"]]
-            bucket["pixels"].append((x, y))
-            project.add(lightburn.Square(pixel_mm, pixel_mm, x=x * pixel_mm, y=y * pixel_mm).layer(bucket["layer_index"]))
+            layer_map[y, x] = recipes_by_name[recipe["name"]]["layer_index"]
+    rectangles_by_layer = _merge_recipe_pixels(layer_map, len(profile["recipes"]))
+    for bucket in recipes_by_name.values():
+        bucket["rectangles"] = rectangles_by_layer[bucket["layer_index"]]
+        for x, y, rectangle_width, rectangle_height in bucket["rectangles"]:
+            project.add(lightburn.Square(rectangle_width * pixel_mm, rectangle_height * pixel_mm,
+                                        x=x * pixel_mm, y=y * pixel_mm).layer(bucket["layer_index"]))
 
     stem = f"holographic_art_{task_id}"
     svg_name, lbrn_name = f"{stem}.svg", f"{stem}.lbrn2"
-    _write_holographic_svg(os.path.join(upload_folder, svg_name), pixels, recipes_by_name, pixel_mm)
+    _write_holographic_svg(os.path.join(upload_folder, svg_name), pixels.shape[1], pixels.shape[0], recipes_by_name, pixel_mm)
     project.write(os.path.join(upload_folder, lbrn_name))
     metadata_name = f"{stem}.json"
     with open(os.path.join(upload_folder, metadata_name), "w", encoding="utf-8") as metadata_file:
@@ -383,9 +411,13 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_f
             "kind": "holographic_art_export", "recipe_profile_name": profile.get("profile_name"),
             "source_pixels": {"width": int(pixels.shape[1]), "height": int(pixels.shape[0])},
             "pixel_size_mm": pixel_mm, "physical_size_mm": [pixels.shape[1] * pixel_mm, pixels.shape[0] * pixel_mm],
+            "vector_rectangles": sum(len(bucket["rectangles"]) for bucket in recipes_by_name.values()),
+            "source_pixel_count": int(pixels.shape[0] * pixels.shape[1]),
             "recipes": [{"name": recipe["name"], "interval_mm": recipe["interval_mm"], "angle_degrees": recipe["angle_degrees"]} for recipe in profile["recipes"]],
         }, metadata_file, indent=2)
-    return svg_name, lbrn_name, metadata_name, pixels.shape[1], pixels.shape[0]
+    return svg_name, lbrn_name, metadata_name, pixels.shape[1], pixels.shape[0], sum(
+        len(bucket["rectangles"]) for bucket in recipes_by_name.values()
+    )
 
 
 @routes.route("/holographic-etching/calibration-grid", methods=["POST"])
@@ -707,14 +739,14 @@ def build_holographic_artwork():
     except ValueError:
         return jsonify({"status": "error", "message": "Processing resolution and pixel size must be numbers."}), 400
     try:
-        svg_name, lbrn_name, metadata_name, width, height = _build_holographic_exports(
+        svg_name, lbrn_name, metadata_name, width, height, rectangle_count = _build_holographic_exports(
             current_app.config["UPLOAD_FOLDER"], artwork, profile_file, material_file, max_dimension, pixel_mm
         )
     except (OSError, ValueError, ET.ParseError, KeyError, TypeError) as error:
         current_app.logger.exception("Holographic artwork export failed")
         return jsonify({"status": "error", "message": f"Could not build holographic artwork: {error}"}), 400
     return jsonify({
-        "status": "completed", "source_width": width, "source_height": height,
+        "status": "completed", "source_width": width, "source_height": height, "rectangle_count": rectangle_count,
         "svg_url": f"/holographic-etching/download/{svg_name}",
         "lightburn_url": f"/holographic-etching/download/{lbrn_name}",
         "metadata_url": f"/holographic-etching/download/{metadata_name}",

@@ -467,7 +467,7 @@
         const response = await fetch('/holographic-etching/build-artwork', {method:'POST', body:new FormData(form)});
         const data = await response.json();
         if (!response.ok) throw new Error(data.message || 'Holographic artwork could not be built.');
-        results.innerHTML = `Artwork built at ${data.source_width} × ${data.source_height} processed pixels. <a href="${data.svg_url}">Download SVG</a> · <a href="${data.lightburn_url}">Download LightBurn project</a> · <a href="${data.metadata_url}">Download export record</a>`;
+        results.innerHTML = `Artwork built at ${data.source_width} × ${data.source_height} processed pixels, merged into ${data.rectangle_count.toLocaleString()} vector rectangles. <a href="${data.svg_url}">Download SVG</a> · <a href="${data.lightburn_url}">Download LightBurn project</a> · <a href="${data.metadata_url}">Download export record</a>`;
       } catch (error) {
         results.textContent = error.message;
       } finally {
