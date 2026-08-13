@@ -39,6 +39,9 @@
     .calibration-form label { display:grid; gap:6px; color:#ddd7b8; font-size:.9rem; letter-spacing:.035em; }
     .calibration-form input { width:100%; min-width:0; padding:9px; border:2px solid #5e6853; border-radius:5px; color:var(--phosphor); background:#11170f; box-shadow:inset 0 2px 7px #000; font-family:"Courier New",monospace; }
     .calibration-form input:focus { outline:none; border-color:#91a477; box-shadow:0 0 0 2px rgba(131,240,106,.18),inset 0 2px 7px #000; }
+    .calibration-form textarea { width:100%; min-width:0; min-height:78px; padding:9px; resize:vertical; border:2px solid #5e6853; border-radius:5px; color:var(--phosphor); background:#11170f; box-shadow:inset 0 2px 7px #000; font-family:"Courier New",monospace; }
+    .calibration-form textarea:focus { outline:none; border-color:#91a477; box-shadow:0 0 0 2px rgba(131,240,106,.18),inset 0 2px 7px #000; }
+    .calibration-form .full-width { grid-column:1 / -1; }
     .form-note,.calibration-results { margin:0; color:#aaa98e; font-size:.9rem; line-height:1.45; }
     .calibration-results a { color:var(--phosphor); font-weight:700; }
     .action-row { display:flex; flex-wrap:wrap; gap:10px; margin-top:25px; }
@@ -53,6 +56,7 @@
     body.light-machine .calibration-form { border-color:#a86632; background:rgba(220,221,216,.5); box-shadow:inset 0 0 0 4px #b1b3ae,inset 0 0 20px #888,0 6px 0 #686a66; }
     body.light-machine .calibration-form h3,body.light-machine .calibration-form label { color:#151613; }
     body.light-machine .calibration-form input { color:#171815; background:#dedfd9; border-color:#777974; box-shadow:inset 0 1px 5px #999; }
+    body.light-machine .calibration-form textarea { color:#171815; background:#dedfd9; border-color:#777974; box-shadow:inset 0 1px 5px #999; }
     @media (min-width:900px) and (hover:hover) { body { zoom:.8; } }
     @media (max-width:700px) { body { width:100%; margin:0; padding:20px; border-radius:0; } h1 { font-size:clamp(18px,6vw,25px); }.console-status-line { grid-template-columns:1fr; gap:7px; padding:0; }.console-subtitle { grid-row:1; }.status-lamps { grid-row:2; }.workflow { grid-template-columns:1fr; } }
   </style>
@@ -88,6 +92,20 @@
     <div class="action-row"><button class="action" type="submit">Build Calibration Grid</button><a class="action secondary" href="/">Return to Color Rasterizer</a></div>
     <p id="calibration_results" class="calibration-results" aria-live="polite"></p>
   </form>
+  <form id="profile_form" class="calibration-form" enctype="multipart/form-data">
+    <h3>Finished Grid Capture Console</h3>
+    <p class="form-note">After you laser the grid, photograph it and save the conditions that made those colors appear. This creates a reusable profile now, ready for the color-reading engine we will install later.</p>
+    <label>Calibration grid ID<input id="profile_calibration_id" name="calibration_id" placeholder="Created automatically when you build a grid" required></label>
+    <label>Profile name<input name="profile_name" placeholder="Example: Polished Ti, 110 mm lens, shop lights" required></label>
+    <label class="full-width">Finished grid photograph<input name="grid_photo" type="file" accept="image/*" required></label>
+    <label>Phone or camera<input name="camera" placeholder="Example: iPhone 15 Pro, flash on"></label>
+    <label>Camera distance (mm)<input name="distance_mm" type="number" min="1" step="1" placeholder="Example: 300"></label>
+    <label>Viewing angle (degrees)<input name="viewing_angle" type="number" min="0" max="90" step="1" placeholder="0 is straight on"></label>
+    <label>Lighting setup<input name="lighting" placeholder="Example: phone flash, dark room"></label>
+    <label class="full-width">Capture notes<textarea name="capture_notes" placeholder="Polish, focus, orientation, what looked especially good, and anything future-you will thank you for writing down."></textarea></label>
+    <div class="action-row"><button class="action" type="submit">Save Calibration Profile</button></div>
+    <p id="profile_results" class="calibration-results" aria-live="polite"></p>
+  </form>
   <p class="reference">This lab is informed by Ben Krasnow’s documented stainless-steel MOPA diffraction-grating work. We will build an original, calibration-first workflow around the same physical principles rather than integrate that project directly. <a href="https://github.com/benkrasnow/MOPA_Laser_Diffraction_Gratings" target="_blank" rel="noopener noreferrer">Review the reference project ↗</a></p>
   <script>
     const themeSwitch = document.getElementById('theme_switch');
@@ -114,7 +132,29 @@
           throw new Error(`Calibration grid request failed (HTTP ${response.status}). The server returned an HTML error page; restart the app deployment so the new Holographic Etching route is loaded, then try again.`);
         }
         if (!response.ok) throw new Error(data.message || 'Calibration grid could not be created.');
-        results.innerHTML = `Calibration grid ready: <a href="${data.svg_url}">Download SVG</a> · <a href="${data.lightburn_url}">Download LightBurn project</a>`;
+        document.getElementById('profile_calibration_id').value = data.calibration_id;
+        localStorage.setItem('holographic-calibration-id', data.calibration_id);
+        results.innerHTML = `Calibration grid ready: <a href="${data.svg_url}">Download SVG</a> · <a href="${data.lightburn_url}">Download LightBurn project</a> · Grid ID loaded into the Finished Grid Capture Console.`;
+      } catch (error) {
+        results.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+    const profileCalibrationId = document.getElementById('profile_calibration_id');
+    profileCalibrationId.value = localStorage.getItem('holographic-calibration-id') || '';
+    document.getElementById('profile_form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const results = document.getElementById('profile_results');
+      const button = form.querySelector('button[type="submit"]');
+      button.disabled = true;
+      results.textContent = 'Saving photo and calibration conditions...';
+      try {
+        const response = await fetch('/holographic-etching/calibration-profile', {method:'POST', body:new FormData(form)});
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || 'Calibration profile could not be saved.');
+        results.innerHTML = `${data.message} <a href="${data.profile_url}">Download profile record</a>`;
       } catch (error) {
         results.textContent = error.message;
       } finally {

@@ -10,6 +10,7 @@ from copy import copy
 from xml.etree import ElementTree as ET
 
 from flask import current_app, jsonify, request, send_from_directory
+from PIL import Image, UnidentifiedImageError
 from werkzeug.utils import secure_filename
 
 from . import routes
@@ -95,6 +96,13 @@ def _svg_grid(path, columns, rows, cell_mm, intervals, angles):
     ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
 
 
+def _calibration_metadata_path(upload_folder, calibration_id):
+    """Return the known metadata path for a calibration grid identifier."""
+    if not calibration_id or any(character not in "0123456789abcdef-" for character in calibration_id.lower()):
+        raise ValueError("Choose a calibration grid created by this lab.")
+    return os.path.join(upload_folder, f"holographic_calibration_{calibration_id}.json")
+
+
 @routes.route("/holographic-etching/calibration-grid", methods=["POST"])
 def calibration_grid():
     library = request.files.get("material_settings")
@@ -162,12 +170,79 @@ def calibration_grid():
             "status": "error",
             "message": f"Could not build the calibration grid: {error}",
         }), 500
-    return jsonify({"status": "completed", "svg_url": f"/holographic-etching/download/{svg_name}",
+    return jsonify({"status": "completed", "calibration_id": task_id,
+                    "svg_url": f"/holographic-etching/download/{svg_name}",
                     "lightburn_url": f"/holographic-etching/download/{lbrn_name}"})
+
+
+@routes.route("/holographic-etching/calibration-profile", methods=["POST"])
+def save_calibration_profile():
+    """Store the captured grid photograph and its measurement context.
+
+    Image analysis is intentionally not performed here yet.  Saving the exact
+    source grid, photograph, and viewing conditions gives the later analyzer a
+    stable, self-contained calibration record to work from.
+    """
+    photo = request.files.get("grid_photo")
+    calibration_id = str(request.form.get("calibration_id", "")).strip()
+    profile_name = str(request.form.get("profile_name", "")).strip()
+    if not photo or not photo.filename or not calibration_id or not profile_name:
+        return jsonify({"status": "error", "message": "Provide a grid photo, calibration grid ID, and profile name."}), 400
+
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    try:
+        grid_metadata_path = _calibration_metadata_path(upload_folder, calibration_id)
+        with open(grid_metadata_path, encoding="utf-8") as metadata_file:
+            grid_metadata = json.load(metadata_file)
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        return jsonify({"status": "error", "message": f"Calibration grid could not be found: {error}"}), 404
+
+    try:
+        photo_image = Image.open(photo.stream)
+        photo_image.verify()
+        photo.stream.seek(0)
+    except (UnidentifiedImageError, OSError):
+        return jsonify({"status": "error", "message": "Upload a readable image of the finished grid, such as a JPG or PNG."}), 400
+
+    profile_id = str(uuid.uuid4())
+    extension = os.path.splitext(secure_filename(photo.filename))[1].lower() or ".image"
+    photo_name = f"holographic_profile_{profile_id}_grid{extension}"
+    profile_name_on_disk = f"holographic_profile_{profile_id}.json"
+    photo.save(os.path.join(upload_folder, photo_name))
+    profile = {
+        "kind": "holographic_calibration_profile",
+        "status": "awaiting_analysis",
+        "profile_id": profile_id,
+        "profile_name": profile_name,
+        "grid_photo": photo_name,
+        "grid_calibration_id": calibration_id,
+        "grid": grid_metadata,
+        "capture": {
+            "phone_or_camera": str(request.form.get("camera", "")).strip(),
+            "camera_distance_mm": str(request.form.get("distance_mm", "")).strip(),
+            "viewing_angle_degrees": str(request.form.get("viewing_angle", "")).strip(),
+            "lighting": str(request.form.get("lighting", "")).strip(),
+            "notes": str(request.form.get("capture_notes", "")).strip(),
+        },
+        "analysis": {
+            "state": "pending",
+            "message": "The calibration-analysis engine has not yet been implemented.",
+            "cells": [],
+        },
+    }
+    with open(os.path.join(upload_folder, profile_name_on_disk), "w", encoding="utf-8") as profile_file:
+        json.dump(profile, profile_file, indent=2)
+    current_app.logger.info("Saved holographic calibration profile %s from grid %s.", profile_id, calibration_id)
+    return jsonify({
+        "status": "saved",
+        "profile_id": profile_id,
+        "profile_url": f"/holographic-etching/download/{profile_name_on_disk}",
+        "message": "Calibration photo and conditions saved. It is ready for the future analysis step.",
+    })
 
 
 @routes.route("/holographic-etching/download/<filename>")
 def download_calibration_file(filename):
-    if not filename.startswith("holographic_calibration_"):
+    if not (filename.startswith("holographic_calibration_") or filename.startswith("holographic_profile_")):
         return jsonify({"status": "error", "message": "Unknown calibration file."}), 404
     return send_from_directory(current_app.config["UPLOAD_FOLDER"], filename, as_attachment=True)
