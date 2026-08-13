@@ -28,6 +28,8 @@ def main(argv=None):
 
     (input_file, output_file, square_mm, new_width, new_height,
      material_library_file, limit_colors, image_preset, abstract_filter) = argv[:9]
+    new_width = new_width.strip() or "0"
+    new_height = new_height.strip() or "0"
     filter_parameters = {}
     if len(argv) > 9 and argv[9].strip():
         try:

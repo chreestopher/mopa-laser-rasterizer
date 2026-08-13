@@ -37,6 +37,16 @@ def valid_history_session(value):
     return value if HISTORY_SESSION_RE.fullmatch(value) else None
 
 
+def normalize_dimension(value, default=0):
+    """Return a safe integer dimension for missing or blank form values."""
+    if value is None or str(value).strip() == "":
+        return default
+    try:
+        return max(0, min(1600, int(float(value))))
+    except (TypeError, ValueError):
+        return default
+
+
 def add_history_entry(session_id, task_id, source_name, image_preset, abstract_filter):
     if not session_id:
         return
@@ -208,8 +218,8 @@ def long_running_script(task_id, data, image_path, material_settings_path):
 
 
         square_mm = data.get('pixel_square_mm', '1')
-        new_width = data.get('new_width', '100')
-        new_height = data.get('new_height', '100')
+        new_width = normalize_dimension(data.get('new_width'), 0)
+        new_height = normalize_dimension(data.get('new_height'), 0)
         colors = data.get('colors', '')
         image_preset = data.get('image_preset', "cartoon")
         abstract_filter = str(data.get('abstract_filter', "none")).strip().lower()
@@ -328,6 +338,8 @@ def start_task():
     material_settings.save(material_settings_path)
 
     user_data = request.form.to_dict()
+    user_data['new_width'] = str(normalize_dimension(user_data.get('new_width'), 0))
+    user_data['new_height'] = str(normalize_dimension(user_data.get('new_height'), 0))
     history_session = (
         valid_history_session(user_data.get('history_session'))
         or valid_history_session(request.cookies.get('mopa_history_session'))

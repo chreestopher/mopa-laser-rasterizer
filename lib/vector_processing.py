@@ -191,8 +191,6 @@ def init_lightburn(the_colors_limit):
             3) filters the lightburn layer colors so it only contains colors in limit_colors list
             4) returns the initialized objects to be used by other functions
     """
-    global lightburn
-
     # Define the module name and its exact absolute file path
     module_name = "lightburn"
     module_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1427,9 +1425,12 @@ def raster_to_puzzle_and_lightburn(
         filter_name == "tumbler"
         and filter_parameters.get("material") == "powdercoat"
     )
-    shattered_mode = filter_name == "shattered"
+    xenoglyph_transparent_mode = (
+        filter_name == "xenoglyph"
+        and bool(filter_parameters.get("light_areas_transparent", True))
+    )
     preserve_source_black = (
-        centerline_mode or powdercoat_tumbler_mode or shattered_mode
+        centerline_mode or powdercoat_tumbler_mode or xenoglyph_transparent_mode
     )
 
     # =========================================================================
@@ -1443,7 +1444,10 @@ def raster_to_puzzle_and_lightburn(
             black_hex=black_hex,
             ignore_background_hex=ignore_background_hex,
             include_black=preserve_source_black,
-            light_areas_transparent=False
+            light_areas_transparent=xenoglyph_transparent_mode,
+            light_threshold=_number(
+                filter_parameters.get("light_threshold"), 225, 128, 255
+            )
         )
 
     )
@@ -1483,9 +1487,9 @@ def raster_to_puzzle_and_lightburn(
 
     elif centerline_mode:
         printLogMessage("Centerline mode: exporting source-color medial axes as open paths.")
-    elif shattered_mode:
+    elif xenoglyph_transparent_mode:
         printLogMessage(
-            "Shattered mode: exporting separated source-derived shards without a black canvas."
+            "Xenoglyph mode: light source areas remain transparent; no black canvas added."
         )
     else:
         printLogMessage(
