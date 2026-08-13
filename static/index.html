@@ -437,7 +437,7 @@
           <option value="abstract_crystal">Crystal Tessellation</option>
           <option value="abstract_ripple">Topographic Ripple</option>
           <option value="abstract_centerline">Centerline Drawing</option>
-          <option value="abstract_tumbler">Tumbler Wrap</option>
+          <option value="abstract_glitch">Digital Glitch</option>
           <option value="abstract_shattered">Shattered</option>
           <option value="abstract_none">Abstract: None</option>
         </optgroup>
@@ -510,14 +510,13 @@
         description: 'Reduces each color region to a single open medial-axis path for line engraving instead of outlined or filled shapes.',
         controls: [['line_simplification', .35, 0, 3, .05], ['min_branch_length', 2, 0, 30, 1]]
       },
-      tumbler: {
-        description: 'Sizes and progressively warps artwork for a straight, tapered, bulged, or waisted rotary tumbler. Measure diameters across the engraving zone.',
-        controls: [['top_diameter_mm', 75, 20, 200, .1], ['middle_diameter_mm', 75, 20, 200, .1],
-          ['bottom_diameter_mm', 70, 20, 200, .1], ['artwork_height_mm', 100, 5, 300, 1],
-          ['wrap_angle', 180, 10, 360, 1], ['profile_curve', 0, -1, 1, .05],
-          ['horizontal_anchor', .5, 0, 1, .05], ['powdercoat_gap_mm', .35, 0, 3, .05],
-          ['powdercoat_simplification_mm', .3, 0, 3, .05], ['foreground_min_percent', .15, 0, 5, .05]],
-        material: true
+      glitch: {
+        description: 'Slices the image into coordinated digital stutters. Fibonacci-sized shifts and repeated echoes create a deliberate signal-glitch pattern instead of random noise.',
+        controls: [['slice_height', 18, 3, 100, 1], ['fragment_width', 70, 8, 240, 1],
+          ['shift_amount', 28, 0, 180, 1], ['echo_count', 2, 0, 5, 1],
+          ['echo_spacing', 9, 0, 80, 1], ['density', .55, 0, 1, .05],
+          ['fibonacci_stride', 2, 1, 8, 1], ['vertical_jitter', 3, 0, 60, 1],
+          ['seed', 1, 0, 999999, 1]]
       },
       shattered: {
         description: 'Breaks the image into irregular glass-like shards, opens variable gaps, and lets the pieces tumble outward as they fall. No synthetic black canvas is added.',
@@ -549,7 +548,6 @@
         if (valueInput && input.type === 'range') valueInput.value = input.value;
       });
       document.getElementById('abstract_filter_parameters').value = JSON.stringify(values);
-      updateTumblerReadout(values);
     }
 
     function updateTumblerReadout(values) {
@@ -578,18 +576,6 @@
       const controls = document.getElementById('filter_controls');
       document.getElementById('filter_description').textContent = filter.description;
       controls.replaceChildren();
-      if (filter.material) {
-        const row = document.createElement('div');
-        row.className = 'filter-control';
-        row.innerHTML = '<label for="tumbler_material"><span>Material</span></label>' +
-          '<select id="tumbler_material" data-parameter="material"><option value="metal">Bare metal</option>' +
-          '<option value="powdercoat">Powder coat</option></select>';
-        row.querySelector('select').addEventListener('change', () => {
-          updateFilterParameters();
-          updatePowdercoatVisibility();
-        });
-        controls.appendChild(row);
-      }
       (filter.toggles || []).forEach(([name, value]) => {
         const row = document.createElement('div');
         row.className = 'filter-control';
@@ -646,16 +632,6 @@
       document.getElementById('randomize_filter').style.display = filter.controls.length ? 'block' : 'none';
       document.getElementById('reset_filter').style.display = filter.controls.length ? 'block' : 'none';
       updateFilterParameters();
-      updatePowdercoatVisibility();
-    }
-
-    function updatePowdercoatVisibility() {
-      const material = document.getElementById('tumbler_material');
-      const show = material && material.value === 'powdercoat';
-      ['powdercoat_gap_mm', 'powdercoat_simplification_mm', 'foreground_min_percent'].forEach(name => {
-        const input = document.querySelector(`[data-parameter="${name}"]`);
-        if (input) input.closest('.filter-control').style.display = show ? 'block' : 'none';
-      });
     }
 
     document.getElementById('image_preset').addEventListener('change', renderFilterControls);

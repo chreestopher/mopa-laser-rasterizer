@@ -106,7 +106,7 @@ material_script=$(cd -- "$(dirname -- "$material_script")" && pwd)/$(basename --
 material_library=$(cd -- "$(dirname -- "$material_library")" && pwd)/$(basename -- "$material_library")
 
 presets=(cartoon color_photograph bw_dither_photograph abstract)
-filters=(none wave voronoi shear spiral mosaic crystal ripple centerline tumbler)
+filters=(none wave voronoi shear spiral mosaic crystal ripple centerline glitch shattered)
 
 # Defaults exercise each filter predictably. Override individual values by
 # editing these JSON objects or by copying this script for a test profile.
@@ -120,7 +120,8 @@ declare -A filter_json=(
   [crystal]='{"cell_size":18,"gap":0.7}'
   [ripple]='{"amplitude":3,"frequency":0.18,"phase":0,"center_x":0.5,"center_y":0.5}'
   [centerline]='{"line_simplification":0.35,"min_branch_length":2}'
-  [tumbler]='{"top_diameter_mm":75,"middle_diameter_mm":75,"bottom_diameter_mm":70,"artwork_height_mm":100,"wrap_angle":180,"profile_curve":0,"horizontal_anchor":0.5,"material":"metal"}'
+  [glitch]='{"slice_height":18,"fragment_width":70,"shift_amount":28,"echo_count":2,"echo_spacing":9,"density":0.55,"fibonacci_stride":2,"vertical_jitter":3,"seed":1}'
+  [shattered]='{"min_shard_size":8,"max_shard_size":32,"density":0.6,"minimum_gap":0.7,"gap_variation":2.2,"horizontal_spread":12,"fall_distance":20,"gravity_bias":1.4,"rotation":22,"break_origin_x":0.5,"break_origin_y":0.35,"seed":1}'
 )
 
 base_name=$(basename -- "$input_file")

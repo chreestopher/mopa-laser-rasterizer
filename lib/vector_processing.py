@@ -791,19 +791,6 @@ def process_color_geometry(
             )
         )
 
-    if filter_name == "tumbler" and settings.get("material") == "powdercoat":
-        pixel_mm = _number(settings.get("_scale_factor"), 1, .0001, 1000)
-        gap = _number(settings.get("powdercoat_gap_mm"), .35, 0, 20) / pixel_mm
-        powder_simplification = _number(
-            settings.get("powdercoat_simplification_mm"), .3, 0, 20
-        ) / pixel_mm
-        if gap:
-            final_geometry = final_geometry.buffer(-gap / 2, join_style=2)
-        if powder_simplification and not final_geometry.is_empty:
-            final_geometry = final_geometry.simplify(
-                powder_simplification, preserve_topology=True
-            )
-
     # ------------------------------------------------------------------------
     # 5. Apply abstract transformation.
     # ------------------------------------------------------------------------
@@ -1517,10 +1504,6 @@ def raster_to_puzzle_and_lightburn(
     filter_parameters["_scale_factor"] = scale_factor
     filter_name, _ = normalize_abstract_settings(abstract_filter, filter_parameters)
     centerline_mode = filter_name == "centerline"
-    powdercoat_tumbler_mode = (
-        filter_name == "tumbler"
-        and filter_parameters.get("material") == "powdercoat"
-    )
     transparent_mode = (
         (image_preset == "bw_dither_photograph"
          and bool(filter_parameters.get("transparent", False)))
@@ -1532,7 +1515,7 @@ def raster_to_puzzle_and_lightburn(
         ))
     )
     preserve_source_black = (
-        centerline_mode or powdercoat_tumbler_mode or transparent_mode
+        centerline_mode or transparent_mode
     )
     transparent_rgb_values = None
     if image_preset == "bw_dither_photograph" and transparent_mode:
@@ -1576,11 +1559,6 @@ def raster_to_puzzle_and_lightburn(
 
     )
 
-    if powdercoat_tumbler_mode:
-        pixel_boxes_by_color = retain_dominant_foreground(
-            pixel_boxes_by_color, img, filter_parameters
-        )
-
     # =========================================================================
     # 5. Process every colored layer
     # =========================================================================
@@ -1621,11 +1599,6 @@ def raster_to_puzzle_and_lightburn(
     elif transparent_mode:
         printLogMessage(
             "Transparent mode: light source areas remain transparent; no black canvas added."
-        )
-    else:
-        printLogMessage(
-            "Powder-coat tumbler mode: exporting isolated foreground shapes "
-            "without a synthetic black canvas."
         )
 
     # =========================================================================

@@ -22,7 +22,7 @@ s3_client = boto3.client("s3")
 BUCKET_NAME = "mopa-laser-rasterizer.com"
 ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
-    "crystal", "ripple", "centerline", "tumbler", "shattered",
+    "crystal", "ripple", "centerline", "glitch", "shattered",
 }
 ABSTRACT_PRESET_PREFIX = "abstract_"
 HISTORY_SESSION_RE = re.compile(r"^[a-f0-9-]{32,36}$")
