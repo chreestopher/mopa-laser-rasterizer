@@ -68,27 +68,52 @@ def add_history_entry(session_id, task_id, source_name, image_preset, abstract_f
 def get_history_entries(session_id):
     if not session_id:
         return []
+
+    history_key = f"history:{session_id}"
     entries = []
-    for raw_entry in redis_client.lrange(f"history:{session_id}", 0, 98):
+    stale_records = []
+
+    for raw_entry in redis_client.lrange(history_key, 0, 98):
         try:
             entry = json.loads(raw_entry)
         except (TypeError, json.JSONDecodeError):
+            stale_records.append(raw_entry)
             continue
+
         task_id = entry.get("task_id")
+
         if not task_id:
+            stale_records.append(raw_entry)
             continue
+
+        status = redis_client.get(f"task:{task_id}:status")
+
+        # The task has expired or was removed.
+        if status is None:
+            stale_records.append(raw_entry)
+            continue
+
         entries.append({
             "task_id": task_id,
             "source_name": entry.get("source_name", "processed image"),
             "image_preset": entry.get("image_preset"),
             "abstract_filter": entry.get("abstract_filter"),
             "created_at": entry.get("created_at"),
-            "status": redis_client.get(f"task:{task_id}:status") or "pending",
+            "status": status,
             "svg_url": f"/download/{task_id}",
             "lightburn_url": f"/download-lbrn2/{task_id}",
         })
-    return entries
 
+    if stale_records:
+        pipeline = redis_client.pipeline()
+
+        for raw_entry in stale_records:
+            # count=0 removes every exact occurrence.
+            pipeline.lrem(history_key, 0, raw_entry)
+
+        pipeline.execute()
+
+    return entries
 
 def parse_abstract_filter_parameters(raw_value):
     """Validate the small JSON object supplied by the abstract-filter UI."""
