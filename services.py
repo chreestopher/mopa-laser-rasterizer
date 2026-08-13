@@ -124,6 +124,31 @@ def parse_abstract_filter_parameters(raw_value):
     return clean
 
 
+def parse_color_name_overrides(raw_value):
+    if not raw_value:
+        return {}
+    try:
+        overrides = json.loads(raw_value)
+    except json.JSONDecodeError as error:
+        raise ValueError("Palette names are not valid JSON") from error
+    if not isinstance(overrides, dict) or len(overrides) > 30:
+        raise ValueError("Palette names must be a small object")
+    clean, seen_names = {}, set()
+    for color_hex, name in overrides.items():
+        normalized_hex = str(color_hex).strip().upper()
+        normalized_name = str(name).strip()
+        if not re.fullmatch(r"#[0-9A-F]{6}", normalized_hex):
+            raise ValueError("A palette color has an invalid hex value")
+        if not normalized_name or len(normalized_name) > 80 or "," in normalized_name:
+            raise ValueError("Each palette name must be 1-80 characters and cannot contain commas")
+        name_key = normalized_name.casefold()
+        if name_key in seen_names:
+            raise ValueError("Each palette color needs a unique Material Library name")
+        seen_names.add(name_key)
+        clean[normalized_hex] = normalized_name
+    return clean
+
+
 def upload_local_file(local_file_path, object_key):
     try:
         s3_client.upload_file(local_file_path, BUCKET_NAME, object_key)
@@ -183,6 +208,7 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
             str(normalize_dimension(data.get("new_height"))), material_settings_path,
             material_name, str(data.get("colors", "")), image_preset, abstract_filter,
             json.dumps(parse_abstract_filter_parameters(data.get("abstract_filter_parameters", "{}")), separators=(",", ":")),
+            json.dumps(parse_color_name_overrides(data.get("color_name_overrides", "{}")), separators=(",", ":")),
         ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         current_line = []
         while True:

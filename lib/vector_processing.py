@@ -265,7 +265,7 @@ def parse_material_settings(
 
     return matched_settings    
 
-def init_lightburn(the_colors_limit):
+def init_lightburn(the_colors_limit, color_name_overrides=None):
     """
         This Function:
             1) initializes lightburn module
@@ -328,6 +328,12 @@ def init_lightburn(the_colors_limit):
         '#86FA88': (121, 28, 'Bright-Mint-Green'),
         '#FFDB66': (46, 29, 'Light-Gold')
     }
+    for color_hex, label in (color_name_overrides or {}).items():
+        color_hex = str(color_hex).strip().upper()
+        if color_hex in TARGET_COLORS and isinstance(label, str) and label.strip():
+            hue, layer_index, _ = TARGET_COLORS[color_hex]
+            TARGET_COLORS[color_hex] = (hue, layer_index, label.strip())
+    found_lb_hex.clear()
     if len(the_colors_limit) > 0:
         filtered_colors = {
             hex_code: value_tuple 

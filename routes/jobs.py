@@ -19,6 +19,7 @@ from services import (
     long_running_script,
     normalize_dimension,
     parse_abstract_filter_parameters,
+    parse_color_name_overrides,
     redis_client,
     tasks,
     valid_history_session,
@@ -58,6 +59,7 @@ def start_task():
         if submitted_preset.startswith("abstract_") and filter_name not in ABSTRACT_FILTER_NAMES:
             raise ValueError("Unknown abstract filter")
         parse_abstract_filter_parameters(user_data.get("abstract_filter_parameters", "{}"))
+        parse_color_name_overrides(user_data.get("color_name_overrides", "{}"))
     except ValueError as error:
         return jsonify({"status": "error", "message": str(error)}), 400
 

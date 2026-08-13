@@ -23,7 +23,7 @@ def main(argv=None):
     if len(argv) < 10:
         raise SystemExit(
             "Usage: Material_Library.py INPUT OUTPUT PIXEL_MM WIDTH HEIGHT "
-            "MATERIAL_LIBRARY MATERIAL COLORS PRESET FILTER [FILTER_JSON]"
+            "MATERIAL_LIBRARY MATERIAL COLORS PRESET FILTER [FILTER_JSON] [PALETTE_NAMES_JSON]"
         )
 
     (input_file, output_file, square_mm, new_width, new_height,
@@ -31,6 +31,7 @@ def main(argv=None):
     new_width = new_width.strip() or "0"
     new_height = new_height.strip() or "0"
     filter_parameters = {}
+    color_name_overrides = {}
     if len(argv) > 10 and argv[10].strip():
         try:
             filter_parameters = json.loads(argv[10])
@@ -38,6 +39,13 @@ def main(argv=None):
                 raise ValueError("filter parameters must be a JSON object")
         except (json.JSONDecodeError, ValueError) as error:
             raise SystemExit(f"Invalid abstract filter parameters: {error}")
+    if len(argv) > 11 and argv[11].strip():
+        try:
+            color_name_overrides = json.loads(argv[11])
+            if not isinstance(color_name_overrides, dict):
+                raise ValueError("palette names must be a JSON object")
+        except (json.JSONDecodeError, ValueError) as error:
+            raise SystemExit(f"Invalid palette names: {error}")
 
     if image_preset.startswith("abstract_"):
         abstract_filter = image_preset.removeprefix("abstract_")
@@ -48,12 +56,12 @@ def main(argv=None):
     vector_processing.image_preset = image_preset
 
     limit_list = [item.strip() for item in limit_colors.split(",") if item.strip()]
-    target_colors, lb, lightburn_module = vector_processing.init_lightburn(limit_colors)
+    target_colors, lb, lightburn_module = vector_processing.init_lightburn(
+        limit_colors, color_name_overrides=color_name_overrides
+    )
     # Keep the exporter dependency explicit at the compatibility boundary.
     # init_lightburn also registers it internally for direct API callers.
     vector_processing.lightburn = lightburn_module
-    target_colors["#B4B4B4"] = (0, 8, "Light-Gray")
-    target_colors["#000000"] = (0, 0, "Black")
     if len(limit_list) <= 1:
         limit_list = [value[-1].lower() for value in target_colors.values()]
     limit_list.extend(("black", "light-gray"))
@@ -93,6 +101,7 @@ def main(argv=None):
             "preset_settings": vector_settings,
             "material_library_path": material_library_file,
             "selected_material": material_name,
+            "palette_names": {metadata[2]: color_hex for color_hex, metadata in target_colors.items()},
             "requested_limit_colors": limit_colors or "all",
             "effective_limit_colors": limit_list,
             "material_library_layers": material_layer_report,

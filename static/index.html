@@ -64,6 +64,8 @@
     text-overflow: ellipsis;
     max-width: 100%;
   }
+  .color-name[contenteditable="true"] { cursor:text; border-bottom:1px dashed currentColor; outline:none; white-space:normal; overflow:visible; width:100%; }
+  .color-name[contenteditable="true"]:focus { border-bottom-style:solid; }
   .color-label {
     font-size: 0.65rem;
     font-weight: 700;
@@ -381,13 +383,14 @@
     <div class="form-group">
       <!-- <label for="colorList">Selected Colors:</label> -->
       <input type="text" id="colorList" name="colors" placeholder="All colors included by default..." readonly hidden="True">
+      <input type="hidden" id="color_name_overrides" name="color_name_overrides" value="{}">
     </div>
     <div>
     <div>      
       <!-- Lightburn Color Palette Grid Section -->
       <div class="palette-section">
         <label style="font-size: 0.9rem; font-weight: 600;">3. Build your engraving palette</label>
-        <h3>Every color is included to start. Click a swatch to exclude it from the artwork; nearby colors will be reassigned to the closest remaining engraving color. Your Material Library settings are still carried into the LightBurn project, so you can experiment confidently.</h3>
+        <h3>Every color is included to start. Click a swatch to exclude it from the artwork, or click its name to match the exact layer name in your Material Library. Nearby colors are reassigned to the closest remaining engraving color—so you can experiment confidently.</h3>
         <div class="color-grid">
           <div class="color-card"><span class="color-name">black</span><div class="color-square" style="background-color: #000000;"></div><span class="color-hex">#000000</span></div>
           <div class="color-card"><span class="color-name">blue</span><div class="color-square" style="background-color: #0000FF;"></div><span class="color-hex">#0000FF</span></div>
@@ -669,41 +672,52 @@
 
     const squares = document.querySelectorAll('.color-square');
     const colorInput = document.getElementById('colorList');
-    
-    // 1. Gather ALL color names from the grid on page load
-    let availableColors = Array.from(squares).map(square => {
-      const card = square.closest('.color-card');
-      return card.querySelector('.color-name').textContent;
-    });
+    const colorNameOverrides = document.getElementById('color_name_overrides');
+    const paletteCards = Array.from(document.querySelectorAll('.color-card'));
+    const selectedColorHexes = new Set(paletteCards.map(card =>
+      card.querySelector('.color-hex').textContent.trim().toUpperCase()
+    ));
 
-    // 2. Helper function to update the form text field
-    function updateColorField() {
-      // Keep them sorted alphabetically so the list stays organized
-      const displayList = [...availableColors].sort();
-      colorInput.value = displayList.join(', ');
+    function updatePaletteFields() {
+      const overrides = {};
+      const selectedNames = [];
+      paletteCards.forEach(card => {
+        const hex = card.querySelector('.color-hex').textContent.trim().toUpperCase();
+        const name = card.querySelector('.color-name').textContent.trim();
+        overrides[hex] = name;
+        if (selectedColorHexes.has(hex)) selectedNames.push(name);
+      });
+      colorInput.value = selectedNames.join(', ');
+      colorNameOverrides.value = JSON.stringify(overrides);
     }
 
-    // 3. Initialize the input field with all colors right away
-    updateColorField();
+    paletteCards.forEach(card => {
+      const name = card.querySelector('.color-name');
+      name.contentEditable = 'true';
+      name.spellcheck = false;
+      name.title = 'Click to edit the matching Material Library layer name';
+      name.addEventListener('keydown', event => {
+        if (event.key === 'Enter') { event.preventDefault(); name.blur(); }
+      });
+      name.addEventListener('blur', () => {
+        name.textContent = name.textContent.trim() || card.querySelector('.color-hex').textContent.trim();
+        updatePaletteFields();
+      });
+    });
 
-    // 4. Handle clicks to remove/restore colors
     squares.forEach(square => {
       square.addEventListener('click', () => {
         const card = square.closest('.color-card');
-        const colorName = card.querySelector('.color-name').textContent;
-        
-        if (availableColors.includes(colorName)) {
-          // If included, remove it from the array and gray out the square
-          availableColors = availableColors.filter(color => color !== colorName);
-          square.classList.add('selected'); // This triggers the greyed-out CSS style
+        const hex = card.querySelector('.color-hex').textContent.trim().toUpperCase();
+        if (selectedColorHexes.has(hex)) {
+          selectedColorHexes.delete(hex);
+          square.classList.add('selected');
         } else {
-          // If missing, add it back and un-gray the square
-          availableColors.push(colorName);
+          selectedColorHexes.add(hex);
           square.classList.remove('selected');
         }
-        
-        // Update the form text box
-        updateColorField();
+        updatePaletteFields();
       });
     });
+    updatePaletteFields();
   </script>
