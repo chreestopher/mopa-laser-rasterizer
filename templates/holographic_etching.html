@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Holographic Etching Lab · MOPA Laser Rasterizer</title>
+  <style>
+    :root { --cream:#d9d2af; --phosphor:#83f06a; --orange:#ad4f1d; --metal:#34382e; }
+    * { box-sizing:border-box; }
+    html { min-height:100%; background:#11130f; }
+    body { max-width:1040px; margin:28px auto; padding:38px; color:var(--cream); background:repeating-linear-gradient(90deg,rgba(255,255,255,.014) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 5%,#505443,#363a30 42%,#24271f 100%); border:3px solid #777864; border-radius:30px; box-shadow:inset 0 0 0 5px #1b1e18,inset 0 0 60px #10120e,0 0 0 1px #9a9a7e,0 20px 50px #000; }
+    .theme-toggle { display:flex; justify-content:flex-end; margin-bottom:12px; }
+    .theme-toggle label { display:flex; align-items:center; gap:9px; color:#ddd7b8; font:700 11px "Courier New",monospace; letter-spacing:.1em; text-transform:uppercase; }
+    .theme-toggle input { position:absolute; opacity:0; }
+    .toggle-track { position:relative; width:54px; height:26px; border:2px solid #777864; border-radius:14px; background:#171b15; box-shadow:inset 0 3px 6px #000; cursor:pointer; }
+    .toggle-track::after { content:""; position:absolute; top:3px; left:4px; width:16px; height:16px; border-radius:50%; background:#d3652e; box-shadow:0 0 7px #ed863d,0 2px 2px #000; transition:transform .2s; }
+    .theme-toggle input:checked + .toggle-track::after { transform:translateX(26px); background:#dad8ce; box-shadow:0 0 5px #fff,0 2px 2px #555; }
+    .page-header { display:flex; flex-direction:column; margin-bottom:25px; }
+    h1 { margin:0; color:var(--cream); font:500 clamp(25px,4.2vw,42px) Impact,"Arial Narrow",sans-serif; text-align:center; text-shadow:0 3px #111; }
+    .facade-title { display:flex; justify-content:space-between; white-space:nowrap; }
+    .console-status-line { display:grid; grid-template-columns:1fr 1fr; align-items:center; padding:0 22px; margin-top:7px; }
+    .status-lamps { justify-self:center; display:flex; gap:12px; color:#bdb58f; font:700 9px "Courier New",monospace; letter-spacing:.11em; text-transform:uppercase; }
+    .status-lamp { display:inline-flex; align-items:center; gap:5px; }
+    .status-lamp::before { content:""; width:10px; height:10px; border:2px solid #1a1b16; border-radius:50%; background:var(--lamp); box-shadow:0 0 5px var(--lamp),inset 0 1px 2px rgba(255,255,255,.5); }
+    .lamp-mopa { --lamp:#fff; }.lamp-laser { --lamp:#ef4338; }.lamp-raster { --lamp:#42c9e8; }.lamp-vector { --lamp:#dc5dd0; }.lamp-power { --lamp:#f0ad32; }
+    .console-subtitle { justify-self:center; color:#bbb38e; font:700 clamp(8px,1.7vw,12px) "Courier New",monospace; letter-spacing:clamp(.04em,.7vw,.16em); white-space:nowrap; }
+    h2 { margin:0 0 9px; color:#e2dcc0; font-family:"Arial Narrow",sans-serif; }
+    .lead { margin:0 0 24px; color:#bdb58f; font-size:1.06rem; line-height:1.55; }
+    .warning { margin:18px 0 24px; padding:13px 16px; border:2px solid #b0752e; border-radius:10px; color:#ffdc99; background:rgba(90,55,15,.3); box-shadow:inset 0 0 18px rgba(0,0,0,.45); font:700 12px "Courier New",monospace; line-height:1.5; }
+    .workflow { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+    .stage { min-height:190px; padding:19px; border:2px solid #73745f; border-radius:16px; background:rgba(17,20,15,.42); box-shadow:inset 0 0 0 4px #292d24,inset 0 0 25px rgba(0,0,0,.65),0 6px 0 #161813; }
+    .stage-number { color:var(--phosphor); font:700 12px "Courier New",monospace; letter-spacing:.1em; }
+    .stage h3 { margin:8px 0; color:#e2dcc0; font-family:"Arial Narrow",sans-serif; font-size:1.3rem; }
+    .stage p { margin:0; color:#aaa98e; line-height:1.45; }
+    .stage[data-state="next"] { border-color:#d07b48; }
+    .action-row { display:flex; flex-wrap:wrap; gap:10px; margin-top:25px; }
+    .action { display:inline-block; padding:10px 14px; border:2px solid #d07b48; border-radius:7px; color:#fff1cd; background:linear-gradient(#c96b35,var(--orange)); box-shadow:inset 0 1px rgba(255,255,255,.28),0 4px 0 #55270f; font:700 12px system-ui,sans-serif; letter-spacing:.06em; text-decoration:none; text-transform:uppercase; }
+    .action.secondary { border-color:#888a72; background:linear-gradient(#666957,#464a3d); box-shadow:0 3px 0 #25271f; }
+    .reference { margin-top:24px; padding-top:16px; border-top:1px solid #536347; color:#aaa98e; font-size:.9rem; line-height:1.5; }
+    .reference a { color:var(--phosphor); }
+    body.light-machine { color:#171815; background:repeating-linear-gradient(90deg,rgba(0,0,0,.025) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 5%,#f0f0e9,#c8c9c3 48%,#9fa19c 100%); border-color:#7c7e7a; box-shadow:inset 0 0 0 5px #a6a8a3,inset 0 0 45px #777,0 0 0 1px #eee,0 20px 50px #000; }
+    body.light-machine h1,body.light-machine h2,body.light-machine .stage h3 { color:#151613; text-shadow:0 1px #fff,0 -1px #777; }
+    body.light-machine .lead,body.light-machine .stage p,body.light-machine .reference,body.light-machine .status-lamps,body.light-machine .console-subtitle { color:#343530; }
+    body.light-machine .stage { border-color:#777974; background:rgba(220,221,216,.5); box-shadow:inset 0 0 0 4px #b1b3ae,inset 0 0 20px #888,0 6px 0 #686a66; }
+    @media (min-width:900px) and (hover:hover) { body { zoom:.8; } }
+    @media (max-width:700px) { body { width:100%; margin:0; padding:20px; border-radius:0; } h1 { font-size:clamp(18px,6vw,25px); }.console-status-line { grid-template-columns:1fr; gap:7px; padding:0; }.console-subtitle { grid-row:1; }.status-lamps { grid-row:2; }.workflow { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <div class="theme-toggle"><label><span>Dark</span><input id="theme_switch" type="checkbox"><span class="toggle-track"></span><span>Light</span></label></div>
+  <header class="page-header">
+    <h1 aria-label="MOPA-LASER-RASTERIZER"><span class="facade-title" aria-hidden="true"><span>M</span><span>O</span><span>P</span><span>A</span><span>-</span><span>L</span><span>A</span><span>S</span><span>E</span><span>R</span><span>-</span><span>R</span><span>A</span><span>S</span><span>T</span><span>E</span><span>R</span><span>I</span><span>Z</span><span>E</span><span>R</span></span></h1>
+    <div class="console-status-line"><div class="status-lamps"><span class="status-lamp lamp-mopa">MOPA</span><span class="status-lamp lamp-laser">Laser</span><span class="status-lamp lamp-raster">Raster</span><span class="status-lamp lamp-vector">Vector</span><span class="status-lamp lamp-power">Power</span></div><span class="console-subtitle">HOLOGRAPHIC ETCHING LAB · SERIES 79</span></div>
+  </header>
+  <h2>Turn light itself into the color palette.</h2>
+  <p class="lead">Holographic Etching uses precisely spaced laser lines to create structural color that shifts with the light. Calibrate your material first, then translate artwork into fine diffraction-grating line fields.</p>
+  <div class="warning">▲ EXPERIMENTAL OPTICS MODE. Results depend on material, polish, lens, laser settings, lighting, and viewing angle. This lab will build a measured recipe library before it generates artwork.</div>
+  <main class="workflow">
+    <section class="stage" data-state="next"><div class="stage-number">01 · CALIBRATE</div><h3>Generate a test grid</h3><p>Create a labeled grid of pitch, line angle, speed, frequency, power, pulse width, and interval recipes for one material and lens combination.</p></section>
+    <section class="stage"><div class="stage-number">02 · MEASURE</div><h3>Photograph the swatch</h3><p>Use a guided phone position, consistent lighting, and grid markers. The lab will correct perspective and sample the visible color from each tested recipe.</p></section>
+    <section class="stage"><div class="stage-number">03 · SAVE</div><h3>Build a recipe library</h3><p>Save measured structural-color recipes with their material, finish, lens, and viewing setup. The same recipe can look different under different conditions.</p></section>
+    <section class="stage"><div class="stage-number">04 · ETCH</div><h3>Convert artwork to gratings</h3><p>Map image color and brightness to calibrated pitch and line-angle fields, then export laser paths instead of ordinary filled color regions.</p></section>
+  </main>
+  <div class="action-row"><a class="action secondary" href="/">Return to Color Rasterizer</a><span class="action" aria-disabled="true" title="The calibration-grid generator is the next build step.">Calibration console coming online</span></div>
+  <p class="reference">This lab is informed by Ben Krasnow’s documented stainless-steel MOPA diffraction-grating work. We will build an original, calibration-first workflow around the same physical principles rather than integrate that project directly. <a href="https://github.com/benkrasnow/MOPA_Laser_Diffraction_Gratings" target="_blank" rel="noopener noreferrer">Review the reference project ↗</a></p>
+  <script>
+    const themeSwitch = document.getElementById('theme_switch');
+    themeSwitch.checked = (localStorage.getItem('mopa-machine-theme') || 'dark') === 'light';
+    document.body.classList.toggle('light-machine', themeSwitch.checked);
+    themeSwitch.addEventListener('change', () => {
+      document.body.classList.toggle('light-machine', themeSwitch.checked);
+      localStorage.setItem('mopa-machine-theme', themeSwitch.checked ? 'light' : 'dark');
+    });
+  </script>
+</body>
+</html>

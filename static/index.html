@@ -280,6 +280,9 @@
   @keyframes lamp-rainbow-spin { to { transform:rotate(360deg); } }
   h2 { color:#e2dcc0; font-family:"Arial Narrow",sans-serif; }
   h3,.filter-description { color:#aaa98e; }
+  .holographic-lab-link { margin:.6em 0 1.1em; color:#bdb58f; font:700 12px "Courier New",monospace; letter-spacing:.03em; }
+  .holographic-lab-link a { color:var(--phosphor); text-decoration:none; text-transform:uppercase; }
+  .holographic-lab-link a:hover { color:#fff1cd; text-shadow:0 0 6px rgba(131,240,106,.7); }
   .collapsible-info { margin:.9em 0; color:#aaa98e; }
   .collapsible-info summary { cursor:pointer; color:#aaa98e; font-size:1.17em; font-weight:700; }
   .collapsible-info summary:hover { color:#d7d0aa; }
@@ -385,7 +388,7 @@
   .theme-toggle input:checked + .toggle-track::after { transform:translateX(26px); background:#dad8ce; box-shadow:0 0 5px #fff,0 2px 2px #555; }
   body.light-machine { color:#171815; background:repeating-linear-gradient(90deg,rgba(0,0,0,.025) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 5%,#f0f0e9,#c8c9c3 48%,#9fa19c 100%); border-color:#7c7e7a; box-shadow:inset 0 0 0 5px #a6a8a3,inset 0 0 45px #777,0 0 0 1px #eee,0 20px 50px #000; }
   body.light-machine h1,body.light-machine h2,body.light-machine label,body.light-machine .color-label { color:#151613; text-shadow:0 1px 0 #fff,0 -1px 0 #777; }
-  body.light-machine .console-subtitle,body.light-machine h3,body.light-machine .filter-description,body.light-machine .color-name,body.light-machine .getting-started-list,body.light-machine .how-it-works-list,body.light-machine .rasterizer-checklist,body.light-machine .collapsible-info,body.light-machine .collapsible-info summary,body.light-machine .remembered-input-note { color:#343530; }
+  body.light-machine .console-subtitle,body.light-machine h3,body.light-machine .filter-description,body.light-machine .color-name,body.light-machine .getting-started-list,body.light-machine .how-it-works-list,body.light-machine .rasterizer-checklist,body.light-machine .collapsible-info,body.light-machine .collapsible-info summary,body.light-machine .remembered-input-note,body.light-machine .holographic-lab-link { color:#343530; }
   body.light-machine .remembered-input-note { border-color:#777974; background:#dedfd9; box-shadow:inset 0 1px 5px #999; }
   body.light-machine .how-it-works-intro { color:#343530; }
   @media (prefers-reduced-motion:reduce) { .status-lamp::before { animation:none; } }
@@ -414,6 +417,7 @@
   </div>
   <h2>Turn any image into a laser-ready color engraving project!</h2>
   <h2>Without building every color layer by hand!</h2>
+  <p class="holographic-lab-link"><a href="/holographic-etching">✦ Enter the Holographic Etching Lab</a> for experimental diffraction-color work.</p>
   <details class="collapsible-info">
     <summary>Getting Started</summary>
     <ul class="getting-started-list">
