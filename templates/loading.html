@@ -11,6 +11,7 @@
     }   
     .page-header {
         flex: 1;
+        width: 100%;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -18,11 +19,19 @@
     }
 
     .page-header h1 {
+        width: 100%;
         margin: 0;
-        font-size: 32px;
+        font-size: clamp(24px, 4vw, 54px);
         font-weight: 700;
         color: #1e1e1e;
     }         
+    .facade-title {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        white-space: nowrap;
+    }
     body {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         background-color: #f4f7f6;
@@ -171,6 +180,7 @@
     .empty-files { color: #94a3b8; padding: 12px 0; }
     @media (max-width: 700px) {
         body { padding: 3vh 3vw; }
+        .page-header h1 { font-size: clamp(18px, 6vw, 25px); }
         .machine-workspace { flex-direction: column; gap: 18px; overflow-y: auto; }
         .terminal-box { flex: 0 0 55vh; min-height: 320px; }
         .files-panel { flex: 0 0 auto; min-width: 0; min-height: 220px; overflow: visible; }
@@ -265,7 +275,7 @@
         <div class="theme-toggle"><span>Dark</span><label><input id="theme_switch" type="checkbox"><span class="toggle-track"></span></label><span>Light</span></div>
     
         <div class="page-header">
-            <h1>MOPA-LASER-RASTERIZER</h1>
+            <h1 aria-label="MOPA-LASER-RASTERIZER"><span class="facade-title" aria-hidden="true"><span>M</span><span>O</span><span>P</span><span>A</span><span>-</span><span>L</span><span>A</span><span>S</span><span>E</span><span>R</span><span>-</span><span>R</span><span>A</span><span>S</span><span>T</span><span>E</span><span>R</span><span>I</span><span>Z</span><span>E</span><span>R</span></span></h1>
         </div>    
         <main class="machine-workspace">
         <div class="terminal-box" id="terminal">
