@@ -16,6 +16,12 @@ def create_app():
     upload_folder = os.environ.get("UPLOAD_FOLDER", "./uploads")
     os.makedirs(upload_folder, exist_ok=True)
     app.config["UPLOAD_FOLDER"] = upload_folder
+    # Anonymous visitors receive a signed browser session for the daily free
+    # allowance. Production supplies this through a Kubernetes Secret so it is
+    # stable across pods and cannot be forged by changing a browser cookie.
+    app.config["SECRET_KEY"] = os.environ.get("APP_SESSION_SECRET", "local-development-only-secret")
+    app.config["SESSION_COOKIE_SECURE"] = os.environ.get("SESSION_COOKIE_SECURE", "false").lower() == "true"
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     register_routes(app)
     return app
 
