@@ -47,6 +47,7 @@
     .calibration-form .full-width { grid-column:1 / -1; }
     .form-note,.calibration-results { margin:0; color:#aaa98e; font-size:.9rem; line-height:1.45; }
     .calibration-results a { color:var(--phosphor); font-weight:700; }
+    .analysis-preview { display:block; width:min(100%,620px); margin:13px 0 8px; border:2px solid #778a64; border-radius:9px; box-shadow:0 3px 10px #000; }
     .action-row { display:flex; flex-wrap:wrap; gap:10px; margin-top:25px; }
     .action { display:inline-block; padding:10px 14px; border:2px solid #d07b48; border-radius:7px; color:#fff1cd; background:linear-gradient(#c96b35,var(--orange)); box-shadow:inset 0 1px rgba(255,255,255,.28),0 4px 0 #55270f; font:700 12px system-ui,sans-serif; letter-spacing:.06em; text-decoration:none; text-transform:uppercase; cursor:pointer; transition:filter .15s,transform .15s,box-shadow .15s; }
     .action:hover { filter:brightness(1.12); }
@@ -116,6 +117,13 @@
     <div class="action-row"><button class="action" type="submit">Save Calibration Profile</button></div>
     <p id="profile_results" class="calibration-results" aria-live="polite"></p>
   </form>
+  <form id="analysis_form" class="calibration-form">
+    <h3>Recipe Measurement Console</h3>
+    <p class="form-note">This first analysis pass finds the grid, straightens it when it can see a clear border, samples the center of every numbered cell, and saves the observed photo color next to that cell’s interval and angle. Review the preview before treating it as a recipe map.</p>
+    <label class="full-width">Calibration profile ID<input id="analysis_profile_id" name="profile_id" placeholder="Created automatically when you save a grid photo" required></label>
+    <div class="action-row"><button class="action" type="submit">Analyze Grid Photo</button></div>
+    <p id="analysis_results" class="calibration-results" aria-live="polite"></p>
+  </form>
   <p class="reference">This lab is informed by Ben Krasnow’s documented stainless-steel MOPA diffraction-grating work. We will build an original, calibration-first workflow around the same physical principles rather than integrate that project directly. <a href="https://github.com/benkrasnow/MOPA_Laser_Diffraction_Gratings" target="_blank" rel="noopener noreferrer">Review the reference project ↗</a></p>
   <script>
     const themeSwitch = document.getElementById('theme_switch');
@@ -164,7 +172,30 @@
         const response = await fetch('/holographic-etching/calibration-profile', {method:'POST', body:new FormData(form)});
         const data = await response.json();
         if (!response.ok) throw new Error(data.message || 'Calibration profile could not be saved.');
+        document.getElementById('analysis_profile_id').value = data.profile_id;
+        localStorage.setItem('holographic-profile-id', data.profile_id);
         results.innerHTML = `${data.message} <a href="${data.profile_url}">Download profile record</a>`;
+      } catch (error) {
+        results.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+    const analysisProfileId = document.getElementById('analysis_profile_id');
+    analysisProfileId.value = localStorage.getItem('holographic-profile-id') || '';
+    document.getElementById('analysis_form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const results = document.getElementById('analysis_results');
+      const button = form.querySelector('button[type="submit"]');
+      button.disabled = true;
+      results.textContent = 'Finding grid cells and sampling visible colors...';
+      try {
+        const response = await fetch('/holographic-etching/analyze-calibration', {method:'POST', body:new FormData(form)});
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || 'Calibration analysis could not be completed.');
+        const correction = data.correction === 'rectified' ? 'Perspective correction applied.' : 'Grid border was not confidently found, so the original photo was sampled. Manual crop support is the next refinement if the overlay is off.';
+        results.innerHTML = `${data.message} ${correction} <a href="${data.profile_url}">Download measured profile</a><a href="${data.preview_url}" target="_blank" rel="noopener noreferrer"><img class="analysis-preview" src="${data.preview_url}" alt="Numbered calibration-grid analysis preview"></a>`;
       } catch (error) {
         results.textContent = error.message;
       } finally {

@@ -9,6 +9,8 @@ import uuid
 from copy import copy
 from xml.etree import ElementTree as ET
 
+import cv2
+import numpy as np
 from flask import current_app, jsonify, request, send_from_directory
 from PIL import Image, UnidentifiedImageError
 from werkzeug.utils import secure_filename
@@ -101,6 +103,93 @@ def _calibration_metadata_path(upload_folder, calibration_id):
     if not calibration_id or any(character not in "0123456789abcdef-" for character in calibration_id.lower()):
         raise ValueError("Choose a calibration grid created by this lab.")
     return os.path.join(upload_folder, f"holographic_calibration_{calibration_id}.json")
+
+
+def _profile_metadata_path(upload_folder, profile_id):
+    if not profile_id or any(character not in "0123456789abcdef-" for character in profile_id.lower()):
+        raise ValueError("Choose a calibration profile created by this lab.")
+    return os.path.join(upload_folder, f"holographic_profile_{profile_id}.json")
+
+
+def _order_corners(points):
+    """Order four points as top-left, top-right, bottom-right, bottom-left."""
+    points = np.asarray(points, dtype=np.float32).reshape(4, 2)
+    sums = points.sum(axis=1)
+    differences = np.diff(points, axis=1).reshape(-1)
+    return np.array([
+        points[np.argmin(sums)], points[np.argmin(differences)],
+        points[np.argmax(sums)], points[np.argmax(differences)],
+    ], dtype=np.float32)
+
+
+def _rectify_grid(photo):
+    """Find the largest rectangular candidate and return a bird's-eye grid view.
+
+    This is a deliberately conservative first pass.  When a clear border cannot
+    be found, the original image is retained and marked for manual crop support
+    rather than pretending an unreliable perspective correction succeeded.
+    """
+    height, width = photo.shape[:2]
+    working = cv2.resize(photo, (1200, max(1, round(height * 1200 / width)))) if width > 1200 else photo.copy()
+    scale_x, scale_y = width / working.shape[1], height / working.shape[0]
+    gray = cv2.cvtColor(working, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(cv2.GaussianBlur(gray, (5, 5), 0), 45, 140)
+    edges = cv2.dilate(edges, np.ones((3, 3), np.uint8), iterations=1)
+    candidates = []
+    for contour in cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[0]:
+        area = cv2.contourArea(contour)
+        if area < working.shape[0] * working.shape[1] * .06:
+            continue
+        polygon = cv2.approxPolyDP(contour, .025 * cv2.arcLength(contour, True), True)
+        if len(polygon) == 4 and cv2.isContourConvex(polygon):
+            candidates.append((area, polygon.reshape(4, 2)))
+    if not candidates:
+        return photo, "not_found", None
+
+    _, corners = max(candidates, key=lambda candidate: candidate[0])
+    corners = _order_corners(corners * np.array([scale_x, scale_y], dtype=np.float32))
+    top = np.linalg.norm(corners[1] - corners[0])
+    bottom = np.linalg.norm(corners[2] - corners[3])
+    left = np.linalg.norm(corners[3] - corners[0])
+    right = np.linalg.norm(corners[2] - corners[1])
+    target_width, target_height = max(300, round(max(top, bottom))), max(300, round(max(left, right)))
+    destination = np.array([[0, 0], [target_width - 1, 0], [target_width - 1, target_height - 1], [0, target_height - 1]], dtype=np.float32)
+    return cv2.warpPerspective(photo, cv2.getPerspectiveTransform(corners, destination), (target_width, target_height)), "rectified", corners.tolist()
+
+
+def _measure_grid_photo(photo_path, grid):
+    photo = cv2.imread(photo_path, cv2.IMREAD_COLOR)
+    if photo is None:
+        raise ValueError("The saved grid photo could not be opened for analysis.")
+    rectified, correction, corners = _rectify_grid(photo)
+    rows, columns = int(grid["rows"]), int(grid["columns"])
+    height, width = rectified.shape[:2]
+    intervals, angles = grid["intervals_mm"], grid["angles_degrees"]
+    cells = []
+    preview = rectified.copy()
+    for index in range(rows * columns):
+        row, column = divmod(index, columns)
+        x0, x1 = round(column * width / columns), round((column + 1) * width / columns)
+        y0, y1 = round(row * height / rows), round((row + 1) * height / rows)
+        # Avoid the engraved border and label, which are not representative of
+        # the cell's structural color.
+        pad_x, pad_y = max(1, round((x1 - x0) * .22)), max(1, round((y1 - y0) * .25))
+        sample = rectified[y0 + pad_y:y1 - pad_y, x0 + pad_x:x1 - pad_x]
+        if sample.size == 0:
+            raise ValueError("The detected grid is too small to sample reliably.")
+        median_bgr = np.median(sample.reshape(-1, 3), axis=0).astype(np.uint8)
+        median_rgb = [int(median_bgr[2]), int(median_bgr[1]), int(median_bgr[0])]
+        median_hsv = cv2.cvtColor(np.uint8([[median_bgr]]), cv2.COLOR_BGR2HSV)[0, 0]
+        cells.append({
+            "index": index + 1, "row": row + 1, "column": column + 1,
+            "interval_mm": intervals[index], "angle_degrees": angles[index],
+            "observed_rgb": median_rgb,
+            "observed_hex": "#{:02X}{:02X}{:02X}".format(*median_rgb),
+            "observed_hsv_opencv": [int(value) for value in median_hsv],
+        })
+        cv2.rectangle(preview, (x0, y0), (x1, y1), (40, 240, 135), 2)
+        cv2.putText(preview, str(index + 1), (x0 + 8, y0 + 25), cv2.FONT_HERSHEY_SIMPLEX, .75, (40, 240, 135), 2, cv2.LINE_AA)
+    return cells, preview, correction, corners
 
 
 @routes.route("/holographic-etching/calibration-grid", methods=["POST"])
@@ -226,7 +315,7 @@ def save_calibration_profile():
         },
         "analysis": {
             "state": "pending",
-            "message": "The calibration-analysis engine has not yet been implemented.",
+            "message": "Ready for grid-photo measurement.",
             "cells": [],
         },
     }
@@ -237,8 +326,57 @@ def save_calibration_profile():
         "status": "saved",
         "profile_id": profile_id,
         "profile_url": f"/holographic-etching/download/{profile_name_on_disk}",
-        "message": "Calibration photo and conditions saved. It is ready for the future analysis step.",
+        "message": "Calibration photo and conditions saved. It is ready for measurement.",
     })
+
+
+@routes.route("/holographic-etching/analyze-calibration", methods=["POST"])
+def analyze_calibration_profile():
+    """Measure visible cell colors from a saved calibration-grid photograph."""
+    profile_id = str(request.form.get("profile_id", "")).strip()
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    try:
+        profile_path = _profile_metadata_path(upload_folder, profile_id)
+        with open(profile_path, encoding="utf-8") as profile_file:
+            profile = json.load(profile_file)
+        cells, preview, correction, corners = _measure_grid_photo(
+            os.path.join(upload_folder, profile["grid_photo"]), profile["grid"]
+        )
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
+        current_app.logger.exception("Holographic calibration analysis failed")
+        return jsonify({"status": "error", "message": f"Calibration analysis could not run: {error}"}), 400
+
+    preview_name = f"holographic_profile_{profile_id}_analysis.jpg"
+    if not cv2.imwrite(os.path.join(upload_folder, preview_name), preview):
+        return jsonify({"status": "error", "message": "Could not save the analyzed grid preview."}), 500
+    profile["status"] = "measured"
+    profile["analysis"] = {
+        "state": "measured",
+        "message": "Cell colors were sampled from the photograph. Confirm the numbered preview before using these values for recipe mapping.",
+        "perspective_correction": correction,
+        "detected_grid_corners": corners,
+        "preview": preview_name,
+        "cells": cells,
+    }
+    with open(profile_path, "w", encoding="utf-8") as profile_file:
+        json.dump(profile, profile_file, indent=2)
+    current_app.logger.info("Measured %s holographic calibration cells for profile %s.", len(cells), profile_id)
+    return jsonify({
+        "status": "measured",
+        "profile_id": profile_id,
+        "profile_url": f"/holographic-etching/download/{os.path.basename(profile_path)}",
+        "preview_url": f"/holographic-etching/preview/{preview_name}",
+        "correction": correction,
+        "cells": cells,
+        "message": "Grid sampled. Review the numbered preview, then keep this profile as the measured recipe source.",
+    })
+
+
+@routes.route("/holographic-etching/preview/<filename>")
+def preview_calibration_file(filename):
+    if not filename.startswith("holographic_profile_"):
+        return jsonify({"status": "error", "message": "Unknown calibration preview."}), 404
+    return send_from_directory(current_app.config["UPLOAD_FOLDER"], filename)
 
 
 @routes.route("/holographic-etching/download/<filename>")
