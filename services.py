@@ -24,6 +24,7 @@ ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
     "crystal", "ripple", "centerline", "tumbler", "shattered",
 }
+ABSTRACT_PRESET_PREFIX = "abstract_"
 HISTORY_SESSION_RE = re.compile(r"^[a-f0-9-]{32,36}$")
 HISTORY_TTL_SECONDS = 7 * 24 * 60 * 60
 manager = multiprocessing.Manager()
@@ -51,7 +52,9 @@ def add_history_entry(session_id, task_id, source_name, image_preset, abstract_f
     entry = json.dumps({
         "task_id": task_id, "source_name": source_name,
         "image_preset": image_preset,
-        "abstract_filter": abstract_filter if image_preset == "abstract" else None,
+        # Abstract styles are now submitted as named presets (for example,
+        # ``abstract_wave``), so retain their resolved filter name in history.
+        "abstract_filter": abstract_filter,
         "created_at": int(time.time()),
     }, separators=(",", ":"))
     pipeline = redis_client.pipeline()
@@ -105,6 +108,8 @@ def parse_abstract_filter_parameters(raw_value):
             raise ValueError("An abstract filter setting has an invalid name")
         if key == "material" and value in ("metal", "powdercoat"):
             clean[key] = value
+        elif key == "transparent" and isinstance(value, bool):
+            clean[key] = value
         elif isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError(f"Abstract filter setting '{key}' must be numeric")
         else:
@@ -154,8 +159,11 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
         redis_client.set(status_key, "processing")
         redis_client.expire(status_key, HISTORY_TTL_SECONDS)
         redis_client.expire(log_key, HISTORY_TTL_SECONDS)
-        image_preset = data.get("image_preset", "cartoon")
+        image_preset = str(data.get("image_preset", "cartoon")).strip().lower()
         abstract_filter = str(data.get("abstract_filter", "none")).strip().lower()
+        if image_preset.startswith(ABSTRACT_PRESET_PREFIX):
+            abstract_filter = image_preset.removeprefix(ABSTRACT_PRESET_PREFIX)
+            image_preset = "abstract"
         if image_preset != "abstract" or abstract_filter not in ABSTRACT_FILTER_NAMES:
             abstract_filter = "none"
         process = subprocess.Popen([

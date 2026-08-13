@@ -4,7 +4,7 @@ from shapely.geometry import LineString, Point, box
 from shapely.ops import unary_union
 from .common import number
 
-DEFAULTS={"recognizability":.65,"glyph_density":.55,"symmetry_order":6,"signal_rings":4,"circuit_branching":.5,"angular_strangeness":.65,"void_ratio":.18,"artifact_age":.15,"signal_seed":1,"core_x":.5,"core_y":.5,"light_areas_transparent":True,"light_threshold":225}
+DEFAULTS={"recognizability":.65,"glyph_density":.55,"symmetry_order":6,"signal_rings":4,"circuit_branching":.5,"angular_strangeness":.65,"void_ratio":.18,"artifact_age":.15,"signal_seed":1,"core_x":.5,"core_y":.5,"transparent":True,"light_threshold":225}
 CONTROLS=(("recognizability",0,1,.05),("glyph_density",0,1,.05),("symmetry_order",1,12,1),("signal_rings",0,12,1),("circuit_branching",0,1,.05),("angular_strangeness",0,1,.05),("void_ratio",0,.6,.02),("artifact_age",0,1,.05),("signal_seed",0,999999,1),("core_x",0,1,.01),("core_y",0,1,.01),("light_threshold",128,255,1))
 
 def apply(geometry,s):

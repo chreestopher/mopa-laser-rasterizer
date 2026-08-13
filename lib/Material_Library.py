@@ -39,6 +39,9 @@ def main(argv=None):
         except (json.JSONDecodeError, ValueError) as error:
             raise SystemExit(f"Invalid abstract filter parameters: {error}")
 
+    if image_preset.startswith("abstract_"):
+        abstract_filter = image_preset.removeprefix("abstract_")
+        image_preset = "abstract"
     if image_preset not in vector_processing.PHOTO_TYPE_PRESETS:
         raise SystemExit(f"Unknown image preset: {image_preset}")
     preset = vector_processing.PHOTO_TYPE_PRESETS[image_preset]
@@ -63,6 +66,11 @@ def main(argv=None):
         material_layer_report=material_layer_report,
     )
 
+    vector_settings = dict(preset)
+    for name in ("min_island_area", "simplification_factor", "smoothing_radius"):
+        if name in filter_parameters:
+            vector_settings[name] = filter_parameters[name]
+
     vector_processing.raster_to_puzzle_and_lightburn(
         raster_image_path=input_file,
         output_svg_path=f"{output_file}.vector.svg",
@@ -72,16 +80,16 @@ def main(argv=None):
         TARGET_COLORS=target_colors,
         scale_factor=float(square_mm),
         ignore_background_hex="#ffffff",
-        quantize_colors=preset["quantize_colors"],
-        min_island_area=preset["min_island_area"],
-        simplification_factor=preset["simplification_factor"],
-        smoothing_radius=preset["smoothing_radius"],
+        quantize_colors=vector_settings["quantize_colors"],
+        min_island_area=vector_settings["min_island_area"],
+        simplification_factor=vector_settings["simplification_factor"],
+        smoothing_radius=vector_settings["smoothing_radius"],
         image_preset=image_preset,
         abstract_filter=abstract_filter,
         filter_parameters=filter_parameters,
         job_settings={
             "image_preset": image_preset,
-            "preset_settings": preset,
+            "preset_settings": vector_settings,
             "material_library_path": material_library_file,
             "requested_limit_colors": limit_colors or "all",
             "effective_limit_colors": limit_list,
