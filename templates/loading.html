@@ -37,23 +37,27 @@
         margin: 0;
         padding: 6.25vh 6.25vw;
     }
-    /* Terminal scrollbar */
-    .terminal-box::-webkit-scrollbar {
+    /* Terminal and processed-files scrollbars */
+    .terminal-box::-webkit-scrollbar,
+    .download-list::-webkit-scrollbar {
         width: 10px;
     }
 
-    .terminal-box::-webkit-scrollbar-track {
+    .terminal-box::-webkit-scrollbar-track,
+    .download-list::-webkit-scrollbar-track {
         background: #151515;
         border-radius: 8px;
     }
 
-    .terminal-box::-webkit-scrollbar-thumb {
+    .terminal-box::-webkit-scrollbar-thumb,
+    .download-list::-webkit-scrollbar-thumb {
         background: #218c53;
         border-radius: 8px;
         border: 2px solid #151515;
     }
 
-    .terminal-box::-webkit-scrollbar-thumb:hover {
+    .terminal-box::-webkit-scrollbar-thumb:hover,
+    .download-list::-webkit-scrollbar-thumb:hover {
         background: #1a7042;
     }
     .terminal-box {
@@ -133,6 +137,8 @@
         padding: 0;
         margin: 10px 0 0;
         overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: #218c53 #151515;
     }
     .file-item {
         display: flex;
