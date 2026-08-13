@@ -309,7 +309,9 @@ def _load_recipe_profile(profile_file):
 
 
 def _nearest_recipe(pixel, recipes):
-    red, green, blue = pixel
+    # Image pixels arrive as uint8 values.  Convert before subtraction so
+    # distances such as 0 - 255 do not wrap around to a positive uint8 value.
+    red, green, blue = (int(channel) for channel in pixel)
     return min(
         recipes,
         key=lambda recipe: sum((channel - int(reference)) ** 2 for channel, reference in zip((red, green, blue), recipe["observed_rgb"])),
