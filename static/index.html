@@ -706,7 +706,7 @@
       (filter.toggles || []).forEach(([name, value]) => {
         const row = document.createElement('div');
         row.className = 'filter-control';
-        row.innerHTML = `<label class="checkbox-label"><input type="checkbox" data-parameter="${name}" ${value ? 'checked' : ''}>` +
+        row.innerHTML = `<label class="checkbox-label"><input id="filter_${name}_enabled" name="filter_${name}_enabled" type="checkbox" data-parameter="${name}" ${value ? 'checked' : ''}>` +
           `<span>${friendlyName(name)}</span></label>`;
         row.querySelector('input').addEventListener('change', updateFilterParameters);
         controls.appendChild(row);
@@ -715,8 +715,8 @@
         const row = document.createElement('div');
         row.className = 'filter-control';
         row.innerHTML = `<label><span>${friendlyName(name)}</span>` +
-          `<input class="value-input" type="number" value="${value}" min="${min}" max="${max}" step="${step}" aria-label="${friendlyName(name)} value"></label>` +
-          `<input type="range" data-parameter="${name}" value="${value}" min="${min}" max="${max}" step="${step}">`;
+          `<input class="value-input" id="filter_${name}_value" name="filter_${name}_value" type="number" value="${value}" min="${min}" max="${max}" step="${step}" aria-label="${friendlyName(name)} value"></label>` +
+          `<input id="filter_${name}_range" name="filter_${name}_range" type="range" data-parameter="${name}" value="${value}" min="${min}" max="${max}" step="${step}">`;
         const slider = row.querySelector('input[type="range"]');
         const valueInput = row.querySelector('.value-input');
         slider.addEventListener('input', updateFilterParameters);
