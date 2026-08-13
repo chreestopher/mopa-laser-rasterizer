@@ -1110,12 +1110,15 @@ def push_geometry_to_lightburn(
     geometry,
     color_hex,
     target_colors,
-    lb_project_instance
+    lb_project_instance,
+    skip_polygon_exterior=False
 ):
     """
     Convert Shapely geometry into LightBurn paths.
 
-    Geometry is written only to its native LightBurn layer.
+    Geometry is written only to its native LightBurn layer. For the synthetic
+    black gap geometry, LightBurn receives the interior cutout paths but not
+    the large outer canvas boundary.
     """
 
     if geometry.is_empty:
@@ -1142,7 +1145,7 @@ def push_geometry_to_lightburn(
             in geometry.exterior.coords
         ]
 
-        if exterior_coords:
+        if exterior_coords and not skip_polygon_exterior:
 
             lb_shape = (
                 lightburn.Path(
@@ -1200,7 +1203,8 @@ def push_geometry_to_lightburn(
                 sub_geometry,
                 color_hex,
                 target_colors,
-                lb_project_instance
+                lb_project_instance,
+                skip_polygon_exterior=skip_polygon_exterior
             )
 
 
@@ -1214,7 +1218,8 @@ def export_processed_layers(
     black_hex,
     scale_factor,
     root,
-    lb_project_instance
+    lb_project_instance,
+    skip_black_canvas_exterior=False
 ):
     """
     Sort, scale, and export all finalized geometry to SVG and LightBurn.
@@ -1313,7 +1318,14 @@ def export_processed_layers(
                 export_geometry,
                 color_hex,
                 target_colors,
-                lb_project_instance
+                lb_project_instance,
+                # The black gap geometry is represented as a large canvas
+                # exterior containing cutout interiors. Exporting that outer
+                # contour produces an unwanted full black fill in LightBurn;
+                # its closed interior paths are the desired black-layer data.
+                skip_polygon_exterior=(
+                    skip_black_canvas_exterior and color_hex == black_hex
+                )
             )
 
 def save_vector_output(
@@ -1583,7 +1595,8 @@ def raster_to_puzzle_and_lightburn(
         black_hex=black_hex,
         scale_factor=scale_factor,
         root=root,
-        lb_project_instance=lb_project_instance
+        lb_project_instance=lb_project_instance,
+        skip_black_canvas_exterior=not preserve_source_black
     )
 
     # =========================================================================
