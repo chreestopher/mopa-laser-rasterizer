@@ -310,6 +310,7 @@
   .rasterizer-checklist .benefit-time::before { content:"⏱"; }
   .rasterizer-checklist .benefit-create::before { content:"⚡"; }
   .rasterizer-checklist .benefit-style::before { content:"🎨"; }
+  .rasterizer-checklist .benefit-settings::before { content:"🧭"; }
   form { padding:24px; border:2px solid #73745f; border-radius:20px; background:rgba(17,20,15,.42); box-shadow:inset 0 0 0 4px #292d24,inset 0 0 25px rgba(0,0,0,.65),0 6px 0 #161813; }
   .abstract-panel { background:#20251d; border:2px solid #686a57; border-radius:16px; box-shadow:inset 0 0 18px #0d100c; }
   label,.color-label { color:#ddd7b8; letter-spacing:.035em; }
@@ -432,6 +433,7 @@
     <li class="benefit-time">Spend less time tracing, sorting layers, and setting up jobs.</li>
     <li class="benefit-create">Spend more time making metal do impossible-looking things.</li>
     <li class="benefit-style">Choose a photo preset for a polished starting point, or an abstract style when you want to turn the signal all the way up.</li>
+    <li class="benefit-settings">You focus on finding those knockout color settings, and the Rasterizer handles the rest.</li>
   </ul>
      
   <!-- Form Section -->
@@ -447,11 +449,11 @@
       <div><input type="file" id="material_settings" name="material_settings" required></div>
     </div>    
     <div>
-      <div><label for="material">Material to engrave (exact Material Library name):</label></div>
+      <div><label for="material">3. Choose material to engrave (exact Material Library name):</label></div>
       <div><input id="material" name="material" list="material_suggestions" value="stainless - steel" required><datalist id="material_suggestions"><option value="stainless - steel">Stainless Steel</option><option value="titanium">Titanium</option></datalist></div>
     </div>
     <div>
-      <div><label for="pixel_square_mm">Pixel scale (mm per raster pixel):</label> </div>
+      <div><label for="pixel_square_mm">4. Set processing dimensions, pixel scale (mm per raster pixel):</label> </div>
       <div><input type="number" id="pixel_square_mm" name="pixel_square_mm" value="1" min="0.0625" step="0.0625" required></div>
     </div>
     <div>
@@ -473,7 +475,7 @@
     <div>      
       <!-- Lightburn Color Palette Grid Section -->
       <div class="palette-section">
-        <label style="font-size: 0.9rem; font-weight: 600;">3. Tune your engraving color palette</label>
+        <label style="font-size: 0.9rem; font-weight: 600;">5. Tune your engraving color palette</label>
         <h3>All available colors are included to start. Click a swatch to exclude it from the artwork. For settings, either keep the default color names and use those same names in your Material Library, or click a color name to retitle it to your library’s exact Entry Description or cut-setting name. Presto: the matching Material Library setting is copied onto that color’s LightBurn layer. Nearby colors are reassigned to the closest remaining engraving color, so you can experiment with confidence.</h3>
         <div class="color-grid">
           <div class="color-card"><span class="color-name">black</span><div class="color-square" style="background-color: #000000;"></div><span class="color-hex">#000000</span></div>
@@ -513,7 +515,7 @@
 
   <div>
     <div>
-      <label for="image_preset">4. Choose your image style</label>
+      <label for="image_preset">6. Choose your image style</label>
       <select id="image_preset" name="image_preset">
         <option value="cartoon" selected>Cartoon</option>
         <option value="color_photograph">Color Photo</option>
