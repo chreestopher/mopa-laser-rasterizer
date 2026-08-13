@@ -54,7 +54,7 @@ spec:
         - name: COGNITO_DOMAIN
           value: "mopa-laser-rasterizer-401716294893.auth.us-east-2.amazoncognito.com"
         - name: COGNITO_CLIENT_ID
-          value: ""
+          value: "69gif0iuklqcn0lldtn4sdtvat"
         - name: PUBLIC_APP_URL
           value: "https://mopa-laser-rasterizer.com"
         ports:
