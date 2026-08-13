@@ -42,10 +42,12 @@ def logout():
     # ALB traffic over HTTP even though the browser used HTTPS, so this must
     # explicitly be Secure.  Otherwise Chrome rejects the SameSite=None
     # deletion response and leaves the ALB login session in place.
+    # The ALB can strip its cookies before proxying to us, so do not rely on
+    # ``request.cookies`` to reveal the chunk names.  ALB supports up to 11
+    # chunks; expire every possible member of its default cookie family.
     session_cookie_names = {"AWSELBAuthSessionCookie"}
     session_cookie_names.update(
-        cookie_name for cookie_name in request.cookies
-        if cookie_name.startswith("AWSELBAuthSessionCookie-")
+        f"AWSELBAuthSessionCookie-{chunk}" for chunk in range(11)
     )
     for cookie_name in session_cookie_names:
         response.delete_cookie(cookie_name, path="/", secure=True, samesite="None")
