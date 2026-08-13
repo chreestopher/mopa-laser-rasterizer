@@ -1611,8 +1611,23 @@ def raster_to_puzzle_and_lightburn(
     # 4. Convert pixels into color geometry buckets
     # =========================================================================
 
-    pixel_boxes_by_color = (
-        classify_raster_pixels(
+    if centerline_mode:
+        # Quantized filled color regions cannot produce faithful line art.
+        # Select dark source-image outlines first, then trace them only on the
+        # user's black LightBurn layer.
+        source_img = prepare_raster_image(
+            raster_image_path=raster_image_path,
+            new_height=new_height,
+            new_width=new_width,
+            quantize_colors=None,
+        )
+        pixel_boxes_by_color = {
+            black_hex: ABSTRACT_FILTER_MODULES["centerline"].line_art_boxes(
+                source_img, filter_parameters
+            )
+        }
+    else:
+        pixel_boxes_by_color = classify_raster_pixels(
             img=img,
             target_colors=TARGET_COLORS,
             black_hex=black_hex,
@@ -1628,8 +1643,6 @@ def raster_to_puzzle_and_lightburn(
                 225, 128, 255
             )
         )
-
-    )
 
     # =========================================================================
     # 5. Process every colored layer
@@ -1667,7 +1680,7 @@ def raster_to_puzzle_and_lightburn(
         )
 
     elif centerline_mode:
-        printLogMessage("Centerline mode: exporting source-color medial axes as open paths.")
+        printLogMessage("Centerline Drawing: exporting dark source-image outlines as thin closed black ribbons.")
     elif transparent_mode:
         printLogMessage(
             "Transparent mode: light source areas remain transparent; no black canvas added."

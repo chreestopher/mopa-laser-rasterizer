@@ -663,8 +663,11 @@
           ['phase', 0, 0, 6.283, .05], ['center_x', .5, 0, 1, .01], ['center_y', .5, 0, 1, .01]]
       },
       centerline: {
-        description: 'Converts each color region into a single centerline drawing rather than filled shapes. Line Simplification smooths and shortens the drawn paths, while Min Branch Length removes tiny offshoots. Use it for line art, sketchy results, and path-following engraves.',
-        controls: [['line_simplification', .35, 0, 3, .05], ['min_branch_length', 2, 0, 30, 1]]
+        description: 'Turns the dark ink, shadows, and outlines already hiding in your image into centered black line art, then wraps each centerline in a tiny closed ribbon so there are no open paths. It ignores bright color boundaries, so a red edge does not become a line unless it is dark enough to read like ink. Dark Threshold decides how dark a pixel must be, Contrast separates ink from nearby tones, Blur quiets grain, Gap Closure reconnects tiny breaks, Line Simplification smooths the routes, Min Branch Length removes little fuzzy offshoots, and Stroke Width sets how wide each closed line ribbon becomes.',
+        controls: [['dark_threshold', 145, 20, 245, 1], ['contrast', 1.15, .3, 3, .05],
+          ['blur', 1, 0, 5, .25], ['gap_closure', 1, 0, 3, 1],
+          ['line_simplification', .35, 0, 3, .05], ['min_branch_length', 8, 0, 80, 1],
+          ['stroke_width', .35, .05, 4, .05]]
       },
       glitch: {
         description: 'Slices the image into coordinated digital stutters, echoes, and Fibonacci-inspired shifts. Slice Height controls band thickness, Fragment Width controls chunk length, Shift Amount controls the jump, Echo Count and Spacing control repeated copies, Density chooses how much participates, Fibonacci Stride changes the rhythm, Vertical Jitter adds wobble, and Seed rolls a new repeatable glitch.',
