@@ -372,12 +372,10 @@ def init_lightburn(the_colors_limit, color_name_overrides=None):
         }
         # ensure light grey and black are always in the list 
         # these colors get defaulted to when no color is close enough to the target pixel
-        filtered_colors['#B4B4B4'] = (0, 8, 'Light-Gray')
-        filtered_colors['#000000'] = (0, 0, 'Black')
+        filtered_colors['#B4B4B4'] = TARGET_COLORS['#B4B4B4']
+        filtered_colors['#000000'] = TARGET_COLORS['#000000']
     else:
-        filtered_colors = TARGET_COLORS
-        filtered_colors['#B4B4B4'] = (0, 8, 'Light-Gray')
-        filtered_colors['#000000'] = (0, 0, 'Black')
+        filtered_colors = dict(TARGET_COLORS)
     # Add it to sys.modules cache and execute the code within the module
     sys.modules[module_name] = lightburn
     spec.loader.exec_module(lightburn)
