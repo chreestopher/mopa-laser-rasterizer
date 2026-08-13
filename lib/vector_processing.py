@@ -216,7 +216,7 @@ def parse_material_settings(
         material_layer_report = {"loaded": [], "skipped": []}
 
     new_color_settings = lb.parse_material_library(material_settings_path)
-    requested_material = "".join(char for char in material_name.lower() if char.isalnum())
+    requested_material = str(material_name or "").strip().casefold()
     settings_per_material = {}
     for item in new_color_settings:
         name = str(getattr(item, "materialName", "") or "").strip()
@@ -224,10 +224,9 @@ def parse_material_settings(
 
     matching_settings = [
         item for item in new_color_settings
-        if requested_material in "".join(
-            char for char in str(getattr(item, "materialName", "") or "").lower()
-            if char.isalnum()
-        )
+        if requested_material == str(
+            getattr(item, "materialName", "") or ""
+        ).strip().casefold()
     ]
     material_layer_report.update({
         "selected_material": material_name,
