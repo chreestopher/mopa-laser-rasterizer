@@ -171,10 +171,28 @@ def _rotate_image(image, degrees):
     return cv2.warpAffine(image, matrix, (rotated_width, rotated_height), borderMode=cv2.BORDER_REPLICATE)
 
 
-def _measure_grid_photo(photo_path, grid, rotation_degrees=0):
+def _crop_and_resize_image(image, crop, max_edge):
+    """Apply user-selected percentage crop margins and optional analysis size."""
+    height, width = image.shape[:2]
+    left = round(width * crop["left"] / 100)
+    right = round(width * (100 - crop["right"]) / 100)
+    top = round(height * crop["top"] / 100)
+    bottom = round(height * (100 - crop["bottom"]) / 100)
+    cropped = image[top:bottom, left:right]
+    if cropped.size == 0:
+        raise ValueError("Crop margins leave no image area to analyze.")
+    height, width = cropped.shape[:2]
+    if max_edge and max(height, width) > max_edge:
+        scale = max_edge / max(height, width)
+        cropped = cv2.resize(cropped, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_AREA)
+    return cropped
+
+
+def _measure_grid_photo(photo_path, grid, rotation_degrees=0, crop=None, max_edge=0):
     photo = cv2.imread(photo_path, cv2.IMREAD_COLOR)
     if photo is None:
         raise ValueError("The saved grid photo could not be opened for analysis.")
+    photo = _crop_and_resize_image(photo, crop or {"left": 0, "top": 0, "right": 0, "bottom": 0}, max_edge)
     photo = _rotate_image(photo, rotation_degrees)
     rectified, correction, corners = _rectify_grid(photo)
     rows, columns = int(grid["rows"]), int(grid["columns"])
@@ -351,15 +369,22 @@ def analyze_calibration_profile():
     profile_id = str(request.form.get("profile_id", "")).strip()
     try:
         rotation_degrees = max(-180, min(180, float(request.form.get("rotation_degrees", 0))))
+        crop = {
+            edge: max(0, min(45, float(request.form.get(f"crop_{edge}", 0))))
+            for edge in ("left", "top", "right", "bottom")
+        }
+        if crop["left"] + crop["right"] >= 90 or crop["top"] + crop["bottom"] >= 90:
+            raise ValueError("Opposing crop margins must leave visible image area.")
+        max_edge = max(0, min(6000, int(request.form.get("max_edge", 1800))))
     except ValueError:
-        return jsonify({"status": "error", "message": "Photo rotation must be a number of degrees."}), 400
+        return jsonify({"status": "error", "message": "Rotation, crop margins, and analysis size must be valid numbers."}), 400
     upload_folder = current_app.config["UPLOAD_FOLDER"]
     try:
         profile_path = _profile_metadata_path(upload_folder, profile_id)
         with open(profile_path, encoding="utf-8") as profile_file:
             profile = json.load(profile_file)
         cells, preview, correction, corners = _measure_grid_photo(
-            os.path.join(upload_folder, profile["grid_photo"]), profile["grid"], rotation_degrees
+            os.path.join(upload_folder, profile["grid_photo"]), profile["grid"], rotation_degrees, crop, max_edge
         )
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
         current_app.logger.exception("Holographic calibration analysis failed")
@@ -374,6 +399,8 @@ def analyze_calibration_profile():
         "message": "Cell colors were sampled from the photograph. Confirm the numbered preview before using these values for recipe mapping.",
         "perspective_correction": correction,
         "source_rotation_degrees": rotation_degrees,
+        "source_crop_percent": crop,
+        "analysis_max_edge_px": max_edge,
         "detected_grid_corners": corners,
         "preview": preview_name,
         "cells": cells,
@@ -388,6 +415,7 @@ def analyze_calibration_profile():
         "preview_url": f"/holographic-etching/preview/{preview_name}",
         "correction": correction,
         "rotation_degrees": rotation_degrees,
+        "crop": crop,
         "cells": cells,
         "message": "Grid sampled. Review the numbered preview, then keep this profile as the measured recipe source.",
     })
