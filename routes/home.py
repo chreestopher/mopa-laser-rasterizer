@@ -38,10 +38,17 @@ def logout():
     else:
         destination = "/"
     response = redirect(destination)
-    # ALB may split a large session across numbered cookies.  Clear each part.
-    for cookie_name in request.cookies:
-        if cookie_name == "AWSELBAuthSessionCookie" or cookie_name.startswith("AWSELBAuthSessionCookie-"):
-            response.delete_cookie(cookie_name, path="/", secure=request.is_secure, samesite="None")
+    # ALB may split a large session across numbered cookies.  The pod receives
+    # ALB traffic over HTTP even though the browser used HTTPS, so this must
+    # explicitly be Secure.  Otherwise Chrome rejects the SameSite=None
+    # deletion response and leaves the ALB login session in place.
+    session_cookie_names = {"AWSELBAuthSessionCookie"}
+    session_cookie_names.update(
+        cookie_name for cookie_name in request.cookies
+        if cookie_name.startswith("AWSELBAuthSessionCookie-")
+    )
+    for cookie_name in session_cookie_names:
+        response.delete_cookie(cookie_name, path="/", secure=True, samesite="None")
     return response
 
 
