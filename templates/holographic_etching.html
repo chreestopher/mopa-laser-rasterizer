@@ -18,6 +18,8 @@
     .page-header { display:flex; flex-direction:column; margin-bottom:25px; }
     h1 { margin:0; color:var(--cream); font:500 clamp(25px,4.2vw,42px) Impact,"Arial Narrow",sans-serif; text-align:center; text-shadow:0 3px #111; }
     .facade-title { display:flex; justify-content:space-between; white-space:nowrap; }
+    .home-title { display:block; color:inherit; text-decoration:none; cursor:pointer; }
+    .home-title:focus-visible { outline:2px solid var(--phosphor); outline-offset:5px; border-radius:4px; }
     .console-status-line { display:grid; grid-template-columns:1fr 1fr; align-items:center; padding:0 22px; margin-top:7px; }
     .status-lamps { justify-self:center; display:flex; gap:12px; color:#bdb58f; font:700 9px "Courier New",monospace; letter-spacing:.11em; text-transform:uppercase; }
     .status-lamp { display:inline-flex; align-items:center; gap:5px; }
@@ -100,7 +102,7 @@
 <body>
   <div class="theme-toggle"><label><span>Dark</span><input id="theme_switch" type="checkbox"><span class="toggle-track"></span><span>Light</span></label></div>
   <header class="page-header">
-    <h1 aria-label="MOPA-LASER-RASTERIZER"><span class="facade-title" aria-hidden="true"><span>M</span><span>O</span><span>P</span><span>A</span><span>-</span><span>L</span><span>A</span><span>S</span><span>E</span><span>R</span><span>-</span><span>R</span><span>A</span><span>S</span><span>T</span><span>E</span><span>R</span><span>I</span><span>Z</span><span>E</span><span>R</span></span></h1>
+    <h1><a class="home-title" href="/" aria-label="Return to MOPA Laser Rasterizer home"><span class="facade-title" aria-hidden="true"><span>M</span><span>O</span><span>P</span><span>A</span><span>-</span><span>L</span><span>A</span><span>S</span><span>E</span><span>R</span><span>-</span><span>R</span><span>A</span><span>S</span><span>T</span><span>E</span><span>R</span><span>I</span><span>Z</span><span>E</span><span>R</span></span></a></h1>
     <div class="console-status-line"><div class="status-lamps"><span class="status-lamp lamp-mopa">MOPA</span><span class="status-lamp lamp-laser">Laser</span><span class="status-lamp lamp-raster">Raster</span><span class="status-lamp lamp-vector">Vector</span><span class="status-lamp lamp-power">Power</span></div><span class="console-subtitle">HOLOGRAPHIC ETCHING LAB · SERIES 79</span></div>
   </header>
   <h2>Turn light itself into the color palette.</h2>
