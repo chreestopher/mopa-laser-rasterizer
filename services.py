@@ -2,6 +2,7 @@
 
 import json
 import base64
+import glob
 import multiprocessing
 import os
 import re
@@ -21,7 +22,7 @@ redis_client = redis.Redis(
     decode_responses=True,
 )
 s3_client = boto3.client("s3")
-BUCKET_NAME = "mopa-laser-rasterizer.com"
+S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME", "").strip()
 ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
     "crystal", "ripple", "centerline", "glitch", "shattered", "deep_fryer",
@@ -177,18 +178,60 @@ def parse_color_name_overrides(raw_value):
     return clean
 
 
-def upload_local_file(local_file_path, object_key):
-    try:
-        s3_client.upload_file(local_file_path, BUCKET_NAME, object_key)
-    except ClientError as error:
-        print(f"Error uploading file: {error}")
+def s3_artifacts_enabled():
+    return bool(S3_BUCKET_NAME)
 
 
-def download_s3_file(object_key, local_download_path):
+def task_artifact_key(task_id, filename, category="outputs"):
+    """Keep every job's private artifacts under one predictable S3 prefix."""
+    return f"jobs/{task_id}/{category}/{os.path.basename(filename)}"
+
+
+def upload_task_artifact(task_id, local_file_path, category="outputs"):
+    if not s3_artifacts_enabled():
+        return None
+    filename = os.path.basename(local_file_path)
+    key = task_artifact_key(task_id, filename, category)
     try:
-        s3_client.download_file(BUCKET_NAME, object_key, local_download_path)
+        s3_client.upload_file(local_file_path, S3_BUCKET_NAME, key)
     except ClientError as error:
-        print(f"Error downloading file: {error}")
+        raise RuntimeError(f"Could not store job artifact in S3: {error}") from error
+    return key
+
+
+def download_task_artifact(key, local_path):
+    if not s3_artifacts_enabled():
+        raise RuntimeError("S3 artifact storage is not configured.")
+    try:
+        s3_client.download_file(S3_BUCKET_NAME, key, local_path)
+    except ClientError as error:
+        raise RuntimeError(f"Could not retrieve job artifact from S3: {error}") from error
+
+
+def find_task_artifact(task_id, extension=None):
+    """Find a generated output even when the request lands on another pod."""
+    if not s3_artifacts_enabled():
+        return None
+    prefix = f"jobs/{task_id}/outputs/"
+    try:
+        response = s3_client.list_objects_v2(Bucket=S3_BUCKET_NAME, Prefix=prefix)
+    except ClientError as error:
+        raise RuntimeError(f"Could not list job artifacts in S3: {error}") from error
+    keys = [item["Key"] for item in response.get("Contents", [])]
+    if extension:
+        keys = [key for key in keys if key.lower().endswith(extension.lower())]
+    else:
+        keys = [key for key in keys if not key.lower().endswith(".lbrn2")]
+    return sorted(keys)[0] if keys else None
+
+
+def get_s3_artifact(key):
+    if not s3_artifacts_enabled():
+        return None
+    try:
+        return s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=key)
+    except ClientError as error:
+        raise RuntimeError(f"Could not retrieve job artifact from S3: {error}") from error
 
 
 def start_disk_cleanup_worker(app, interval_seconds=3600):
@@ -201,8 +244,12 @@ def start_disk_cleanup_worker(app, interval_seconds=3600):
                     for filename in os.listdir(upload_folder):
                         if filename.startswith("."):
                             continue
-                        task_id = filename.split("_")[0]
-                        if not redis_client.exists(f"task:{task_id}:status"):
+                        task_match = re.search(
+                            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                            filename.lower(),
+                        )
+                        task_id = task_match.group(0) if task_match else None
+                        if task_id and not redis_client.exists(f"task:{task_id}:status"):
                             file_path = os.path.join(upload_folder, filename)
                             if os.path.isfile(file_path):
                                 os.remove(file_path)
@@ -256,9 +303,19 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
         if line:
             print(f"[Task {task_id}] {line}", flush=True)
             redis_client.rpush(log_key, line)
-        redis_client.set(status_key, "completed" if process.wait() == 0 else "failed")
+        exit_code = process.wait()
+        if exit_code == 0:
+            output_paths = glob.glob(os.path.join(upload_folder, f"output_{task_id}_*"))
+            for output_path in output_paths:
+                if os.path.isfile(output_path):
+                    upload_task_artifact(task_id, output_path)
+            redis_client.set(status_key, "completed")
+        else:
+            redis_client.set(status_key, "failed")
     except Exception as error:
         print(f"[Thread-{task_id}] Exception: {error}", flush=True)
+        redis_client.set(f"task:{task_id}:status", "failed", ex=HISTORY_TTL_SECONDS)
+        redis_client.rpush(f"task:{task_id}:log", f"Artifact processing failed: {error}")
         tasks[f"{task_id}_status"] = "failed"
         tasks[f"{task_id}_error"] = str(error)
 

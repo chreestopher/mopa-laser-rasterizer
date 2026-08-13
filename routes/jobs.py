@@ -7,7 +7,7 @@ import threading
 import time
 import uuid
 
-from flask import current_app, jsonify, make_response, redirect, render_template, request, send_from_directory
+from flask import Response, current_app, jsonify, make_response, redirect, render_template, request, send_from_directory, stream_with_context
 from PIL import Image, UnidentifiedImageError
 from werkzeug.utils import secure_filename
 
@@ -22,8 +22,12 @@ from services import (
     normalize_dimension,
     parse_abstract_filter_parameters,
     parse_color_name_overrides,
+    download_task_artifact,
+    find_task_artifact,
+    get_s3_artifact,
     redis_client,
     tasks,
+    upload_task_artifact,
     valid_history_session,
 )
 
@@ -58,6 +62,10 @@ def start_task():
     upload_folder = current_app.config["UPLOAD_FOLDER"]
     image_path = os.path.join(upload_folder, f"{task_id}_{base_name}")
     image_file.save(image_path)
+    try:
+        upload_task_artifact(task_id, image_path, category="inputs")
+    except RuntimeError as error:
+        return jsonify({"status": "error", "message": str(error)}), 503
     material_cache_key = f"material-library:{history_session}"
     if material_settings and material_settings.filename:
         material_filename = secure_filename(material_settings.filename)
@@ -65,9 +73,13 @@ def start_task():
             upload_folder, f"{task_id}_material_library_{material_filename}"
         )
         material_settings.save(material_settings_path)
+        try:
+            material_key = upload_task_artifact(task_id, material_settings_path, category="inputs")
+        except RuntimeError as error:
+            return jsonify({"status": "error", "message": str(error)}), 503
         redis_client.set(
             material_cache_key,
-            json.dumps({"path": material_settings_path, "filename": material_filename}),
+            json.dumps({"path": material_settings_path, "filename": material_filename, "key": material_key}),
             ex=HISTORY_TTL_SECONDS,
         )
     else:
@@ -75,7 +87,15 @@ def start_task():
             cached_material = json.loads(redis_client.get(material_cache_key) or "{}")
             material_settings_path = cached_material.get("path")
         except (TypeError, json.JSONDecodeError):
+            cached_material = {}
             material_settings_path = None
+        material_key = cached_material.get("key")
+        if material_key and not os.path.isfile(material_settings_path or ""):
+            material_settings_path = os.path.join(upload_folder, f"{task_id}_cached_material_{cached_material.get('filename', 'library.clb')}")
+            try:
+                download_task_artifact(material_key, material_settings_path)
+            except RuntimeError as error:
+                return jsonify({"status": "error", "message": str(error)}), 503
         if not material_settings_path or not os.path.isfile(material_settings_path):
             return jsonify({"status": "error", "message": "Choose a LightBurn Material Library file"}), 400
     try:
@@ -170,8 +190,32 @@ def _output_file(task_id, extension=None):
     return None
 
 
+def _s3_output_key(task_id, extension=None):
+    try:
+        return find_task_artifact(task_id, extension)
+    except RuntimeError as error:
+        current_app.logger.error("S3 output lookup failed for %s: %s", task_id, error)
+        return None
+
+
+def _stream_s3_download(key, as_attachment=True, mimetype=None):
+    try:
+        artifact = get_s3_artifact(key)
+    except RuntimeError as error:
+        return jsonify({"status": "error", "message": str(error)}), 503
+    filename = os.path.basename(key)
+    response = Response(stream_with_context(artifact["Body"].iter_chunks(chunk_size=1024 * 1024)),
+                        mimetype=mimetype or artifact.get("ContentType") or "application/octet-stream")
+    if as_attachment:
+        response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
 @routes.route("/download/<task_id>")
 def download_file(task_id):
+    s3_key = _s3_output_key(task_id)
+    if s3_key:
+        return _stream_s3_download(s3_key, mimetype="image/svg+xml" if s3_key.endswith(".svg") else None)
     image_file = _output_file(task_id)
     if not image_file:
         return jsonify({"status": "error", "message": "Processed image file not found on disk"}), 404
@@ -187,6 +231,10 @@ def list_downloads(task_id):
 
 @routes.route("/download-lbrn2/<task_id>")
 def download_lbrn2(task_id):
+    s3_key = _s3_output_key(task_id, ".lbrn2")
+    if s3_key:
+        cleanup_redis_inflight(task_id)
+        return _stream_s3_download(s3_key)
     filename = _output_file(task_id, ".lbrn2")
     if not filename:
         return jsonify({"status": "error", "message": "LightBurn file (.lbrn2) not found on disk"}), 404
@@ -196,6 +244,13 @@ def download_lbrn2(task_id):
 
 @routes.route("/view-image/<task_id>")
 def view_image(task_id):
+    s3_key = _s3_output_key(task_id)
+    if s3_key:
+        lower = s3_key.lower()
+        mimetype = ("image/svg+xml" if "svg" in lower else "image/png" if lower.endswith(".png")
+            else "image/jpeg" if lower.endswith((".jpg", ".jpeg")) else "image/gif" if lower.endswith(".gif")
+            else "image/webp" if lower.endswith(".webp") else None)
+        return _stream_s3_download(s3_key, as_attachment=False, mimetype=mimetype)
     filename = _output_file(task_id)
     if not filename:
         return jsonify({"status": "error", "message": "Preview asset not found on disk"}), 404

@@ -36,6 +36,10 @@ spec:
           value: "redis-service"
         - name: REDIS_PORT
           value: "6379"
+        - name: S3_BUCKET_NAME
+          value: "mopa-laser-rasterizer-artifacts-401716294893"
+        - name: UPLOAD_FOLDER
+          value: "/tmp/uploads"
         ports:
         - name: http
           containerPort: 8000
@@ -51,9 +55,13 @@ spec:
         - name: application-source
           mountPath: /app
           readOnly: false
+        - name: job-scratch
+          mountPath: /tmp/uploads
       volumes:
       # This is a bind mount of the EC2 host checkout, not a copy into the pod.
       - name: application-source
         hostPath:
           path: /home/ubuntu/mopa-laser-rasterizer
           type: Directory
+      - name: job-scratch
+        emptyDir: {}

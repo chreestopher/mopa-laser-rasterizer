@@ -10,7 +10,10 @@ from services import start_disk_cleanup_worker
 
 def create_app():
     app = Flask(__name__)
-    upload_folder = "./uploads"
+    # Active jobs use node-local scratch space. Durable inputs and outputs are
+    # mirrored to S3 by the job service, so this directory need not be shared
+    # between Kubernetes workers.
+    upload_folder = os.environ.get("UPLOAD_FOLDER", "./uploads")
     os.makedirs(upload_folder, exist_ok=True)
     app.config["UPLOAD_FOLDER"] = upload_folder
     register_routes(app)
