@@ -41,6 +41,7 @@
         width: 100vw;
         height: 100vh;
         overflow: hidden;
+        gap: 18px;
 
         box-sizing: border-box;
         margin: 0;
@@ -216,7 +217,13 @@
     }
     body::before { left: 22px; }
     body::after { right: 22px; }
-    .page-header { flex-direction: column; min-height: 72px; }
+    /* Reserve room for the console subtitle before the workspace begins. */
+    .page-header {
+        flex: 0 0 98px;
+        flex-direction: column;
+        min-height: 98px;
+        padding-bottom: 8px;
+    }
     .page-header h1 {
         color: var(--cream);
         font-family: Impact, "Arial Narrow", sans-serif;
