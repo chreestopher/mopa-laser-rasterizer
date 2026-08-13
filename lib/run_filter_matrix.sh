@@ -108,7 +108,7 @@ material_script=$(cd -- "$(dirname -- "$material_script")" && pwd)/$(basename --
 material_library=$(cd -- "$(dirname -- "$material_library")" && pwd)/$(basename -- "$material_library")
 
 presets=(cartoon color_photograph bw_dither_photograph abstract)
-filters=(none wave voronoi shear spiral mosaic crystal ripple centerline glitch shattered)
+filters=(none wave voronoi shear spiral mosaic crystal ripple centerline glitch deep_fryer shattered)
 
 # Defaults exercise each filter predictably. Override individual values by
 # editing these JSON objects or by copying this script for a test profile.
@@ -123,6 +123,7 @@ declare -A filter_json=(
   [ripple]='{"amplitude":3,"frequency":0.18,"phase":0,"center_x":0.5,"center_y":0.5}'
   [centerline]='{"line_simplification":0.35,"min_branch_length":2}'
   [glitch]='{"slice_height":18,"fragment_width":70,"shift_amount":28,"echo_count":2,"echo_spacing":9,"density":0.55,"fibonacci_stride":2,"vertical_jitter":3,"seed":1}'
+  [deep_fryer]='{"block_size":24,"band_height":34,"compression_gap":0.7,"smear_amount":18,"echo_count":2,"echo_spacing":5,"degradation":0.35,"seed":1}'
   [shattered]='{"min_shard_size":8,"max_shard_size":32,"density":0.6,"minimum_gap":0.7,"gap_variation":2.2,"horizontal_spread":12,"fall_distance":20,"gravity_bias":1.4,"rotation":22,"break_origin_x":0.5,"break_origin_y":0.35,"seed":1}'
 )
 

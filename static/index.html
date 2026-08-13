@@ -541,6 +541,7 @@
           <option value="abstract_ripple">Topographic Ripple</option>
           <option value="abstract_centerline">Centerline Drawing</option>
           <option value="abstract_glitch">Digital Glitch</option>
+          <option value="abstract_deep_fryer">Deep Fryer</option>
           <option value="abstract_shattered">Shattered</option>
           <option value="abstract_none">Abstract: None</option>
         </optgroup>
@@ -620,6 +621,13 @@
           ['echo_spacing', 9, 0, 80, 1], ['density', .55, 0, 1, .05],
           ['fibonacci_stride', 2, 1, 8, 1], ['vertical_jitter', 3, 0, 60, 1],
           ['seed', 1, 0, 999999, 1]]
+      },
+      deep_fryer: {
+        description: 'Recreates the gloriously over-processed energy of a deep-fried meme with compression blocks, damaged scan bands, smears, and copy-of-a-copy echoes. Block Size sets the chunk scale, Band Height sets the scanline strips, Compression Gap opens block seams, Smear Amount drags bands sideways, Echo Count and Spacing add repeated ghosts, Degradation increases broken or missing chunks, and Seed tunes a new repeatable batch of digital damage.',
+        controls: [['block_size', 24, 4, 120, 1], ['band_height', 34, 4, 180, 1],
+          ['compression_gap', .7, 0, 8, .1], ['smear_amount', 18, 0, 120, 1],
+          ['echo_count', 2, 0, 5, 1], ['echo_spacing', 5, 0, 40, 1],
+          ['degradation', .35, 0, 1, .05], ['seed', 1, 0, 999999, 1]]
       },
       shattered: {
         description: 'Breaks the artwork into glass-like shards that spread, tumble, and fall from a chosen impact point. Min and Max Shard Size set the smallest and largest pieces, Density sets how many appear, Minimum Gap and Gap Variation open the cracks, Horizontal Spread and Fall Distance move pieces out and down, Gravity Bias makes the fall heavier, Rotation spins them, Break Origin X/Y places the impact, and Seed rolls a new repeatable break.',
