@@ -30,7 +30,7 @@ from abstract_filters.common import number as _number
 
 
 def printLogMessage(message):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now().strftime("%H:%M:%S")
     print(f"[{timestamp}] {message}", flush=True)
 
 
