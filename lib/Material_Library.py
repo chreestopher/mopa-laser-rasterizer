@@ -66,14 +66,20 @@ def main(argv=None):
         limit_list = [value[-1].lower() for value in target_colors.values()]
     limit_list.extend(("black", "light-gray"))
     material_layer_report = {"loaded": [], "skipped": []}
-    target_colors = vector_processing.parse_material_settings(
-        lb,
-        material_library_file,
-        limit_list,
-        target_colors,
-        material_name=material_name,
-        material_layer_report=material_layer_report,
-    )
+    try:
+        target_colors = vector_processing.parse_material_settings(
+            lb,
+            material_library_file,
+            limit_list,
+            target_colors,
+            material_name=material_name,
+            material_layer_report=material_layer_report,
+        )
+    except ValueError as error:
+        # A missing material is an expected user-input error.  The parser has
+        # already emitted the useful material list, so avoid adding a Python
+        # traceback to the task console.
+        raise SystemExit(str(error))
 
     vector_settings = dict(preset)
     for name in ("min_island_area", "simplification_factor", "smoothing_radius"):
