@@ -1055,17 +1055,15 @@ def push_geometry_to_lightburn(
     geometry,
     color_hex,
     target_colors,
-    lb_project_instance
+    lb_project_instance,
+    override_layer_id=None
 ):
     """
     Convert Shapely geometry into LightBurn paths.
 
-    Geometry is always pushed to its native color layer.
-
-    IMPORTANT:
-    This function no longer supports the old behavior of copying colored
-    geometry onto the black layer. The black layer is now already punched
-    geometrically.
+    ``override_layer_id`` writes the same geometry to another LightBurn layer.
+    It is used to put colored shapes on the black layer as nested paths, which
+    lets LightBurn perform its own black-layer hole punching.
     """
 
     if geometry.is_empty:
@@ -1075,7 +1073,7 @@ def push_geometry_to_lightburn(
         color_hex
     ]
 
-    layer_id = layer_meta[1]
+    layer_id = override_layer_id if override_layer_id is not None else layer_meta[1]
 
     if geometry.geom_type == "Polygon":
 
@@ -1150,7 +1148,8 @@ def push_geometry_to_lightburn(
                 sub_geometry,
                 color_hex,
                 target_colors,
-                lb_project_instance
+                lb_project_instance,
+                override_layer_id=layer_id
             )
 
 
@@ -1164,10 +1163,14 @@ def export_processed_layers(
     black_hex,
     scale_factor,
     root,
-    lb_project_instance
+    lb_project_instance,
+    punch_through_black=False
 ):
     """
     Sort, scale, and export all finalized geometry to SVG and LightBurn.
+
+    When enabled, ``punch_through_black`` also emits every non-black shape on
+    the black LightBurn layer as a nested path.
     """
 
     printLogMessage(
@@ -1181,6 +1184,8 @@ def export_processed_layers(
             item[0]
         ][1]
     )
+
+    black_layer_id = target_colors[black_hex][1]
 
     printLogMessage(
         "=============================================="
@@ -1262,19 +1267,18 @@ def export_processed_layers(
                 lb_project_instance
             )
 
-        # --------------------------------------------------------------------
-        # IMPORTANT:
-        #
-        # There is deliberately NO:
-        #
-        #     if color_hex != black_hex:
-        #         push_geometry_to_lightburn(... black_layer ...)
-        #
-        # anymore.
-        #
-        # The black layer itself already contains the holes.
-        # --------------------------------------------------------------------
-
+            if punch_through_black and color_hex != black_hex:
+                printLogMessage(
+                    f" -> Adding {layer_color_name} geometry to Black "
+                    f"Layer ID {black_layer_id} for hole punching"
+                )
+                push_geometry_to_lightburn(
+                    export_geometry,
+                    color_hex,
+                    target_colors,
+                    lb_project_instance,
+                    override_layer_id=black_layer_id
+                )
 
 def save_vector_output(
     root,
@@ -1396,8 +1400,8 @@ def raster_to_puzzle_and_lightburn(
         )
     )
 
-    # `black_layer_id` is retained here for compatibility/logging/debugging.
-    # The actual export now uses the native layer ID from TARGET_COLORS.
+    # The exporter resolves this same native black-layer ID when it emits
+    # LightBurn hole-punch paths.
     _ = black_layer_id
 
     # =========================================================================
@@ -1518,7 +1522,8 @@ def raster_to_puzzle_and_lightburn(
         black_hex=black_hex,
         scale_factor=scale_factor,
         root=root,
-        lb_project_instance=lb_project_instance
+        lb_project_instance=lb_project_instance,
+        punch_through_black=not preserve_source_black
     )
 
     # =========================================================================
