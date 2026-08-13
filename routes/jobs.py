@@ -8,6 +8,7 @@ import time
 import uuid
 
 from flask import current_app, jsonify, make_response, redirect, render_template, request, send_from_directory
+from PIL import Image, UnidentifiedImageError
 from werkzeug.utils import secure_filename
 
 from . import routes
@@ -42,6 +43,16 @@ def start_task():
         or valid_history_session(request.cookies.get("mopa_history_session")) or str(uuid.uuid4()))
     image_file = request.files["image"]
     material_settings = request.files.get("material_settings")
+    try:
+        with Image.open(image_file.stream) as image_probe:
+            image_probe.verify()
+    except (UnidentifiedImageError, OSError):
+        return jsonify({
+            "status": "error",
+            "message": "The artwork file must be an image. It looks like a LightBurn Material Library may have been selected instead.",
+        }), 400
+    finally:
+        image_file.stream.seek(0)
     base_name = secure_filename(image_file.filename)
     output_name = f"output_{task_id}_{base_name}"
     upload_folder = current_app.config["UPLOAD_FOLDER"]

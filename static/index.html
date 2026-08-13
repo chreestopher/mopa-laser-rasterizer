@@ -449,11 +449,11 @@
     <div class="form-group"></div>
     <div>
       <div><label for="image">1. Bring your own artwork:</label></div>
-      <div><input type="file" id="image" name="image" required></div>
+      <div><input type="file" id="image" name="image" accept="image/*" required></div>
     </div>
     <div>
       <div><label for="material_settings">2. Choose your LightBurn Material Library:</label></div>
-      <div><input type="file" id="material_settings" name="material_settings" aria-describedby="remembered_material_library"></div>
+      <div><input type="file" id="material_settings" name="material_settings" accept=".clb,.lbmat,.lbrn" aria-describedby="remembered_material_library"></div>
       <div id="remembered_material_library" class="remembered-input-note" hidden></div>
     </div>    
     <div>
@@ -808,6 +808,24 @@
         sessionStorage.setItem(materialLibraryKey, filename);
         rememberedMaterialNote.hidden = false;
         rememberedMaterialNote.textContent = `Current Material Library: ${filename}. This file will replace the remembered library.`;
+      });
+      uploadForm.addEventListener('submit', event => {
+        const artworkFile = document.getElementById('image').files[0];
+        const materialFile = materialLibraryInput.files[0];
+        const artworkLooksLikeImage = artworkFile && (
+          artworkFile.type.startsWith('image/') || /\.(avif|bmp|gif|jpe?g|png|tiff?|webp)$/i.test(artworkFile.name)
+        );
+        const materialLooksValid = materialFile || rememberedLibraryName;
+        document.getElementById('image').setCustomValidity(
+          artworkLooksLikeImage ? '' : 'Choose an image file for your artwork, not a LightBurn Material Library.'
+        );
+        materialLibraryInput.setCustomValidity(
+          materialLooksValid ? '' : 'Choose a LightBurn Material Library file before starting the job.'
+        );
+        if (!artworkLooksLikeImage || !materialLooksValid) {
+          event.preventDefault();
+          (!artworkLooksLikeImage ? document.getElementById('image') : materialLibraryInput).reportValidity();
+        }
       });
       renderFilterControls();
     });
