@@ -37,8 +37,8 @@
     .calibration-form h3,.calibration-form .form-note,.calibration-results { grid-column:1 / -1; }
     .calibration-form h3 { margin:0; color:#e2dcc0; font-family:"Arial Narrow",sans-serif; }
     .calibration-form label { display:grid; gap:6px; color:#ddd7b8; font-size:.9rem; letter-spacing:.035em; }
-    .calibration-form input { width:100%; min-width:0; min-height:39px; padding:9px; border:2px solid #5e6853; border-radius:5px; color:var(--phosphor); background:#11170f; box-shadow:inset 0 2px 7px #000; font-family:"Courier New",monospace; }
-    .calibration-form input:focus { outline:none; border-color:#91a477; box-shadow:0 0 0 2px rgba(131,240,106,.18),inset 0 2px 7px #000; }
+    .calibration-form input,.calibration-form select { width:100%; min-width:0; min-height:39px; padding:9px; border:2px solid #5e6853; border-radius:5px; color:var(--phosphor); background:#11170f; box-shadow:inset 0 2px 7px #000; font-family:"Courier New",monospace; }
+    .calibration-form input:focus,.calibration-form select:focus { outline:none; border-color:#91a477; box-shadow:0 0 0 2px rgba(131,240,106,.18),inset 0 2px 7px #000; }
     .calibration-form input[type="file"] { padding:4px; color:#bdb58f; cursor:pointer; }
     .calibration-form input[type="file"]::file-selector-button { margin-right:10px; padding:7px 10px; border:1px solid #e19355; border-radius:4px; color:#fff1cd; background:linear-gradient(#c96b35,var(--orange)); box-shadow:inset 0 1px rgba(255,255,255,.3),0 2px 0 #55270f; font:700 10px "Courier New",monospace; letter-spacing:.07em; cursor:pointer; text-transform:uppercase; }
     .calibration-form input[type="file"]::file-selector-button:hover { filter:brightness(1.14); }
@@ -57,10 +57,15 @@
     .recipe-card .swatch { width:100%; height:24px; border:1px solid #d9d2af; border-radius:3px; box-shadow:inset 0 0 4px rgba(0,0,0,.55); }
     .recipe-card input[type="text"] { min-height:30px; padding:5px; font-size:11px; }
     .recipe-card small { grid-column:2; color:#aaa98e; font:10px "Courier New",monospace; }
+    .recipe-card.low-confidence { border-color:#bf7137; }
     .corner-editor { grid-column:1 / -1; display:none; max-width:760px; padding:10px; border:2px solid #778a64; border-radius:10px; background:#0c110b; }
     .corner-editor.active { display:block; }
     .corner-editor canvas { display:block; width:100%; max-height:520px; cursor:crosshair; touch-action:none; }
     .corner-editor p { margin:9px 0 0; color:#bdb58f; font:700 11px "Courier New",monospace; line-height:1.4; }
+    .sample-editor { grid-column:1 / -1; display:none; max-width:760px; padding:10px; border:2px solid #657359; border-radius:10px; background:#0c110b; }
+    .sample-editor.active { display:block; }
+    .sample-editor canvas { display:block; width:100%; max-height:520px; cursor:crosshair; touch-action:none; }
+    .sample-editor p { margin:9px 0 0; color:#bdb58f; font:700 11px "Courier New",monospace; line-height:1.4; }
     .action-row { display:flex; flex-wrap:wrap; gap:10px; margin-top:25px; }
     .action { display:inline-block; padding:10px 14px; border:2px solid #d07b48; border-radius:7px; color:#fff1cd; background:linear-gradient(#c96b35,var(--orange)); box-shadow:inset 0 1px rgba(255,255,255,.28),0 4px 0 #55270f; font:700 12px system-ui,sans-serif; letter-spacing:.06em; text-decoration:none; text-transform:uppercase; cursor:pointer; transition:filter .15s,transform .15s,box-shadow .15s; }
     .action:hover { filter:brightness(1.12); }
@@ -78,11 +83,14 @@
     body.light-machine .calibration-form { border-color:#a86632; background:rgba(220,221,216,.5); box-shadow:inset 0 0 0 4px #b1b3ae,inset 0 0 20px #888,0 6px 0 #686a66; }
     body.light-machine .calibration-form h3,body.light-machine .calibration-form label { color:#151613; }
     body.light-machine .calibration-form input { color:#171815; background:#dedfd9; border-color:#777974; box-shadow:inset 0 1px 5px #999; }
+    body.light-machine .calibration-form select { color:#171815; background:#dedfd9; border-color:#777974; box-shadow:inset 0 1px 5px #999; }
     body.light-machine .calibration-form input[type="file"] { color:#343530; }
     body.light-machine .calibration-form input[type="file"]::file-selector-button { border-color:#79431f; color:#fff5da; background:linear-gradient(#bd7544,#8a4821); }
     body.light-machine .calibration-form textarea { color:#171815; background:#dedfd9; border-color:#777974; box-shadow:inset 0 1px 5px #999; }
     body.light-machine .corner-editor { background:#d5d6cf; border-color:#777974; }
     body.light-machine .corner-editor p { color:#343530; }
+    body.light-machine .sample-editor { background:#d5d6cf; border-color:#777974; }
+    body.light-machine .sample-editor p { color:#343530; }
     body.light-machine .recipe-card { border-color:#777974; background:#d8d9d3; }
     body.light-machine .recipe-card small { color:#343530; }
     @media (min-width:900px) and (hover:hover) { body { zoom:.8; } }
@@ -117,6 +125,9 @@
     <label>Cell size (mm)<input name="cell_mm" type="number" value="12" min="4" max="30" step=".5" required></label>
     <label>Minimum fill interval (mm)<input name="interval_low" type="number" value=".045" min=".01" max=".5" step=".001" required></label>
     <label>Maximum fill interval (mm)<input name="interval_high" type="number" value=".070" min=".01" max=".5" step=".001" required></label>
+    <label>Extra laser-setting sweep<select name="sweep_parameter"><option value="none">None, interval and angle only</option><option value="power">Maximum power</option><option value="speed">Speed</option><option value="frequency">Frequency</option><option value="pulse_width">Pulse width</option><option value="passes">Passes</option></select></label>
+    <label>Sweep low value<input name="sweep_low" type="number" value="0" step=".1"><span class="form-note">Ignored when no extra sweep is selected.</span></label>
+    <label>Sweep high value<input name="sweep_high" type="number" value="0" step=".1"><span class="form-note">The chosen setting changes across the grid.</span></label>
     <div class="action-row"><button class="action" type="submit">Build Calibration Grid</button><a class="action secondary" href="/">Return to Color Rasterizer</a></div>
     <p id="calibration_results" class="calibration-results" aria-live="polite"></p>
   </form>
@@ -144,10 +155,12 @@
     <label>Crop right, %<input name="crop_right" type="number" value="0" min="0" max="45" step=".1"></label>
     <label>Crop bottom, %<input name="crop_bottom" type="number" value="0" min="0" max="45" step=".1"></label>
     <label class="full-width">Analysis maximum edge, px<input name="max_edge" type="number" value="1800" min="0" max="6000" step="100"><span class="form-note">Use 0 for the original size. 1800 px is normally plenty and keeps analysis brisk.</span></label>
+    <label class="full-width">Neutral reference, observed RGB<input name="reference_r" type="number" min="1" max="255" placeholder="R"><input name="reference_g" type="number" min="1" max="255" placeholder="G"><input name="reference_b" type="number" min="1" max="255" placeholder="B"><span class="form-note">Optional. Photograph a white or neutral-gray reference card beside the grid, sample its observed RGB with an image color picker, and enter it here to normalize the photo before recipes are measured.</span></label>
     <div class="action-row full-width"><button id="load_corner_editor" class="action secondary" type="button">Load Photo, Align Corners</button></div>
     <div id="corner_editor" class="corner-editor"><canvas id="corner_canvas"></canvas><p>Drag a green handle to reshape the grid. Click and drag inside the green outline to slide the whole grid over the photo. These corners override rotation and crop for the next analysis.</p></div>
     <div class="action-row"><button class="action" type="submit">Analyze Grid Photo</button></div>
     <p id="analysis_results" class="calibration-results" aria-live="polite"></p>
+    <section id="sample_editor" class="sample-editor"><canvas id="sample_canvas"></canvas><p>Click a clean, representative spot inside any swatch to move that cell’s sample point. Click Analyze Grid Photo again to resample using the blue points.</p></section>
     <section id="recipe_review" class="recipe-review">
       <h4>Recipe Palette Review</h4>
       <p class="form-note">Keep the cells that produce clean, useful color. Give each one a memorable name, then save your chosen structural-color palette.</p>
@@ -233,6 +246,10 @@
     manualCornersInput.type = 'hidden';
     manualCornersInput.name = 'manual_corners';
     document.getElementById('analysis_form').appendChild(manualCornersInput);
+    const manualSamplesInput = document.createElement('input');
+    manualSamplesInput.type = 'hidden';
+    manualSamplesInput.name = 'manual_sample_points';
+    document.getElementById('analysis_form').appendChild(manualSamplesInput);
     let cornerImage = null;
     let cornerPoints = [];
     let draggedCorner = null;
@@ -323,6 +340,48 @@
     const stopCornerDrag = () => { draggedCorner = null; draggedGrid = false; lastCornerPointer = null; };
     cornerCanvas.addEventListener('pointerup', stopCornerDrag);
     cornerCanvas.addEventListener('pointercancel', stopCornerDrag);
+    const sampleEditor = document.getElementById('sample_editor');
+    const sampleCanvas = document.getElementById('sample_canvas');
+    const sampleContext = sampleCanvas.getContext('2d');
+    let sampleImage = null;
+    let sampleRows = 0;
+    let sampleColumns = 0;
+    let manualSamplePoints = {};
+    const redrawSampleEditor = () => {
+      if (!sampleImage) return;
+      sampleContext.drawImage(sampleImage, 0, 0, sampleCanvas.width, sampleCanvas.height);
+      Object.entries(manualSamplePoints).forEach(([index, [x, y]]) => {
+        sampleContext.fillStyle = '#44bff0';
+        sampleContext.beginPath(); sampleContext.arc(x * sampleCanvas.width, y * sampleCanvas.height, 7, 0, Math.PI * 2); sampleContext.fill();
+        sampleContext.fillStyle = '#071014'; sampleContext.font = 'bold 10px Courier New'; sampleContext.fillText(index, x * sampleCanvas.width - 4, y * sampleCanvas.height + 3);
+      });
+      manualSamplesInput.value = JSON.stringify(manualSamplePoints);
+    };
+    const loadSampleEditor = (previewUrl, cells) => {
+      sampleRows = Math.max(...cells.map(cell => cell.row));
+      sampleColumns = Math.max(...cells.map(cell => cell.column));
+      manualSamplePoints = Object.fromEntries(cells.filter(cell => cell.manual_sample_point).map(cell => [String(cell.index), cell.manual_sample_point]));
+      const image = new Image();
+      image.onload = () => {
+        const scale = Math.min(720 / image.naturalWidth, 520 / image.naturalHeight, 1);
+        sampleCanvas.width = Math.round(image.naturalWidth * scale);
+        sampleCanvas.height = Math.round(image.naturalHeight * scale);
+        sampleImage = image;
+        sampleEditor.classList.add('active');
+        redrawSampleEditor();
+      };
+      image.src = `${previewUrl}?sample_editor=${Date.now()}`;
+    };
+    sampleCanvas.addEventListener('pointerdown', event => {
+      if (!sampleImage) return;
+      const rect = sampleCanvas.getBoundingClientRect();
+      const x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+      const y = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+      const column = Math.min(sampleColumns - 1, Math.floor(x * sampleColumns));
+      const row = Math.min(sampleRows - 1, Math.floor(y * sampleRows));
+      manualSamplePoints[String(row * sampleColumns + column + 1)] = [x, y];
+      redrawSampleEditor();
+    });
     let measuredProfileId = null;
     const renderRecipeReview = (profileId, cells) => {
       measuredProfileId = profileId;
@@ -341,7 +400,8 @@
         name.type = 'text'; name.value = `Holographic ${String(cell.index).padStart(2, '0')}`; name.dataset.nameFor = cell.index;
         details.append(swatch, name);
         const metadata = document.createElement('small');
-        metadata.textContent = `${cell.observed_hex} · ${Number(cell.interval_mm).toFixed(3)} mm · ${Number(cell.angle_degrees).toFixed(1)}°`;
+        metadata.textContent = `${cell.observed_hex} · ${Number(cell.interval_mm).toFixed(3)} mm · ${Number(cell.angle_degrees).toFixed(1)}° · confidence ${cell.confidence}%${cell.quality_flags.length ? `, ${cell.quality_flags.join(', ')}` : ''}`;
+        if (cell.confidence < 45 || cell.quality_flags.length) card.classList.add('low-confidence');
         card.append(keep, details, metadata);
         grid.appendChild(card);
       });
@@ -361,6 +421,7 @@
         const correction = data.correction === 'manual_corners' ? 'Your four aligned corners were used for perspective correction.' : data.correction === 'rectified' ? 'Perspective correction applied.' : data.correction === 'manual_crop' ? 'Your crop was used as the grid boundary.' : 'Grid border was not confidently found, so the rotated photo was sampled.';
         results.innerHTML = `${data.message} Rotation: ${data.rotation_degrees}°. Crop: L${data.crop.left}% T${data.crop.top}% R${data.crop.right}% B${data.crop.bottom}%. ${correction} <a href="${data.profile_url}">Download measured profile</a><a href="${data.preview_url}" target="_blank" rel="noopener noreferrer"><img class="analysis-preview" src="${data.preview_url}" alt="Numbered calibration-grid analysis preview"></a>`;
         renderRecipeReview(data.profile_id, data.cells);
+        loadSampleEditor(data.preview_url, data.cells);
       } catch (error) {
         results.textContent = error.message;
       } finally {
@@ -383,7 +444,12 @@
         const response = await fetch('/holographic-etching/save-recipes', {method:'POST', body});
         const data = await response.json();
         if (!response.ok) throw new Error(data.message || 'Recipe palette could not be saved.');
-        results.innerHTML = `${data.message} <a href="${data.profile_url}">Download recipe profile</a>`;
+        const diagnostics = data.palette_diagnostics;
+        const notes = [
+          diagnostics.similar_pairs.length ? `Similar colors: ${diagnostics.similar_pairs.map(pair => `${pair.recipes[0]} / ${pair.recipes[1]}`).join(', ')}.` : '',
+          diagnostics.weak_recipes.length ? `Review low-confidence recipes: ${diagnostics.weak_recipes.join(', ')}.` : ''
+        ].filter(Boolean).join(' ');
+        results.innerHTML = `${data.message} ${notes} <a href="${data.profile_url}">Download recipe profile</a>`;
       } catch (error) {
         results.textContent = error.message;
       } finally {

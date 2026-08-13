@@ -18,6 +18,16 @@ from werkzeug.utils import secure_filename
 from . import routes
 
 
+SWEEP_SETTINGS = {
+    "none": None,
+    "power": "maxPower",
+    "speed": "speed",
+    "frequency": "frequency",
+    "pulse_width": "QPulseWidth",
+    "passes": "numPasses",
+}
+
+
 def _lightburn_module():
     path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "lib", "lightburn.py")
     spec = importlib.util.spec_from_file_location("holographic_lightburn", path)
@@ -68,6 +78,12 @@ def _svg_grid(path, columns, rows, cell_mm, intervals, angles):
     root = ET.Element("svg", xmlns="http://www.w3.org/2000/svg", width=f"{width}mm",
                       height=f"{height}mm", viewBox=f"0 0 {width} {height}")
     ET.SubElement(root, "rect", x="0", y="0", width=str(width), height=str(height), fill="white")
+    # High-contrast registration marks make the photographed grid far easier
+    # to align than a thin cell border alone.  They sit in the outer corners,
+    # away from the center sampling zones.
+    mark_size = min(1.2, cell_mm * .12)
+    for mark_x, mark_y in ((.2, .2), (width - mark_size - .2, .2), (.2, height - mark_size - .2), (width - mark_size - .2, height - mark_size - .2)):
+        ET.SubElement(root, "rect", x=str(mark_x), y=str(mark_y), width=str(mark_size), height=str(mark_size), fill="#000")
     for index, (interval, angle) in enumerate(zip(intervals, angles)):
         column, row = index % columns, index // columns
         x, y = column * cell_mm, row * cell_mm
@@ -199,7 +215,7 @@ def _crop_and_resize_image(image, crop, max_edge):
     return cropped
 
 
-def _measure_grid_photo(photo_path, grid, rotation_degrees=0, crop=None, max_edge=0, manual_corners=None):
+def _measure_grid_photo(photo_path, grid, rotation_degrees=0, crop=None, max_edge=0, manual_corners=None, manual_sample_points=None, reference_correction=None):
     photo = cv2.imread(photo_path, cv2.IMREAD_COLOR)
     if photo is None:
         raise ValueError("The saved grid photo could not be opened for analysis.")
@@ -221,6 +237,7 @@ def _measure_grid_photo(photo_path, grid, rotation_degrees=0, crop=None, max_edg
     height, width = rectified.shape[:2]
     intervals, angles = grid["intervals_mm"], grid["angles_degrees"]
     cells = []
+    manual_sample_points = manual_sample_points or {}
     preview = rectified.copy()
     for index in range(rows * columns):
         row, column = divmod(index, columns)
@@ -228,19 +245,46 @@ def _measure_grid_photo(photo_path, grid, rotation_degrees=0, crop=None, max_edg
         y0, y1 = round(row * height / rows), round((row + 1) * height / rows)
         # Avoid the engraved border and label, which are not representative of
         # the cell's structural color.
-        pad_x, pad_y = max(1, round((x1 - x0) * .22)), max(1, round((y1 - y0) * .25))
-        sample = rectified[y0 + pad_y:y1 - pad_y, x0 + pad_x:x1 - pad_x]
+        point = manual_sample_points.get(str(index + 1))
+        if point:
+            center_x, center_y = round(float(point[0]) * width), round(float(point[1]) * height)
+            radius_x, radius_y = max(2, round((x1 - x0) * .14)), max(2, round((y1 - y0) * .14))
+            sample = rectified[max(y0, center_y - radius_y):min(y1, center_y + radius_y), max(x0, center_x - radius_x):min(x1, center_x + radius_x)]
+        else:
+            pad_x, pad_y = max(1, round((x1 - x0) * .22)), max(1, round((y1 - y0) * .25))
+            sample = rectified[y0 + pad_y:y1 - pad_y, x0 + pad_x:x1 - pad_x]
         if sample.size == 0:
             raise ValueError("The detected grid is too small to sample reliably.")
         median_bgr = np.median(sample.reshape(-1, 3), axis=0).astype(np.uint8)
         median_rgb = [int(median_bgr[2]), int(median_bgr[1]), int(median_bgr[0])]
+        if reference_correction:
+            median_rgb = [int(np.clip(channel * scale, 0, 255)) for channel, scale in zip(median_rgb, reference_correction)]
+        sample_hsv = cv2.cvtColor(sample, cv2.COLOR_BGR2HSV)
         median_hsv = cv2.cvtColor(np.uint8([[median_bgr]]), cv2.COLOR_BGR2HSV)[0, 0]
+        saturation = float(np.median(sample_hsv[:, :, 1])) / 255
+        brightness = float(np.median(sample_hsv[:, :, 2])) / 255
+        uniformity = max(0., 1 - float(np.mean(np.std(sample.reshape(-1, 3), axis=0))) / 85)
+        confidence = round(100 * (.35 * saturation + .30 * brightness + .35 * uniformity))
+        quality_flags = []
+        if saturation < .12:
+            quality_flags.append("low color saturation")
+        if brightness < .16:
+            quality_flags.append("very dark")
+        if uniformity < .55:
+            quality_flags.append("uneven sample")
         cells.append({
             "index": index + 1, "row": row + 1, "column": column + 1,
             "interval_mm": intervals[index], "angle_degrees": angles[index],
             "observed_rgb": median_rgb,
             "observed_hex": "#{:02X}{:02X}{:02X}".format(*median_rgb),
             "observed_hsv_opencv": [int(value) for value in median_hsv],
+            "confidence": confidence,
+            "quality_flags": quality_flags,
+            "manual_sample_point": point,
+            "laser_setting_override": (
+                {"parameter": grid["sweep"]["parameter"], "value": grid["sweep"]["values"][index]}
+                if grid.get("sweep", {}).get("parameter") else None
+            ),
         })
         cv2.rectangle(preview, (x0, y0), (x1, y1), (40, 240, 135), 2)
         cv2.putText(preview, str(index + 1), (x0 + 8, y0 + 25), cv2.FONT_HERSHEY_SIMPLEX, .75, (40, 240, 135), 2, cv2.LINE_AA)
@@ -312,6 +356,12 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_f
         setting.name = recipe["name"]
         setting.interval = float(recipe["interval_mm"])
         setting.angle = float(recipe["angle_degrees"])
+        override = recipe.get("laser_setting_override") or {}
+        if override.get("parameter") in SWEEP_SETTINGS and SWEEP_SETTINGS[override["parameter"]]:
+            value = override.get("value")
+            if override["parameter"] in {"frequency", "passes"}:
+                value = round(float(value))
+            setattr(setting, SWEEP_SETTINGS[override["parameter"]], value)
         setting.subLayers = []
         project.add_layer(setting)
         recipes_by_name[recipe["name"]] = {"recipe": recipe, "layer_index": layer_index, "pixels": []}
@@ -353,6 +403,11 @@ def calibration_grid():
         interval_low = max(.01, min(.5, float(request.form.get("interval_low", .045))))
         interval_high = max(interval_low, min(.5, float(request.form.get("interval_high", .07))))
         lens_field_mm = max(1, min(1000, float(request.form.get("lens_field_mm", 110))))
+        sweep_key = str(request.form.get("sweep_parameter", "none"))
+        if sweep_key not in SWEEP_SETTINGS:
+            raise ValueError("Unknown laser-setting sweep.")
+        sweep_low = float(request.form.get("sweep_low", 0))
+        sweep_high = float(request.form.get("sweep_high", sweep_low))
     except ValueError:
         return jsonify({"status": "error", "message": "Calibration grid dimensions and intervals must be numbers."}), 400
 
@@ -376,17 +431,30 @@ def calibration_grid():
     count = columns * rows
     intervals = [interval_low + (interval_high - interval_low) * index / max(count - 1, 1) for index in range(count)]
     angles = [180 * index / max(count - 1, 1) for index in range(count)]
+    sweep_values = [sweep_low + (sweep_high - sweep_low) * index / max(count - 1, 1) for index in range(count)]
     stem = f"holographic_calibration_{task_id}"
     svg_name, lbrn_name = f"{stem}.svg", f"{stem}.lbrn2"
     try:
         _svg_grid(os.path.join(upload_folder, svg_name), columns, rows, cell_mm, intervals, angles)
         project = lightburn.Lightburn()
+        fiducial_layer_index = count
+        fiducial_setting = copy(base_setting)
+        fiducial_setting.index = fiducial_layer_index
+        fiducial_setting.name = "Calibration alignment fiducials"
+        fiducial_setting.subLayers = []
+        project.add_layer(fiducial_setting)
+        fiducial_size = min(1.2, cell_mm * .12)
+        for fiducial_x, fiducial_y in ((.2, .2), (columns * cell_mm - fiducial_size - .2, .2), (.2, rows * cell_mm - fiducial_size - .2), (columns * cell_mm - fiducial_size - .2, rows * cell_mm - fiducial_size - .2)):
+            project.add(lightburn.Square(fiducial_size, fiducial_size, x=fiducial_x, y=fiducial_y).layer(fiducial_layer_index))
         for index, (interval, angle) in enumerate(zip(intervals, angles)):
             setting = copy(base_setting)
             setting.index = index
             setting.name = f"Holo {index + 1:02d} {angle:g}deg {interval:.3f}mm"
             setting.interval = interval
             setting.angle = angle
+            if SWEEP_SETTINGS[sweep_key]:
+                value = round(sweep_values[index]) if sweep_key in {"frequency", "passes"} else sweep_values[index]
+                setattr(setting, SWEEP_SETTINGS[sweep_key], value)
             project.add_layer(setting)
             project.add(lightburn.Square(cell_mm, cell_mm, x=(index % columns) * cell_mm,
                                         y=(index // columns) * cell_mm).layer(index))
@@ -398,6 +466,11 @@ def calibration_grid():
                 "lens_field_of_view_mm": lens_field_mm, "columns": columns, "rows": rows,
                 "cell_size_mm": cell_mm, "interval_range_mm": [interval_low, interval_high],
                 "angles_degrees": angles, "intervals_mm": intervals,
+                "sweep": {
+                    "parameter": sweep_key if SWEEP_SETTINGS[sweep_key] else None,
+                    "lightburn_property": SWEEP_SETTINGS[sweep_key],
+                    "values": sweep_values if SWEEP_SETTINGS[sweep_key] else [],
+                },
             }, metadata_file, indent=2)
     except Exception as error:
         current_app.logger.exception("Holographic calibration-grid export failed")
@@ -491,6 +564,8 @@ def analyze_calibration_profile():
             raise ValueError("Opposing crop margins must leave visible image area.")
         max_edge = max(0, min(6000, int(request.form.get("max_edge", 1800))))
         manual_corners_raw = str(request.form.get("manual_corners", "")).strip()
+        manual_samples_raw = str(request.form.get("manual_sample_points", "")).strip()
+        reference_values = [str(request.form.get(f"reference_{channel}", "")).strip() for channel in ("r", "g", "b")]
         manual_corners = None
         if manual_corners_raw:
             normalized_corners = json.loads(manual_corners_raw)
@@ -498,6 +573,17 @@ def analyze_calibration_profile():
                     or any(not isinstance(corner, list) or len(corner) != 2 for corner in normalized_corners)):
                 raise ValueError("Four grid corners are required.")
             manual_corners = normalized_corners
+        manual_sample_points = json.loads(manual_samples_raw) if manual_samples_raw else {}
+        if not isinstance(manual_sample_points, dict):
+            raise ValueError("Manual sample points must be a cell map.")
+        reference_correction = None
+        if any(reference_values):
+            if not all(reference_values):
+                raise ValueError("Enter all three neutral-reference RGB values, or leave them all blank.")
+            observed_reference = [float(value) for value in reference_values]
+            if any(value <= 0 for value in observed_reference):
+                raise ValueError("Neutral-reference RGB values must be above zero.")
+            reference_correction = [220 / value for value in observed_reference]
     except (ValueError, TypeError, json.JSONDecodeError):
         return jsonify({"status": "error", "message": "Rotation, crop margins, and analysis size must be valid numbers."}), 400
     try:
@@ -514,7 +600,7 @@ def analyze_calibration_profile():
                 for corner in manual_corners
             ]
         cells, preview, correction, corners = _measure_grid_photo(
-            os.path.join(upload_folder, profile["grid_photo"]), profile["grid"], rotation_degrees, crop, max_edge, manual_corners
+            os.path.join(upload_folder, profile["grid_photo"]), profile["grid"], rotation_degrees, crop, max_edge, manual_corners, manual_sample_points, reference_correction
         )
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
         current_app.logger.exception("Holographic calibration analysis failed")
@@ -532,6 +618,8 @@ def analyze_calibration_profile():
         "source_crop_percent": crop,
         "analysis_max_edge_px": max_edge,
         "manual_grid_corners": corners if correction == "manual_corners" else None,
+        "manual_sample_points": manual_sample_points,
+        "neutral_reference_correction": reference_correction,
         "detected_grid_corners": corners,
         "preview": preview_name,
         "cells": cells,
@@ -586,6 +674,14 @@ def save_holographic_recipes():
 
     profile["status"] = "recipe_palette_ready"
     profile["recipes"] = recipes
+    similar_pairs = []
+    for left_index, left in enumerate(recipes):
+        for right in recipes[left_index + 1:]:
+            distance = round(math.sqrt(sum((int(a) - int(b)) ** 2 for a, b in zip(left["observed_rgb"], right["observed_rgb"]))), 1)
+            if distance < 28:
+                similar_pairs.append({"recipes": [left["name"], right["name"]], "rgb_distance": distance})
+    weak_recipes = [recipe["name"] for recipe in recipes if recipe.get("confidence", 100) < 45 or recipe.get("quality_flags")]
+    profile["palette_diagnostics"] = {"similar_pairs": similar_pairs, "weak_recipes": weak_recipes}
     with open(profile_path, "w", encoding="utf-8") as profile_file:
         json.dump(profile, profile_file, indent=2)
     current_app.logger.info("Saved %s holographic recipes for profile %s.", len(recipes), profile_id)
@@ -593,6 +689,7 @@ def save_holographic_recipes():
         "status": "saved",
         "recipe_count": len(recipes),
         "profile_url": f"/holographic-etching/download/{os.path.basename(profile_path)}",
+        "palette_diagnostics": profile["palette_diagnostics"],
         "message": f"Saved {len(recipes)} holographic recipe(s) into this calibration profile.",
     })
 
