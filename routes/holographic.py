@@ -734,7 +734,7 @@ def build_holographic_artwork():
     if not all((artwork, artwork.filename, profile_file, profile_file.filename, material_file, material_file.filename)):
         return jsonify({"status": "error", "message": "Provide artwork, a saved recipe profile, and the matching Material Library file."}), 400
     try:
-        max_dimension = max(8, min(300, int(request.form.get("max_dimension", 96))))
+        max_dimension = max(8, min(1600, int(request.form.get("max_dimension", 96))))
         pixel_mm = max(.05, min(5, float(request.form.get("pixel_mm", .5))))
     except ValueError:
         return jsonify({"status": "error", "message": "Processing resolution and pixel size must be numbers."}), 400
