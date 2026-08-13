@@ -236,13 +236,15 @@
     .console-status-line {
         order:2;
         display:grid;
-        grid-template-columns:minmax(0, 1fr) auto minmax(0, 1fr);
+        grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
         align-items:center;
         width:100%;
         margin-top:7px;
+        padding:0 22px;
     }
     .console-subtitle {
         grid-column:2;
+        justify-self:center;
         color: #bdb58f;
         font:700 clamp(8px, 1.7vw, 12px) "Courier New", monospace;
         letter-spacing:clamp(.04em, .7vw, .16em);
@@ -251,7 +253,7 @@
     }
     .status-lamps {
         grid-column:1;
-        justify-self:end;
+        justify-self:center;
         display:flex;
         align-items:center;
         justify-content:flex-start;
@@ -299,7 +301,7 @@
     .status-lamps[data-status="failed"] .mopa-lamp::before { background:#e54d42; }
     @media (prefers-reduced-motion: reduce) { .status-lamp::before { animation:none; } }
     @media (max-width: 700px) {
-        .console-status-line { grid-template-columns:1fr; gap:7px; }
+        .console-status-line { grid-template-columns:1fr; gap:7px; padding:0; }
         .console-subtitle { grid-column:1; grid-row:1; }
         .status-lamps { grid-column:1; grid-row:2; justify-self:center; gap:9px; }
     }
