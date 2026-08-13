@@ -43,7 +43,7 @@
   }
   .color-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(75px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(var(--palette-card-min, 75px), 1fr));
     gap: 16px 10px;
     margin-top: 14px;
   }
@@ -60,11 +60,11 @@
     line-height: 1.2;
     margin-bottom: 3px;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
+    overflow: visible;
+    width: max-content;
+    max-width: none;
   }
-  .color-name[contenteditable="true"] { cursor:text; border-bottom:1px dashed currentColor; outline:none; white-space:normal; overflow:visible; width:100%; }
+  .color-name[contenteditable="true"] { cursor:text; border-bottom:1px dashed currentColor; outline:none; }
   .color-name[contenteditable="true"]:focus { border-bottom-style:solid; }
   .color-label {
     font-size: 0.65rem;
@@ -674,6 +674,7 @@
     const colorInput = document.getElementById('colorList');
     const colorNameOverrides = document.getElementById('color_name_overrides');
     const paletteCards = Array.from(document.querySelectorAll('.color-card'));
+    const paletteGrid = document.querySelector('.color-grid');
     const selectedColorHexes = new Set(paletteCards.map(card =>
       card.querySelector('.color-hex').textContent.trim().toUpperCase()
     ));
@@ -689,6 +690,13 @@
       });
       colorInput.value = selectedNames.join(', ');
       colorNameOverrides.value = JSON.stringify(overrides);
+      // Keep every palette card the same width.  When a user enters a long
+      // library label, widen the shared grid minimum so the grid uses fewer
+      // columns instead of wrapping only that one label.
+      const widestLabel = Math.max(...paletteCards.map(card =>
+        card.querySelector('.color-name').scrollWidth
+      ));
+      paletteGrid.style.setProperty('--palette-card-min', `${Math.max(75, widestLabel + 14)}px`);
     }
 
     paletteCards.forEach(card => {
@@ -703,6 +711,7 @@
         name.textContent = name.textContent.trim() || card.querySelector('.color-hex').textContent.trim();
         updatePaletteFields();
       });
+      name.addEventListener('input', updatePaletteFields);
     });
 
     squares.forEach(square => {
