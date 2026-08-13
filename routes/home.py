@@ -1,6 +1,8 @@
-"""Static-page routes."""
+"""Home, sign-in, and account-status routes."""
 
-from flask import current_app, render_template
+from urllib.parse import urlencode
+
+from flask import current_app, jsonify, redirect, render_template, request
 
 from . import routes
 
@@ -14,6 +16,33 @@ def index():
 def login():
     """ALB authenticates this route before returning users to the app home."""
     return render_template("login_complete.html")
+
+
+@routes.route("/auth-status")
+def auth_status():
+    """Expose only the ALB-authenticated state needed by the console chrome."""
+    return jsonify({"signed_in": bool(request.headers.get("x-amzn-oidc-identity", "").strip())})
+
+
+@routes.route("/logout")
+def logout():
+    """Clear ALB's auth session and finish the Cognito hosted-UI sign-out flow."""
+    public_url = current_app.config.get("PUBLIC_APP_URL") or f"{request.scheme}://{request.host}"
+    cognito_domain = current_app.config.get("COGNITO_DOMAIN")
+    client_id = current_app.config.get("COGNITO_CLIENT_ID")
+    if cognito_domain and client_id:
+        destination = f"https://{cognito_domain}/logout?" + urlencode({
+            "client_id": client_id,
+            "logout_uri": f"{public_url}/",
+        })
+    else:
+        destination = "/"
+    response = redirect(destination)
+    # ALB may split a large session across numbered cookies.  Clear each part.
+    for cookie_name in request.cookies:
+        if cookie_name == "AWSELBAuthSessionCookie" or cookie_name.startswith("AWSELBAuthSessionCookie-"):
+            response.delete_cookie(cookie_name, path="/", secure=request.is_secure, samesite="None")
+    return response
 
 
 @routes.route("/holographic-etching")

@@ -402,6 +402,12 @@
   }
   .theme-toggle { display:flex; justify-content:flex-end; margin-bottom:12px; }
   .login-link { margin-right:auto; color:var(--phosphor); font:700 11px "Courier New",monospace; letter-spacing:.08em; text-decoration:none; text-transform:uppercase; }
+  .auth-console { display:flex; align-items:center; gap:8px; margin-right:auto; color:#f2a25d; font:700 10px "Courier New",monospace; letter-spacing:.09em; text-transform:uppercase; }
+  .auth-console[hidden] { display:none; }
+  .auth-launch-lamp { width:13px; height:13px; border:2px solid #9b3b2d; border-radius:50%; background:#4b160f; box-shadow:inset 0 0 4px #170503,0 0 0 2px #25150d; }
+  .auth-console.authorized { color:#bff39a; }
+  .auth-console.authorized .auth-launch-lamp { border-color:#91cf68; background:#64bb46; box-shadow:inset 0 1px 3px #e2ffd0,0 0 10px #6dce4e,0 0 0 2px #1f3918; }
+  .auth-console a { color:inherit; text-decoration:none; border-bottom:1px dotted currentColor; }
   .theme-toggle label { display:flex; align-items:center; gap:9px; font:700 11px "Courier New",monospace; letter-spacing:.1em; text-transform:uppercase; }
   .theme-toggle input { position:absolute; opacity:0; }
   .toggle-track { position:relative; width:54px; height:26px; border:2px solid #777864; border-radius:14px; background:#171b15; box-shadow:inset 0 3px 6px #000; cursor:pointer; }
@@ -415,6 +421,8 @@
   body.light-machine .upload-error-dialog { color:#352016; background:#f0e8d9; border-color:#a95030; box-shadow:0 12px 40px #333,inset 0 0 0 4px #d0c2aa; }
   body.light-machine .upload-error-dialog h2 { color:#873419; }
   body.light-machine .upload-error-login { color:#173113; border-color:#5e9850; background:linear-gradient(#c4e2ad,#86b873); box-shadow:inset 0 1px #efffe4,0 4px 0 #4e7841; }
+  body.light-machine .auth-console { color:#8a321d; }
+  body.light-machine .auth-console.authorized { color:#2a6b22; }
   body.light-machine .how-it-works-intro { color:#343530; }
   @media (prefers-reduced-motion:reduce) { .status-lamp::before { animation:none; } }
   body.light-machine form { background:rgba(220,221,216,.5); border-color:#777974; box-shadow:inset 0 0 0 4px #b1b3ae,inset 0 0 20px #888,0 6px 0 #686a66; }
@@ -436,7 +444,11 @@
     </div>
   </div>
 </div>
-  <div class="theme-toggle"><a class="login-link" href="/login">Sign in for unlimited runs</a><label><span>Dark</span><input id="theme_switch" type="checkbox"><span class="toggle-track"></span><span>Light</span></label></div>
+  <div class="theme-toggle">
+    <a id="login_link" class="login-link" href="/login">Sign in for unlimited runs</a>
+    <div id="auth_console" class="auth-console authorized" hidden><span class="auth-launch-lamp" aria-hidden="true"></span><span>Operator authorized</span><a href="/logout">Sign out</a></div>
+    <label><span>Dark</span><input id="theme_switch" type="checkbox"><span class="toggle-track"></span><span>Light</span></label>
+  </div>
   <div class="page-header">
     <h1><a class="home-title" href="/" aria-label="Return to MOPA Laser Rasterizer home"><span class="facade-title" aria-hidden="true"><span>M</span><span>O</span><span>P</span><span>A</span><span>-</span><span>L</span><span>A</span><span>S</span><span>E</span><span>R</span><span>-</span><span>R</span><span>A</span><span>S</span><span>T</span><span>E</span><span>R</span><span>I</span><span>Z</span><span>E</span><span>R</span></span></a></h1>
     <div class="console-status-line">
@@ -823,6 +835,8 @@
 
     document.addEventListener('DOMContentLoaded', () => {
       const themeSwitch = document.getElementById('theme_switch');
+      const loginLink = document.getElementById('login_link');
+      const authConsole = document.getElementById('auth_console');
       const savedTheme = localStorage.getItem('mopa-machine-theme') || 'dark';
       themeSwitch.checked = savedTheme === 'light';
       document.body.classList.toggle('light-machine', themeSwitch.checked);
@@ -830,6 +844,13 @@
         document.body.classList.toggle('light-machine', themeSwitch.checked);
         localStorage.setItem('mopa-machine-theme', themeSwitch.checked ? 'light' : 'dark');
       });
+      fetch('/auth-status', { credentials: 'same-origin' })
+        .then(response => response.ok ? response.json() : { signed_in: false })
+        .then(({ signed_in }) => {
+          loginLink.hidden = Boolean(signed_in);
+          authConsole.hidden = !signed_in;
+        })
+        .catch(() => {});
       const sessionFromLink = new URLSearchParams(window.location.search).get('history_session');
       const savedHistorySession = sessionStorage.getItem('mopa-history-session');
       const newSession = crypto.randomUUID

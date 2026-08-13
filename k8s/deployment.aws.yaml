@@ -49,6 +49,14 @@ spec:
             secretKeyRef:
               name: mopa-rasterizer-session
               key: secret
+        # Fill COGNITO_CLIENT_ID with the non-secret app-client ID created for
+        # the ALB.  It is used only to build Cognito's hosted-UI logout URL.
+        - name: COGNITO_DOMAIN
+          value: "mopa-laser-rasterizer-401716294893.auth.us-east-2.amazoncognito.com"
+        - name: COGNITO_CLIENT_ID
+          value: ""
+        - name: PUBLIC_APP_URL
+          value: "https://mopa-laser-rasterizer.com"
         ports:
         - name: http
           containerPort: 8000

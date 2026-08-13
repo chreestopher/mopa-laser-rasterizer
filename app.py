@@ -22,6 +22,9 @@ def create_app():
     app.config["SECRET_KEY"] = os.environ.get("APP_SESSION_SECRET", "local-development-only-secret")
     app.config["SESSION_COOKIE_SECURE"] = os.environ.get("SESSION_COOKIE_SECURE", "false").lower() == "true"
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["COGNITO_DOMAIN"] = os.environ.get("COGNITO_DOMAIN", "").strip()
+    app.config["COGNITO_CLIENT_ID"] = os.environ.get("COGNITO_CLIENT_ID", "").strip()
+    app.config["PUBLIC_APP_URL"] = os.environ.get("PUBLIC_APP_URL", "").rstrip("/")
     register_routes(app)
     return app
 
