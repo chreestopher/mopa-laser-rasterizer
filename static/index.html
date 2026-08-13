@@ -343,11 +343,12 @@
 <body> 
   <div class="theme-toggle"><label><span>Dark</span><input id="theme_switch" type="checkbox"><span class="toggle-track"></span><span>Light</span></label></div>
   <h1 aria-label="MOPA-LASER-RASTERIZER"><span class="facade-title" aria-hidden="true"><span>M</span><span>O</span><span>P</span><span>A</span><span>-</span><span>L</span><span>A</span><span>S</span><span>E</span><span>R</span><span>-</span><span>R</span><span>A</span><span>S</span><span>T</span><span>E</span><span>R</span><span>I</span><span>Z</span><span>E</span><span>R</span></span></h1> 
-  <h2>Turn an image into a ready-to-run MOPA color engraving project—without building every color layer by hand.</h2>
+  <h2>Turn an image into a ready-to-run MOPA color engraving project</h2>
+  <h2>Without building every color layer by hand!</h2>
   <h3>Upload your artwork and LightBurn Material Library. The Rasterizer isolates the color regions, applies your saved laser settings, and gives you both a clean SVG and a LightBurn project to refine and run.</h3>
-  <h3>New to MOPA color engraving? Start with the material settings you already trust. Choose or type the material name used in your library, then name each LightBurn layer to match the color names in the palette.</h3>
+  <h3><strong>Before you begin:</strong> choose or type the exact material name from your LightBurn Material Library. Then pick your easy path: keep <em>this app’s palette</em> names and name your library entries the same, or click any name in <em>this app’s palette</em> and retitle it to match a custom entry already in your library. Same words wins the prize—matching ignores capitalization, but not the words themselves.</h3>
   <h3>Choose your image preset, keep the colors you want, set the finished size, and let the app do the heavy lifting. Your aspect ratio is always preserved.</h3>
-  <h3><strong>How does it work?</strong> The Rasterizer reads your artwork one pixel at a time, reduces it to your chosen MOPA color palette, welds matching areas into clean vector shapes, and assigns each shape to the matching LightBurn layer from your Material Library. But wait, there’s more: it also prepares the black underlay and punch-through geometry LightBurn needs, so colored regions stay clean instead of engraving over one another.</h3>
+  <h3><strong>How does it work?</strong> The Rasterizer reads your artwork one pixel at a time, reduces it to your chosen colors from <em>this app’s palette</em>, welds matching areas into clean vector shapes, and assigns each shape to the matching LightBurn layer from your Material Library. But wait, there’s more: it also prepares the black underlay and punch-through geometry LightBurn needs, so colored regions stay clean instead of engraving over one another.</h3>
   <h3>That means less tracing, less layer setup, and more time making metal do impossible-looking things. Pick a photo preset for a polished starting point—or choose an abstract style when you want to turn the signal all the way up.</h3>
      
   <!-- Form Section -->
@@ -363,7 +364,7 @@
       <div><input type="file" id="material_settings" name="material_settings" required></div>
     </div>    
     <div>
-      <div><label for="material">Material to engrave:</label></div>
+      <div><label for="material">Material to engrave (exact Material Library name):</label></div>
       <div><input id="material" name="material" list="material_suggestions" value="stainless - steel" required><datalist id="material_suggestions"><option value="stainless - steel">Stainless Steel</option><option value="titanium">Titanium</option></datalist></div>
     </div>
     <div>
@@ -389,8 +390,8 @@
     <div>      
       <!-- Lightburn Color Palette Grid Section -->
       <div class="palette-section">
-        <label style="font-size: 0.9rem; font-weight: 600;">3. Build your engraving palette</label>
-        <h3>Every color is included to start. Click a swatch to exclude it from the artwork, or click its name to match the exact layer name in your Material Library. Nearby colors are reassigned to the closest remaining engraving color—so you can experiment confidently.</h3>
+        <label style="font-size: 0.9rem; font-weight: 600;">3. Tune this app’s engraving palette</label>
+        <h3>Every color in <em>this app’s palette</em> is included to start. Click a swatch to exclude it from the artwork. For settings, either keep this app’s default color names and use those same names in your Material Library, or click a color name to retitle it to your library’s exact Entry Description or cut-setting name. Presto: the app copies that setting onto the matching LightBurn layer. Nearby colors are reassigned to the closest remaining engraving color, so you can experiment with confidence.</h3>
         <div class="color-grid">
           <div class="color-card"><span class="color-name">black</span><div class="color-square" style="background-color: #000000;"></div><span class="color-hex">#000000</span></div>
           <div class="color-card"><span class="color-name">blue</span><div class="color-square" style="background-color: #0000FF;"></div><span class="color-hex">#0000FF</span></div>
