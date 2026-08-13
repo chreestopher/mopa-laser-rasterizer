@@ -966,7 +966,7 @@ def build_punched_black_layer(
     """
     Build the black layer as the canvas minus all colored geometry.
 
-    Invalid geometries are repaired before the union operation.
+    Invalid geometries are repaired and precision-snapped before subtraction.
     """
 
     canvas_frame = build_black_canvas(
@@ -977,6 +977,22 @@ def build_punched_black_layer(
     )
 
     colored_geometries = []
+    precision_grid = 0.001
+
+    def topology_safe(geometry, label):
+        """Repair polygon topology before a GEOS overlay operation."""
+        if geometry.is_empty:
+            return geometry
+        if not geometry.is_valid:
+            printLogMessage(f"Repairing invalid geometry for {label} before black-layer subtraction...")
+            geometry = make_valid(geometry)
+        # A zero-width buffer resolves residual touching-ring artifacts that
+        # ``make_valid`` can retain in geometry collections.
+        try:
+            return geometry.buffer(0)
+        except Exception as error:
+            printLogMessage(f"Topology cleanup warning for {label}: {error}")
+            return geometry
 
     for color_hex, geometry in processed_layers.items():
 
@@ -986,20 +1002,7 @@ def build_punched_black_layer(
         if geometry.is_empty:
             continue
 
-        # ------------------------------------------------------------
-        # Repair invalid geometry before attempting the union.
-        # ------------------------------------------------------------
-
-        if not geometry.is_valid:
-
-            printLogMessage(
-                f"Repairing invalid geometry for color "
-                f"{color_hex} before black-layer subtraction..."
-            )
-
-            geometry = make_valid(
-                geometry
-            )
+        geometry = topology_safe(geometry, f"color {color_hex}")
 
         if not geometry.is_empty:
             colored_geometries.append(
@@ -1020,23 +1023,29 @@ def build_punched_black_layer(
         f"colored layer(s) out of black background..."
     )
 
-    # ------------------------------------------------------------
-    # Combine all repaired colored geometry.
-    # ------------------------------------------------------------
-
-    all_colored_geometry = unary_union(
-        colored_geometries
-    )
-
-    # ------------------------------------------------------------
-    # Subtract colored geometry from black canvas.
-    # ------------------------------------------------------------
-
-    punched_black_layer = (
-        canvas_frame.difference(
-            all_colored_geometry
+    # Subtract one repaired layer at a time.  A combined union can create
+    # invalid shared edges after abstract transforms, even when each input
+    # geometry is valid on its own.  A tiny grid snap is visually invisible
+    # at raster scale and makes the overlay operation deterministic.
+    punched_black_layer = topology_safe(canvas_frame, "black canvas")
+    for color_geometry in colored_geometries:
+        try:
+            punched_black_layer = punched_black_layer.difference(
+                color_geometry, grid_size=precision_grid
+            )
+        except Exception as error:
+            printLogMessage(
+                f"Retrying black punch-through after topology repair: {error}"
+            )
+            punched_black_layer = topology_safe(
+                punched_black_layer, "partially punched black canvas"
+            ).difference(
+                topology_safe(color_geometry, "colored punch-through geometry"),
+                grid_size=precision_grid
+            )
+        punched_black_layer = topology_safe(
+            punched_black_layer, "partially punched black canvas"
         )
-    )
 
     printLogMessage(
         "Black layer successfully punched around "
