@@ -157,10 +157,25 @@ def _rectify_grid(photo):
     return cv2.warpPerspective(photo, cv2.getPerspectiveTransform(corners, destination), (target_width, target_height)), "rectified", corners.tolist()
 
 
-def _measure_grid_photo(photo_path, grid):
+def _rotate_image(image, degrees):
+    """Rotate without clipping the calibration sheet's corners."""
+    if not degrees:
+        return image
+    height, width = image.shape[:2]
+    matrix = cv2.getRotationMatrix2D((width / 2, height / 2), degrees, 1)
+    cosine, sine = abs(matrix[0, 0]), abs(matrix[0, 1])
+    rotated_width = round(height * sine + width * cosine)
+    rotated_height = round(height * cosine + width * sine)
+    matrix[0, 2] += rotated_width / 2 - width / 2
+    matrix[1, 2] += rotated_height / 2 - height / 2
+    return cv2.warpAffine(image, matrix, (rotated_width, rotated_height), borderMode=cv2.BORDER_REPLICATE)
+
+
+def _measure_grid_photo(photo_path, grid, rotation_degrees=0):
     photo = cv2.imread(photo_path, cv2.IMREAD_COLOR)
     if photo is None:
         raise ValueError("The saved grid photo could not be opened for analysis.")
+    photo = _rotate_image(photo, rotation_degrees)
     rectified, correction, corners = _rectify_grid(photo)
     rows, columns = int(grid["rows"]), int(grid["columns"])
     height, width = rectified.shape[:2]
@@ -334,13 +349,17 @@ def save_calibration_profile():
 def analyze_calibration_profile():
     """Measure visible cell colors from a saved calibration-grid photograph."""
     profile_id = str(request.form.get("profile_id", "")).strip()
+    try:
+        rotation_degrees = max(-180, min(180, float(request.form.get("rotation_degrees", 0))))
+    except ValueError:
+        return jsonify({"status": "error", "message": "Photo rotation must be a number of degrees."}), 400
     upload_folder = current_app.config["UPLOAD_FOLDER"]
     try:
         profile_path = _profile_metadata_path(upload_folder, profile_id)
         with open(profile_path, encoding="utf-8") as profile_file:
             profile = json.load(profile_file)
         cells, preview, correction, corners = _measure_grid_photo(
-            os.path.join(upload_folder, profile["grid_photo"]), profile["grid"]
+            os.path.join(upload_folder, profile["grid_photo"]), profile["grid"], rotation_degrees
         )
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
         current_app.logger.exception("Holographic calibration analysis failed")
@@ -354,6 +373,7 @@ def analyze_calibration_profile():
         "state": "measured",
         "message": "Cell colors were sampled from the photograph. Confirm the numbered preview before using these values for recipe mapping.",
         "perspective_correction": correction,
+        "source_rotation_degrees": rotation_degrees,
         "detected_grid_corners": corners,
         "preview": preview_name,
         "cells": cells,
@@ -367,6 +387,7 @@ def analyze_calibration_profile():
         "profile_url": f"/holographic-etching/download/{os.path.basename(profile_path)}",
         "preview_url": f"/holographic-etching/preview/{preview_name}",
         "correction": correction,
+        "rotation_degrees": rotation_degrees,
         "cells": cells,
         "message": "Grid sampled. Review the numbered preview, then keep this profile as the measured recipe source.",
     })
