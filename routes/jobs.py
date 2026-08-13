@@ -67,6 +67,10 @@ def start_task():
     tasks[f"{task_id}_logs"] = ["Waiting to start..."]
     tasks[f"{task_id}_filename"] = output_name
     tasks[f"{task_id}_error"] = None
+    # Register the status before recording history.  Otherwise the history
+    # reader can see a brand-new entry before its worker starts and mistake it
+    # for an expired task.
+    redis_client.set(f"task:{task_id}:status", "pending", ex=HISTORY_TTL_SECONDS)
     submitted_preset = str(user_data.get("image_preset", "cartoon")).strip().lower()
     submitted_filter = (
         submitted_preset.removeprefix("abstract_")
