@@ -46,7 +46,7 @@
   }
   .color-grid {
     display: grid;
-    grid-template-columns: repeat(var(--palette-columns, 5), minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 16px 10px;
     margin-top: 14px;
   }
@@ -386,6 +386,10 @@
       max-width:100%;
       font-size:12px;
     }
+    .color-grid { grid-template-columns:repeat(4, minmax(0, 1fr)); gap:14px 8px; }
+  }
+  @media (max-width:390px) {
+    .color-grid { grid-template-columns:repeat(3, minmax(0, 1fr)); }
   }
   .theme-toggle { display:flex; justify-content:flex-end; margin-bottom:12px; }
   .theme-toggle label { display:flex; align-items:center; gap:9px; font:700 11px "Courier New",monospace; letter-spacing:.1em; text-transform:uppercase; }
@@ -912,19 +916,6 @@
       });
       colorInput.value = selectedNames.join(', ');
       colorNameOverrides.value = JSON.stringify(overrides);
-      // Pick one explicit column count for the entire palette.  A longer
-      // library label lowers that count and creates additional even rows,
-      // rather than letting an individual card wrap or distort its neighbors.
-      const widestLabel = Math.max(...paletteCards.map(card =>
-        card.querySelector('.color-name').scrollWidth
-      ));
-      const gap = Number.parseFloat(getComputedStyle(paletteGrid).columnGap) || 10;
-      const desiredCardWidth = Math.max(75, widestLabel + 18);
-      const columns = Math.max(1, Math.min(
-        paletteCards.length,
-        Math.floor((paletteGrid.clientWidth + gap) / (desiredCardWidth + gap))
-      ));
-      paletteGrid.style.setProperty('--palette-columns', columns);
     }
 
     paletteCards.forEach(card => {
@@ -956,6 +947,5 @@
         updatePaletteFields();
       });
     });
-    new ResizeObserver(() => updatePaletteFields()).observe(paletteGrid);
     updatePaletteFields();
   </script>
