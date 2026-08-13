@@ -40,6 +40,15 @@ spec:
           value: "mopa-laser-rasterizer-artifacts-401716294893"
         - name: UPLOAD_FOLDER
           value: "/tmp/uploads"
+        - name: DAILY_JOB_LIMIT
+          value: "3"
+        - name: SESSION_COOKIE_SECURE
+          value: "true"
+        - name: APP_SESSION_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: mopa-rasterizer-session
+              key: secret
         ports:
         - name: http
           containerPort: 8000

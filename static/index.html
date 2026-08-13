@@ -392,6 +392,7 @@
     .color-grid { grid-template-columns:repeat(4, minmax(0, 1fr)); }
   }
   .theme-toggle { display:flex; justify-content:flex-end; margin-bottom:12px; }
+  .login-link { margin-right:auto; color:var(--phosphor); font:700 11px "Courier New",monospace; letter-spacing:.08em; text-decoration:none; text-transform:uppercase; }
   .theme-toggle label { display:flex; align-items:center; gap:9px; font:700 11px "Courier New",monospace; letter-spacing:.1em; text-transform:uppercase; }
   .theme-toggle input { position:absolute; opacity:0; }
   .toggle-track { position:relative; width:54px; height:26px; border:2px solid #777864; border-radius:14px; background:#171b15; box-shadow:inset 0 3px 6px #000; cursor:pointer; }
@@ -412,7 +413,7 @@
 </style>
 </head>
 <body> 
-  <div class="theme-toggle"><label><span>Dark</span><input id="theme_switch" type="checkbox"><span class="toggle-track"></span><span>Light</span></label></div>
+  <div class="theme-toggle"><a class="login-link" href="/login">Sign in for unlimited runs</a><label><span>Dark</span><input id="theme_switch" type="checkbox"><span class="toggle-track"></span><span>Light</span></label></div>
   <div class="page-header">
     <h1><a class="home-title" href="/" aria-label="Return to MOPA Laser Rasterizer home"><span class="facade-title" aria-hidden="true"><span>M</span><span>O</span><span>P</span><span>A</span><span>-</span><span>L</span><span>A</span><span>S</span><span>E</span><span>R</span><span>-</span><span>R</span><span>A</span><span>S</span><span>T</span><span>E</span><span>R</span><span>I</span><span>Z</span><span>E</span><span>R</span></span></a></h1>
     <div class="console-status-line">

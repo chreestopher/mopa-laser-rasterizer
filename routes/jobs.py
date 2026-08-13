@@ -7,7 +7,7 @@ import threading
 import time
 import uuid
 
-from flask import Response, current_app, jsonify, make_response, redirect, render_template, request, send_from_directory, stream_with_context
+from flask import Response, current_app, jsonify, make_response, redirect, render_template, request, send_from_directory, session, stream_with_context
 from PIL import Image, UnidentifiedImageError
 from werkzeug.utils import secure_filename
 
@@ -16,6 +16,7 @@ from services import (
     ABSTRACT_FILTER_NAMES,
     HISTORY_TTL_SECONDS,
     add_history_entry,
+    claim_daily_job,
     cleanup_redis_inflight,
     get_history_entries,
     long_running_script,
@@ -38,6 +39,14 @@ def start_task():
         return redirect("/")
     if "image" not in request.files or not request.files["image"].filename:
         return jsonify({"status": "error", "message": "Choose an artwork file"}), 400
+
+    user_id = request.headers.get("x-amzn-oidc-identity", "").strip()
+    anonymous_id = None
+    if not user_id:
+        anonymous_id = session.get("anonymous_quota_id")
+        if not anonymous_id:
+            anonymous_id = str(uuid.uuid4())
+            session["anonymous_quota_id"] = anonymous_id
 
     task_id = str(uuid.uuid4())
     user_data = request.form.to_dict()
@@ -112,6 +121,18 @@ def start_task():
         color_name_overrides = parse_color_name_overrides(user_data.get("color_name_overrides", "{}"))
     except ValueError as error:
         return jsonify({"status": "error", "message": str(error)}), 400
+
+    # Cognito-authenticated users have unlimited jobs.  Anonymous visitors use
+    # a server-signed browser session and receive three accepted jobs per UTC
+    # day; malformed uploads never consume an allowance.
+    if anonymous_id:
+        allowed, _remaining_jobs = claim_daily_job(f"anonymous:{anonymous_id}")
+        if not allowed:
+            return jsonify({
+                "status": "error",
+                "message": "Your three free Rasterizer jobs for today are used. Sign in for unlimited jobs, or return after 00:00 UTC.",
+                "daily_limit": 3,
+            }), 429
 
     tasks[f"{task_id}_status"] = "pending"
     tasks[f"{task_id}_logs"] = ["Waiting to start..."]

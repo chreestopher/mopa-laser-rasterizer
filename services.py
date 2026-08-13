@@ -9,6 +9,7 @@ import re
 import subprocess
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 import boto3
@@ -30,6 +31,7 @@ ABSTRACT_FILTER_NAMES = {
 ABSTRACT_PRESET_PREFIX = "abstract_"
 HISTORY_SESSION_RE = re.compile(r"^[a-f0-9-]{32,36}$")
 HISTORY_TTL_SECONDS = 7 * 24 * 60 * 60
+DAILY_JOB_LIMIT = max(1, int(os.environ.get("DAILY_JOB_LIMIT", "3")))
 manager = multiprocessing.Manager()
 tasks = manager.dict()
 
@@ -37,6 +39,20 @@ tasks = manager.dict()
 def valid_history_session(value):
     value = str(value or "").strip().lower()
     return value if HISTORY_SESSION_RE.fullmatch(value) else None
+
+
+def claim_daily_job(user_id):
+    """Atomically claim one authenticated user's daily job allowance."""
+    now = datetime.now(timezone.utc)
+    day_key = now.strftime("%Y-%m-%d")
+    key = f"quota:{user_id}:{day_key}"
+    used = redis_client.incr(key)
+    if used == 1:
+        next_day = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        redis_client.expire(key, max(1, int((next_day - now).total_seconds())))
+    if used > DAILY_JOB_LIMIT:
+        return False, DAILY_JOB_LIMIT
+    return True, DAILY_JOB_LIMIT - used
 
 
 def normalize_dimension(value, default=0):

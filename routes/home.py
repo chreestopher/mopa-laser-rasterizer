@@ -10,6 +10,12 @@ def index():
     return current_app.send_static_file("index.html")
 
 
+@routes.route("/login")
+def login():
+    """ALB authenticates this route before returning users to the app home."""
+    return render_template("login_complete.html")
+
+
 @routes.route("/holographic-etching")
 def holographic_etching():
     """Dedicated workspace for the structural-color engraving workflow."""
