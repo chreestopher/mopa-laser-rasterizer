@@ -106,7 +106,13 @@
       results.textContent = 'Building calibration grid...';
       try {
         const response = await fetch('/holographic-etching/calibration-grid', {method:'POST', body:new FormData(form)});
-        const data = await response.json();
+        const responseText = await response.text();
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          throw new Error(`Calibration grid request failed (HTTP ${response.status}). The server returned an HTML error page; restart the app deployment so the new Holographic Etching route is loaded, then try again.`);
+        }
         if (!response.ok) throw new Error(data.message || 'Calibration grid could not be created.');
         results.innerHTML = `Calibration grid ready: <a href="${data.svg_url}">Download SVG</a> · <a href="${data.lightburn_url}">Download LightBurn project</a>`;
       } catch (error) {

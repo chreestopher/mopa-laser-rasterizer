@@ -4,6 +4,7 @@ import importlib.util
 import json
 import math
 import os
+import sys
 import uuid
 from copy import copy
 from xml.etree import ElementTree as ET
@@ -18,6 +19,9 @@ def _lightburn_module():
     path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "lib", "lightburn.py")
     spec = importlib.util.spec_from_file_location("holographic_lightburn", path)
     module = importlib.util.module_from_spec(spec)
+    # The LightBurn writer defines dataclasses, which require their module to
+    # be registered before execution.
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
