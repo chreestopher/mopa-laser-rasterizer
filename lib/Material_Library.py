@@ -54,8 +54,13 @@ def main(argv=None):
     if len(limit_list) <= 1:
         limit_list = [value[-1].lower() for value in target_colors.values()]
     limit_list.extend(("black", "light-gray"))
+    material_layer_report = {"loaded": [], "skipped": []}
     target_colors = vector_processing.parse_material_settings(
-        lb, material_library_file, limit_list, target_colors
+        lb,
+        material_library_file,
+        limit_list,
+        target_colors,
+        material_layer_report=material_layer_report,
     )
 
     vector_processing.raster_to_puzzle_and_lightburn(
@@ -73,6 +78,14 @@ def main(argv=None):
         smoothing_radius=preset["smoothing_radius"],
         abstract_filter=abstract_filter,
         filter_parameters=filter_parameters,
+        job_settings={
+            "image_preset": image_preset,
+            "preset_settings": preset,
+            "material_library_path": material_library_file,
+            "requested_limit_colors": limit_colors or "all",
+            "effective_limit_colors": limit_list,
+            "material_library_layers": material_layer_report,
+        },
     )
 
 

@@ -34,6 +34,49 @@ def printLogMessage(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}", flush=True)
 
+
+def _yaml_scalar(value):
+    """Return a safe, readable YAML scalar without adding a runtime dependency."""
+    if value is None:
+        return "null"
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    return json.dumps(str(value))
+
+
+def _yaml_lines(value, indent=0):
+    """Serialize the job's simple settings structure to YAML lines."""
+    prefix = " " * indent
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if isinstance(item, (dict, list, tuple)):
+                yield f"{prefix}{key}:"
+                yield from _yaml_lines(item, indent + 2)
+            else:
+                yield f"{prefix}{key}: {_yaml_scalar(item)}"
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            if isinstance(item, (dict, list, tuple)):
+                yield f"{prefix}-"
+                yield from _yaml_lines(item, indent + 2)
+            else:
+                yield f"{prefix}- {_yaml_scalar(item)}"
+    else:
+        yield f"{prefix}{_yaml_scalar(value)}"
+
+
+def log_job_settings(**settings):
+    """Write the input configuration as a YAML block at the top of job logs."""
+    printLogMessage("--- job_settings.yaml ---")
+    for line in _yaml_lines(settings):
+        printLogMessage(line)
+    printLogMessage("--- end job_settings.yaml ---")
+
+
 PHOTO_TYPE_PRESETS = {
     "cartoon": {
         "quantize_colors": None,
@@ -153,7 +196,13 @@ def rgb_to_hex(rgb):
     """Converts an (R, G, B) tuple to a #RRGGBB hex string."""
     return '#{:02x}{:02x}{:02x}'.format(*rgb)
 
-def parse_material_settings(lb, material_settings_path, limit_colors, TARGET_COLORS):
+def parse_material_settings(
+    lb,
+    material_settings_path,
+    limit_colors,
+    TARGET_COLORS,
+    material_layer_report=None
+):
     """
     This function:
         1) parses the material settings file
@@ -163,6 +212,9 @@ def parse_material_settings(lb, material_settings_path, limit_colors, TARGET_COL
         4) returns the new lightburn layer TARGET_COLORS for use in pixel generation=
             this ensures that we only find the closest lightburn layer color that exists in our material settings
     """
+    if material_layer_report is None:
+        material_layer_report = {"loaded": [], "skipped": []}
+
     new_color_settings = lb.parse_material_library(material_settings_path)
     matched_settings = {}
     for item in new_color_settings:
@@ -176,10 +228,10 @@ def parse_material_settings(lb, material_settings_path, limit_colors, TARGET_COL
                 matched_settings[target_key[0]] = TARGET_COLORS[target_key[0]]
                 item.index = target_touple[-2]
                 lb.add_layer(item)
-                printLogMessage(f"added Layer: {item.name}")
+                material_layer_report["loaded"].append(item.name)
 
             else:
-                printLogMessage(f"unable to add layer: {item.name}, name not in lightburn target colors")
+                material_layer_report["skipped"].append(item.name)
 
     return matched_settings    
 
@@ -1333,7 +1385,8 @@ def raster_to_puzzle_and_lightburn(
     simplification_factor=0.0,
     smoothing_radius=0.001,
     abstract_filter=None,
-    filter_parameters=None
+    filter_parameters=None,
+    job_settings=None
 ):
     """
     Parses a raster image, applies a structural vector scale_factor,
@@ -1356,6 +1409,30 @@ def raster_to_puzzle_and_lightburn(
         - SVG export
         - LightBurn export
     """
+
+    # Keep this at the beginning of the pipeline so the console records the
+    # exact values received for every submitted job, before normalization or
+    # preset/filter logic changes any of them.
+    log_job_settings(
+        **(job_settings or {}),
+        input_raster_path=raster_image_path,
+        output_svg_path=output_svg_path,
+        requested_dimensions={"width": new_width, "height": new_height},
+        scale_factor_mm=scale_factor,
+        ignore_background_hex=ignore_background_hex,
+        vector_settings={
+            "quantize_colors": quantize_colors,
+            "min_island_area": min_island_area,
+            "simplification_factor": simplification_factor,
+            "smoothing_radius": smoothing_radius,
+        },
+        abstract_filter=abstract_filter,
+        abstract_filter_parameters=filter_parameters or {},
+        lightburn_layers={
+            color_hex: {"layer_id": metadata[1], "name": metadata[2]}
+            for color_hex, metadata in TARGET_COLORS.items()
+        },
+    )
 
     filter_name, normalized_filter_settings = normalize_abstract_settings(
         abstract_filter, filter_parameters
