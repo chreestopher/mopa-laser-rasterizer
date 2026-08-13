@@ -341,36 +341,39 @@
 <body> 
   <div class="theme-toggle"><label><span>Dark</span><input id="theme_switch" type="checkbox"><span class="toggle-track"></span><span>Light</span></label></div>
   <h1 aria-label="MOPA-LASER-RASTERIZER"><span class="facade-title" aria-hidden="true"><span>M</span><span>O</span><span>P</span><span>A</span><span>-</span><span>L</span><span>A</span><span>S</span><span>E</span><span>R</span><span>-</span><span>R</span><span>A</span><span>S</span><span>T</span><span>E</span><span>R</span><span>I</span><span>Z</span><span>E</span><span>R</span></span></h1> 
-  <h2>Upload an image file, and a Lightburn Material Library file with color settings for your MOPA Fiber Laser</h2>
-  <H2>Download a geometry flattened, color isolated, vectorized version of the image as both an SVG and a lightburn project file with your mopa settings from your material library alreaedy applied.</H3>
-  <H3> Name your material settings in your lighburn material settings file with description matching the color names here, and material name containing: stainless - steel</H3>
-  <h2> You can control the size of each "pixel" / scaling factor with the pixel_square_mm form field</h2>
-  <h2> You can control how many pixels Wide or how many pixels Tall, but only one option at a time. For the other dimension option , you must put 0. The original aspect ratio will ALWAYS be respected</h2>  
-  
-  <h3>Please be patient, it is a slow process</h3>
+  <h2>Turn an image into a ready-to-run MOPA color engraving project—without building every color layer by hand.</h2>
+  <h3>Upload your artwork and LightBurn Material Library. The Rasterizer isolates the color regions, applies your saved laser settings, and gives you both a clean SVG and a LightBurn project to refine and run.</h3>
+  <h3>New to MOPA color engraving? Start with the material settings you already trust. Choose or type the material name used in your library, then name each LightBurn layer to match the color names in the palette.</h3>
+  <h3>Choose your image preset, keep the colors you want, set the finished size, and let the app do the heavy lifting. Your aspect ratio is always preserved.</h3>
+  <h3><strong>How does it work?</strong> The Rasterizer reads your artwork one pixel at a time, reduces it to your chosen MOPA color palette, welds matching areas into clean vector shapes, and assigns each shape to the matching LightBurn layer from your Material Library. But wait, there’s more: it also prepares the black underlay and punch-through geometry LightBurn needs, so colored regions stay clean instead of engraving over one another.</h3>
+  <h3>That means less tracing, less layer setup, and more time making metal do impossible-looking things. Pick a photo preset for a polished starting point—or choose an abstract style when you want to turn the signal all the way up.</h3>
      
   <!-- Form Section -->
   <form action="/upload" method="post" enctype="multipart/form-data"> 
     <input type="hidden" id="history_session" name="history_session">
     <div class="form-group"></div>
     <div>
-      <div><label for="image">Choose a raster image file:</label></div>
+      <div><label for="image">1. Choose your artwork:</label></div>
       <div><input type="file" id="image" name="image" required></div>
     </div>
     <div>
-      <div><label for="material_settings">Choose material settings file:</label></div> 
+      <div><label for="material_settings">2. Choose your LightBurn Material Library:</label></div>
       <div><input type="file" id="material_settings" name="material_settings" required></div>
     </div>    
     <div>
-      <div><label for="pixel_square_mm">pixel_square_mm:</label> </div>
+      <div><label for="material">Material to engrave:</label></div>
+      <div><input id="material" name="material" list="material_suggestions" value="stainless - steel" required><datalist id="material_suggestions"><option value="stainless - steel">Stainless Steel</option><option value="titanium">Titanium</option></datalist></div>
+    </div>
+    <div>
+      <div><label for="pixel_square_mm">Pixel scale (mm per raster pixel):</label> </div>
       <div><input type="number" id="pixel_square_mm" name="pixel_square_mm" value="1" min="0.0625" step="0.0625" required></div>
     </div>
     <div>
-      <div><label for="new_width">new_width:</label> </div>
+      <div><label for="new_width">Finished width (pixels; use 0 to size by height):</label> </div>
       <div><input type="number" id="new_width" name="new_width" value="0" min="0" max="1600"> </div>
     </div>
     <div>
-      <div><label for="new_height">new_height:</label> </div>
+      <div><label for="new_height">Finished height (pixels; use 0 to size by width):</label> </div>
       <div><input type="number" id="new_height" name="new_height" value="0" min="0" max="1600"> </div>
     </div>
     <div>
@@ -383,8 +386,8 @@
     <div>      
       <!-- Lightburn Color Palette Grid Section -->
       <div class="palette-section">
-        <label style="font-size: 0.9rem; font-weight: 600;">Lightburn Color Reference Grid</label>
-        <h3>All colors of lightburn layers included by default, pick the colors you want toggle on / off , when a color is toggled off it means the lightburn color layer will not be used for the engraving, and color will not be considered when finding the closest lightburn layer color, so this only exludes the color itself from the drawing, the next closest color that is not exlcluded will be used instead, but the color's settings will still be loaded into lightburn if present in your material library file. </h3>
+        <label style="font-size: 0.9rem; font-weight: 600;">3. Build your engraving palette</label>
+        <h3>Every color is included to start. Click a swatch to exclude it from the artwork; nearby colors will be reassigned to the closest remaining engraving color. Your Material Library settings are still carried into the LightBurn project, so you can experiment confidently.</h3>
         <div class="color-grid">
           <div class="color-card"><span class="color-name">black</span><div class="color-square" style="background-color: #000000;"></div><span class="color-hex">#000000</span></div>
           <div class="color-card"><span class="color-name">blue</span><div class="color-square" style="background-color: #0000FF;"></div><span class="color-hex">#0000FF</span></div>
@@ -423,7 +426,7 @@
 
   <div>
     <div>
-      <label for="image_preset">Image Preset</label>
+      <label for="image_preset">4. Choose your image style</label>
       <select id="image_preset" name="image_preset">
         <option value="cartoon" selected>Cartoon</option>
         <option value="color_photograph">Color Photo</option>
@@ -453,7 +456,7 @@
       <input type="hidden" id="abstract_filter_parameters" name="abstract_filter_parameters" value="{}">
     </div>    
   </div>    
-  <button type="submit">Process Raster</button>      
+  <button type="submit">Build My MOPA Color Project</button>
 </form>
 
   <script>    

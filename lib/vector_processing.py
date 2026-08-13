@@ -200,6 +200,7 @@ def parse_material_settings(
     material_settings_path,
     limit_colors,
     TARGET_COLORS,
+    material_name="stainless - steel",
     material_layer_report=None
 ):
     """
@@ -215,9 +216,39 @@ def parse_material_settings(
         material_layer_report = {"loaded": [], "skipped": []}
 
     new_color_settings = lb.parse_material_library(material_settings_path)
-    matched_settings = {}
+    requested_material = "".join(char for char in material_name.lower() if char.isalnum())
+    settings_per_material = {}
     for item in new_color_settings:
-        if item.materialName == "colors - stainless steel":
+        name = str(getattr(item, "materialName", "") or "").strip()
+        settings_per_material[name] = settings_per_material.get(name, 0) + 1
+
+    matching_settings = [
+        item for item in new_color_settings
+        if requested_material in "".join(
+            char for char in str(getattr(item, "materialName", "") or "").lower()
+            if char.isalnum()
+        )
+    ]
+    material_layer_report.update({
+        "selected_material": material_name,
+        "available_materials": settings_per_material,
+    })
+    if not matching_settings:
+        available = ", ".join(
+            f"{name or '(unnamed)'} ({count} settings)"
+            for name, count in sorted(settings_per_material.items(), key=lambda entry: entry[0].lower())
+        ) or "none"
+        printLogMessage(
+            f"Material settings error: no entries matched '{material_name}'."
+        )
+        printLogMessage(f"Material names found in this file: {available}")
+        raise ValueError(
+            f"Material settings file does not contain '{material_name}'. "
+            f"Available materials: {available}"
+        )
+
+    matched_settings = {}
+    for item in matching_settings:
             item.frequency = int(item.frequency)
             item.name = item.entryDesc
             if item.name.lower() in [cv[-1].lower() for cn,cv in TARGET_COLORS.items() if cv[-1].lower() in limit_colors]:

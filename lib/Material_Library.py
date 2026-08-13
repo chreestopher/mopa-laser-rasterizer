@@ -20,20 +20,20 @@ import vector_processing
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    if len(argv) < 9:
+    if len(argv) < 10:
         raise SystemExit(
             "Usage: Material_Library.py INPUT OUTPUT PIXEL_MM WIDTH HEIGHT "
-            "MATERIAL_LIBRARY COLORS PRESET FILTER [FILTER_JSON]"
+            "MATERIAL_LIBRARY MATERIAL COLORS PRESET FILTER [FILTER_JSON]"
         )
 
     (input_file, output_file, square_mm, new_width, new_height,
-     material_library_file, limit_colors, image_preset, abstract_filter) = argv[:9]
+     material_library_file, material_name, limit_colors, image_preset, abstract_filter) = argv[:10]
     new_width = new_width.strip() or "0"
     new_height = new_height.strip() or "0"
     filter_parameters = {}
-    if len(argv) > 9 and argv[9].strip():
+    if len(argv) > 10 and argv[10].strip():
         try:
-            filter_parameters = json.loads(argv[9])
+            filter_parameters = json.loads(argv[10])
             if not isinstance(filter_parameters, dict):
                 raise ValueError("filter parameters must be a JSON object")
         except (json.JSONDecodeError, ValueError) as error:
@@ -63,6 +63,7 @@ def main(argv=None):
         material_library_file,
         limit_list,
         target_colors,
+        material_name=material_name,
         material_layer_report=material_layer_report,
     )
 
@@ -91,6 +92,7 @@ def main(argv=None):
             "image_preset": image_preset,
             "preset_settings": vector_settings,
             "material_library_path": material_library_file,
+            "selected_material": material_name,
             "requested_limit_colors": limit_colors or "all",
             "effective_limit_colors": limit_list,
             "material_library_layers": material_layer_report,

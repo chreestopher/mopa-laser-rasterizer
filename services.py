@@ -45,7 +45,7 @@ def normalize_dimension(value, default=0):
         return default
 
 
-def add_history_entry(session_id, task_id, source_name, image_preset, abstract_filter):
+def add_history_entry(session_id, task_id, source_name, image_preset, abstract_filter, material_name):
     if not session_id:
         return
     key = f"history:{session_id}"
@@ -55,6 +55,7 @@ def add_history_entry(session_id, task_id, source_name, image_preset, abstract_f
         # Abstract styles are now submitted as named presets (for example,
         # ``abstract_wave``), so retain their resolved filter name in history.
         "abstract_filter": abstract_filter,
+        "material_name": material_name,
         "created_at": int(time.time()),
     }, separators=(",", ":"))
     pipeline = redis_client.pipeline()
@@ -82,6 +83,7 @@ def get_history_entries(session_id):
         entries.append({
             "task_id": task_id, "source_name": entry.get("source_name", "processed image"),
             "image_preset": entry.get("image_preset"), "abstract_filter": entry.get("abstract_filter"),
+            "material_name": entry.get("material_name"),
             "created_at": entry.get("created_at"), "status": redis_client.get(f"task:{task_id}:status"),
             "svg_url": f"/download/{task_id}", "lightburn_url": f"/download-lbrn2/{task_id}",
         })
@@ -165,6 +167,9 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
         redis_client.expire(status_key, HISTORY_TTL_SECONDS)
         redis_client.expire(log_key, HISTORY_TTL_SECONDS)
         image_preset = str(data.get("image_preset", "cartoon")).strip().lower()
+        material_name = str(data.get("material", "stainless - steel")).strip().lower()
+        if not material_name:
+            raise ValueError("Choose or enter a material name")
         abstract_filter = str(data.get("abstract_filter", "none")).strip().lower()
         if image_preset.startswith(ABSTRACT_PRESET_PREFIX):
             abstract_filter = image_preset.removeprefix(ABSTRACT_PRESET_PREFIX)
@@ -176,7 +181,7 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
             os.path.join(upload_folder, tasks[f"{task_id}_filename"]),
             str(data.get("pixel_square_mm", "1")), str(normalize_dimension(data.get("new_width"))),
             str(normalize_dimension(data.get("new_height"))), material_settings_path,
-            str(data.get("colors", "")), image_preset, abstract_filter,
+            material_name, str(data.get("colors", "")), image_preset, abstract_filter,
             json.dumps(parse_abstract_filter_parameters(data.get("abstract_filter_parameters", "{}")), separators=(",", ":")),
         ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         current_line = []

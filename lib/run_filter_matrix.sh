@@ -11,6 +11,7 @@
 #   MATERIAL_SCRIPT=/path/to/Material_Library.py
 #   PYTHON_BIN=python3
 #   PIXEL_SIZE_MM=1
+#   MATERIAL_NAME="stainless - steel"
 #   RASTER_WIDTH=300       # Set one of RASTER_WIDTH/RASTER_HEIGHT to 0.
 #   RASTER_HEIGHT=0
 #   LIMIT_COLORS=""        # Empty means every available LightBurn color.
@@ -31,6 +32,7 @@ output_dir=$2
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 python_bin=${PYTHON_BIN:-python3}
 pixel_size_mm=${PIXEL_SIZE_MM:-1}
+material_name=${MATERIAL_NAME:-stainless - steel}
 raster_width=${RASTER_WIDTH:-300}
 raster_height=${RASTER_HEIGHT:-0}
 limit_colors=${LIMIT_COLORS:-}
@@ -140,6 +142,7 @@ echo "Input:     $input_file"
 echo "Output:    $output_dir"
 echo "Pipeline:  $material_script"
 echo "Materials: $material_library"
+echo "Material:  $material_name"
 echo "Matrix:    ${#presets[@]} presets x ${#filters[@]} filters = $total runs"
 echo
 
@@ -165,6 +168,7 @@ for preset in "${presets[@]}"; do
       "$raster_width" \
       "$raster_height" \
       "$material_library" \
+      "$material_name" \
       "$limit_colors" \
       "$preset" \
       "$filter" \
