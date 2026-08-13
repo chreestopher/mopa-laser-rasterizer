@@ -27,4 +27,4 @@ COPY . /app/
 EXPOSE 8000
 
 # FIX: Reduce workers to 1 so they share a single unified global memory cache space
-CMD ["gunicorn", "--workers=1", "--threads=4", "--timeout=1200", "--bind", "0.0.0.0:8000", "app:app"]
+CMD ["gunicorn", "--workers=1", "--threads=4", "--timeout=1200", "--bind", "0.0.0.0:8000", "--error-logfile=-", "--capture-output", "app:app"]

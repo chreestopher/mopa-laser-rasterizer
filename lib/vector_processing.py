@@ -1111,14 +1111,14 @@ def push_geometry_to_lightburn(
     color_hex,
     target_colors,
     lb_project_instance,
-    skip_polygon_exterior=False
+    override_layer_id=None
 ):
     """
     Convert Shapely geometry into LightBurn paths.
 
-    Geometry is written only to its native LightBurn layer. For the synthetic
-    black gap geometry, LightBurn receives the interior cutout paths but not
-    the large outer canvas boundary.
+    ``override_layer_id`` writes the same closed paths to another LightBurn
+    layer. The synthetic black canvas uses this to receive colored shapes as
+    nested punch-through paths.
     """
 
     if geometry.is_empty:
@@ -1128,7 +1128,7 @@ def push_geometry_to_lightburn(
         color_hex
     ]
 
-    layer_id = layer_meta[1]
+    layer_id = override_layer_id if override_layer_id is not None else layer_meta[1]
 
     if geometry.geom_type == "Polygon":
 
@@ -1145,7 +1145,7 @@ def push_geometry_to_lightburn(
             in geometry.exterior.coords
         ]
 
-        if exterior_coords and not skip_polygon_exterior:
+        if exterior_coords:
 
             lb_shape = (
                 lightburn.Path(
@@ -1204,7 +1204,7 @@ def push_geometry_to_lightburn(
                 color_hex,
                 target_colors,
                 lb_project_instance,
-                skip_polygon_exterior=skip_polygon_exterior
+                override_layer_id=layer_id
             )
 
 
@@ -1219,14 +1219,15 @@ def export_processed_layers(
     scale_factor,
     root,
     lb_project_instance,
-    skip_black_canvas_exterior=False
+    punch_through_black=False,
+    black_lightburn_geometry=None
 ):
     """
     Sort, scale, and export all finalized geometry to SVG and LightBurn.
 
-    The black layer contains only the closed gap paths remaining after all
-    non-black geometry has been removed. No full black canvas or duplicate
-    colored paths are sent to LightBurn.
+    SVG uses the gap-only black geometry. LightBurn uses a complete black
+    canvas with colored paths nested on the black layer so it can punch them
+    through during fill processing.
     """
 
     printLogMessage(
@@ -1255,7 +1256,9 @@ def export_processed_layers(
 
     for color_hex, geometry in sorted_layers:
 
-        if geometry.is_empty:
+        if geometry.is_empty and not (
+            color_hex == black_hex and black_lightburn_geometry is not None
+        ):
             continue
 
         layer_meta = target_colors[
@@ -1314,19 +1317,36 @@ def export_processed_layers(
                 f"{layer_id}"
             )
 
+            lightburn_geometry = export_geometry
+            if color_hex == black_hex and black_lightburn_geometry is not None:
+                lightburn_geometry = black_lightburn_geometry
+                if scale_factor != 1.0:
+                    lightburn_geometry = scale(
+                        lightburn_geometry,
+                        xfact=scale_factor,
+                        yfact=scale_factor,
+                        origin=(0, 0)
+                    )
+
             push_geometry_to_lightburn(
-                export_geometry,
+                lightburn_geometry,
                 color_hex,
                 target_colors,
-                lb_project_instance,
-                # The black gap geometry is represented as a large canvas
-                # exterior containing cutout interiors. Exporting that outer
-                # contour produces an unwanted full black fill in LightBurn;
-                # its closed interior paths are the desired black-layer data.
-                skip_polygon_exterior=(
-                    skip_black_canvas_exterior and color_hex == black_hex
-                )
+                lb_project_instance
             )
+
+            if punch_through_black and color_hex != black_hex:
+                printLogMessage(
+                    f" -> Adding {layer_color_name} geometry to Black "
+                    "Layer for LightBurn punch-through"
+                )
+                push_geometry_to_lightburn(
+                    export_geometry,
+                    color_hex,
+                    target_colors,
+                    lb_project_instance,
+                    override_layer_id=target_colors[black_hex][1]
+                )
 
 def save_vector_output(
     root,
@@ -1552,7 +1572,14 @@ def raster_to_puzzle_and_lightburn(
     # 6. Build the BLACK layer around the colored geometry
     # =========================================================================
 
+    black_lightburn_geometry = None
     if not preserve_source_black:
+        black_lightburn_geometry = build_black_canvas(
+            width=width,
+            height=height,
+            abstract_filter=abstract_filter,
+            filter_parameters=filter_parameters
+        )
         processed_layers[black_hex] = build_punched_black_layer(
             width=width,
             height=height,
@@ -1596,7 +1623,8 @@ def raster_to_puzzle_and_lightburn(
         scale_factor=scale_factor,
         root=root,
         lb_project_instance=lb_project_instance,
-        skip_black_canvas_exterior=not preserve_source_black
+        punch_through_black=not preserve_source_black,
+        black_lightburn_geometry=black_lightburn_geometry
     )
 
     # =========================================================================
