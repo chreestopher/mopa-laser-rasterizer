@@ -86,7 +86,9 @@ def start_task():
         filter_name = submitted_preset.removeprefix("abstract_")
         if submitted_preset.startswith("abstract_") and filter_name not in ABSTRACT_FILTER_NAMES:
             raise ValueError("Unknown abstract filter")
-        parse_abstract_filter_parameters(user_data.get("abstract_filter_parameters", "{}"))
+        filter_parameters = parse_abstract_filter_parameters(
+            user_data.get("abstract_filter_parameters", "{}")
+        )
         parse_color_name_overrides(user_data.get("color_name_overrides", "{}"))
     except ValueError as error:
         return jsonify({"status": "error", "message": str(error)}), 400
@@ -104,13 +106,22 @@ def start_task():
         submitted_preset.removeprefix("abstract_")
         if submitted_preset.startswith("abstract_") else None
     )
-    add_history_entry(history_session, task_id, base_name, submitted_preset, submitted_filter, material_name)
+    run_parameters = {
+        "pixel_size_mm": user_data.get("pixel_square_mm", "1"),
+        "processing_width_px": user_data["new_width"],
+        "processing_height_px": user_data["new_height"],
+        "colors": [color.strip() for color in user_data.get("colors", "").split(",") if color.strip()],
+        "filter_parameters": filter_parameters,
+    }
+    add_history_entry(history_session, task_id, base_name, submitted_preset, submitted_filter,
+                      material_name, run_parameters)
     history_files = get_history_entries(history_session)
     if not any(item.get("task_id") == task_id for item in history_files):
         history_files.insert(0, {"task_id": task_id, "source_name": base_name,
             "image_preset": submitted_preset,
             "abstract_filter": submitted_filter,
             "material_name": material_name,
+            "run_parameters": run_parameters,
             "created_at": int(time.time()), "status": "pending",
             "svg_url": f"/download/{task_id}", "lightburn_url": f"/download-lbrn2/{task_id}"})
     threading.Thread(target=long_running_script,

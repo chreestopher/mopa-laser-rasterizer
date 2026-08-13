@@ -45,7 +45,8 @@ def normalize_dimension(value, default=0):
         return default
 
 
-def add_history_entry(session_id, task_id, source_name, image_preset, abstract_filter, material_name):
+def add_history_entry(session_id, task_id, source_name, image_preset, abstract_filter, material_name,
+                      run_parameters=None):
     if not session_id:
         return
     key = f"history:{session_id}"
@@ -56,6 +57,7 @@ def add_history_entry(session_id, task_id, source_name, image_preset, abstract_f
         # ``abstract_wave``), so retain their resolved filter name in history.
         "abstract_filter": abstract_filter,
         "material_name": material_name,
+        "run_parameters": run_parameters or {},
         "created_at": int(time.time()),
     }, separators=(",", ":"))
     pipeline = redis_client.pipeline()
@@ -85,6 +87,7 @@ def get_history_entries(session_id):
             "task_id": task_id, "source_name": entry.get("source_name", "processed image"),
             "image_preset": entry.get("image_preset"), "abstract_filter": entry.get("abstract_filter"),
             "material_name": entry.get("material_name"),
+            "run_parameters": entry.get("run_parameters") or {},
             "created_at": entry.get("created_at"), "status": status,
             "svg_url": f"/download/{task_id}", "lightburn_url": f"/download-lbrn2/{task_id}",
         })
