@@ -219,12 +219,13 @@
     body::after { right: 22px; }
     /* Reserve room for the console subtitle before the workspace begins. */
     .page-header {
-        flex: 0 0 98px;
+        flex: 0 0 124px;
         flex-direction: column;
-        min-height: 98px;
+        min-height: 124px;
         padding-bottom: 8px;
     }
     .page-header h1 {
+        order:1;
         color: var(--cream);
         font-family: Impact, "Arial Narrow", sans-serif;
         font-weight: 500;
@@ -233,12 +234,62 @@
         text-shadow: 0 3px #111;
     }
     .page-header::after {
+        order:2;
         content: "VECTOR PROCESSING CONSOLE · SERIES 79";
         margin-top: 7px;
         color: #bdb58f;
         font: 700 12px "Courier New", monospace;
         letter-spacing: .16em;
     }
+    .status-lamps {
+        order:3;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        gap:12px;
+        margin-top:10px;
+        font:700 9px "Courier New",monospace;
+        letter-spacing:.11em;
+        color:#bdb58f;
+        text-transform:uppercase;
+    }
+    .status-lamp { display:inline-flex; align-items:center; gap:5px; }
+    .status-lamp::before {
+        content:"";
+        width:10px;
+        height:10px;
+        border:2px solid #1a1b16;
+        border-radius:50%;
+        background:var(--lamp-color);
+        box-shadow:0 0 8px var(--lamp-color), inset 0 1px 2px rgba(255,255,255,.45), 0 1px 1px #000;
+        animation:lamp-flicker var(--lamp-flicker, 1s) linear infinite;
+    }
+    .mopa-lamp { --lamp-color:#fff; }
+    .mopa-lamp::before {
+        background:conic-gradient(#fa4d50, #ffca49, #68e875, #4ed4ee, #7b72f0, #e75bcc, #fa4d50);
+        box-shadow:0 0 10px #fff, inset 0 1px 2px rgba(255,255,255,.75), 0 1px 1px #000;
+        animation:lamp-rainbow-spin .9s linear infinite;
+    }
+    .laser-lamp { --lamp-color:#ef4338; }
+    .power-lamp { --lamp-color:#f0ad32; --lamp-flicker:.97s; }
+    .raster-lamp { --lamp-color:#42c9e8; --lamp-flicker:1.31s; }
+    .vector-lamp { --lamp-color:#dc5dd0; --lamp-flicker:.67s; }
+    @keyframes lamp-flicker {
+        0%, 5%, 19%, 20%, 46%, 48%, 74%, 100% { opacity:1; filter:brightness(1); }
+        7%, 42%, 78% { opacity:.22; filter:brightness(.42); }
+        11% { opacity:.72; filter:brightness(.8); }
+        14% { opacity:.12; filter:brightness(.3); }
+        44% { opacity:.5; filter:brightness(.62); }
+        81% { opacity:.66; filter:brightness(.76); }
+    }
+    @keyframes lamp-rainbow-spin { to { transform:rotate(360deg); } }
+    .status-lamps[data-status="completed"] .status-lamp { --lamp-color:#65e85c; }
+    .status-lamps[data-status="completed"] .status-lamp::before { animation:none; opacity:1; filter:none; }
+    .status-lamps[data-status="completed"] .mopa-lamp::before { background:#65e85c; }
+    .status-lamps[data-status="failed"] .status-lamp { --lamp-color:#e54d42; }
+    .status-lamps[data-status="failed"] .status-lamp::before { animation:none; opacity:1; filter:none; }
+    .status-lamps[data-status="failed"] .mopa-lamp::before { background:#e54d42; }
+    @media (prefers-reduced-motion: reduce) { .status-lamp::before { animation:none; } }
     .terminal-box, .files-panel {
         position: relative;
         background:
@@ -272,6 +323,7 @@
     body.light-machine { color:#151613; background:repeating-linear-gradient(90deg,rgba(0,0,0,.025) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 15%,#f2f2ec,#c7c8c2 48%,#9ea09b 100%); border-color:#777974; box-shadow:inset 0 0 0 5px #a9aba6,inset 0 0 48px #777,0 0 0 1px #eee; }
     body.light-machine .page-header h1 { color:#171815; text-shadow:0 1px #fff,0 -1px #777; }
     body.light-machine .page-header::after,body.light-machine .theme-toggle { color:#292a26; text-shadow:0 1px #fff; }
+    body.light-machine .status-lamps { color:#343530; }
     body.light-machine .terminal-box,body.light-machine .files-panel { border-color:#777974; box-shadow:inset 0 0 0 5px #aaaCa6,inset 0 0 36px rgba(90,255,70,.1),inset 0 0 75px #000,0 7px 0 #696b66,0 12px 22px rgba(0,0,0,.4); }
     body.light-machine .files-header h2 { color:#151613; text-shadow:0 1px #fff; }
     body.light-machine .files-panel { color:#191a17; background:repeating-linear-gradient(0deg,rgba(0,0,0,.025) 0 1px,transparent 1px 4px),radial-gradient(ellipse at center,#dedfd9,#aeb0aa 90%); }
@@ -283,6 +335,9 @@
     
         <div class="page-header">
             <h1 aria-label="MOPA-LASER-RASTERIZER"><span class="facade-title" aria-hidden="true"><span>M</span><span>O</span><span>P</span><span>A</span><span>-</span><span>L</span><span>A</span><span>S</span><span>E</span><span>R</span><span>-</span><span>R</span><span>A</span><span>S</span><span>T</span><span>E</span><span>R</span><span>I</span><span>Z</span><span>E</span><span>R</span></span></h1>
+            <div id="status-lamps" class="status-lamps" data-status="processing" role="status" aria-label="Processing in progress">
+                <span class="status-lamp mopa-lamp">MOPA</span><span class="status-lamp laser-lamp">Laser</span><span class="status-lamp raster-lamp">Raster</span><span class="status-lamp vector-lamp">Vector</span><span class="status-lamp power-lamp">Power</span>
+            </div>
         </div>    
         <main class="machine-workspace">
         <div class="terminal-box" id="terminal">
@@ -323,6 +378,7 @@ const historySession = "{{ history_session }}";
 if (historySession) sessionStorage.setItem('mopa-history-session', historySession);
 const logContainer = document.getElementById("log-container");
 const terminalBox = document.getElementById("terminal");
+const statusLamps = document.getElementById('status-lamps');
 
 const themeSwitch = document.getElementById('theme_switch');
 themeSwitch.checked = (localStorage.getItem('mopa-machine-theme') || 'dark') === 'light';
@@ -427,6 +483,14 @@ function updateCurrentFileRow(status) {
     });
 }
 
+function updateStatusLamps(status) {
+    const normalized = status === 'completed' || status === 'failed' ? status : 'processing';
+    statusLamps.dataset.status = normalized;
+    statusLamps.setAttribute('aria-label', normalized === 'completed'
+        ? 'Processing complete'
+        : normalized === 'failed' ? 'Processing failed' : 'Processing in progress');
+}
+
 // Start checking logs immediately
 const checkStatus = setInterval(async () => {
     try {
@@ -441,6 +505,7 @@ const checkStatus = setInterval(async () => {
 
         const data = await response.json();
         updateCurrentFileRow(data.status || 'pending');
+        updateStatusLamps(data.status || 'pending');
 
         const currentLogs = data.logs || [];
 
