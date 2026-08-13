@@ -293,8 +293,8 @@
   .getting-started-list .step-colors::before { content:"🎨"; }
   .getting-started-list .step-mapping::before { content:"🔗"; }
   .getting-started-list .step-library::before { content:"📚"; }
-  .getting-started-list .step-match::before { content:"✓"; }
   .getting-started-list .step-style::before { content:"✨"; }
+  .getting-started-list .step-pixel-size::before { content:"📏"; }
   .getting-started-list .step-dimensions::before { content:"📐"; }
   .getting-started-list .step-maximum::before { content:"▲"; color:#f0ad32; text-shadow:0 0 5px rgba(240,173,50,.6); }
   .how-it-works-list { margin:.65em 0 0; padding:0; color:#aaa98e; list-style:none; }
@@ -304,6 +304,8 @@
   .how-it-works-list .works-vectors::before { content:"🧩"; }
   .how-it-works-list .works-settings::before { content:"⚙"; }
   .how-it-works-list .works-punch::before { content:"✂"; }
+  .how-it-works-intro { margin:.8em 0 1.35em; color:#d7d0aa; font-style:italic; }
+  .how-it-works-transition { margin:0; color:var(--phosphor); font:700 .9em "Courier New",monospace; letter-spacing:.06em; text-transform:uppercase; }
   .rasterizer-checklist { margin:1em 0; padding:0; color:#aaa98e; list-style:none; }
   .rasterizer-checklist li { position:relative; margin:.55em 0; padding-left:1.8em; }
   .rasterizer-checklist li::before { position:absolute; left:0; top:-.08em; width:1.25em; color:var(--phosphor); font-size:1.15em; font-weight:700; text-align:center; text-shadow:0 0 5px rgba(131,240,106,.55); }
@@ -383,6 +385,7 @@
   body.light-machine { color:#171815; background:repeating-linear-gradient(90deg,rgba(0,0,0,.025) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 5%,#f0f0e9,#c8c9c3 48%,#9fa19c 100%); border-color:#7c7e7a; box-shadow:inset 0 0 0 5px #a6a8a3,inset 0 0 45px #777,0 0 0 1px #eee,0 20px 50px #000; }
   body.light-machine h1,body.light-machine h2,body.light-machine label,body.light-machine .color-label { color:#151613; text-shadow:0 1px 0 #fff,0 -1px 0 #777; }
   body.light-machine .console-subtitle,body.light-machine h3,body.light-machine .filter-description,body.light-machine .color-name,body.light-machine .getting-started-list,body.light-machine .how-it-works-list,body.light-machine .rasterizer-checklist,body.light-machine .collapsible-info,body.light-machine .collapsible-info summary { color:#343530; }
+  body.light-machine .how-it-works-intro { color:#343530; }
   @media (prefers-reduced-motion:reduce) { .status-lamp::before { animation:none; } }
   body.light-machine form { background:rgba(220,221,216,.5); border-color:#777974; box-shadow:inset 0 0 0 4px #b1b3ae,inset 0 0 20px #888,0 6px 0 #686a66; }
   body.light-machine .abstract-panel { background:#b9bbb5; border-color:#777974; box-shadow:inset 0 0 15px #8c8e89; }
@@ -409,19 +412,21 @@
   <details class="collapsible-info">
     <summary>Getting Started</summary>
     <ul class="getting-started-list">
-      <li class="step-files">Choose your artwork and LightBurn Material Library file.</li>
+      <li class="step-files">Bring your own artwork and LightBurn Material Library file.</li>
       <li class="step-material">Choose or type the exact material name from that library.</li>
       <li class="step-colors">Choose your engraving colors. Click a swatch to exclude it from the artwork, click it again to bring it back.</li>
       <li class="step-mapping">Link a swatch to its laser setting. Click and edit its color name so it exactly matches the <strong>Description</strong> field of the LightBurn Material Library setting you want to use.</li>
       <li class="step-library">Planning plenty of color engraving? For the smoothest workflow, rename your Material Library setting descriptions to match the Rasterizer’s palette color names.</li>
-      <li class="step-match">Same words wins the prize. Matching ignores capitalization, but the color name and LightBurn setting description must otherwise be identical.</li>
-      <li class="step-style">Choose an image preset, then set the pixel resolution used to process the image and the physical size of each engraved pixel.</li>
-      <li class="step-dimensions">Enter either the processing width or processing height in pixels. That value multiplied by the engraved-pixel size determines the finished physical dimension; the other dimension is calculated automatically to preserve your aspect ratio.</li>
-      <li class="step-maximum"><strong>Important:</strong> for maximum Rasterizer detail, set the image’s largest processing dimension to <strong>1600</strong> pixels and set Square MM Size to its minimum, <strong>0.0625 mm</strong>. That gives you the smallest engraved pixels and the largest available pixel count, fully maxing out the Rasterizer’s resolution capability. It also asks more of the machine and takes longer, so this is your official signal to make a coffee, drink it, and let the Rasterizer do its thing.</li>
+      <li class="step-style">Choose an image preset.</li>
+      <li class="step-pixel-size">Set Square MM Size to choose the physical size of individual pixels processed.</li>
+      <li class="step-dimensions">Enter either the processing width or processing height in pixels. That value multiplied by the processing pixel size determines the finished physical dimension; the other dimension is calculated automatically to preserve your artwork’s aspect ratio.</li>
+      <li class="step-maximum"><strong>Important:</strong> for maximum Rasterizer detail, set the image’s largest processing dimension to <strong>1600</strong> pixels and set Square MM Size to its minimum, <strong>0.0625 mm</strong>. That gives you the smallest processing pixels and the largest available pixel count, fully maxing out the Rasterizer’s resolution capability. It also asks more of the machine and takes longer, so this is your official signal to make a coffee, drink it, and let the Rasterizer do its thing.</li>
     </ul>
   </details>
   <details class="collapsible-info">
     <summary>How does it work?</summary>
+    <p class="how-it-works-intro">Honestly, no one knows for sure. We found the Rasterizer in an abandoned missile silo and were initially afraid to turn it on. Luckily, it appears to prefer turning images into laser-ready color projects.</p>
+    <p class="how-it-works-transition">Okay, seriously, here’s what it does:</p>
     <ul class="how-it-works-list">
       <li class="works-pixels">The Rasterizer reads your artwork pixel by pixel and reduces it to the engraving colors you selected.</li>
       <li class="works-vectors">It joins matching color regions into clean, closed vector shapes that are ready for the laser.</li>
@@ -433,7 +438,7 @@
     <li class="benefit-time">Spend less time tracing, sorting layers, and setting up jobs.</li>
     <li class="benefit-create">Spend more time making beautiful markings on metals.</li>
     <li class="benefit-style">Choose a photo preset for a polished starting point, or an abstract style when you want to turn the signal all the way up.</li>
-    <li class="benefit-settings">You focus on finding those knockout color settings, and the Rasterizer handles the rest.</li>
+    <li class="benefit-settings">You focus on finding those knockout color settings, and the Rasterizer handles everything else.</li>
   </ul>
      
   <!-- Form Section -->
@@ -441,7 +446,7 @@
     <input type="hidden" id="history_session" name="history_session">
     <div class="form-group"></div>
     <div>
-      <div><label for="image">1. Choose your artwork:</label></div>
+      <div><label for="image">1. Bring your own artwork:</label></div>
       <div><input type="file" id="image" name="image" required></div>
     </div>
     <div>
