@@ -39,6 +39,27 @@ def _exact_setting(lightburn, library_path, material_name, description):
     )
 
 
+def _calibration_base_layer(setting):
+    """Use one concrete scan layer from a multi-sublayer library entry.
+
+    LightBurn stores Offset Fill settings as child cut settings.  A diffraction
+    grid needs one unambiguous starting layer, so select the first child in the
+    order the Material Library defines it.
+    """
+    sublayers = getattr(setting, "subLayers", None) or []
+    if not sublayers:
+        return setting
+
+    selected = copy(sublayers[0])
+    # Keep the selected library entry identifiable in the exported project and
+    # metadata, while deliberately leaving the remaining Offset Fill children
+    # out of the calibration export.
+    selected.materialName = getattr(setting, "materialName", "")
+    selected.entryDesc = getattr(setting, "entryDesc", "")
+    selected.subLayers = []
+    return selected
+
+
 def _svg_grid(path, columns, rows, cell_mm, intervals, angles):
     width, height = columns * cell_mm, rows * cell_mm
     root = ET.Element("svg", xmlns="http://www.w3.org/2000/svg", width=f"{width}mm",
@@ -54,7 +75,9 @@ def _svg_grid(path, columns, rows, cell_mm, intervals, angles):
         defs = ET.SubElement(group, "defs")
         clip = ET.SubElement(defs, "clipPath", id=clip_id)
         ET.SubElement(clip, "rect", x=str(x), y=str(y), width=str(cell_mm), height=str(cell_mm))
-        lines = ET.SubElement(group, **{"clip-path": f"url(#{clip_id})"})
+        # Keep the grating lines clipped inside their own calibration cell.
+        # ``SubElement`` needs an element name as well as its attributes.
+        lines = ET.SubElement(group, "g", **{"clip-path": f"url(#{clip_id})"})
         radians = math.radians(angle)
         dx, dy = math.cos(radians), math.sin(radians)
         normal_x, normal_y = -dy, dx
@@ -96,7 +119,14 @@ def calibration_grid():
     library.save(library_path)
     try:
         lightburn = _lightburn_module()
-        base_setting = _exact_setting(lightburn, library_path, material, description)
+        matched_setting = _exact_setting(lightburn, library_path, material, description)
+        base_setting = _calibration_base_layer(matched_setting)
+        if base_setting is not matched_setting:
+            current_app.logger.info(
+                "Holographic calibration: using the first of %s sublayers for '%s'.",
+                len(matched_setting.subLayers),
+                description,
+            )
     except (OSError, ValueError, ET.ParseError) as error:
         return jsonify({"status": "error", "message": str(error)}), 400
 
@@ -105,26 +135,33 @@ def calibration_grid():
     angles = [180 * index / max(count - 1, 1) for index in range(count)]
     stem = f"holographic_calibration_{task_id}"
     svg_name, lbrn_name = f"{stem}.svg", f"{stem}.lbrn2"
-    _svg_grid(os.path.join(upload_folder, svg_name), columns, rows, cell_mm, intervals, angles)
-    project = lightburn.Lightburn()
-    for index, (interval, angle) in enumerate(zip(intervals, angles)):
-        setting = copy(base_setting)
-        setting.index = index
-        setting.name = f"Holo {index + 1:02d} {angle:g}deg {interval:.3f}mm"
-        setting.interval = interval
-        setting.angle = angle
-        project.add_layer(setting)
-        project.add(lightburn.Square(cell_mm, cell_mm, x=(index % columns) * cell_mm,
-                                    y=(index // columns) * cell_mm).layer(index))
-    project.write(os.path.join(upload_folder, lbrn_name))
-    with open(os.path.join(upload_folder, f"{stem}.json"), "w", encoding="utf-8") as metadata_file:
-        json.dump({
-            "kind": "holographic_calibration_grid", "material": material,
-            "setting_description": description, "laser_source": laser_source,
-            "lens_field_of_view_mm": lens_field_mm, "columns": columns, "rows": rows,
-            "cell_size_mm": cell_mm, "interval_range_mm": [interval_low, interval_high],
-            "angles_degrees": angles, "intervals_mm": intervals,
-        }, metadata_file, indent=2)
+    try:
+        _svg_grid(os.path.join(upload_folder, svg_name), columns, rows, cell_mm, intervals, angles)
+        project = lightburn.Lightburn()
+        for index, (interval, angle) in enumerate(zip(intervals, angles)):
+            setting = copy(base_setting)
+            setting.index = index
+            setting.name = f"Holo {index + 1:02d} {angle:g}deg {interval:.3f}mm"
+            setting.interval = interval
+            setting.angle = angle
+            project.add_layer(setting)
+            project.add(lightburn.Square(cell_mm, cell_mm, x=(index % columns) * cell_mm,
+                                        y=(index // columns) * cell_mm).layer(index))
+        project.write(os.path.join(upload_folder, lbrn_name))
+        with open(os.path.join(upload_folder, f"{stem}.json"), "w", encoding="utf-8") as metadata_file:
+            json.dump({
+                "kind": "holographic_calibration_grid", "material": material,
+                "setting_description": description, "laser_source": laser_source,
+                "lens_field_of_view_mm": lens_field_mm, "columns": columns, "rows": rows,
+                "cell_size_mm": cell_mm, "interval_range_mm": [interval_low, interval_high],
+                "angles_degrees": angles, "intervals_mm": intervals,
+            }, metadata_file, indent=2)
+    except Exception as error:
+        current_app.logger.exception("Holographic calibration-grid export failed")
+        return jsonify({
+            "status": "error",
+            "message": f"Could not build the calibration grid: {error}",
+        }), 500
     return jsonify({"status": "completed", "svg_url": f"/holographic-etching/download/{svg_name}",
                     "lightburn_url": f"/holographic-etching/download/{lbrn_name}"})
 
