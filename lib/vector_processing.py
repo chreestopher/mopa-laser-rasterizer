@@ -18,7 +18,6 @@ from shapely.validation import make_valid
 from svgelements import SVG, Path, Polygon as SVGPolygon
 from datetime import datetime
 from abstract_filters import (
-    FULL_PALETTE_FILTERS,
     MODULES as ABSTRACT_FILTER_MODULES,
     apply as apply_registered_filter,
     canonical_name,
@@ -1426,9 +1425,13 @@ def raster_to_puzzle_and_lightburn(
         - LightBurn export
     """
 
+    # Quantization must always use every available LightBurn target after the
+    # material library and requested color limits have filtered TARGET_COLORS.
+    # Presets and abstract filters do not control this count.
+    quantize_colors = len(TARGET_COLORS)
+
     # Keep this at the beginning of the pipeline so the console records the
-    # exact values received for every submitted job, before normalization or
-    # preset/filter logic changes any of them.
+    # effective values used by the job before raster processing begins.
     log_job_settings(
         **(job_settings or {}),
         input_raster_path=raster_image_path,
@@ -1438,6 +1441,7 @@ def raster_to_puzzle_and_lightburn(
         ignore_background_hex=ignore_background_hex,
         vector_settings={
             "quantize_colors": quantize_colors,
+            "quantize_color_source": "filtered_target_colors",
             "min_island_area": min_island_area,
             "simplification_factor": simplification_factor,
             "smoothing_radius": smoothing_radius,
@@ -1449,22 +1453,6 @@ def raster_to_puzzle_and_lightburn(
             for color_hex, metadata in TARGET_COLORS.items()
         },
     )
-
-    filter_name, normalized_filter_settings = normalize_abstract_settings(
-        abstract_filter, filter_parameters
-    )
-    if filter_name in FULL_PALETTE_FILTERS:
-        # Pillow's adaptive quantizer creates its own intermediate palette;
-        # asking it for N colors does not make those colors the N selected
-        # LightBurn layers. It can therefore erase hues before closest-layer
-        # matching. Preserve source RGB here and let get_closest_color() match
-        # every pixel directly against the complete filtered TARGET_COLORS.
-        quantize_colors = None
-        printLogMessage(
-            f"{filter_name.title()} filter bypassing intermediate palette "
-            f"reduction and matching directly to all {len(TARGET_COLORS)} "
-            "available LightBurn colors."
-        )
 
     # =========================================================================
     # 1. Normalize parameters
