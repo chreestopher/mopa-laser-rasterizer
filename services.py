@@ -77,14 +77,15 @@ def get_history_entries(session_id):
             stale_records.append(raw_entry)
             continue
         task_id = entry.get("task_id")
-        if not task_id or redis_client.get(f"task:{task_id}:status") is None:
+        if not task_id:
             stale_records.append(raw_entry)
             continue
+        status = redis_client.get(f"task:{task_id}:status") or "expired"
         entries.append({
             "task_id": task_id, "source_name": entry.get("source_name", "processed image"),
             "image_preset": entry.get("image_preset"), "abstract_filter": entry.get("abstract_filter"),
             "material_name": entry.get("material_name"),
-            "created_at": entry.get("created_at"), "status": redis_client.get(f"task:{task_id}:status"),
+            "created_at": entry.get("created_at"), "status": status,
             "svg_url": f"/download/{task_id}", "lightburn_url": f"/download-lbrn2/{task_id}",
         })
     if stale_records:
