@@ -46,7 +46,7 @@
   }
   .color-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(var(--palette-card-min, 75px), 1fr));
+    grid-template-columns: repeat(var(--palette-columns, 5), minmax(0, 1fr));
     gap: 16px 10px;
     margin-top: 14px;
   }
@@ -55,6 +55,7 @@
     flex-direction: column;
     align-items: center;
     text-align: center;
+    min-width: 0;
   }
   .color-name {
     font-size: 0.65rem;
@@ -63,9 +64,10 @@
     line-height: 1.2;
     margin-bottom: 3px;
     white-space: nowrap;
-    overflow: visible;
-    width: max-content;
-    max-width: none;
+    overflow: hidden;
+    width: 100%;
+    max-width: 100%;
+    text-overflow: ellipsis;
   }
   .color-name[contenteditable="true"] { cursor:text; border-bottom:1px dashed currentColor; outline:none; }
   .color-name[contenteditable="true"]:focus { border-bottom-style:solid; }
@@ -910,13 +912,19 @@
       });
       colorInput.value = selectedNames.join(', ');
       colorNameOverrides.value = JSON.stringify(overrides);
-      // Keep every palette card the same width.  When a user enters a long
-      // library label, widen the shared grid minimum so the grid uses fewer
-      // columns instead of wrapping only that one label.
+      // Pick one explicit column count for the entire palette.  A longer
+      // library label lowers that count and creates additional even rows,
+      // rather than letting an individual card wrap or distort its neighbors.
       const widestLabel = Math.max(...paletteCards.map(card =>
         card.querySelector('.color-name').scrollWidth
       ));
-      paletteGrid.style.setProperty('--palette-card-min', `${Math.max(75, widestLabel + 14)}px`);
+      const gap = Number.parseFloat(getComputedStyle(paletteGrid).columnGap) || 10;
+      const desiredCardWidth = Math.max(75, widestLabel + 18);
+      const columns = Math.max(1, Math.min(
+        paletteCards.length,
+        Math.floor((paletteGrid.clientWidth + gap) / (desiredCardWidth + gap))
+      ));
+      paletteGrid.style.setProperty('--palette-columns', columns);
     }
 
     paletteCards.forEach(card => {
@@ -948,5 +956,6 @@
         updatePaletteFields();
       });
     });
+    new ResizeObserver(() => updatePaletteFields()).observe(paletteGrid);
     updatePaletteFields();
   </script>
