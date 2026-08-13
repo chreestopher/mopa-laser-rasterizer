@@ -175,12 +175,14 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
                 if char in ("\n", "\r"):
                     line = "".join(current_line).strip()
                     if line:
+                        print(f"[Task {task_id}] {line}", flush=True)
                         redis_client.rpush(log_key, line)
                     current_line = []
                 else:
                     current_line.append(char)
         line = "".join(current_line).strip()
         if line:
+            print(f"[Task {task_id}] {line}", flush=True)
             redis_client.rpush(log_key, line)
         redis_client.set(status_key, "completed" if process.wait() == 0 else "failed")
     except Exception as error:
