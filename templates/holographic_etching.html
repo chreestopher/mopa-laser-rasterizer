@@ -156,6 +156,17 @@
       <p id="recipe_results" class="calibration-results" aria-live="polite"></p>
     </section>
   </form>
+  <form id="artwork_form" class="calibration-form" enctype="multipart/form-data">
+    <h3>Holographic Artwork Console</h3>
+    <p class="form-note">Bring your artwork, the recipe profile you saved above, and the same LightBurn Material Library used for calibration. Each processed image pixel becomes a tiny square on its closest calibrated recipe layer, using that recipe’s measured Fill interval and angle.</p>
+    <label class="full-width">Artwork image<input name="artwork" type="file" accept="image/*" required></label>
+    <label>Saved recipe profile<input name="recipe_profile" type="file" accept=".json,application/json" required></label>
+    <label>Matching Material Library<input name="material_settings" type="file" accept=".clb,.lbmat,.lbrn" required></label>
+    <label>Maximum processing dimension, pixels<input name="max_dimension" type="number" value="96" min="8" max="300" step="1"><span class="form-note">Start at 64–96. More pixels mean much larger, slower LightBurn files.</span></label>
+    <label>Physical pixel size, mm<input name="pixel_mm" type="number" value=".5" min=".05" max="5" step=".05"><span class="form-note">This sets each grating patch’s width and height.</span></label>
+    <div class="action-row"><button class="action" type="submit">Build Holographic Artwork</button></div>
+    <p id="artwork_results" class="calibration-results" aria-live="polite"></p>
+  </form>
   <p class="reference">This lab is informed by Ben Krasnow’s documented stainless-steel MOPA diffraction-grating work. We will build an original, calibration-first workflow around the same physical principles rather than integrate that project directly. <a href="https://github.com/benkrasnow/MOPA_Laser_Diffraction_Gratings" target="_blank" rel="noopener noreferrer">Review the reference project ↗</a></p>
   <script>
     const themeSwitch = document.getElementById('theme_switch');
@@ -347,6 +358,24 @@
         const data = await response.json();
         if (!response.ok) throw new Error(data.message || 'Recipe palette could not be saved.');
         results.innerHTML = `${data.message} <a href="${data.profile_url}">Download recipe profile</a>`;
+      } catch (error) {
+        results.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+    document.getElementById('artwork_form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const results = document.getElementById('artwork_results');
+      const button = form.querySelector('button[type="submit"]');
+      button.disabled = true;
+      results.textContent = 'Quantizing artwork and building calibrated grating layers...';
+      try {
+        const response = await fetch('/holographic-etching/build-artwork', {method:'POST', body:new FormData(form)});
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || 'Holographic artwork could not be built.');
+        results.innerHTML = `Artwork built at ${data.source_width} × ${data.source_height} processed pixels. <a href="${data.svg_url}">Download SVG</a> · <a href="${data.lightburn_url}">Download LightBurn project</a> · <a href="${data.metadata_url}">Download export record</a>`;
       } catch (error) {
         results.textContent = error.message;
       } finally {

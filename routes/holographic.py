@@ -247,6 +247,97 @@ def _measure_grid_photo(photo_path, grid, rotation_degrees=0, crop=None, max_edg
     return cells, preview, correction, corners
 
 
+def _load_recipe_profile(profile_file):
+    try:
+        profile = json.load(profile_file)
+    except json.JSONDecodeError as error:
+        raise ValueError(f"Recipe profile is not valid JSON: {error}") from error
+    recipes = profile.get("recipes")
+    grid = profile.get("grid", {})
+    if profile.get("kind") != "holographic_calibration_profile" or not isinstance(recipes, list) or not recipes:
+        raise ValueError("Upload a saved Holographic Etching recipe profile with at least one kept recipe.")
+    if not grid.get("material") or not grid.get("setting_description"):
+        raise ValueError("The recipe profile does not contain its original Material Library setting reference.")
+    for recipe in recipes:
+        if not isinstance(recipe.get("observed_rgb"), list) or len(recipe["observed_rgb"]) != 3:
+            raise ValueError("A recipe profile contains an invalid observed color.")
+    return profile
+
+
+def _nearest_recipe(pixel, recipes):
+    red, green, blue = pixel
+    return min(
+        recipes,
+        key=lambda recipe: sum((channel - int(reference)) ** 2 for channel, reference in zip((red, green, blue), recipe["observed_rgb"])),
+    )
+
+
+def _write_holographic_svg(path, pixels, recipes_by_name, pixel_mm):
+    height, width = pixels.shape[:2]
+    root = ET.Element("svg", xmlns="http://www.w3.org/2000/svg", width=f"{width * pixel_mm}mm",
+                      height=f"{height * pixel_mm}mm", viewBox=f"0 0 {width * pixel_mm} {height * pixel_mm}")
+    for name, coordinates in recipes_by_name.items():
+        recipe = coordinates["recipe"]
+        group = ET.SubElement(root, "g", id=f"recipe_{recipe['index']}", fill=recipe["observed_hex"])
+        for x, y in coordinates["pixels"]:
+            ET.SubElement(group, "rect", x=str(x * pixel_mm), y=str(y * pixel_mm),
+                          width=str(pixel_mm), height=str(pixel_mm))
+    ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
+
+
+def _build_holographic_exports(upload_folder, art_file, profile_file, material_file, max_dimension, pixel_mm):
+    profile = _load_recipe_profile(profile_file)
+    try:
+        image = Image.open(art_file.stream).convert("RGB")
+    except (UnidentifiedImageError, OSError) as error:
+        raise ValueError("Upload a readable artwork image, such as JPG or PNG.") from error
+    image.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+    pixels = np.asarray(image)
+    if not pixels.size:
+        raise ValueError("Artwork image has no usable pixels.")
+
+    task_id = str(uuid.uuid4())
+    material_path = os.path.join(upload_folder, f"{task_id}_holographic_{secure_filename(material_file.filename)}")
+    material_file.save(material_path)
+    lightburn = _lightburn_module()
+    grid = profile["grid"]
+    base_setting = _calibration_base_layer(_exact_setting(
+        lightburn, material_path, grid["material"], grid["setting_description"]
+    ))
+    recipes_by_name = {}
+    project = lightburn.Lightburn()
+    for layer_index, recipe in enumerate(profile["recipes"]):
+        setting = copy(base_setting)
+        setting.index = layer_index
+        setting.name = recipe["name"]
+        setting.interval = float(recipe["interval_mm"])
+        setting.angle = float(recipe["angle_degrees"])
+        setting.subLayers = []
+        project.add_layer(setting)
+        recipes_by_name[recipe["name"]] = {"recipe": recipe, "layer_index": layer_index, "pixels": []}
+
+    for y, row in enumerate(pixels):
+        for x, pixel in enumerate(row):
+            recipe = _nearest_recipe(pixel, profile["recipes"])
+            bucket = recipes_by_name[recipe["name"]]
+            bucket["pixels"].append((x, y))
+            project.add(lightburn.Square(pixel_mm, pixel_mm, x=x * pixel_mm, y=y * pixel_mm).layer(bucket["layer_index"]))
+
+    stem = f"holographic_art_{task_id}"
+    svg_name, lbrn_name = f"{stem}.svg", f"{stem}.lbrn2"
+    _write_holographic_svg(os.path.join(upload_folder, svg_name), pixels, recipes_by_name, pixel_mm)
+    project.write(os.path.join(upload_folder, lbrn_name))
+    metadata_name = f"{stem}.json"
+    with open(os.path.join(upload_folder, metadata_name), "w", encoding="utf-8") as metadata_file:
+        json.dump({
+            "kind": "holographic_art_export", "recipe_profile_name": profile.get("profile_name"),
+            "source_pixels": {"width": int(pixels.shape[1]), "height": int(pixels.shape[0])},
+            "pixel_size_mm": pixel_mm, "physical_size_mm": [pixels.shape[1] * pixel_mm, pixels.shape[0] * pixel_mm],
+            "recipes": [{"name": recipe["name"], "interval_mm": recipe["interval_mm"], "angle_degrees": recipe["angle_degrees"]} for recipe in profile["recipes"]],
+        }, metadata_file, indent=2)
+    return svg_name, lbrn_name, metadata_name, pixels.shape[1], pixels.shape[0]
+
+
 @routes.route("/holographic-etching/calibration-grid", methods=["POST"])
 def calibration_grid():
     library = request.files.get("material_settings")
@@ -506,6 +597,33 @@ def save_holographic_recipes():
     })
 
 
+@routes.route("/holographic-etching/build-artwork", methods=["POST"])
+def build_holographic_artwork():
+    artwork = request.files.get("artwork")
+    profile_file = request.files.get("recipe_profile")
+    material_file = request.files.get("material_settings")
+    if not all((artwork, artwork.filename, profile_file, profile_file.filename, material_file, material_file.filename)):
+        return jsonify({"status": "error", "message": "Provide artwork, a saved recipe profile, and the matching Material Library file."}), 400
+    try:
+        max_dimension = max(8, min(300, int(request.form.get("max_dimension", 96))))
+        pixel_mm = max(.05, min(5, float(request.form.get("pixel_mm", .5))))
+    except ValueError:
+        return jsonify({"status": "error", "message": "Processing resolution and pixel size must be numbers."}), 400
+    try:
+        svg_name, lbrn_name, metadata_name, width, height = _build_holographic_exports(
+            current_app.config["UPLOAD_FOLDER"], artwork, profile_file, material_file, max_dimension, pixel_mm
+        )
+    except (OSError, ValueError, ET.ParseError, KeyError, TypeError) as error:
+        current_app.logger.exception("Holographic artwork export failed")
+        return jsonify({"status": "error", "message": f"Could not build holographic artwork: {error}"}), 400
+    return jsonify({
+        "status": "completed", "source_width": width, "source_height": height,
+        "svg_url": f"/holographic-etching/download/{svg_name}",
+        "lightburn_url": f"/holographic-etching/download/{lbrn_name}",
+        "metadata_url": f"/holographic-etching/download/{metadata_name}",
+    })
+
+
 @routes.route("/holographic-etching/profile-photo/<profile_id>")
 def calibration_profile_photo(profile_id):
     upload_folder = current_app.config["UPLOAD_FOLDER"]
@@ -527,6 +645,6 @@ def preview_calibration_file(filename):
 
 @routes.route("/holographic-etching/download/<filename>")
 def download_calibration_file(filename):
-    if not (filename.startswith("holographic_calibration_") or filename.startswith("holographic_profile_")):
+    if not (filename.startswith("holographic_calibration_") or filename.startswith("holographic_profile_") or filename.startswith("holographic_art_")):
         return jsonify({"status": "error", "message": "Unknown calibration file."}), 404
     return send_from_directory(current_app.config["UPLOAD_FOLDER"], filename, as_attachment=True)
