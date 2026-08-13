@@ -461,6 +461,51 @@ def analyze_calibration_profile():
     })
 
 
+@routes.route("/holographic-etching/save-recipes", methods=["POST"])
+def save_holographic_recipes():
+    """Persist the operator's chosen calibration cells as a reusable palette."""
+    profile_id = str(request.form.get("profile_id", "")).strip()
+    try:
+        selected = json.loads(str(request.form.get("recipes", "[]")))
+        if not isinstance(selected, list) or not selected:
+            raise ValueError("Keep at least one measured swatch.")
+    except (ValueError, TypeError, json.JSONDecodeError) as error:
+        return jsonify({"status": "error", "message": f"Recipe selections are invalid: {error}"}), 400
+
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    try:
+        profile_path = _profile_metadata_path(upload_folder, profile_id)
+        with open(profile_path, encoding="utf-8") as profile_file:
+            profile = json.load(profile_file)
+        cells = {int(cell["index"]): cell for cell in profile["analysis"]["cells"]}
+        recipes = []
+        used_names = set()
+        for item in selected:
+            index = int(item["index"])
+            if index not in cells:
+                raise ValueError(f"Cell {index} is not part of this profile.")
+            name = str(item.get("name", "")).strip() or f"Holographic {index:02d}"
+            unique_name = name.casefold()
+            if unique_name in used_names:
+                raise ValueError("Recipe names must be unique.")
+            used_names.add(unique_name)
+            recipes.append({"name": name, **cells[index]})
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
+        return jsonify({"status": "error", "message": f"Could not save recipes: {error}"}), 400
+
+    profile["status"] = "recipe_palette_ready"
+    profile["recipes"] = recipes
+    with open(profile_path, "w", encoding="utf-8") as profile_file:
+        json.dump(profile, profile_file, indent=2)
+    current_app.logger.info("Saved %s holographic recipes for profile %s.", len(recipes), profile_id)
+    return jsonify({
+        "status": "saved",
+        "recipe_count": len(recipes),
+        "profile_url": f"/holographic-etching/download/{os.path.basename(profile_path)}",
+        "message": f"Saved {len(recipes)} holographic recipe(s) into this calibration profile.",
+    })
+
+
 @routes.route("/holographic-etching/profile-photo/<profile_id>")
 def calibration_profile_photo(profile_id):
     upload_folder = current_app.config["UPLOAD_FOLDER"]
