@@ -18,12 +18,13 @@ import redis
 from botocore.exceptions import ClientError
 
 
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-2").strip()
 redis_client = redis.Redis(
     host=os.environ.get("REDIS_HOST", "localhost"),
     port=int(os.environ.get("REDIS_PORT", 6379)),
     decode_responses=True,
 )
-s3_client = boto3.client("s3")
+s3_client = boto3.client("s3", region_name=AWS_REGION)
 S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME", "").strip()
 DYNAMODB_TABLE_NAME = os.environ.get("DYNAMODB_TABLE_NAME", "").strip()
 ABSTRACT_FILTER_NAMES = {
@@ -42,7 +43,7 @@ def account_table():
     """Return the optional durable account-data table without affecting guests."""
     if not DYNAMODB_TABLE_NAME:
         return None
-    return boto3.resource("dynamodb").Table(DYNAMODB_TABLE_NAME)
+    return boto3.resource("dynamodb", region_name=AWS_REGION).Table(DYNAMODB_TABLE_NAME)
 
 
 def _dynamodb_values(value):
