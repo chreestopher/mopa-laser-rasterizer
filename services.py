@@ -197,6 +197,29 @@ def rename_user_material_library(user_id, library_id, display_name):
     return True
 
 
+def update_user_material_library_file(user_id, library_id, local_file_path, summary):
+    """Replace an account library's S3 XML and refresh its display summary."""
+    table = account_table()
+    library = get_user_material_library(user_id, library_id)
+    if not table or not library or not library.get("s3_key"):
+        return False
+    try:
+        s3_client.upload_file(local_file_path, S3_BUCKET_NAME, library["s3_key"],
+                              ExtraArgs={"Tagging": "mopa-retention=material"})
+        table.update_item(
+            Key={"pk": f"USER#{user_id}", "sk": f"MATERIAL#{library_id}"},
+            UpdateExpression="SET summary = :summary, material_name = :material_name, updated_at = :updated_at",
+            ExpressionAttributeValues={
+                ":summary": _dynamodb_values(summary),
+                ":material_name": ", ".join(summary.get("material_names", []))[:160],
+                ":updated_at": int(time.time()),
+            },
+        )
+    except ClientError as error:
+        raise RuntimeError("Could not save Material Library changes.") from error
+    return True
+
+
 def record_user_job(user_id, task_id, source_name, image_preset, abstract_filter, material_name,
                     run_parameters, input_keys=None):
     """Write both an ordered user-history record and a direct owner lookup."""

@@ -22,6 +22,7 @@ from services import (
     save_user_preferences,
     save_user_material_library,
     rename_user_material_library,
+    update_user_material_library_file,
 )
 
 from . import routes
@@ -109,7 +110,7 @@ def library_entries(path, include_settings=False):
     """Return a compact, safe-to-display summary of a LightBurn library."""
     settings = Lightburn().parse_material_library(path)
     entries, material_names = [], []
-    for setting in settings:
+    for entry_id, setting in enumerate(settings):
         material_name = str(getattr(setting, "materialName", "") or "").strip()
         if material_name and material_name not in material_names:
             material_names.append(material_name)
@@ -120,6 +121,7 @@ def library_entries(path, include_settings=False):
         }
         if include_settings:
             entry["settings"] = setting_values(setting)
+            entry["entry_id"] = entry_id
         entries.append(entry)
     entries.sort(key=lambda entry: (
         entry["material"].casefold(), entry["type"].casefold(), entry["description"].casefold(),
@@ -152,6 +154,75 @@ def filtered_material_library(source_path, destination_path, selected_materials)
     tree.write(destination_path, encoding="utf-8", xml_declaration=True)
 
 
+def all_xml_entries(root):
+    return [(material, entry) for material in root.findall("Material") for entry in material.findall("Entry")]
+
+
+def setting_value(value):
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    return str(value)
+
+
+def apply_entry_update(root, entry_id, payload, creating=False):
+    material_name = str(payload.get("material", "")).strip()
+    description = str(payload.get("description", "")).strip()
+    setting_type = str(payload.get("type", "Scan")).strip()
+    values = payload.get("settings", {})
+    if not material_name or not description or setting_type not in {"Cut", "Scan", "Image"}:
+        raise ValueError("Material, Description, and a valid setting Type are required.")
+    if not isinstance(values, dict) or len(values) > 80:
+        raise ValueError("Settings must be a small object.")
+    entries = all_xml_entries(root)
+    if creating:
+        entry = ET.Element("Entry", {"Thickness": "0", "Desc": description, "NoThickTitle": "1"})
+    else:
+        if entry_id < 0 or entry_id >= len(entries):
+            raise ValueError("That Material Library entry no longer exists.")
+        old_material, entry = entries[entry_id]
+        old_material.remove(entry)
+    target = next((material for material in root.findall("Material") if material.attrib.get("name") == material_name), None)
+    if target is None:
+        target = ET.SubElement(root, "Material", {"name": material_name})
+    entry.attrib["Desc"] = description
+    entry.attrib.setdefault("Thickness", "0")
+    entry.attrib.setdefault("NoThickTitle", "1")
+    cut = entry.find("CutSetting")
+    if cut is None:
+        cut = ET.SubElement(entry, "CutSetting")
+    cut.attrib["type"] = setting_type
+    for child in list(cut):
+        if child.tag != "SubLayer":
+            cut.remove(child)
+    defaults = {"index": "0", "name": "", "minPower": "0", "maxPower": "100", "speed": "100"}
+    defaults.update({str(key): setting_value(value) for key, value in values.items() if str(key) and isinstance(value, (str, int, float, bool))})
+    for key, value in defaults.items():
+        ET.SubElement(cut, key, {"Value": value})
+    target.append(entry)
+    for material in list(root.findall("Material")):
+        if not material.findall("Entry"):
+            root.remove(material)
+
+
+def mutate_library(user_id, library_id, callback):
+    library = get_user_material_library(user_id, library_id)
+    if not library:
+        return None
+    with tempfile.NamedTemporaryFile(suffix=".clb", delete=False) as temp_file:
+        temp_path = temp_file.name
+    try:
+        download_user_material_library(library, temp_path)
+        tree = ET.parse(temp_path)
+        callback(tree.getroot())
+        tree.write(temp_path, encoding="utf-8", xml_declaration=True)
+        summary = library_entries(temp_path)
+        update_user_material_library_file(user_id, library_id, temp_path, summary)
+        return summary
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
 @routes.route("/account/material-libraries/preview", methods=["POST"])
 def preview_material_libraries():
     user_id = authenticated_user_id()
@@ -176,6 +247,29 @@ def preview_material_libraries():
         for temp_path in temp_paths:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
+
+
+@routes.route("/account/material-libraries/new", methods=["POST"])
+def new_material_library():
+    user_id = authenticated_user_id()
+    if not user_id:
+        return jsonify({"status": "error", "message": "Sign in to create a Material Library."}), 401
+    payload = request.get_json(silent=True) or {}
+    name = str(payload.get("name", "")).strip()
+    if not name or len(name) > 160:
+        return jsonify({"status": "error", "message": "Library names must be between 1 and 160 characters."}), 400
+    with tempfile.NamedTemporaryFile(suffix=".clb", delete=False) as temp_file:
+        temp_path = temp_file.name
+    try:
+        ET.ElementTree(ET.Element("LightBurnLibrary")).write(temp_path, encoding="utf-8", xml_declaration=True)
+        library = save_user_material_library(user_id, temp_path, "", summary=library_entries(temp_path),
+                                             display_name=name, source_filename=f"{secure_filename(name) or 'material-library'}.clb")
+        return jsonify({"status": "ok", "library": library}), 201
+    except (RuntimeError, OSError, ValueError, ET.ParseError) as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 @routes.route("/account/material-libraries", methods=["GET", "POST"])
@@ -263,6 +357,25 @@ def material_library_detail(library_id):
                 os.remove(temp_path)
     except (RuntimeError, OSError, ValueError, ET.ParseError) as error:
         return jsonify({"status": "error", "message": f"Could not read this Material Library: {error}"}), 400
+
+
+@routes.route("/account/material-libraries/<library_id>/entries", methods=["POST"])
+@routes.route("/account/material-libraries/<library_id>/entries/<int:entry_id>", methods=["PATCH"])
+def edit_material_library_entry(library_id, entry_id=None):
+    user_id = authenticated_user_id()
+    if not user_id:
+        return jsonify({"status": "error", "message": "Sign in to edit Material Libraries."}), 401
+    payload = request.get_json(silent=True) or {}
+    try:
+        summary = mutate_library(
+            user_id, library_id,
+            lambda root: apply_entry_update(root, entry_id, payload, creating=request.method == "POST"),
+        )
+        if summary is None:
+            return jsonify({"status": "error", "message": "That Material Library no longer exists."}), 404
+        return jsonify({"status": "ok", "summary": summary})
+    except (RuntimeError, OSError, ValueError, ET.ParseError) as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
 
 
 @routes.route("/account/jobs")

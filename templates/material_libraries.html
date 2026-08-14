@@ -38,6 +38,7 @@
         <label for="libraries">Load one or more LightBurn Material Library files</label>
         <input id="libraries" type="file" accept=".clb,.lbmat,.lbrn" multiple>
         <button id="scan" type="button">Scan selected libraries</button>
+        <button id="new_library" type="button">New Settings Library</button>
         <div id="import_plan" class="import-plan" hidden></div>
         <button id="import" type="button" hidden>Import selected materials</button>
         <div id="notice" class="notice" role="status"></div>
@@ -73,23 +74,52 @@
     const settingsBody = document.getElementById('settings_modal_body');
     let activeEntries = [];
     let activeLibraryName = '';
+    let activeLibraryId = '';
     const closeSettings = () => { settingsModal.hidden = true; };
     document.getElementById('settings_modal_close').addEventListener('click', closeSettings);
     settingsModal.addEventListener('click', event => { if (event.target === settingsModal) closeSettings(); });
     document.addEventListener('keydown', event => { if (event.key === 'Escape') closeSettings(); });
     const showEntryList = () => {
       settingsTitle.textContent = activeLibraryName || 'MATERIAL LIBRARY SETTINGS';
-      settingsBody.innerHTML = `<p class="meta">Click an entry row to view its full LightBurn settings.</p>${renderEntries({entries: activeEntries}, true)}`;
+      settingsBody.innerHTML = `<button id="settings_add" type="button">Add Setting</button><p class="meta">Click an entry row to view or edit its full LightBurn settings.</p>${renderEntries({entries: activeEntries}, true)}`;
     };
     const showEntrySettings = entry => {
       settingsTitle.textContent = `${entry.material || 'Material'} · ${entry.type || 'Setting'} · ${entry.description || 'Untitled'}`;
+      settingsBody.dataset.entryId = entry.entry_id;
       const values = entry.settings || {};
-      settingsBody.innerHTML = `<button id="settings_back" type="button">Back to entries</button><div class="entries"><table><thead><tr><th>Setting</th><th>Value</th></tr></thead><tbody>${Object.entries(values).map(([key, value]) => `<tr><td>${esc(key)}</td><td>${esc(typeof value === 'object' ? JSON.stringify(value) : value)}</td></tr>`).join('')}</tbody></table></div>`;
+      settingsBody.innerHTML = `<button id="settings_back" type="button">Back to entries</button><button id="settings_edit" type="button">Edit Setting</button><div class="entries"><table><thead><tr><th>Setting</th><th>Value</th></tr></thead><tbody>${Object.entries(values).map(([key, value]) => `<tr><td>${esc(key)}</td><td>${esc(typeof value === 'object' ? JSON.stringify(value) : value)}</td></tr>`).join('')}</tbody></table></div>`;
     };
-    settingsBody.addEventListener('click', event => {
+    const showEntryEditor = entry => {
+      const isNew = !entry;
+      const data = entry || {material:'', description:'', type:'Scan', settings:{minPower:0,maxPower:100,speed:100,frequency:20,interval:.1,angle:0}};
+      settingsTitle.textContent = isNew ? 'NEW MATERIAL LIBRARY SETTING' : 'EDIT MATERIAL LIBRARY SETTING';
+      settingsBody.dataset.entryId = isNew ? '' : data.entry_id;
+      settingsBody.innerHTML = `<label>Material<input id="entry_material" class="library-name-input" value="${esc(data.material)}"></label><label>Description<input id="entry_description" class="library-name-input" value="${esc(data.description)}"></label><label>Type<select id="entry_type" class="library-name-input"><option${data.type === 'Scan' ? ' selected' : ''}>Scan</option><option${data.type === 'Cut' ? ' selected' : ''}>Cut</option><option${data.type === 'Image' ? ' selected' : ''}>Image</option></select></label><label>LightBurn settings (JSON)</label><textarea id="entry_settings" class="library-name-input" rows="12">${esc(JSON.stringify(data.settings || {}, null, 2))}</textarea><button id="settings_save" type="button">Save Setting</button><button id="settings_cancel" type="button">Cancel</button>`;
+    };
+    const refreshOpenLibrary = async () => {
+      const response = await fetch(`/account/material-libraries/${encodeURIComponent(activeLibraryId)}`, {credentials:'same-origin'});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Could not refresh library.');
+      activeEntries = data.library.summary.entries || []; showEntryList(); load();
+    };
+    settingsBody.addEventListener('click', async event => {
       const row = event.target.closest('.entry-row');
       if (row) showEntrySettings(activeEntries[Number(row.dataset.entryIndex)]);
       if (event.target.matches('#settings_back')) showEntryList();
+      if (event.target.matches('#settings_add')) showEntryEditor(null);
+      if (event.target.matches('#settings_edit')) { const rowId = settingsBody.dataset.entryId; showEntryEditor(activeEntries.find(entry => String(entry.entry_id) === String(rowId))); }
+      if (event.target.matches('#settings_cancel')) showEntryList();
+      if (event.target.matches('#settings_save')) {
+        let settings;
+        try { settings = JSON.parse(document.getElementById('entry_settings').value); } catch (_) { return say('Settings JSON is not valid.', true); }
+        const payload = {material:document.getElementById('entry_material').value.trim(), description:document.getElementById('entry_description').value.trim(), type:document.getElementById('entry_type').value, settings};
+        const entryId = settingsBody.dataset.entryId;
+        const url = entryId === '' ? `/account/material-libraries/${encodeURIComponent(activeLibraryId)}/entries` : `/account/material-libraries/${encodeURIComponent(activeLibraryId)}/entries/${encodeURIComponent(entryId)}`;
+        const response = await fetch(url, {method:entryId === '' ? 'POST' : 'PATCH', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+        const data = await response.json();
+        if (!response.ok) return say(data.message || 'Could not save setting.', true);
+        try { await refreshOpenLibrary(); say('Material Library setting saved.'); } catch (error) { say(error.message, true); }
+      }
     });
     list.addEventListener('click', async event => {
       if (event.target.matches('.rename-button')) {
@@ -102,6 +132,7 @@
       const card = event.target.closest('.library');
       if (event.target.matches('.inspect')) {
         activeLibraryName = card.querySelector('.library-name-input').value.trim() || 'MATERIAL LIBRARY SETTINGS';
+        activeLibraryId = card.dataset.id;
         settingsTitle.textContent = activeLibraryName;
         settingsBody.innerHTML = '<p class="meta">Reading settings from the vault…</p>';
         settingsModal.hidden = false;
@@ -143,6 +174,14 @@
       const response = await fetch('/account/material-libraries', {method:'POST', credentials:'same-origin', body}); const data = await response.json();
       if (!response.ok) return say(data.message || 'Could not import libraries.', true);
       fileInput.value = ''; importPlan.hidden = true; importPlan.innerHTML = ''; importButton.hidden = true; say(`${data.libraries.length} Material Library file(s) imported.`); load();
+    });
+    document.getElementById('new_library').addEventListener('click', async () => {
+      const name = prompt('Name this new Material Library:');
+      if (!name || !name.trim()) return;
+      const response = await fetch('/account/material-libraries/new', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:name.trim()})});
+      const data = await response.json();
+      if (!response.ok) return say(data.message || 'Could not create library.', true);
+      say('New Settings Library created. Open Settings, then Add Setting.'); load();
     });
     fetch('/auth-status', {credentials:'same-origin'}).then(response => response.json()).then(data => { document.getElementById(data.signed_in ? 'manager' : 'sign_in_panel').hidden = false; if (data.signed_in) load().catch(error => say(error.message, true)); }).catch(() => { document.getElementById('sign_in_panel').hidden = false; });
   </script>
