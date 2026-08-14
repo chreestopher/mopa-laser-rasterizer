@@ -417,6 +417,17 @@
   body.light-machine { color:#171815; background:repeating-linear-gradient(90deg,rgba(0,0,0,.025) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 5%,#f0f0e9,#c8c9c3 48%,#9fa19c 100%); border-color:#7c7e7a; box-shadow:inset 0 0 0 5px #a6a8a3,inset 0 0 45px #777,0 0 0 1px #eee,0 20px 50px #000; }
   body.light-machine h1,body.light-machine h2,body.light-machine label,body.light-machine .color-label { color:#151613; text-shadow:0 1px 0 #fff,0 -1px 0 #777; }
   body.light-machine .console-subtitle,body.light-machine h3,body.light-machine .filter-description,body.light-machine .color-name,body.light-machine .getting-started-list,body.light-machine .how-it-works-list,body.light-machine .rasterizer-checklist,body.light-machine .collapsible-info,body.light-machine .collapsible-info summary,body.light-machine .remembered-input-note,body.light-machine .holographic-lab-link { color:#343530; }
+  body.light-machine .holographic-lab-link a { color:#1d5c2c; text-decoration:underline; text-decoration-thickness:2px; text-underline-offset:3px; text-shadow:none; }
+  body.light-machine .holographic-lab-link a:hover { color:#0d3b18; text-shadow:0 1px #fff; }
+  .machine-nav { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin:0 0 18px; padding:6px; border:1px solid #6d725d; border-radius:10px; background:linear-gradient(#252b24,#151914); box-shadow:inset 0 0 0 2px #0d100c,0 3px 0 #0a0c09; }
+  .machine-nav a { display:flex; align-items:center; justify-content:center; min-height:32px; padding:6px 8px; border:1px solid #596451; border-radius:5px; color:#d9d2af; background:linear-gradient(#465149,#29352f); font:700 clamp(8px,1.5vw,11px) "Courier New",monospace; letter-spacing:.04em; text-align:center; text-decoration:none; text-transform:uppercase; }
+  .machine-nav a:hover,.machine-nav a:focus-visible { color:#f5f1d7; border-color:#a8c99b; background:linear-gradient(#657b6c,#3c5447); outline:0; }
+  .machine-nav a[aria-current="page"] { color:#eaf7df; border-color:#93bf82; background:linear-gradient(#527448,#2d542d); box-shadow:inset 0 0 8px rgba(141,240,108,.28); }
+  body.light-machine .machine-nav { border-color:#777974; background:linear-gradient(#dcddd7,#bcbeb8); box-shadow:inset 0 0 0 2px #f1f1eb,0 3px 0 #858782; }
+  body.light-machine .machine-nav a { color:#20251f; border-color:#7b857d; background:linear-gradient(#e6e8e2,#b2bab3); text-shadow:0 1px #fff; }
+  body.light-machine .machine-nav a:hover,body.light-machine .machine-nav a:focus-visible { color:#102b16; background:linear-gradient(#d5e5cd,#a8c89c); }
+  body.light-machine .machine-nav a[aria-current="page"] { color:#102b16; border-color:#527d50; background:linear-gradient(#b8d2aa,#8eaf82); box-shadow:inset 0 0 8px rgba(40,109,36,.18); }
+  @media (max-width:520px) { .machine-nav { grid-template-columns:1fr; } }
   body.light-machine .remembered-input-note { border-color:#777974; background:#dedfd9; box-shadow:inset 0 1px 5px #999; }
   body.light-machine .upload-error { color:#781e11; background:#f8d8d1; border-color:#b84736; box-shadow:inset 0 1px 4px #d6a39a; }
   body.light-machine .upload-error-dialog { color:#352016; background:#f0e8d9; border-color:#a95030; box-shadow:0 12px 40px #333,inset 0 0 0 4px #d0c2aa; }
@@ -466,6 +477,7 @@
       <span class="console-subtitle">VECTOR PROCESSING CONSOLE · SERIES 79</span>
     </div>
   </div>
+  <nav class="machine-nav" aria-label="Primary navigation"><a href="/" aria-current="page">Rasterizer</a><a href="/holographic-etching">Holographic Lab</a><a href="/material-libraries">Material Vault</a></nav>
   <h2>Turn any image into a laser-ready color engraving project!</h2>
   <h2>Without building every color layer by hand!</h2>
   <p class="holographic-lab-link"><a href="/holographic-etching">✦ Enter the Holographic Etching Lab</a> for experimental diffraction-color work.</p>
