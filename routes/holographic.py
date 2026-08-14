@@ -11,11 +11,19 @@ from xml.etree import ElementTree as ET
 
 import cv2
 import numpy as np
-from flask import current_app, jsonify, request, send_from_directory
+from flask import Response, current_app, jsonify, request, send_from_directory, stream_with_context
 from PIL import Image, UnidentifiedImageError
 from werkzeug.utils import secure_filename
 
-from services import download_user_material_library, get_user_material_library
+from services import (
+    HISTORY_TTL_SECONDS,
+    download_task_artifact,
+    download_user_material_library,
+    get_s3_artifact,
+    get_user_material_library,
+    redis_client,
+    upload_task_artifact,
+)
 
 from . import routes
 
@@ -175,6 +183,47 @@ def _profile_metadata_path(upload_folder, profile_id):
     if not profile_id or any(character not in "0123456789abcdef-" for character in profile_id.lower()):
         raise ValueError("Choose a calibration profile created by this lab.")
     return os.path.join(upload_folder, f"holographic_profile_{profile_id}.json")
+
+
+def _holographic_artifact_cache_key(filename):
+    return f"holographic-artifact:{os.path.basename(filename)}"
+
+
+def _store_holographic_artifact(task_id, local_path):
+    """Persist a lab artifact so a later request may land on any web pod."""
+    key = upload_task_artifact(task_id, local_path, category="outputs")
+    if key:
+        redis_client.set(_holographic_artifact_cache_key(os.path.basename(local_path)), key, ex=HISTORY_TTL_SECONDS)
+    return key
+
+
+def _ensure_holographic_artifact(upload_folder, filename):
+    """Return a local copy, restoring it from durable artifact storage if needed."""
+    filename = os.path.basename(filename)
+    path = os.path.join(upload_folder, filename)
+    if os.path.exists(path):
+        return path
+    key = redis_client.get(_holographic_artifact_cache_key(filename))
+    if not key:
+        raise FileNotFoundError(f"Holographic lab artifact '{filename}' was not found.")
+    download_task_artifact(key, path)
+    return path
+
+
+def _download_holographic_artifact(upload_folder, filename):
+    """Stream a durable artifact, with a local-only fallback for development."""
+    filename = os.path.basename(filename)
+    key = redis_client.get(_holographic_artifact_cache_key(filename))
+    if key:
+        artifact = get_s3_artifact(key)
+        response = Response(
+            stream_with_context(artifact["Body"].iter_chunks(chunk_size=1024 * 1024)),
+            mimetype="image/svg+xml" if filename.endswith(".svg") else artifact.get("ContentType") or "application/octet-stream",
+        )
+        response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+    return send_from_directory(upload_folder, filename, as_attachment=True,
+                               mimetype="image/svg+xml" if filename.endswith(".svg") else None)
 
 
 def _order_corners(points):
@@ -483,6 +532,8 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_f
                 "grating_signature": recipe.get("grating_signature", {}),
             } for recipe in profile["recipes"]],
         }, metadata_file, indent=2)
+    for filename in (svg_name, lbrn_name, metadata_name):
+        _store_holographic_artifact(task_id, os.path.join(upload_folder, filename))
     return svg_name, lbrn_name, metadata_name, pixels.shape[1], pixels.shape[0], sum(
         len(bucket["rectangles"]) for bucket in recipes_by_name.values()
     )
@@ -596,6 +647,8 @@ def calibration_grid():
                     "values": sweep_values if SWEEP_SETTINGS[sweep_key] else [],
                 },
             }, metadata_file, indent=2)
+        for filename in (svg_name, lbrn_name, f"{stem}.json"):
+            _store_holographic_artifact(task_id, os.path.join(upload_folder, filename))
     except Exception as error:
         current_app.logger.exception("Holographic calibration-grid export failed")
         return jsonify({
@@ -623,7 +676,9 @@ def save_calibration_profile():
 
     upload_folder = current_app.config["UPLOAD_FOLDER"]
     try:
-        grid_metadata_path = _calibration_metadata_path(upload_folder, calibration_id)
+        grid_metadata_path = _ensure_holographic_artifact(
+            upload_folder, os.path.basename(_calibration_metadata_path(upload_folder, calibration_id))
+        )
         with open(grid_metadata_path, encoding="utf-8") as metadata_file:
             grid_metadata = json.load(metadata_file)
     except (OSError, ValueError, json.JSONDecodeError) as error:
@@ -664,6 +719,8 @@ def save_calibration_profile():
     }
     with open(os.path.join(upload_folder, profile_name_on_disk), "w", encoding="utf-8") as profile_file:
         json.dump(profile, profile_file, indent=2)
+    for filename in (photo_name, profile_name_on_disk):
+        _store_holographic_artifact(profile_id, os.path.join(upload_folder, filename))
     current_app.logger.info("Saved holographic calibration profile %s from grid %s.", profile_id, calibration_id)
     return jsonify({
         "status": "saved",
@@ -711,9 +768,12 @@ def analyze_calibration_profile():
     except (ValueError, TypeError, json.JSONDecodeError):
         return jsonify({"status": "error", "message": "Rotation, crop margins, and analysis size must be valid numbers."}), 400
     try:
-        profile_path = _profile_metadata_path(upload_folder, profile_id)
+        profile_path = _ensure_holographic_artifact(
+            upload_folder, os.path.basename(_profile_metadata_path(upload_folder, profile_id))
+        )
         with open(profile_path, encoding="utf-8") as profile_file:
             profile = json.load(profile_file)
+        _ensure_holographic_artifact(upload_folder, profile["grid_photo"])
         if manual_corners is not None:
             source = cv2.imread(os.path.join(upload_folder, profile["grid_photo"]), cv2.IMREAD_COLOR)
             if source is None:
@@ -750,6 +810,8 @@ def analyze_calibration_profile():
     }
     with open(profile_path, "w", encoding="utf-8") as profile_file:
         json.dump(profile, profile_file, indent=2)
+    _store_holographic_artifact(profile_id, os.path.join(upload_folder, preview_name))
+    _store_holographic_artifact(profile_id, profile_path)
     current_app.logger.info("Measured %s holographic calibration cells for profile %s.", len(cells), profile_id)
     return jsonify({
         "status": "measured",
@@ -777,7 +839,9 @@ def save_holographic_recipes():
 
     upload_folder = current_app.config["UPLOAD_FOLDER"]
     try:
-        profile_path = _profile_metadata_path(upload_folder, profile_id)
+        profile_path = _ensure_holographic_artifact(
+            upload_folder, os.path.basename(_profile_metadata_path(upload_folder, profile_id))
+        )
         with open(profile_path, encoding="utf-8") as profile_file:
             profile = json.load(profile_file)
         cells = {int(cell["index"]): cell for cell in profile["analysis"]["cells"]}
@@ -808,6 +872,7 @@ def save_holographic_recipes():
     profile["palette_diagnostics"] = {"similar_pairs": similar_pairs, "weak_recipes": weak_recipes}
     with open(profile_path, "w", encoding="utf-8") as profile_file:
         json.dump(profile, profile_file, indent=2)
+    _store_holographic_artifact(profile_id, profile_path)
     current_app.logger.info("Saved %s holographic recipes for profile %s.", len(recipes), profile_id)
     return jsonify({
         "status": "saved",
@@ -849,10 +914,14 @@ def build_holographic_artwork():
 def calibration_profile_photo(profile_id):
     upload_folder = current_app.config["UPLOAD_FOLDER"]
     try:
-        with open(_profile_metadata_path(upload_folder, profile_id), encoding="utf-8") as profile_file:
+        profile_path = _ensure_holographic_artifact(
+            upload_folder, os.path.basename(_profile_metadata_path(upload_folder, profile_id))
+        )
+        with open(profile_path, encoding="utf-8") as profile_file:
             profile = json.load(profile_file)
         photo_name = os.path.basename(profile["grid_photo"])
-    except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        _ensure_holographic_artifact(upload_folder, photo_name)
+    except (OSError, RuntimeError, ValueError, KeyError, json.JSONDecodeError):
         return jsonify({"status": "error", "message": "Calibration profile photo was not found."}), 404
     return send_from_directory(upload_folder, photo_name)
 
@@ -861,6 +930,10 @@ def calibration_profile_photo(profile_id):
 def preview_calibration_file(filename):
     if not filename.startswith("holographic_profile_"):
         return jsonify({"status": "error", "message": "Unknown calibration preview."}), 404
+    try:
+        _ensure_holographic_artifact(current_app.config["UPLOAD_FOLDER"], filename)
+    except (OSError, RuntimeError):
+        return jsonify({"status": "error", "message": "Calibration preview was not found."}), 404
     return send_from_directory(current_app.config["UPLOAD_FOLDER"], filename)
 
 
@@ -868,4 +941,7 @@ def preview_calibration_file(filename):
 def download_calibration_file(filename):
     if not (filename.startswith("holographic_calibration_") or filename.startswith("holographic_profile_") or filename.startswith("holographic_art_")):
         return jsonify({"status": "error", "message": "Unknown calibration file."}), 404
-    return send_from_directory(current_app.config["UPLOAD_FOLDER"], filename, as_attachment=True)
+    try:
+        return _download_holographic_artifact(current_app.config["UPLOAD_FOLDER"], filename)
+    except (OSError, RuntimeError):
+        return jsonify({"status": "error", "message": "Calibration file was not found."}), 404
