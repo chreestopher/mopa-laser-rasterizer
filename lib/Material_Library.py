@@ -59,10 +59,6 @@ def main(argv=None):
     target_colors, lb, lightburn_module = vector_processing.init_lightburn(
         limit_colors, color_name_overrides=color_name_overrides
     )
-    # Quantization reflects the user's filtered Rasterizer palette. Material
-    # Library matching below may omit a layer with no matching setting, but it
-    # must not silently reduce the source image's color pool first.
-    filtered_palette_color_count = len(target_colors)
     # Keep the exporter dependency explicit at the compatibility boundary.
     # init_lightburn also registers it internally for direct API callers.
     vector_processing.lightburn = lightburn_module
@@ -99,10 +95,7 @@ def main(argv=None):
         TARGET_COLORS=target_colors,
         scale_factor=float(square_mm),
         ignore_background_hex="#ffffff",
-        quantize_colors=(
-            2 if image_preset == "bw_dither_photograph"
-            else filtered_palette_color_count
-        ),
+        quantize_colors=vector_settings["quantize_colors"],
         min_island_area=vector_settings["min_island_area"],
         simplification_factor=vector_settings["simplification_factor"],
         smoothing_radius=vector_settings["smoothing_radius"],
@@ -112,7 +105,6 @@ def main(argv=None):
         job_settings={
             "image_preset": image_preset,
             "preset_settings": vector_settings,
-            "filtered_palette_color_count": filtered_palette_color_count,
             "material_library_path": material_library_file,
             "selected_material": material_name,
             "palette_names": {metadata[2]: color_hex for color_hex, metadata in target_colors.items()},

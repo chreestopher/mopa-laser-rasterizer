@@ -160,6 +160,13 @@ def get_closest_color(r, g, b, TARGET_COLORS):
         r=int(r)
         g=int(g)
         b=int(b)
+        exact_swatch = f"#{r:02X}{g:02X}{b:02X}"
+        # Palette quantization above deliberately produces these exact RGB
+        # values. Preserve that deliberate swatch assignment before the
+        # generic low-saturation (gray) and hue fallback rules examine it.
+        if exact_swatch in TARGET_COLORS:
+            found_lb_hex[(r, g, b)] = exact_swatch
+            return exact_swatch
         V = max(r, g, b)
 
         # 2. Apply Luminance Threshold Rules
@@ -433,10 +440,10 @@ def normalize_vector_parameters(
     if quantize_colors is not None:
         quantize_colors = int(quantize_colors)
 
-        # This is a source-image palette size, not an export-layer count.
-        # Material Library matching can remove a layer later, but that must
-        # not reduce the requested color quantization. Pillow supports 256.
-        quantize_colors = max(1, min(256, quantize_colors))
+        max_allowable_colors = len(target_colors)
+
+        if quantize_colors > max_allowable_colors:
+            quantize_colors = max_allowable_colors
 
     if isinstance(min_island_area, (tuple, list)):
         min_island_area = (
@@ -506,7 +513,8 @@ def prepare_raster_image(
     raster_image_path,
     new_height,
     new_width,
-    quantize_colors
+    quantize_colors,
+    target_colors=None
 ):
     """
     Open, convert, resize, and optionally quantize the raster image.
@@ -540,10 +548,25 @@ def prepare_raster_image(
             f"maximum pool of {quantize_colors} levels..."
         )
 
-        img = img.quantize(
-            colors=quantize_colors,
-            method=0
-        ).convert("RGB")
+        active_swatches = list((target_colors or {}).keys())
+        if active_swatches:
+            # Quantize to the actual active LightBurn palette instead of an
+            # unrelated adaptive palette. This prevents a later hue snap from
+            # collapsing many generic quantization colors into Light-Gray.
+            palette = Image.new("P", (1, 1))
+            palette_values = []
+            for color_hex in active_swatches[:256]:
+                palette_values.extend(hex_to_rgb(color_hex))
+            palette.putpalette(palette_values + [0] * (768 - len(palette_values)))
+            img = img.quantize(palette=palette, dither=Image.Dither.NONE).convert("RGB")
+            printLogMessage(
+                f"Using {len(active_swatches)} active LightBurn swatches as the quantization palette."
+            )
+        else:
+            img = img.quantize(
+                colors=quantize_colors,
+                method=0
+            ).convert("RGB")
 
     return img
 
@@ -1528,10 +1551,10 @@ def raster_to_puzzle_and_lightburn(
         - LightBurn export
     """
 
-    # Material_Library passes the number of Rasterizer palette colors left
-    # after limit_colors filtering. Black-and-white photos are the sole
-    # exception and deliberately reduce the source raster to two colors.
-    quantize_colors = 2 if image_preset == "bw_dither_photograph" else quantize_colors
+    # Quantization uses the real LightBurn layers that survived both palette
+    # filtering and exact Material Library matching. Black-and-white photos
+    # are the sole exception and deliberately reduce the source raster to two.
+    quantize_colors = 2 if image_preset == "bw_dither_photograph" else len(TARGET_COLORS)
 
     # Keep this at the beginning of the pipeline so the console records the
     # effective values used by the job before raster processing begins.
@@ -1546,7 +1569,7 @@ def raster_to_puzzle_and_lightburn(
             "quantize_colors": quantize_colors,
             "quantize_color_source": (
                 "bw_dither_preset" if image_preset == "bw_dither_photograph"
-                else "filtered_palette_colors"
+                else "resolved_material_layers"
             ),
             "min_island_area": min_island_area,
             "simplification_factor": simplification_factor,
@@ -1599,7 +1622,11 @@ def raster_to_puzzle_and_lightburn(
         raster_image_path=raster_image_path,
         new_height=new_height,
         new_width=new_width,
-        quantize_colors=quantize_colors
+        quantize_colors=quantize_colors,
+        # BW photo mode intentionally uses Pillow's adaptive two-color
+        # reduction so its transparent-light-area option can inspect the two
+        # actual source values. Every other preset uses real LightBurn swatches.
+        target_colors=None if image_preset == "bw_dither_photograph" else TARGET_COLORS
     )
 
     width, height = img.size
