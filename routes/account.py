@@ -425,6 +425,9 @@ def material_libraries():
                 "library_id": item.get("library_id"),
                 "name": item.get("name", "Saved Material Library"),
                 "material_name": item.get("material_name", ""),
+                "laser_source": item.get("laser_source", ""),
+                "lens_field_of_view": item.get("lens_field_of_view", ""),
+                "notes": item.get("notes", ""),
                 "summary": item.get("summary", {}),
             }
             for item in libraries
@@ -445,9 +448,17 @@ def material_library_detail(library_id):
             return jsonify({"status": "ok"})
         if request.method == "PATCH":
             payload = request.get_json(silent=True) or {}
-            if not rename_user_material_library(user_id, library_id, payload.get("name")):
+            if not rename_user_material_library(
+                user_id, library_id, payload.get("name"),
+                payload.get("laser_source"), payload.get("lens_field_of_view"), payload.get("notes"),
+            ):
                 return jsonify({"status": "error", "message": "That Material Library no longer exists."}), 404
-            return jsonify({"status": "ok", "name": str(payload.get("name")).strip()})
+            return jsonify({
+                "status": "ok", "name": str(payload.get("name")).strip(),
+                "laser_source": str(payload.get("laser_source") or "").strip(),
+                "lens_field_of_view": str(payload.get("lens_field_of_view") or "").strip(),
+                "notes": str(payload.get("notes") or "").strip(),
+            })
         library = get_user_material_library(user_id, library_id)
         if not library:
             return jsonify({"status": "error", "message": "That Material Library no longer exists."}), 404
@@ -455,7 +466,7 @@ def material_library_detail(library_id):
             temp_path = temp_file.name
         try:
             download_user_material_library(library, temp_path)
-            return jsonify({"status": "ok", "library": {"library_id": library_id, "name": library.get("name", "Material Library"), "summary": library_entries(temp_path, include_settings=True)}})
+            return jsonify({"status": "ok", "library": {"library_id": library_id, "name": library.get("name", "Material Library"), "laser_source": library.get("laser_source", ""), "lens_field_of_view": library.get("lens_field_of_view", ""), "notes": library.get("notes", ""), "summary": library_entries(temp_path, include_settings=True)}})
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)

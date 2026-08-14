@@ -177,19 +177,30 @@ def delete_user_material_library(user_id, library_id):
     return True
 
 
-def rename_user_material_library(user_id, library_id, display_name):
+def rename_user_material_library(user_id, library_id, display_name, laser_source=None, lens_field_of_view=None, notes=None):
     table = account_table()
     if not table or not get_user_material_library(user_id, library_id):
         return False
     display_name = str(display_name or "").strip()
     if not display_name or len(display_name) > 160:
         raise ValueError("Library names must be between 1 and 160 characters.")
+    laser_source = str(laser_source or "").strip()
+    lens_field_of_view = str(lens_field_of_view or "").strip()
+    notes = str(notes or "").strip()
+    if len(laser_source) > 160 or len(lens_field_of_view) > 160 or len(notes) > 1000:
+        raise ValueError("Laser Source and Lens Field of View must be 160 characters or fewer, and Notes 1000 characters or fewer.")
     try:
         table.update_item(
             Key={"pk": f"USER#{user_id}", "sk": f"MATERIAL#{library_id}"},
-            UpdateExpression="SET #name = :name, updated_at = :updated_at",
+            UpdateExpression="SET #name = :name, laser_source = :laser_source, lens_field_of_view = :lens_field_of_view, notes = :notes, updated_at = :updated_at",
             ExpressionAttributeNames={"#name": "name"},
-            ExpressionAttributeValues={":name": display_name, ":updated_at": int(time.time())},
+            ExpressionAttributeValues={
+                ":name": display_name,
+                ":laser_source": laser_source,
+                ":lens_field_of_view": lens_field_of_view,
+                ":notes": notes,
+                ":updated_at": int(time.time()),
+            },
         )
     except ClientError as error:
         raise RuntimeError("Could not rename the saved Material Library.") from error
