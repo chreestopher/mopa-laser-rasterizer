@@ -359,6 +359,20 @@ def parse_material_settings(
         raise ValueError(f"Material settings file does not contain required filter setting: {requested}")
     return (matched_settings, required_layers) if return_setting_layers else matched_settings
 
+
+def move_lightburn_layer_after(lb_project, layer_id, after_layer_id):
+    """Move one configured LightBurn layer after another in execution order."""
+    layers = getattr(lb_project, "_layers", None)
+    if not isinstance(layers, list):
+        return False
+    layer = next((item for item in layers if getattr(item, "index", None) == layer_id), None)
+    after_layer = next((item for item in layers if getattr(item, "index", None) == after_layer_id), None)
+    if layer is None or after_layer is None or layer is after_layer:
+        return False
+    layers.remove(layer)
+    layers.insert(layers.index(after_layer) + 1, layer)
+    return True
+
 def init_lightburn(the_colors_limit, color_name_overrides=None):
     """
         This Function:

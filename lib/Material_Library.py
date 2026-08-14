@@ -87,6 +87,11 @@ def main(argv=None):
         raise SystemExit(str(error))
     if required_setting_names:
         filter_parameters["_setting_layer_id"] = filter_setting_layers[required_setting_names[0].casefold()]
+        vector_processing.move_lightburn_layer_after(
+            lb,
+            target_colors["#000000"][1],
+            filter_parameters["_setting_layer_id"],
+        )
 
     vector_settings = dict(preset)
     for name in ("min_island_area", "simplification_factor", "smoothing_radius"):
