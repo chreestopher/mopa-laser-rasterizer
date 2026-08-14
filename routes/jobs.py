@@ -24,9 +24,12 @@ from services import (
     parse_abstract_filter_parameters,
     parse_color_name_overrides,
     download_task_artifact,
+    download_user_material_library,
     find_task_artifact,
+    get_user_material_library,
     get_s3_artifact,
     redis_client,
+    save_user_material_library,
     tasks,
     upload_task_artifact,
     valid_history_session,
@@ -76,6 +79,7 @@ def start_task():
     except RuntimeError as error:
         return jsonify({"status": "error", "message": str(error)}), 503
     material_cache_key = f"material-library:{history_session}"
+    saved_library_id = str(user_data.get("saved_material_library_id", "")).strip()
     if material_settings and material_settings.filename:
         material_filename = secure_filename(material_settings.filename)
         material_settings_path = os.path.join(
@@ -91,6 +95,24 @@ def start_task():
             json.dumps({"path": material_settings_path, "filename": material_filename, "key": material_key}),
             ex=HISTORY_TTL_SECONDS,
         )
+        if user_id:
+            try:
+                save_user_material_library(user_id, material_settings_path, user_data.get("material", ""))
+            except RuntimeError as error:
+                return jsonify({"status": "error", "message": str(error)}), 503
+    elif saved_library_id:
+        if not user_id:
+            return jsonify({"status": "error", "message": "Sign in to use a saved Material Library."}), 401
+        try:
+            saved_library = get_user_material_library(user_id, saved_library_id)
+            if not saved_library:
+                return jsonify({"status": "error", "message": "That saved Material Library is no longer available."}), 404
+            material_filename = secure_filename(saved_library.get("name") or "library.clb")
+            material_settings_path = os.path.join(upload_folder, f"{task_id}_saved_material_{material_filename}")
+            download_user_material_library(saved_library, material_settings_path)
+            material_key = saved_library.get("s3_key")
+        except RuntimeError as error:
+            return jsonify({"status": "error", "message": str(error)}), 503
     else:
         try:
             cached_material = json.loads(redis_client.get(material_cache_key) or "{}")

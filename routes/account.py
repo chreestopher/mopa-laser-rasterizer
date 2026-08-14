@@ -4,6 +4,7 @@ from flask import jsonify, request
 
 from services import (
     ABSTRACT_FILTER_NAMES,
+    list_user_material_libraries,
     get_user_preferences,
     normalize_dimension,
     save_user_preferences,
@@ -73,4 +74,23 @@ def preferences():
         save_user_preferences(user_id, preferences)
         return jsonify({"status": "ok", "preferences": preferences})
     except (RuntimeError, ValueError) as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+
+@routes.route("/account/material-libraries")
+def material_libraries():
+    user_id = authenticated_user_id()
+    if not user_id:
+        return jsonify({"status": "error", "message": "Sign in to use saved Material Libraries."}), 401
+    try:
+        libraries = list_user_material_libraries(user_id)
+        return jsonify({"status": "ok", "libraries": [
+            {
+                "library_id": item.get("library_id"),
+                "name": item.get("name", "Saved Material Library"),
+                "material_name": item.get("material_name", ""),
+            }
+            for item in libraries
+        ]})
+    except RuntimeError as error:
         return jsonify({"status": "error", "message": str(error)}), 400

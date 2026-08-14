@@ -510,6 +510,7 @@
       <div><label for="material_settings">2. Choose your LightBurn Material Library:</label></div>
       <div><input type="file" id="material_settings" name="material_settings" accept=".clb,.lbmat,.lbrn" aria-describedby="remembered_material_library"></div>
       <div id="remembered_material_library" class="remembered-input-note" hidden></div>
+      <div id="saved_material_library_row" hidden><label for="saved_material_library">Or use one of your saved Material Libraries:</label><select id="saved_material_library" name="saved_material_library_id"><option value="">Choose an account library…</option></select></div>
     </div>    
     <div>
       <div><label for="material">3. Choose material to engrave (exact Material Library name):</label></div>
@@ -917,6 +918,7 @@
               })
               .catch(() => {});
           }
+          if (signedInAccount) loadSavedMaterialLibraries();
         })
         .catch(() => {});
       const sessionFromLink = new URLSearchParams(window.location.search).get('history_session');
@@ -929,6 +931,8 @@
       sessionStorage.setItem('mopa-history-session', historySession);
       const materialInput = document.getElementById('material');
       const materialLibraryInput = document.getElementById('material_settings');
+      const savedMaterialLibraryRow = document.getElementById('saved_material_library_row');
+      const savedMaterialLibraryInput = document.getElementById('saved_material_library');
       const uploadErrorModal = document.getElementById('upload_error_modal');
       const uploadErrorModalMessage = document.getElementById('upload_error_modal_message');
       const uploadErrorClose = document.getElementById('upload_error_close');
@@ -941,6 +945,22 @@
         uploadErrorModal.hidden = true;
       });
       const rememberedMaterialNote = document.getElementById('remembered_material_library');
+      const loadSavedMaterialLibraries = () => fetch('/account/material-libraries', { credentials: 'same-origin' })
+        .then(response => response.ok ? response.json() : null)
+        .then(data => {
+          const libraries = data?.libraries || [];
+          if (!libraries.length) return;
+          savedMaterialLibraryRow.hidden = false;
+          libraries.forEach(library => {
+            const option = document.createElement('option');
+            option.value = library.library_id;
+            option.textContent = library.material_name
+              ? `${library.name} · ${library.material_name}`
+              : library.name;
+            savedMaterialLibraryInput.appendChild(option);
+          });
+        })
+        .catch(() => {});
       const materialNameKey = `mopa-material-name:${historySession}`;
       const materialLibraryKey = `mopa-material-library:${historySession}`;
       const rememberedMaterialName = sessionStorage.getItem(materialNameKey);
@@ -956,10 +976,17 @@
       });
       materialLibraryInput.addEventListener('change', () => {
         if (!materialLibraryInput.files.length) return;
+        savedMaterialLibraryInput.value = '';
         const filename = materialLibraryInput.files[0].name;
         sessionStorage.setItem(materialLibraryKey, filename);
         rememberedMaterialNote.hidden = false;
         rememberedMaterialNote.textContent = `Current Material Library: ${filename}. This file will replace the remembered library.`;
+      });
+      savedMaterialLibraryInput.addEventListener('change', () => {
+        if (!savedMaterialLibraryInput.value) return;
+        materialLibraryInput.value = '';
+        rememberedMaterialNote.hidden = false;
+        rememberedMaterialNote.textContent = `Using saved Material Library: ${savedMaterialLibraryInput.selectedOptions[0].textContent}.`;
       });
       const encodedSettings = new URLSearchParams(window.location.search).get('settings');
       if (encodedSettings) {
@@ -1012,7 +1039,7 @@
         const artworkLooksLikeImage = artworkFile && (
           artworkFile.type.startsWith('image/') || /\.(avif|bmp|gif|jpe?g|png|tiff?|webp)$/i.test(artworkFile.name)
         );
-        const materialLooksValid = materialFile || rememberedLibraryName;
+        const materialLooksValid = materialFile || savedMaterialLibraryInput.value || rememberedLibraryName;
         document.getElementById('image').setCustomValidity(
           artworkLooksLikeImage ? '' : 'Choose an image file for your artwork, not a LightBurn Material Library.'
         );

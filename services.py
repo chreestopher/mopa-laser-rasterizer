@@ -9,6 +9,7 @@ import re
 import subprocess
 import threading
 import time
+import uuid
 from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
@@ -16,6 +17,7 @@ from urllib.parse import urlencode
 import boto3
 import redis
 from botocore.exceptions import ClientError
+from boto3.dynamodb.conditions import Key
 
 
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-2").strip()
@@ -91,6 +93,64 @@ def save_user_preferences(user_id, preferences):
         "preferences": _dynamodb_values(preferences),
         "updated_at": int(time.time()),
     })
+
+
+def list_user_material_libraries(user_id):
+    table = account_table()
+    if not table or not user_id:
+        return []
+    try:
+        response = table.query(
+            KeyConditionExpression=Key("pk").eq(f"USER#{user_id}") & Key("sk").begins_with("MATERIAL#"),
+            ScanIndexForward=False,
+        )
+    except ClientError as error:
+        raise RuntimeError("Could not load saved Material Libraries.") from error
+    return [_json_values(item) for item in response.get("Items", [])]
+
+
+def get_user_material_library(user_id, library_id):
+    table = account_table()
+    if not table or not user_id or not library_id:
+        return None
+    try:
+        item = table.get_item(Key={"pk": f"USER#{user_id}", "sk": f"MATERIAL#{library_id}"}).get("Item")
+    except ClientError as error:
+        raise RuntimeError("Could not load the saved Material Library.") from error
+    return _json_values(item) if item else None
+
+
+def save_user_material_library(user_id, local_file_path, material_name=""):
+    """Store an uploaded LightBurn library once under its Cognito owner."""
+    table = account_table()
+    if not table or not S3_BUCKET_NAME:
+        raise RuntimeError("Account Material Library storage is not configured.")
+    library_id = str(uuid.uuid4())
+    filename = os.path.basename(local_file_path)
+    s3_key = f"users/{user_id}/materials/{library_id}/{filename}"
+    try:
+        s3_client.upload_file(local_file_path, S3_BUCKET_NAME, s3_key)
+        table.put_item(Item={
+            "pk": f"USER#{user_id}",
+            "sk": f"MATERIAL#{library_id}",
+            "library_id": library_id,
+            "name": filename,
+            "material_name": str(material_name or "").strip()[:160],
+            "s3_key": s3_key,
+            "created_at": int(time.time()),
+        })
+    except ClientError as error:
+        raise RuntimeError("Could not save the Material Library to this account.") from error
+    return {"library_id": library_id, "name": filename, "material_name": str(material_name or "").strip()}
+
+
+def download_user_material_library(library, local_path):
+    if not library or not library.get("s3_key"):
+        raise RuntimeError("Saved Material Library is unavailable.")
+    try:
+        s3_client.download_file(S3_BUCKET_NAME, library["s3_key"], local_path)
+    except ClientError as error:
+        raise RuntimeError("Could not retrieve the saved Material Library.") from error
 
 
 def valid_history_session(value):
