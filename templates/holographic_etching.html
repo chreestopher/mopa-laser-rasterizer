@@ -137,7 +137,13 @@
   <form id="calibration_form" class="calibration-form" enctype="multipart/form-data">
     <h3><span class="sequence-tag">01</span> Calibration Grid Console</h3>
     <p class="form-note">This first grid sweeps line angle and fill interval while copying one selected LightBurn setting onto each cell. Keep the laser, material finish, and lens setup stable while you test it.</p>
-    <label>Material Library file<input type="file" name="material_settings" accept=".clb,.lbmat,.lbrn" required></label>
+    <label id="saved_calibration_library_row" class="full-width" hidden>Saved Material Vault library
+      <select id="saved_calibration_library" name="saved_material_library_id">
+        <option value="">Upload a one-off Material Library below</option>
+      </select>
+      <span class="form-note">Signed-in operators can reuse any library stored in their Material Vault.</span>
+    </label>
+    <label>One-off Material Library file<input id="calibration_material_settings" type="file" name="material_settings" accept=".clb,.lbmat,.lbrn"><span class="form-note">Use this when a saved library is not selected.</span></label>
     <label>Material name<input name="material" value="stainless - steel" required></label>
     <label>Setting Description<input name="setting_description" placeholder="Exact Material Library Description" required></label>
     <label>Laser source<input name="laser_source" placeholder="Example: JPT M7 100 W MOPA"></label>
@@ -227,17 +233,53 @@
       document.body.classList.toggle('light-machine', themeSwitch.checked);
       localStorage.setItem('mopa-machine-theme', themeSwitch.checked ? 'light' : 'dark');
     });
+    const calibrationForm = document.getElementById('calibration_form');
+    const savedCalibrationLibraryRow = document.getElementById('saved_calibration_library_row');
+    const savedCalibrationLibrary = document.getElementById('saved_calibration_library');
+    const calibrationMaterialSettings = document.getElementById('calibration_material_settings');
+    const savedCalibrationLibraryKey = 'calibration_form:saved_material_library_id';
+    const loadSavedCalibrationLibraries = () => fetch('/account/material-libraries', {credentials:'same-origin'})
+      .then(response => response.ok ? response.json() : null)
+      .then(data => {
+        const libraries = data?.libraries || [];
+        if (!libraries.length) return;
+        savedCalibrationLibraryRow.hidden = false;
+        libraries.forEach(library => {
+          const option = document.createElement('option');
+          option.value = library.library_id;
+          option.textContent = library.material_name
+            ? `${library.name} · ${library.material_name}`
+            : library.name;
+          savedCalibrationLibrary.appendChild(option);
+        });
+        const rememberedLibraryId = rememberedHolographicSettings[savedCalibrationLibraryKey];
+        if (rememberedLibraryId && [...savedCalibrationLibrary.options].some(option => option.value === rememberedLibraryId)) {
+          savedCalibrationLibrary.value = rememberedLibraryId;
+        }
+      })
+      .catch(() => {});
+    savedCalibrationLibrary.addEventListener('change', () => {
+      if (savedCalibrationLibrary.value) calibrationMaterialSettings.value = '';
+    });
+    calibrationMaterialSettings.addEventListener('change', () => {
+      if (calibrationMaterialSettings.files.length) savedCalibrationLibrary.value = '';
+    });
     fetch('/auth-status', {credentials:'same-origin'})
       .then(response => response.ok ? response.json() : {signed_in:false})
       .then(({signed_in}) => {
         document.getElementById('login_link').hidden = Boolean(signed_in);
         document.getElementById('auth_console').hidden = !signed_in;
+        if (signed_in) loadSavedCalibrationLibraries();
       }).catch(() => {});
-    document.getElementById('calibration_form').addEventListener('submit', async event => {
+    calibrationForm.addEventListener('submit', async event => {
       event.preventDefault();
       const form = event.currentTarget;
       const results = document.getElementById('calibration_results');
       const button = form.querySelector('button[type="submit"]');
+      if (!savedCalibrationLibrary.value && !calibrationMaterialSettings.files.length) {
+        results.textContent = 'Choose a saved Material Vault library or upload a one-off Material Library file.';
+        return;
+      }
       button.disabled = true;
       results.textContent = 'Building calibration grid...';
       try {

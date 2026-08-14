@@ -15,6 +15,8 @@ from flask import current_app, jsonify, request, send_from_directory
 from PIL import Image, UnidentifiedImageError
 from werkzeug.utils import secure_filename
 
+from services import download_user_material_library, get_user_material_library
+
 from . import routes
 
 
@@ -425,11 +427,12 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_f
 @routes.route("/holographic-etching/calibration-grid", methods=["POST"])
 def calibration_grid():
     library = request.files.get("material_settings")
+    saved_library_id = str(request.form.get("saved_material_library_id", "")).strip()
     material = str(request.form.get("material", "")).strip()
     description = str(request.form.get("setting_description", "")).strip()
     laser_source = str(request.form.get("laser_source", "")).strip()
-    if not library or not library.filename or not material or not description:
-        return jsonify({"status": "error", "message": "Provide a Material Library, material name, and setting Description."}), 400
+    if not material or not description or (not saved_library_id and (not library or not library.filename)):
+        return jsonify({"status": "error", "message": "Choose a saved Material Library or upload one, then provide its material name and setting Description."}), 400
     try:
         columns = max(2, min(6, int(request.form.get("columns", 4))))
         rows = max(2, min(6, int(request.form.get("rows", 4))))
@@ -447,8 +450,23 @@ def calibration_grid():
 
     task_id = str(uuid.uuid4())
     upload_folder = current_app.config["UPLOAD_FOLDER"]
-    library_path = os.path.join(upload_folder, f"{task_id}_calibration_{secure_filename(library.filename)}")
-    library.save(library_path)
+    if saved_library_id:
+        user_id = request.headers.get("x-amzn-oidc-identity", "").strip()
+        if not user_id:
+            return jsonify({"status": "error", "message": "Sign in to use a saved Material Library, or upload a one-off library file."}), 401
+        try:
+            saved_library = get_user_material_library(user_id, saved_library_id)
+            if not saved_library:
+                return jsonify({"status": "error", "message": "That saved Material Library is unavailable or belongs to another account."}), 404
+            saved_name = secure_filename(saved_library.get("original_name") or saved_library.get("name") or "material-library.clb")
+            library_path = os.path.join(upload_folder, f"{task_id}_calibration_saved_{saved_name}")
+            download_user_material_library(saved_library, library_path)
+        except RuntimeError as error:
+            current_app.logger.exception("Could not retrieve saved holographic calibration library")
+            return jsonify({"status": "error", "message": str(error)}), 503
+    else:
+        library_path = os.path.join(upload_folder, f"{task_id}_calibration_{secure_filename(library.filename)}")
+        library.save(library_path)
     try:
         lightburn = _lightburn_module()
         matched_setting = _exact_setting(lightburn, library_path, material, description)
