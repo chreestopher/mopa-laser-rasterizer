@@ -34,7 +34,7 @@
   </style>
 </head>
 <body>
-  <div class="theme-toggle"><a id="login_link" class="login-link" href="/login"><span class="auth-machine-switch" aria-hidden="true"></span><span>Operator access, sign in</span></a><div id="auth_console" class="auth-console authorized" hidden><span class="auth-machine-switch is-on" aria-hidden="true"></span><span>Operator authorized</span><a href="/logout">Sign out</a></div><label><span>Dark</span><input id="theme_switch" type="checkbox"><span class="toggle-track"></span><span>Light</span></label></div>
+  <div class="theme-toggle"><a id="login_link" class="login-link" href="/login"><span class="auth-machine-switch" aria-hidden="true"></span><span>Operator access, sign in</span></a><div id="auth_console" class="auth-console authorized" hidden><a class="auth-machine-switch is-on" href="/logout" aria-label="Sign out"></a><span>Operator authorized</span></div><label><span>Dark</span><input id="theme_switch" type="checkbox"><span class="toggle-track"></span><span>Light</span></label></div>
   <main class="machine">
     <header class="page-header">
       <h1><a class="home-title" href="/" aria-label="Return to MOPA Laser Rasterizer home"><span class="facade-title">MOPA-LASER-RASTERIZER</span></a></h1>

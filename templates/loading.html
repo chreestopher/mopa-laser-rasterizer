@@ -344,7 +344,7 @@
     .auth-machine-switch::before { content:""; position:absolute; left:8px; bottom:7px; width:10px; height:10px; border:2px solid #20221d; border-radius:50%; background:radial-gradient(circle at 35% 30%,#f4f0db,#7d8178 48%,#373a34); box-shadow:0 0 0 1px #cbc8b4; }
     .auth-machine-switch::after { content:""; position:absolute; left:11px; bottom:12px; width:7px; height:21px; border:1px solid #151713; border-radius:3px 3px 1px 1px; background:linear-gradient(90deg,#42463f,#f4f1d9 50%,#4d514a); box-shadow:0 0 0 1px #c9c6b0,1px 2px 2px rgba(0,0,0,.65); transform-origin:50% calc(100% + 5px); transform:rotate(53deg); transition:transform .2s ease,box-shadow .2s ease; }
     .auth-machine-switch.is-on::after { transform:rotate(0); box-shadow:0 0 0 1px #c9c6b0,0 0 9px #80e85c,1px 2px 2px rgba(0,0,0,.65); }
-    .auth-console a { color:inherit; text-decoration:none; border-bottom:1px dotted currentColor; }
+    .auth-console a:not(.auth-machine-switch) { color:inherit; text-decoration:none; border-bottom:1px dotted currentColor; }
     .theme-toggle input { position:absolute; opacity:0; }
     .toggle-track { position:relative; width:52px; height:25px; border:2px solid #777864; border-radius:14px; background:#171b15; box-shadow:inset 0 3px 6px #000; cursor:pointer; }
     .toggle-track::after { content:""; position:absolute; top:3px; left:4px; width:15px; height:15px; border-radius:50%; background:#d3652e; box-shadow:0 0 7px #ed863d,0 2px 2px #000; transition:transform .2s; }
@@ -365,7 +365,7 @@
 </head>
 <body>
         <a id="login_link" class="login-link" href="/login"><span class="auth-machine-switch" aria-hidden="true"></span><span>Operator access, sign in</span></a>
-        <div id="auth_console" class="auth-console" hidden><span class="auth-machine-switch is-on" aria-hidden="true"></span><span>Operator authorized</span><a href="/logout">Sign out</a></div>
+        <div id="auth_console" class="auth-console" hidden><a class="auth-machine-switch is-on" href="/logout" aria-label="Sign out"></a><span>Operator authorized</span></div>
         <div class="theme-toggle"><span>Dark</span><label><input id="theme_switch" type="checkbox"><span class="toggle-track"></span></label><span>Light</span></div>
     
         <div class="page-header">
