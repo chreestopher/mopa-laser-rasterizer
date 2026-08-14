@@ -669,12 +669,11 @@ def calibration_grid():
     intervals = [column_intervals[index % columns] for index in range(count)]
     angles = [row_angles[index // columns] for index in range(count)]
     sweep_values = [sweep_low + (sweep_high - sweep_low) * index / max(count - 1, 1) for index in range(count)]
-    # Apply the same downward shift as the prior clearance adjustment. This
-    # keeps the label baseline fixed while moving the grating matrix farther
-    # from LightBurn's larger-than-nominal text bounds.
+    # Keep the label baseline fixed while moving the grating matrix far enough
+    # below LightBurn's larger-than-nominal text bounds.
     previous_top_label_mm = min(3.2, max(2.4, cell_mm * .22))
     top_label_mm = min(5.0, max(4.0, cell_mm * .34))
-    top_label_mm += top_label_mm - previous_top_label_mm
+    top_label_mm += 3 * (top_label_mm - previous_top_label_mm)
     right_label_mm = min(2.2, max(1.4, cell_mm * .16))
     left_grid_margin_mm = min(2.2, max(1.4, cell_mm * .16))
     recipe_signatures = []
