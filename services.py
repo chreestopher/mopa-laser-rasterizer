@@ -131,10 +131,9 @@ def save_user_material_library(user_id, local_file_path, material_name="", summa
     library_name = str(display_name or filename).strip()[:160] or filename
     s3_key = f"users/{user_id}/materials/{library_id}/{filename}"
     try:
-        s3_client.upload_file(
-            local_file_path, S3_BUCKET_NAME, s3_key,
-            ExtraArgs={"Tagging": "mopa-retention=material"},
-        )
+        # Material libraries are outside the S3 lifecycle rules, so they do
+        # not need a retention tag (and this avoids requiring PutObjectTagging).
+        s3_client.upload_file(local_file_path, S3_BUCKET_NAME, s3_key)
         item = {
             "pk": f"USER#{user_id}",
             "sk": f"MATERIAL#{library_id}",
@@ -204,8 +203,7 @@ def update_user_material_library_file(user_id, library_id, local_file_path, summ
     if not table or not library or not library.get("s3_key"):
         return False
     try:
-        s3_client.upload_file(local_file_path, S3_BUCKET_NAME, library["s3_key"],
-                              ExtraArgs={"Tagging": "mopa-retention=material"})
+        s3_client.upload_file(local_file_path, S3_BUCKET_NAME, library["s3_key"])
         table.update_item(
             Key={"pk": f"USER#{user_id}", "sk": f"MATERIAL#{library_id}"},
             UpdateExpression="SET summary = :summary, material_name = :material_name, updated_at = :updated_at",

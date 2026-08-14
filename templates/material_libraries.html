@@ -178,10 +178,12 @@
     document.getElementById('new_library').addEventListener('click', async () => {
       const name = prompt('Name this new Material Library:');
       if (!name || !name.trim()) return;
-      const response = await fetch('/account/material-libraries/new', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:name.trim()})});
-      const data = await response.json();
-      if (!response.ok) return say(data.message || 'Could not create library.', true);
-      say('New Settings Library created. Open Settings, then Add Setting.'); load();
+      try {
+        const response = await fetch('/account/material-libraries/new', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:name.trim()})});
+        const data = await response.json();
+        if (!response.ok) return say(data.message || 'Could not create library.', true);
+        say('New Settings Library created. Open Settings, then Add Setting.'); load();
+      } catch (_) { say('Could not create the library. Check the server logs for details.', true); }
     });
     fetch('/auth-status', {credentials:'same-origin'}).then(response => response.json()).then(data => { document.getElementById(data.signed_in ? 'manager' : 'sign_in_panel').hidden = false; if (data.signed_in) load().catch(error => say(error.message, true)); }).catch(() => { document.getElementById('sign_in_panel').hidden = false; });
   </script>

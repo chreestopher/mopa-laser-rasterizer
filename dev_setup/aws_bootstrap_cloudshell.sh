@@ -59,7 +59,7 @@ fi
 cat > "$POLICY_FILE" <<JSON
 {"Version":"2012-10-17","Statement":[
 {"Effect":"Allow","Action":"s3:ListBucket","Resource":"arn:aws:s3:::${BUCKET_NAME}"},
-{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject"],"Resource":"arn:aws:s3:::${BUCKET_NAME}/*"},
+{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:PutObjectTagging","s3:DeleteObject"],"Resource":"arn:aws:s3:::${BUCKET_NAME}/*"},
 {"Effect":"Allow","Action":["dynamodb:BatchGetItem","dynamodb:BatchWriteItem","dynamodb:DeleteItem","dynamodb:DescribeTable","dynamodb:GetItem","dynamodb:PutItem","dynamodb:Query","dynamodb:UpdateItem"],"Resource":"arn:aws:dynamodb:${REGION}:${ACCOUNT_ID}:table/${TABLE_NAME}"}]}
 JSON
 aws iam put-role-policy --role-name "$ROLE_NAME" --policy-name MopaRasterizerAccountData --policy-document "file://${POLICY_FILE}"
