@@ -120,13 +120,15 @@ def get_user_material_library(user_id, library_id):
     return _json_values(item) if item else None
 
 
-def save_user_material_library(user_id, local_file_path, material_name="", summary=None):
+def save_user_material_library(user_id, local_file_path, material_name="", summary=None,
+                               display_name=None, source_filename=None):
     """Store an uploaded LightBurn library once under its Cognito owner."""
     table = account_table()
     if not table or not S3_BUCKET_NAME:
         raise RuntimeError("Account Material Library storage is not configured.")
     library_id = str(uuid.uuid4())
-    filename = os.path.basename(local_file_path)
+    filename = os.path.basename(source_filename or local_file_path)
+    library_name = str(display_name or filename).strip()[:160] or filename
     s3_key = f"users/{user_id}/materials/{library_id}/{filename}"
     try:
         s3_client.upload_file(
@@ -137,7 +139,8 @@ def save_user_material_library(user_id, local_file_path, material_name="", summa
             "pk": f"USER#{user_id}",
             "sk": f"MATERIAL#{library_id}",
             "library_id": library_id,
-            "name": filename,
+            "name": library_name,
+            "original_name": filename,
             "material_name": str(material_name or "").strip()[:160],
             "s3_key": s3_key,
             "created_at": int(time.time()),
@@ -147,7 +150,8 @@ def save_user_material_library(user_id, local_file_path, material_name="", summa
         table.put_item(Item=item)
     except ClientError as error:
         raise RuntimeError("Could not save the Material Library to this account.") from error
-    return {"library_id": library_id, "name": filename, "material_name": str(material_name or "").strip()}
+    return {"library_id": library_id, "name": library_name, "original_name": filename,
+            "material_name": str(material_name or "").strip()}
 
 
 def download_user_material_library(library, local_path):
@@ -171,6 +175,25 @@ def delete_user_material_library(user_id, library_id):
         table.delete_item(Key={"pk": f"USER#{user_id}", "sk": f"MATERIAL#{library_id}"})
     except ClientError as error:
         raise RuntimeError("Could not delete the saved Material Library.") from error
+    return True
+
+
+def rename_user_material_library(user_id, library_id, display_name):
+    table = account_table()
+    if not table or not get_user_material_library(user_id, library_id):
+        return False
+    display_name = str(display_name or "").strip()
+    if not display_name or len(display_name) > 160:
+        raise ValueError("Library names must be between 1 and 160 characters.")
+    try:
+        table.update_item(
+            Key={"pk": f"USER#{user_id}", "sk": f"MATERIAL#{library_id}"},
+            UpdateExpression="SET #name = :name, updated_at = :updated_at",
+            ExpressionAttributeNames={"#name": "name"},
+            ExpressionAttributeValues={":name": display_name, ":updated_at": int(time.time())},
+        )
+    except ClientError as error:
+        raise RuntimeError("Could not rename the saved Material Library.") from error
     return True
 
 

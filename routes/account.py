@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+import json
 from xml.etree import ElementTree as ET
 
 from flask import jsonify, request
@@ -20,6 +21,7 @@ from services import (
     normalize_dimension,
     save_user_preferences,
     save_user_material_library,
+    rename_user_material_library,
 )
 
 from . import routes
@@ -108,6 +110,57 @@ def library_entries(path):
     return {"entry_count": len(entries), "material_names": material_names, "entries": entries[:500]}
 
 
+def uploaded_library_files():
+    files = request.files.getlist("libraries")
+    if not files:
+        raise ValueError("Choose one or more LightBurn Material Library files.")
+    if len(files) > 10:
+        raise ValueError("Upload up to 10 Material Library files at a time.")
+    clean = []
+    for file in files:
+        filename = secure_filename(file.filename or "")
+        if not filename or os.path.splitext(filename)[1].lower() not in {".clb", ".lbmat", ".lbrn"}:
+            raise ValueError("Material Libraries must be .clb, .lbmat, or .lbrn files.")
+        clean.append((file, filename))
+    return clean
+
+
+def filtered_material_library(source_path, destination_path, selected_materials):
+    tree = ET.parse(source_path)
+    root = tree.getroot()
+    selected = {str(material).strip() for material in selected_materials}
+    for material in root.findall("Material"):
+        if str(material.attrib.get("name", "")).strip() not in selected:
+            root.remove(material)
+    tree.write(destination_path, encoding="utf-8", xml_declaration=True)
+
+
+@routes.route("/account/material-libraries/preview", methods=["POST"])
+def preview_material_libraries():
+    user_id = authenticated_user_id()
+    if not user_id:
+        return jsonify({"status": "error", "message": "Sign in to manage Material Libraries."}), 401
+    temp_paths = []
+    try:
+        previews = []
+        for index, (file, filename) in enumerate(uploaded_library_files()):
+            with tempfile.NamedTemporaryFile(suffix=os.path.splitext(filename)[1], delete=False) as temp_file:
+                temp_path = temp_file.name
+            temp_paths.append(temp_path)
+            file.save(temp_path)
+            summary = library_entries(temp_path)
+            if not summary["entry_count"]:
+                raise ValueError(f"{filename} contains no LightBurn Material Library entries.")
+            previews.append({"index": index, "filename": filename, "summary": summary})
+        return jsonify({"status": "ok", "libraries": previews})
+    except (RuntimeError, OSError, ValueError, ET.ParseError) as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+    finally:
+        for temp_path in temp_paths:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+
 @routes.route("/account/material-libraries", methods=["GET", "POST"])
 def material_libraries():
     user_id = authenticated_user_id()
@@ -115,32 +168,41 @@ def material_libraries():
         return jsonify({"status": "error", "message": "Sign in to use saved Material Libraries."}), 401
     try:
         if request.method == "POST":
-            files = request.files.getlist("libraries")
-            if not files:
-                return jsonify({"status": "error", "message": "Choose one or more LightBurn Material Library files."}), 400
-            if len(files) > 10:
-                return jsonify({"status": "error", "message": "Upload up to 10 Material Library files at a time."}), 400
+            try:
+                library_names = json.loads(request.form.get("library_names", "{}"))
+                selected_by_file = json.loads(request.form.get("selected_materials", "{}"))
+            except json.JSONDecodeError as error:
+                raise ValueError("The selected library information is invalid.") from error
+            if not isinstance(library_names, dict) or not isinstance(selected_by_file, dict):
+                raise ValueError("The selected library information is invalid.")
             uploaded = []
-            for file in files:
-                filename = secure_filename(file.filename or "")
-                if not filename or os.path.splitext(filename)[1].lower() not in {".clb", ".lbmat", ".lbrn"}:
-                    return jsonify({"status": "error", "message": "Material Libraries must be .clb, .lbmat, or .lbrn files."}), 400
+            for index, (file, filename) in enumerate(uploaded_library_files()):
+                selected_materials = selected_by_file.get(str(index), [])
+                if not isinstance(selected_materials, list) or not selected_materials:
+                    raise ValueError(f"Choose at least one material from {filename}.")
+                display_name = str(library_names.get(str(index), os.path.splitext(filename)[0])).strip()
                 with tempfile.NamedTemporaryFile(suffix=os.path.splitext(filename)[1], delete=False) as temp_file:
                     temp_path = temp_file.name
+                with tempfile.NamedTemporaryFile(suffix=os.path.splitext(filename)[1], delete=False) as filtered_file:
+                    filtered_path = filtered_file.name
                 try:
                     file.save(temp_path)
-                    summary = library_entries(temp_path)
+                    filtered_material_library(temp_path, filtered_path, selected_materials)
+                    summary = library_entries(filtered_path)
                     if not summary["entry_count"]:
-                        return jsonify({"status": "error", "message": f"{filename} contains no LightBurn Material Library entries."}), 400
+                        raise ValueError(f"{filename} contains no selected Material Library entries.")
                     library = save_user_material_library(
-                        user_id, temp_path,
+                        user_id, filtered_path,
                         ", ".join(summary["material_names"])[:160], summary=summary,
+                        display_name=display_name, source_filename=filename,
                     )
                     library["summary"] = summary
                     uploaded.append(library)
                 finally:
                     if os.path.exists(temp_path):
                         os.remove(temp_path)
+                    if os.path.exists(filtered_path):
+                        os.remove(filtered_path)
             return jsonify({"status": "ok", "libraries": uploaded}), 201
         libraries = list_user_material_libraries(user_id)
         return jsonify({"status": "ok", "libraries": [
@@ -156,7 +218,7 @@ def material_libraries():
         return jsonify({"status": "error", "message": str(error)}), 400
 
 
-@routes.route("/account/material-libraries/<library_id>", methods=["GET", "DELETE"])
+@routes.route("/account/material-libraries/<library_id>", methods=["GET", "PATCH", "DELETE"])
 def material_library_detail(library_id):
     user_id = authenticated_user_id()
     if not user_id:
@@ -166,6 +228,11 @@ def material_library_detail(library_id):
             if not delete_user_material_library(user_id, library_id):
                 return jsonify({"status": "error", "message": "That Material Library no longer exists."}), 404
             return jsonify({"status": "ok"})
+        if request.method == "PATCH":
+            payload = request.get_json(silent=True) or {}
+            if not rename_user_material_library(user_id, library_id, payload.get("name")):
+                return jsonify({"status": "error", "message": "That Material Library no longer exists."}), 404
+            return jsonify({"status": "ok", "name": str(payload.get("name")).strip()})
         library = get_user_material_library(user_id, library_id)
         if not library:
             return jsonify({"status": "error", "message": "That Material Library no longer exists."}), 404

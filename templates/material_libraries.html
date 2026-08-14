@@ -20,6 +20,10 @@
     button.delete { color:#fff2e9; background:linear-gradient(#be5145,#7c2923); border-color:#e27263; box-shadow:inset 0 1px rgba(255,255,255,.2),0 4px 0 #40130f; }
     button.delete:hover { background:linear-gradient(#d96658,#94342d); }
     .notice { min-height:1.4em; margin:12px 0 0; color:var(--green); } .notice.error { color:#ff9485; }
+    .import-plan { margin-top:16px; display:grid; gap:12px; } .import-file { padding:13px; border:1px solid #596451; border-radius:9px; background:#171b17; }
+    .import-file label { margin:0 0 6px; } .library-name-input { width:min(100%,420px); padding:8px; color:#fff1cd; border:1px solid #777957; border-radius:5px; background:#111510; font:700 12px "Courier New",monospace; }
+    .materials { display:flex; flex-wrap:wrap; gap:7px; margin-top:10px; } .materials label { display:flex; align-items:center; gap:5px; margin:0; padding:5px 7px; color:#d9d6be; border:1px solid #4e5a49; border-radius:4px; background:#242a23; font-size:.78rem; }
+    .materials input { accent-color:#8df06c; } .rename { display:flex; gap:7px; align-items:center; flex:1; min-width:160px; } .rename .library-name-input { width:100%; } .rename button { margin:0; padding:6px 8px; font-size:.68rem; }
     .library { margin-top:12px; border:1px solid #596451; border-radius:11px; overflow:hidden; background:#171b17; } .library-head { display:flex; align-items:center; gap:12px; padding:13px; } .library-name { flex:1; min-width:0; color:#fff3c8; font-weight:bold; overflow-wrap:anywhere; } .meta { color:#b4bda9; font-size:.82rem; } details { border-top:1px solid #465044; } summary { padding:12px 13px; cursor:pointer; color:var(--green); } .entries { overflow:auto; max-height:360px; padding:0 13px 13px; } table { width:100%; border-collapse:collapse; font-size:.79rem; } th,td { padding:8px 6px; text-align:left; border-bottom:1px solid #374035; vertical-align:top; } th { color:var(--amber); } .empty { color:#b4bda9; text-align:center; padding:30px; } [hidden] { display:none !important; }
   </style>
 </head>
@@ -32,7 +36,9 @@
       <section class="panel">
         <label for="libraries">Load one or more LightBurn Material Library files</label>
         <input id="libraries" type="file" accept=".clb,.lbmat,.lbrn" multiple>
-        <button id="upload" type="button">Store selected libraries</button>
+        <button id="scan" type="button">Scan selected libraries</button>
+        <div id="import_plan" class="import-plan" hidden></div>
+        <button id="import" type="button" hidden>Import selected materials</button>
         <div id="notice" class="notice" role="status"></div>
       </section>
       <section class="panel"><strong>YOUR SAVED LIBRARIES</strong><div id="library_list"></div></section>
@@ -53,9 +59,16 @@
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Could not load libraries.');
       const libraries = data.libraries || [];
-      list.innerHTML = libraries.length ? libraries.map(library => `<article class="library" data-id="${esc(library.library_id)}"><div class="library-head"><div class="library-name">${esc(library.name)}</div><span class="meta">${esc(library.summary?.entry_count ?? '?')} entries</span><button class="delete" type="button">Delete</button></div><details><summary>▸ Inspect Material Library entries</summary><div class="entry-content">${renderEntries(library.summary)}</div></details></article>`).join('') : '<p class="empty">No saved libraries yet. Feed the vault a .clb file.</p>';
+      list.innerHTML = libraries.length ? libraries.map(library => `<article class="library" data-id="${esc(library.library_id)}"><div class="library-head"><div class="rename"><input class="library-name-input" value="${esc(library.name)}" aria-label="Library name"><button class="rename-button" type="button">Rename</button></div><span class="meta">${esc(library.summary?.entry_count ?? '?')} entries</span><button class="delete" type="button">Delete</button></div><details><summary>▸ Inspect Material Library entries</summary><div class="entry-content">${renderEntries(library.summary)}</div></details></article>`).join('') : '<p class="empty">No saved libraries yet. Feed the vault a .clb file.</p>';
     };
     list.addEventListener('click', async event => {
+      if (event.target.matches('.rename-button')) {
+        const card = event.target.closest('.library');
+        const name = card.querySelector('.library-name-input').value.trim();
+        const response = await fetch(`/account/material-libraries/${encodeURIComponent(card.dataset.id)}`, {method:'PATCH', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name})});
+        const data = await response.json();
+        return response.ok ? say('Library renamed.') : say(data.message || 'Could not rename library.', true);
+      }
       if (!event.target.matches('.delete')) return;
       const card = event.target.closest('.library');
       if (!confirm(`Delete ${card.querySelector('.library-name').textContent}? This removes the saved file from your account.`)) return;
@@ -73,15 +86,29 @@
       const data = await response.json();
       if (response.ok) { content.innerHTML = renderEntries(data.library.summary); content.dataset.loaded = 'true'; }
     }, true);
-    document.getElementById('upload').addEventListener('click', async () => {
-      const files = document.getElementById('libraries').files;
+    const fileInput = document.getElementById('libraries');
+    const importPlan = document.getElementById('import_plan');
+    const importButton = document.getElementById('import');
+    document.getElementById('scan').addEventListener('click', async () => {
+      const files = fileInput.files;
       if (!files.length) return say('Choose at least one Material Library file first.', true);
       const body = new FormData(); Array.from(files).forEach(file => body.append('libraries', file));
-      say('Cataloging settings…');
-      const response = await fetch('/account/material-libraries', {method:'POST', credentials:'same-origin', body});
+      say('Scanning Material Library settings…');
+      const response = await fetch('/account/material-libraries/preview', {method:'POST', credentials:'same-origin', body});
       const data = await response.json();
-      if (!response.ok) return say(data.message || 'Could not store libraries.', true);
-      document.getElementById('libraries').value = ''; say(`${data.libraries.length} library file(s) stored.`); load();
+      if (!response.ok) return say(data.message || 'Could not scan libraries.', true);
+      importPlan.innerHTML = data.libraries.map(library => `<div class="import-file" data-index="${library.index}"><label>Library name</label><input class="library-name-input import-name" value="${esc(library.filename.replace(/\.[^.]+$/, ''))}"><div class="meta">Choose the material groups to import from ${esc(library.filename)}:</div><div class="materials">${library.summary.material_names.map(material => `<label><input type="checkbox" value="${esc(material)}" checked> ${esc(material)}</label>`).join('')}</div></div>`).join('');
+      importPlan.hidden = false; importButton.hidden = false; say('Choose the materials to keep, then import.');
+    });
+    importButton.addEventListener('click', async () => {
+      const body = new FormData(); Array.from(fileInput.files).forEach(file => body.append('libraries', file));
+      const names = {}, selected = {};
+      importPlan.querySelectorAll('.import-file').forEach(card => { const index = card.dataset.index; names[index] = card.querySelector('.import-name').value.trim(); selected[index] = Array.from(card.querySelectorAll('input[type=checkbox]:checked')).map(input => input.value); });
+      body.append('library_names', JSON.stringify(names)); body.append('selected_materials', JSON.stringify(selected));
+      say('Importing selected materials…');
+      const response = await fetch('/account/material-libraries', {method:'POST', credentials:'same-origin', body}); const data = await response.json();
+      if (!response.ok) return say(data.message || 'Could not import libraries.', true);
+      fileInput.value = ''; importPlan.hidden = true; importPlan.innerHTML = ''; importButton.hidden = true; say(`${data.libraries.length} Material Library file(s) imported.`); load();
     });
     fetch('/auth-status', {credentials:'same-origin'}).then(response => response.json()).then(data => { document.getElementById(data.signed_in ? 'manager' : 'sign_in_panel').hidden = false; if (data.signed_in) load().catch(error => say(error.message, true)); }).catch(() => { document.getElementById('sign_in_panel').hidden = false; });
   </script>

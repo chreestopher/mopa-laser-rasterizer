@@ -112,7 +112,9 @@ def start_task():
             saved_library = get_user_material_library(user_id, saved_library_id)
             if not saved_library:
                 return jsonify({"status": "error", "message": "That saved Material Library is no longer available."}), 404
-            material_filename = secure_filename(saved_library.get("name") or "library.clb")
+            material_filename = secure_filename(
+                saved_library.get("original_name") or saved_library.get("name") or "library.clb"
+            )
             material_settings_path = os.path.join(upload_folder, f"{task_id}_saved_material_{material_filename}")
             download_user_material_library(saved_library, material_settings_path)
             material_key = saved_library.get("s3_key")
