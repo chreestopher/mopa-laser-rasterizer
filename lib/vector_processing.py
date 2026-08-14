@@ -235,7 +235,9 @@ def parse_material_settings(
     limit_colors,
     TARGET_COLORS,
     material_name="stainless - steel",
-    material_layer_report=None
+    material_layer_report=None,
+    required_setting_names=(),
+    return_setting_layers=False,
 ):
     """
     This function:
@@ -281,6 +283,11 @@ def parse_material_settings(
         )
 
     matched_settings = {}
+    required_names = {
+        str(name).strip().casefold() for name in required_setting_names if str(name).strip()
+    }
+    required_layers = {}
+    next_layer_index = max((metadata[1] for metadata in TARGET_COLORS.values()), default=-1) + 1
     selected_targets = {
         metadata[2].casefold(): (color_hex, metadata)
         for color_hex, metadata in TARGET_COLORS.items()
@@ -297,6 +304,25 @@ def parse_material_settings(
              if str(label or "").strip().casefold() in selected_targets),
             None,
         )
+        matching_required_name = next(
+            (str(label or "").strip().casefold() for label in library_labels
+             if str(label or "").strip().casefold() in required_names),
+            None,
+        )
+        if target is None and matching_required_name is not None:
+            if matching_required_name in required_layers:
+                continue
+            item.frequency = int(item.frequency)
+            item.index = next_layer_index
+            next_layer_index += 1
+            item.name = str(getattr(item, "entryDesc", "") or item.name).strip()
+            required_layers[matching_required_name] = item.index
+            lb.add_layer(item)
+            material_layer_report["loaded"].append(item.name)
+            printLogMessage(
+                f"Additional filter setting '{item.name}' assigned to LightBurn layer {item.index}."
+            )
+            continue
         if target is None:
             material_layer_report["skipped"].append(str(getattr(item, "entryDesc", "") or item.name))
             continue
@@ -316,6 +342,8 @@ def parse_material_settings(
         item.index = target_metadata[1]
         item.name = target_metadata[2]
         matched_settings[target_hex] = target_metadata
+        if matching_required_name is not None:
+            required_layers[matching_required_name] = target_metadata[1]
         lb.add_layer(item)
         material_layer_report["loaded"].append(item.name)
         printLogMessage(
@@ -325,7 +353,11 @@ def parse_material_settings(
             f"frequency {item.frequency}, pulse width {item.QPulseWidth})"
         )
 
-    return matched_settings    
+    missing_required = required_names.difference(required_layers)
+    if missing_required:
+        requested = ", ".join(sorted(missing_required))
+        raise ValueError(f"Material settings file does not contain required filter setting: {requested}")
+    return (matched_settings, required_layers) if return_setting_layers else matched_settings
 
 def init_lightburn(the_colors_limit, color_name_overrides=None):
     """
@@ -388,7 +420,8 @@ def init_lightburn(the_colors_limit, color_name_overrides=None):
         '#B45A00': (30, 26, 'Rust-Brown'),
         '#004754': (189, 27, 'Teal'),
         '#86FA88': (121, 28, 'Bright-Mint-Green'),
-        '#FFDB66': (46, 29, 'Light-Gold')
+        '#FFDB66': (46, 29, 'Light-Gold'),
+        '#7A00FF': (268, 30, 'Holographic')
     }
     for color_hex, label in (color_name_overrides or {}).items():
         color_hex = str(color_hex).strip().upper()
@@ -940,6 +973,7 @@ def process_color_layers(
     abstract_filter,
     filter_parameters=None,
     punch_layers=None,
+    layer_overrides=None,
 ):
     """
     Convert all raster color groups into finalized Shapely geometries.
@@ -950,6 +984,8 @@ def process_color_layers(
     filter_module = ABSTRACT_FILTER_MODULES.get(filter_name)
     light_layers_only = bool(getattr(filter_module, "LIGHT_LAYERS_ONLY", False))
     punch_source_geometry = bool(getattr(filter_module, "PUNCH_SOURCE_GEOMETRY", False))
+    setting_parameter = getattr(filter_module, "SETTING_NAME_PARAMETER", None)
+    setting_layer_id = (filter_parameters or {}).get("_setting_layer_id")
     light_threshold = _number(settings.get("light_threshold", 150), 150, 0, 255)
 
     def is_light_swatch(color_hex):
@@ -1026,6 +1062,8 @@ def process_color_layers(
         ] = final_geometry
         if punch_layers is not None:
             punch_layers[color_hex] = source_geometry
+        if layer_overrides is not None and layer_filter != "none" and setting_parameter and setting_layer_id is not None:
+            layer_overrides[color_hex] = setting_layer_id
 
     return processed_layers
 
@@ -1378,7 +1416,8 @@ def export_processed_layers(
     root,
     lb_project_instance,
     punch_through_black=False,
-    black_lightburn_geometry=None
+    black_lightburn_geometry=None,
+    layer_overrides=None,
 ):
     """
     Sort, scale, and export all finalized geometry to SVG and LightBurn.
@@ -1423,7 +1462,7 @@ def export_processed_layers(
             color_hex
         ]
 
-        layer_id = layer_meta[1]
+        layer_id = (layer_overrides or {}).get(color_hex, layer_meta[1])
         layer_color_name = layer_meta[2]
 
         printLogMessage(
@@ -1490,7 +1529,8 @@ def export_processed_layers(
                 lightburn_geometry,
                 color_hex,
                 target_colors,
-                lb_project_instance
+                lb_project_instance,
+                override_layer_id=layer_id,
             )
 
             if punch_through_black and color_hex != black_hex:
@@ -1746,6 +1786,7 @@ def raster_to_puzzle_and_lightburn(
     # =========================================================================
 
     punch_layers = {}
+    layer_overrides = {}
     processed_layers = process_color_layers(
         pixel_boxes_by_color=pixel_boxes_by_color,
         target_colors=TARGET_COLORS,
@@ -1755,6 +1796,7 @@ def raster_to_puzzle_and_lightburn(
         abstract_filter=abstract_filter,
         filter_parameters=filter_parameters,
         punch_layers=punch_layers,
+        layer_overrides=layer_overrides,
     )
 
     # =========================================================================
@@ -1809,7 +1851,8 @@ def raster_to_puzzle_and_lightburn(
         root=root,
         lb_project_instance=lb_project_instance,
         punch_through_black=not preserve_source_black,
-        black_lightburn_geometry=black_lightburn_geometry
+        black_lightburn_geometry=black_lightburn_geometry,
+        layer_overrides=layer_overrides,
     )
 
     # =========================================================================

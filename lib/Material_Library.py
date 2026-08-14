@@ -52,6 +52,9 @@ def main(argv=None):
         image_preset = "abstract"
     if image_preset not in vector_processing.PHOTO_TYPE_PRESETS:
         raise SystemExit(f"Unknown image preset: {image_preset}")
+    required_setting_names = []
+    if abstract_filter == "holographic_space":
+        required_setting_names.append(str(filter_parameters.get("setting_name", "holographic")).strip())
     preset = vector_processing.PHOTO_TYPE_PRESETS[image_preset]
     vector_processing.image_preset = image_preset
 
@@ -67,19 +70,23 @@ def main(argv=None):
     limit_list.extend(("black", "light-gray"))
     material_layer_report = {"loaded": [], "skipped": []}
     try:
-        target_colors = vector_processing.parse_material_settings(
+        target_colors, filter_setting_layers = vector_processing.parse_material_settings(
             lb,
             material_library_file,
             limit_list,
             target_colors,
             material_name=material_name,
             material_layer_report=material_layer_report,
+            required_setting_names=required_setting_names,
+            return_setting_layers=True,
         )
     except ValueError as error:
         # A missing material is an expected user-input error.  The parser has
         # already emitted the useful material list, so avoid adding a Python
         # traceback to the task console.
         raise SystemExit(str(error))
+    if required_setting_names:
+        filter_parameters["_setting_layer_id"] = filter_setting_layers[required_setting_names[0].casefold()]
 
     vector_settings = dict(preset)
     for name in ("min_island_area", "simplification_factor", "smoothing_radius"):

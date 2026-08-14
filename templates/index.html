@@ -593,6 +593,7 @@
           <div class="color-card"><span class="color-name">teal</span><div class="color-square" style="background-color: #004754;"></div><span class="color-hex">#004754</span></div>
           <div class="color-card"><span class="color-name">bright-mint-green</span><div class="color-square" style="background-color: #86FA88;"></div><span class="color-hex">#86FA88</span></div>
           <div class="color-card"><span class="color-name">light-gold</span><div class="color-square" style="background-color: #FFDB66;"></div><span class="color-hex">#FFDB66</span></div>
+          <div class="color-card" data-default-excluded data-holographic-setting><span class="color-name">holographic</span><div class="color-square selected" style="background-color: #7A00FF;"></div><span class="color-hex">#7A00FF</span></div>
         </div>
       </div>  
     </div>
@@ -717,7 +718,7 @@
           ['break_origin_y', .35, 0, 1, .01], ['seed', 1, 0, 999999, 1]]
       },
       holographic_space: {
-        description: 'Holographizes only the light/background swatches while preserving darker artwork as a crisp foreground. Band Height and Segment Width set the scale of the scan pattern, Gap opens the seams, Diffraction controls the sideways rainbow-like shift, Phase Stride changes its rhythm, Echo Count and Spacing create repeated light trails, Density decides how much of the light area catches the effect, Light Threshold chooses which swatches count as light, and Seed creates a new repeatable holographic arrangement. No calibration is required.',
+        description: 'Holographizes only the light/background swatches while preserving darker artwork as a crisp foreground. The optional Holographic palette swatch supplies the Material Library setting used for every holographic band; it is off by default and can be renamed to match your library. Band Height and Segment Width set the scan pattern scale, Gap opens seams, Diffraction controls the shift, and the remaining controls tune its rhythm and density. No calibration is required.',
         controls: [['band_height', 12, 3, 100, 1], ['segment_width', 54, 8, 240, 1],
           ['gap', .6, 0, 12, .1], ['diffraction', 18, 0, 160, 1],
           ['phase_stride', 1.35, .1, 8, .05], ['echo_count', 2, 0, 5, 1],
@@ -740,10 +741,14 @@
       document.querySelectorAll('#filter_controls [data-parameter]').forEach(input => {
         values[input.dataset.parameter] = input.type === 'checkbox'
           ? input.checked
-          : (input.tagName === 'SELECT' ? input.value : Number(input.value));
+          : (input.type === 'text' || input.tagName === 'SELECT' ? input.value : Number(input.value));
         const valueInput = input.closest('.filter-control').querySelector('.value-input');
         if (valueInput && input.type === 'range') valueInput.value = input.value;
       });
+      if (document.getElementById('image_preset').value === 'abstract_holographic_space') {
+        const holographicCard = document.querySelector('[data-holographic-setting]');
+        if (holographicCard) values.setting_name = holographicCard.querySelector('.color-name').textContent.trim();
+      }
       document.getElementById('abstract_filter_parameters').value = JSON.stringify(values);
     }
 
@@ -1120,9 +1125,9 @@
     const colorNameOverrides = document.getElementById('color_name_overrides');
     const paletteCards = Array.from(document.querySelectorAll('.color-card'));
     const paletteGrid = document.querySelector('.color-grid');
-    const selectedColorHexes = new Set(paletteCards.map(card =>
-      card.querySelector('.color-hex').textContent.trim().toUpperCase()
-    ));
+    const selectedColorHexes = new Set(paletteCards
+      .filter(card => !card.hasAttribute('data-default-excluded'))
+      .map(card => card.querySelector('.color-hex').textContent.trim().toUpperCase()));
 
     function updatePaletteFields() {
       const overrides = {};
@@ -1151,6 +1156,10 @@
         updatePaletteFields();
       });
       name.addEventListener('input', updatePaletteFields);
+      if (card.hasAttribute('data-holographic-setting')) {
+        name.addEventListener('input', updateFilterParameters);
+        name.addEventListener('blur', updateFilterParameters);
+      }
     });
 
     squares.forEach(square => {

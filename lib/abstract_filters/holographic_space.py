@@ -13,6 +13,7 @@ from .common import number
 LIGHT_LAYERS_ONLY = True
 PRESERVE_BLACK_CANVAS = True
 PUNCH_SOURCE_GEOMETRY = True
+SETTING_NAME_PARAMETER = "setting_name"
 
 DEFAULTS = {
     "band_height": 12,
@@ -23,6 +24,7 @@ DEFAULTS = {
     "echo_count": 2,
     "echo_spacing": 5,
     "density": .78,
+    "setting_name": "holographic",
     "light_threshold": 150,
     "seed": 1,
 }

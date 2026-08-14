@@ -43,6 +43,7 @@ LIGHTBURN_PALETTE_NAMES = {
     "#8CD78C": "Sage-Green", "#F0B98D": "Peach", "#F6C4E1": "Light-Pink",
     "#FA9ED4": "Orchid-Pink", "#500A78": "Deep-Purple", "#B45A00": "Rust-Brown",
     "#004754": "Teal", "#86FA88": "Bright-Mint-Green", "#FFDB66": "Light-Gold",
+    "#7A00FF": "Holographic",
 }
 ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
@@ -617,6 +618,8 @@ def parse_abstract_filter_parameters(raw_value):
             raise ValueError("An abstract filter setting has an invalid name")
         if key == "material" and value in ("metal", "powdercoat"):
             clean[key] = value
+        elif key == "setting_name" and isinstance(value, str) and 1 <= len(value.strip()) <= 80:
+            clean[key] = value.strip()
         elif key == "transparent" and isinstance(value, bool):
             clean[key] = value
         elif key == "transparent" and isinstance(value, str) and value.lower() in ("true", "false"):
