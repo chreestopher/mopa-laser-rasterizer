@@ -257,6 +257,15 @@ def file_history(session_id):
     return jsonify({"files": get_history_entries(session_id)})
 
 
+@routes.route("/job-history")
+def job_history():
+    """Open the shared console in history mode for account or guest runs."""
+    history_session = valid_history_session(request.cookies.get("mopa_history_session", "")) or ""
+    history_files = get_history_entries(history_session) if history_session else []
+    return render_template("loading.html", task_id="", history_session=history_session,
+                           history_files=history_files, history_mode=True)
+
+
 @routes.route("/task-status/<task_id>")
 def task_status(task_id):
     access_error = _job_access_error(task_id)
