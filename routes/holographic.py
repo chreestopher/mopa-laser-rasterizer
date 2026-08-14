@@ -503,7 +503,7 @@ def _nearest_recipe(pixel, recipes):
 
 
 def _merge_recipe_pixels(layer_map, recipe_count):
-    """Greedily combine same-recipe pixels into non-overlapping rectangles."""
+    """Greedily combine same-recipe pixels into non-overlapping closed rectangles."""
     height, width = layer_map.shape
     visited = np.zeros((height, width), dtype=bool)
     rectangles = {index: [] for index in range(recipe_count)}
@@ -527,6 +527,7 @@ def _merge_recipe_pixels(layer_map, recipe_count):
 
 
 def _write_holographic_svg(path, width, height, recipes_by_name, pixel_mm):
+    """Write only filled SVG rectangles, never open-path artwork geometry."""
     root = ET.Element("svg", xmlns="http://www.w3.org/2000/svg", width=f"{width * pixel_mm}mm",
                       height=f"{height * pixel_mm}mm", viewBox=f"0 0 {width * pixel_mm} {height * pixel_mm}")
     for name, coordinates in recipes_by_name.items():
@@ -584,8 +585,19 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_f
     for bucket in recipes_by_name.values():
         bucket["rectangles"] = rectangles_by_layer[bucket["layer_index"]]
         for x, y, rectangle_width, rectangle_height in bucket["rectangles"]:
-            project.add(lightburn.Square(rectangle_width * pixel_mm, rectangle_height * pixel_mm,
-                                        x=x * pixel_mm, y=y * pixel_mm).layer(bucket["layer_index"]))
+            # LightBurn stores a rectangle's transform at its center, while
+            # ``x`` and ``y`` above are the top-left pixel coordinates.  Put
+            # each rectangle at its actual center so the combined artwork is
+            # bounded exactly by [0, width * pixel_mm] × [0, height * pixel_mm]
+            # instead of spilling half a rectangle above and left of origin.
+            rectangle_width_mm = rectangle_width * pixel_mm
+            rectangle_height_mm = rectangle_height * pixel_mm
+            project.add(lightburn.Square(
+                rectangle_width_mm,
+                rectangle_height_mm,
+                x=(x * pixel_mm) + (rectangle_width_mm / 2),
+                y=(y * pixel_mm) + (rectangle_height_mm / 2),
+            ).layer(bucket["layer_index"]))
 
     stem = f"holographic_art_{task_id}"
     svg_name, lbrn_name = f"{stem}.svg", f"{stem}.lbrn2"
@@ -597,6 +609,9 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_f
             "kind": "holographic_art_export", "recipe_profile_name": profile.get("profile_name"),
             "source_pixels": {"width": int(pixels.shape[1]), "height": int(pixels.shape[0])},
             "pixel_size_mm": pixel_mm, "physical_size_mm": [pixels.shape[1] * pixel_mm, pixels.shape[0] * pixel_mm],
+            "bounds_mm": {"left": 0, "top": 0, "right": pixels.shape[1] * pixel_mm,
+                          "bottom": pixels.shape[0] * pixel_mm},
+            "geometry": {"shape_type": "closed_rectangles", "open_paths": False},
             "vector_rectangles": sum(len(bucket["rectangles"]) for bucket in recipes_by_name.values()),
             "source_pixel_count": int(pixels.shape[0] * pixels.shape[1]),
             "color_mapping": {
