@@ -427,6 +427,17 @@
 <script>
 const taskId = "{{ task_id }}";
 const historySession = "{{ history_session }}";
+const currentTaskFile = {
+    task_id: taskId,
+    source_name: {{ current_source_name|default('processed image', true)|tojson }},
+    image_preset: {{ current_image_preset|default('unknown preset', true)|tojson }},
+    abstract_filter: {{ current_abstract_filter|default(none, true)|tojson }},
+    material_name: {{ current_material_name|default('', true)|tojson }},
+    created_at: {{ current_created_at|default(0, true) }},
+    status: 'pending',
+    svg_url: `/download/${taskId}`,
+    lightburn_url: `/download-lbrn2/${taskId}`,
+};
 if (historySession) sessionStorage.setItem('mopa-history-session', historySession);
 const logContainer = document.getElementById("log-container");
 const terminalBox = document.getElementById("terminal");
@@ -496,6 +507,19 @@ function fileRowHtml(file) {
       `<div class="file-actions"><a class="download-button reuse-settings-button" href="${reuseUrl}">Reuse Settings</a><a class="download-button${disabled}" href="${file.svg_url}">SVG</a>` +
       `<a class="download-button${disabled}" href="${file.lightburn_url}">LBRN2</a></div></div>`;
 }
+
+function ensureCurrentTaskRow() {
+    if (downloadList.querySelector(`[data-task-id="${taskId}"]`)) return;
+    const row = document.createElement('li');
+    row.className = 'file-item';
+    row.dataset.taskId = taskId;
+    row.dataset.createdAt = String(currentTaskFile.created_at || 0);
+    row.tabIndex = 0;
+    row.innerHTML = fileRowHtml(currentTaskFile);
+    downloadList.prepend(row);
+}
+
+ensureCurrentTaskRow();
 
 function upsertFileRows(files) {
     const emptyRow = downloadList.querySelector('.empty-files');

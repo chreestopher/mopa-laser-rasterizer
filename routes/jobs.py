@@ -242,7 +242,8 @@ def start_task():
         files=[f"/download-lbrn2/{task_id}", f"/download/{task_id}"],
         history_session=history_session, history_files=history_files, current_source_name=base_name,
         current_image_preset=submitted_preset,
-        current_abstract_filter=submitted_filter, current_material_name=material_name))
+        current_abstract_filter=submitted_filter, current_material_name=material_name,
+        current_created_at=int(time.time())))
     response.set_cookie("mopa_history_session", history_session, max_age=HISTORY_TTL_SECONDS,
         secure=request.is_secure, httponly=True, samesite="Lax")
     return response
