@@ -706,11 +706,19 @@ def calibration_grid():
         grid_left, grid_top = left_grid_margin_mm, top_label_mm
         grid_right, grid_bottom = grid_left + columns * cell_mm, grid_top + rows * cell_mm
         fiducial_gap_mm = .2
+        # LightBurn renders Rect transforms from their center, while these
+        # grid coordinates describe the visible cell corner. Offset every
+        # registration mark by half a cell to align with that same origin.
+        fiducial_origin_offset_mm = cell_mm / 2
         for fiducial_x, fiducial_y in ((grid_left - fiducial_size - fiducial_gap_mm, grid_top - fiducial_size - fiducial_gap_mm),
                                       (grid_right + fiducial_gap_mm, grid_top - fiducial_size - fiducial_gap_mm),
                                       (grid_left - fiducial_size - fiducial_gap_mm, grid_bottom + fiducial_gap_mm),
                                       (grid_right + fiducial_gap_mm, grid_bottom + fiducial_gap_mm)):
-            project.add(lightburn.Square(fiducial_size, fiducial_size, x=fiducial_x, y=fiducial_y).layer(label_layer_index))
+            project.add(lightburn.Square(
+                fiducial_size, fiducial_size,
+                x=fiducial_x - fiducial_origin_offset_mm,
+                y=fiducial_y - fiducial_origin_offset_mm,
+            ).layer(label_layer_index))
         label_setting = copy(label_setting)
         label_setting.index = label_layer_index
         label_setting.name = f"Calibration labels ({getattr(label_setting, 'entryDesc', 'dark setting')})"
