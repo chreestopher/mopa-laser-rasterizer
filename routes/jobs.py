@@ -196,33 +196,36 @@ def start_task():
         "color_name_overrides": color_name_overrides,
         "filter_parameters": filter_parameters,
     }
+    resolved_settings = []
+    try:
+        # Capture the real setting each palette swatch resolves to while the
+        # original Material Library is available locally. This applies to both
+        # signed-in and guest jobs; shared telemetry excludes artwork, account
+        # identity, and guest browser identifiers.
+        resolved_settings = resolve_material_setting_usage(
+            material_settings_path,
+            material_name,
+            run_parameters["colors"],
+            color_name_overrides,
+        )
+        run_parameters["resolved_material_settings"] = resolved_settings
+    except Exception as error:
+        # The worker retains the authoritative validation path. A library that
+        # its telemetry reader cannot inspect must not reject an accepted job.
+        current_app.logger.warning("Could not resolve Material Library usage for %s: %s", task_id, error)
     if user_id:
-        resolved_settings = []
-        try:
-            # Capture the real setting each palette swatch resolves to while
-            # the original Material Library is available locally. This shared
-            # telemetry intentionally excludes artwork and account identity.
-            resolved_settings = resolve_material_setting_usage(
-                material_settings_path,
-                material_name,
-                run_parameters["colors"],
-                color_name_overrides,
-            )
-            run_parameters["resolved_material_settings"] = resolved_settings
-        except Exception as error:
-            # The worker retains the authoritative validation path. A library
-            # that its telemetry reader cannot inspect must not reject a job.
-            current_app.logger.warning("Could not resolve Material Library usage for %s: %s", task_id, error)
         try:
             record_user_job(user_id, task_id, base_name, submitted_preset, submitted_filter,
                             material_name, run_parameters,
                             input_keys=[key for key in (image_key, material_key) if key])
         except RuntimeError as error:
             return jsonify({"status": "error", "message": str(error)}), 503
-        try:
-            record_setting_usage(task_id, resolved_settings, usage_library)
-        except RuntimeError as error:
-            current_app.logger.warning("Could not record Material Library usage for %s: %s", task_id, error)
+    try:
+        record_setting_usage(task_id, resolved_settings, usage_library)
+    except RuntimeError as error:
+        # Usage reporting is deliberately non-blocking for both account and
+        # guest processing. The raster job remains fully usable.
+        current_app.logger.warning("Could not record Material Library usage for %s: %s", task_id, error)
     add_history_entry(history_session, task_id, base_name, submitted_preset, submitted_filter,
                       material_name, run_parameters)
     history_files = get_history_entries(history_session)
