@@ -911,9 +911,18 @@ def process_color_layers(
         if not boxes:
             continue
 
-        layer_meta = target_colors[
-            color_hex
-        ]
+        layer_meta = target_colors.get(color_hex)
+        if layer_meta is None:
+            # Color snapping can produce a neutral gray even when the chosen
+            # Material Library has no matching gray setting. Only geometry
+            # backed by an actual LightBurn layer may be exported; skipping it
+            # lets the synthetic black canvas occupy that space rather than
+            # terminating the entire job with a KeyError.
+            printLogMessage(
+                f" -> Skipping {color_hex}: no matching Material Library "
+                "setting was loaded for this color."
+            )
+            continue
 
         layer_id = layer_meta[1]
         layer_color_name = layer_meta[2]

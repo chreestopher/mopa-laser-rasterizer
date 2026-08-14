@@ -208,7 +208,6 @@ def start_task():
             run_parameters["colors"],
             color_name_overrides,
         )
-        run_parameters["resolved_material_settings"] = resolved_settings
     except Exception as error:
         # The worker retains the authoritative validation path. A library that
         # its telemetry reader cannot inspect must not reject an accepted job.
