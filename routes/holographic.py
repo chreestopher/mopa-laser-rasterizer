@@ -182,7 +182,8 @@ def _svg_grid(path, columns, rows, cell_mm, intervals, angles, top_label_mm, rig
     # to align than a thin cell border alone.  They sit in the outer corners,
     # away from the center sampling zones.
     mark_size = min(1.2, cell_mm * .12)
-    for mark_x, mark_y in ((.2, .2), (width - mark_size - .2, .2), (.2, height - mark_size - .2), (width - mark_size - .2, height - mark_size - .2)):
+    for mark_x, mark_y in ((.2, top_label_mm + .2), (grid_width - mark_size - .2, top_label_mm + .2),
+                            (.2, height - mark_size - .2), (grid_width - mark_size - .2, height - mark_size - .2)):
         ET.SubElement(root, "rect", x=str(mark_x), y=str(mark_y), width=str(mark_size), height=str(mark_size), fill="#000")
     for column in range(columns):
         interval = intervals[column]
@@ -702,8 +703,12 @@ def calibration_grid():
                 cell_layer_indices.append(candidate_layer_index)
             candidate_layer_index += 1
         fiducial_size = min(1.2, cell_mm * .12)
-        total_width, total_height = left_grid_margin_mm + columns * cell_mm + right_label_mm, rows * cell_mm + top_label_mm
-        for fiducial_x, fiducial_y in ((.2, .2), (total_width - fiducial_size - .2, .2), (.2, total_height - fiducial_size - .2), (total_width - fiducial_size - .2, total_height - fiducial_size - .2)):
+        grid_left, grid_top = left_grid_margin_mm, top_label_mm
+        grid_right, grid_bottom = grid_left + columns * cell_mm, grid_top + rows * cell_mm
+        for fiducial_x, fiducial_y in ((grid_left + .2, grid_top + .2),
+                                      (grid_right - fiducial_size - .2, grid_top + .2),
+                                      (grid_left + .2, grid_bottom - fiducial_size - .2),
+                                      (grid_right - fiducial_size - .2, grid_bottom - fiducial_size - .2)):
             project.add(lightburn.Square(fiducial_size, fiducial_size, x=fiducial_x, y=fiducial_y).layer(label_layer_index))
         label_setting = copy(label_setting)
         label_setting.index = label_layer_index
