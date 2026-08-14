@@ -401,6 +401,9 @@
   @media (max-width:390px) {
     .color-grid { grid-template-columns:repeat(4, minmax(0, 1fr)); }
   }
+  @media (min-width:701px) {
+    .color-grid { grid-template-columns:repeat(12, minmax(0, 1fr)); gap:12px 8px; }
+  }
   .theme-toggle { display:flex; justify-content:flex-end; margin-bottom:12px; }
   .login-link,.auth-console { display:flex; align-items:center; gap:8px; margin-right:auto; color:#f2a25d; font:700 10px "Courier New",monospace; letter-spacing:.09em; text-decoration:none; text-transform:uppercase; }
   .login-link[hidden],.auth-console[hidden] { display:none; }
