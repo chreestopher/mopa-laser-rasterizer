@@ -144,8 +144,8 @@
       <span class="form-note">Signed-in operators can reuse any library stored in their Material Vault.</span>
     </label>
     <label>One-off Material Library file<input id="calibration_material_settings" type="file" name="material_settings" accept=".clb,.lbmat,.lbrn"><span class="form-note">Use this when a saved library is not selected.</span></label>
-    <label>Material name<input name="material" value="stainless - steel" required></label>
-    <label>Setting Description<input name="setting_description" placeholder="Exact Material Library Description" required></label>
+    <label>Material name<input id="calibration_material" name="material" list="calibration_material_suggestions" value="stainless - steel" required><datalist id="calibration_material_suggestions"></datalist></label>
+    <label>Setting Description<input id="calibration_setting_description" name="setting_description" list="calibration_setting_suggestions" placeholder="Exact Material Library Description" required><datalist id="calibration_setting_suggestions"></datalist><span class="form-note">Saved-library entries appear here as you type. Custom descriptions remain welcome.</span></label>
     <label>Laser source<input name="laser_source" placeholder="Example: JPT M7 100 W MOPA"></label>
     <label>Lens field of view (mm)<input name="lens_field_mm" type="number" value="110" min="1" max="1000" step="1" required></label>
     <label>Grid columns<input name="columns" type="number" value="4" min="2" max="6" required></label>
@@ -237,7 +237,42 @@
     const savedCalibrationLibraryRow = document.getElementById('saved_calibration_library_row');
     const savedCalibrationLibrary = document.getElementById('saved_calibration_library');
     const calibrationMaterialSettings = document.getElementById('calibration_material_settings');
+    const calibrationMaterial = document.getElementById('calibration_material');
+    const calibrationSettingDescription = document.getElementById('calibration_setting_description');
+    const calibrationMaterialSuggestions = document.getElementById('calibration_material_suggestions');
+    const calibrationSettingSuggestions = document.getElementById('calibration_setting_suggestions');
     const savedCalibrationLibraryKey = 'calibration_form:saved_material_library_id';
+    let savedCalibrationEntries = [];
+    const setSuggestionOptions = (target, values) => {
+      target.replaceChildren(...[...new Set(values.filter(Boolean))].sort((left, right) => left.localeCompare(right, undefined, {sensitivity:'base'})).map(value => {
+        const option = document.createElement('option');
+        option.value = value;
+        return option;
+      }));
+    };
+    const refreshCalibrationDescriptionSuggestions = () => {
+      const materialKey = calibrationMaterial.value.trim().toLocaleLowerCase();
+      setSuggestionOptions(calibrationSettingSuggestions, savedCalibrationEntries
+        .filter(entry => !materialKey || String(entry.material || '').trim().toLocaleLowerCase() === materialKey)
+        .map(entry => entry.description));
+    };
+    const loadSavedCalibrationLibraryEntries = libraryId => {
+      if (!libraryId) {
+        savedCalibrationEntries = [];
+        setSuggestionOptions(calibrationMaterialSuggestions, []);
+        setSuggestionOptions(calibrationSettingSuggestions, []);
+        return;
+      }
+      fetch(`/account/material-libraries/${encodeURIComponent(libraryId)}`, {credentials:'same-origin'})
+        .then(response => response.ok ? response.json() : null)
+        .then(data => {
+          if (!data?.library || savedCalibrationLibrary.value !== libraryId) return;
+          savedCalibrationEntries = data.library.summary?.entries || [];
+          setSuggestionOptions(calibrationMaterialSuggestions, savedCalibrationEntries.map(entry => entry.material));
+          refreshCalibrationDescriptionSuggestions();
+        })
+        .catch(() => {});
+    };
     const loadSavedCalibrationLibraries = () => fetch('/account/material-libraries', {credentials:'same-origin'})
       .then(response => response.ok ? response.json() : null)
       .then(data => {
@@ -255,15 +290,21 @@
         const rememberedLibraryId = rememberedHolographicSettings[savedCalibrationLibraryKey];
         if (rememberedLibraryId && [...savedCalibrationLibrary.options].some(option => option.value === rememberedLibraryId)) {
           savedCalibrationLibrary.value = rememberedLibraryId;
+          loadSavedCalibrationLibraryEntries(rememberedLibraryId);
         }
       })
       .catch(() => {});
     savedCalibrationLibrary.addEventListener('change', () => {
       if (savedCalibrationLibrary.value) calibrationMaterialSettings.value = '';
+      loadSavedCalibrationLibraryEntries(savedCalibrationLibrary.value);
     });
     calibrationMaterialSettings.addEventListener('change', () => {
-      if (calibrationMaterialSettings.files.length) savedCalibrationLibrary.value = '';
+      if (calibrationMaterialSettings.files.length) {
+        savedCalibrationLibrary.value = '';
+        loadSavedCalibrationLibraryEntries('');
+      }
     });
+    calibrationMaterial.addEventListener('input', refreshCalibrationDescriptionSuggestions);
     fetch('/auth-status', {credentials:'same-origin'})
       .then(response => response.ok ? response.json() : {signed_in:false})
       .then(({signed_in}) => {
