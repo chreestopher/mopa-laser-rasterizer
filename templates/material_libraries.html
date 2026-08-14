@@ -88,7 +88,8 @@
     let activeLibraryName = '';
     let activeLibraryId = '';
     const closeSettings = () => { settingsWorkspace.hidden = true; vaultControls.hidden = false; };
-    document.getElementById('settings_workspace_back').addEventListener('click', closeSettings);
+    const settingsWorkspaceBack = document.getElementById('settings_workspace_back');
+    if (settingsWorkspaceBack) settingsWorkspaceBack.addEventListener('click', closeSettings);
     const selectionBody = settingsBody;
     const selectionControls = () => {
       const action = document.getElementById('selection_action')?.value || 'export';
@@ -97,7 +98,8 @@
       return `<p class="meta">${selectedSettings.size} selected setting${selectedSettings.size === 1 ? '' : 's'} will be written under one exact Material Name.</p><label>Action<select id="selection_action" class="library-name-input"><option value="export"${action === 'export' ? ' selected' : ''}>Export to LightBurn</option><option value="copy_existing"${action === 'copy_existing' ? ' selected' : ''}>Copy to a saved library</option><option value="copy_new"${action === 'copy_new' ? ' selected' : ''}>Copy to a new saved library</option></select></label><label>Material Name<input id="selection_material_name" class="library-name-input" value="colors - stainless steel" placeholder="colors - stainless steel"></label><small>This exact name becomes the Material Name inside the exported or copied LightBurn settings.</small>${target}${newName}<button id="selection_submit" type="button">${action === 'export' ? 'Download LightBurn Library' : 'Copy selected settings'}</button>`;
     };
     const openSelectionActions = () => { vaultControls.hidden = true; settingsWorkspace.hidden = false; settingsTitle.textContent = 'SELECTED MATERIAL SETTINGS'; selectionBody.innerHTML = selectionControls(); };
-    document.getElementById('selected_actions').addEventListener('click', openSelectionActions);
+    const selectedActionsButton = document.getElementById('selected_actions');
+    if (selectedActionsButton) selectedActionsButton.addEventListener('click', openSelectionActions);
     const showSettingsWorkspace = async (expandLibraryId='') => {
       vaultControls.hidden = true;
       settingsWorkspace.hidden = false;
@@ -286,7 +288,7 @@
         say('New Settings Library created. Open Settings, then Add Setting.'); load();
       } catch (_) { say('Could not create the library. Check the server logs for details.', true); }
     });
-    fetch('/auth-status', {credentials:'same-origin'}).then(response => response.json()).then(data => { document.getElementById('login_link').hidden = Boolean(data.signed_in); document.getElementById('auth_console').hidden = !data.signed_in; document.getElementById(data.signed_in ? 'manager' : 'sign_in_panel').hidden = false; if (data.signed_in) load().catch(error => say(error.message, true)); }).catch(() => { document.getElementById('sign_in_panel').hidden = false; });
+    fetch('/auth-status', {credentials:'same-origin'}).then(response => response.json()).then(data => { document.getElementById('login_link').hidden = Boolean(data.signed_in); document.getElementById('auth_console').hidden = !data.signed_in; document.getElementById(data.signed_in ? 'manager' : 'sign_in_panel').hidden = false; if (data.signed_in) load().then(() => showSettingsWorkspace()).catch(error => say(error.message, true)); }).catch(() => { document.getElementById('sign_in_panel').hidden = false; });
   </script>
 </body>
 </html>
