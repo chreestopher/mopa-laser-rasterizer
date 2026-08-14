@@ -741,7 +741,7 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_f
             "preserved_black_outlines": {
                 "enabled": preserve_black_outlines,
                 "selection": "bw_photo_two_color_dark_geometry",
-                "source_quantized_dark_rgb": list(black_source_color) if black_source_color else None,
+                "source_quantized_dark_rgb": [int(channel) for channel in black_source_color] if black_source_color else None,
                 "rectangle_count": len(black_rectangles),
                 "material_setting": black_setting_name,
             },
