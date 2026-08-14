@@ -107,6 +107,9 @@
     @media (min-width:900px) and (hover:hover) { body { width:125vw; max-width:none; margin:0; zoom:.8; } }
     @media (max-width:700px) { body { width:100%; margin:0; padding:20px; border-radius:0; } h1 { font-size:clamp(18px,6vw,25px); }.console-status-line { grid-template-columns:1fr; gap:7px; padding:0; }.console-subtitle { grid-row:1; }.status-lamps { grid-row:2; }.workflow { grid-template-columns:1fr; } }
     .machine-nav { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin:0 0 18px; padding:6px; border:1px solid #6d725d; border-radius:10px; background:linear-gradient(#252b24,#151914); box-shadow:inset 0 0 0 2px #0d100c,0 3px 0 #0a0c09; } .machine-nav a { display:flex; align-items:center; justify-content:center; min-height:32px; padding:6px 8px; border:1px solid #596451; border-radius:5px; color:#d9d2af; background:linear-gradient(#465149,#29352f); font:700 clamp(8px,1.5vw,11px) "Courier New",monospace; letter-spacing:.04em; text-align:center; text-decoration:none; text-transform:uppercase; } .machine-nav a:hover,.machine-nav a:focus-visible { color:#f5f1d7; border-color:#a8c99b; background:linear-gradient(#657b6c,#3c5447); outline:0; } .machine-nav a[aria-current="page"] { color:#eaf7df; border-color:#93bf82; background:linear-gradient(#527448,#2d542d); box-shadow:inset 0 0 8px rgba(141,240,108,.28); } body.light-machine .machine-nav { border-color:#777974; background:linear-gradient(#dcddd7,#bcbeb8); box-shadow:inset 0 0 0 2px #f1f1eb,0 3px 0 #858782; } body.light-machine .machine-nav a { color:#20251f; border-color:#7b857d; background:linear-gradient(#e6e8e2,#b2bab3); text-shadow:0 1px #fff; } body.light-machine .machine-nav a:hover,body.light-machine .machine-nav a:focus-visible { color:#102b16; background:linear-gradient(#d5e5cd,#a8c89c); } body.light-machine .machine-nav a[aria-current="page"] { color:#102b16; border-color:#527d50; background:linear-gradient(#b8d2aa,#8eaf82); box-shadow:inset 0 0 8px rgba(40,109,36,.18); } @media (max-width:520px) { .machine-nav { grid-template-columns:1fr; } }
+    .process-schematic { margin:0 0 24px; padding:16px; border:2px solid #73745f; border-radius:16px; background:rgba(17,20,15,.5); box-shadow:inset 0 0 0 4px #292d24,inset 0 0 25px rgba(0,0,0,.65),0 6px 0 #161813; } .schematic-title { margin:0 0 14px; color:var(--phosphor); font:700 clamp(10px,1.5vw,13px) "Courier New",monospace; letter-spacing:.12em; text-align:center; } .schematic-flow { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:8px; } .schematic-node { min-height:104px; padding:13px 10px 10px; border:1px solid #7a876e; border-radius:7px; background:linear-gradient(145deg,rgba(78,93,73,.58),rgba(21,27,20,.72)); box-shadow:inset 0 0 0 2px rgba(12,15,11,.7); text-align:center; } .schematic-node span { display:inline-grid; place-items:center; width:23px; height:23px; margin-bottom:6px; border:1px solid #b9d8a9; border-radius:50%; color:#10140f; background:#9bd77f; font:700 11px "Courier New",monospace; } .schematic-node strong,.schematic-node small { display:block; } .schematic-node strong { color:#eee7c8; font:700 12px "Courier New",monospace; text-transform:uppercase; } .schematic-node small { margin-top:6px; color:#aaa98e; font:11px/1.3 "Courier New",monospace; } .schematic-arrow { color:#98c889; font:700 26px "Courier New",monospace; } .schematic-loop { margin-top:13px; padding-top:10px; border-top:1px dashed #6c765e; color:#d6d0aa; font:700 11px/1.45 "Courier New",monospace; text-align:center; } .schematic-loop span { color:#efb94f; font-size:18px; vertical-align:-2px; } .sequence-tag { display:inline-grid; place-items:center; width:25px; height:25px; margin-right:7px; border:1px solid #b9d8a9; border-radius:50%; color:#10140f; background:#9bd77f; font:700 11px "Courier New",monospace; vertical-align:2px; }
+    body.light-machine .process-schematic { border-color:#777974; background:rgba(220,221,216,.62); box-shadow:inset 0 0 0 4px #b1b3ae,inset 0 0 20px #888,0 6px 0 #686a66; } body.light-machine .schematic-title { color:#245d2a; } body.light-machine .schematic-node { border-color:#717c71; background:linear-gradient(#e4e6df,#bfc7be); box-shadow:inset 0 0 0 2px #f0f1eb; } body.light-machine .schematic-node strong { color:#171815; } body.light-machine .schematic-node small,body.light-machine .schematic-loop { color:#343530; } body.light-machine .schematic-loop { border-color:#777974; }
+    @media (max-width:760px) { .schematic-flow { grid-template-columns:1fr; } .schematic-arrow { position:static; justify-self:center !important; transform:rotate(90deg); } .schematic-flow .schematic-arrow:nth-of-type(n) { grid-column:1; } }
   </style>
 <link rel="stylesheet" href="/static/machine_chrome.css">
 </head>
@@ -118,17 +121,21 @@
   </header>
   <nav class="machine-nav" aria-label="Primary navigation"><a href="/">Rasterizer</a><a href="/holographic-etching" aria-current="page">Holographic Lab</a><a href="/material-libraries">Material Vault</a></nav> #}
   {{ machine_chrome('holographic', 'HOLOGRAPHIC ETCHING LAB · SERIES 79') }}
-  <h2>Turn light itself into the color palette.</h2>
-  <p class="lead">Holographic Etching uses precisely spaced laser lines to create structural color that shifts with the light. Calibrate your material first, then translate artwork into fine diffraction-grating line fields.</p>
-  <div class="warning">▲ EXPERIMENTAL OPTICS MODE. Results depend on material, polish, lens, laser settings, lighting, and viewing angle. This lab will build a measured recipe library before it generates artwork.</div>
-  <main class="workflow">
-    <section class="stage" data-state="next"><div class="stage-number">01 · CALIBRATE</div><h3>Generate a test grid</h3><p>Create a labeled grid of pitch, line angle, speed, frequency, power, pulse width, and interval recipes for one material and lens combination.</p></section>
-    <section class="stage"><div class="stage-number">02 · MEASURE</div><h3>Photograph the swatch</h3><p>Use a guided phone position, consistent lighting, and grid markers. The lab will correct perspective and sample the visible color from each tested recipe.</p></section>
-    <section class="stage"><div class="stage-number">03 · SAVE</div><h3>Build a recipe library</h3><p>Save measured structural-color recipes with their material, finish, lens, and viewing setup. The same recipe can look different under different conditions.</p></section>
-    <section class="stage"><div class="stage-number">04 · ETCH</div><h3>Convert artwork to gratings</h3><p>Map image color and brightness to calibrated pitch and line-angle fields, then export laser paths instead of ordinary filled color regions.</p></section>
-  </main>
+  <section class="process-schematic" aria-labelledby="process_schematic_title">
+    <div id="process_schematic_title" class="schematic-title">HOLOGRAPHIC ETCHING, CALIBRATION SIGNAL FLOW</div>
+    <div class="schematic-flow">
+      <div class="schematic-node"><span>01</span><strong>Build Test Grid</strong><small>Sweep interval, angle, and laser settings.</small></div>
+      <div class="schematic-arrow" aria-hidden="true">→</div>
+      <div class="schematic-node"><span>02</span><strong>Laser + Capture</strong><small>Mark the grid, then photograph the swatches.</small></div>
+      <div class="schematic-arrow" aria-hidden="true">→</div>
+      <div class="schematic-node"><span>03</span><strong>Measure + Save</strong><small>Align, sample, and keep the useful recipes.</small></div>
+      <div class="schematic-arrow" aria-hidden="true">→</div>
+      <div class="schematic-node"><span>04</span><strong>Build Artwork</strong><small>Map artwork into calibrated grating layers.</small></div>
+    </div>
+    <div class="schematic-loop"><span aria-hidden="true">↺</span> Tune the grid settings and repeat steps 01–03 whenever the material, finish, lens, laser, or viewing setup changes.</div>
+  </section>
   <form id="calibration_form" class="calibration-form" enctype="multipart/form-data">
-    <h3>Calibration Grid Console</h3>
+    <h3><span class="sequence-tag">01</span> Calibration Grid Console</h3>
     <p class="form-note">This first grid sweeps line angle and fill interval while copying one selected LightBurn setting onto each cell. Keep the laser, material finish, and lens setup stable while you test it.</p>
     <label>Material Library file<input type="file" name="material_settings" accept=".clb,.lbmat,.lbrn" required></label>
     <label>Material name<input name="material" value="stainless - steel" required></label>
@@ -147,7 +154,7 @@
     <p id="calibration_results" class="calibration-results" aria-live="polite"></p>
   </form>
   <form id="profile_form" class="calibration-form" enctype="multipart/form-data">
-    <h3>Finished Grid Capture Console</h3>
+    <h3><span class="sequence-tag">02</span> Finished Grid Capture Console</h3>
     <p class="form-note">After you laser the grid, photograph it and save the conditions that made those colors appear. This creates a reusable profile now, ready for the color-reading engine we will install later.</p>
     <label>Calibration grid ID<input id="profile_calibration_id" name="calibration_id" placeholder="Created automatically when you build a grid" required></label>
     <label>Profile name<input name="profile_name" placeholder="Example: Polished Ti, 110 mm lens, shop lights" required></label>
@@ -161,7 +168,7 @@
     <p id="profile_results" class="calibration-results" aria-live="polite"></p>
   </form>
   <form id="analysis_form" class="calibration-form">
-    <h3>Recipe Measurement Console</h3>
+    <h3><span class="sequence-tag">03</span> Recipe Measurement Console</h3>
     <p class="form-note">This first analysis pass finds the grid, straightens it when it can see a clear border, samples the center of every numbered cell, and saves the observed photo color next to that cell’s interval and angle. Enter any crop value to make your crop the grid boundary, then trim tightly around the swatch. Review the preview before treating it as a recipe map.</p>
     <label>Calibration profile ID<input id="analysis_profile_id" name="profile_id" placeholder="Created automatically when you save a grid photo" required></label>
     <label>Photo rotation, degrees<input id="rotation_degrees" name="rotation_degrees" type="number" value="0" min="-180" max="180" step=".1"><span class="form-note">Positive rotates counterclockwise.</span></label>
@@ -185,7 +192,7 @@
     </section>
   </form>
   <form id="artwork_form" class="calibration-form" enctype="multipart/form-data">
-    <h3>Holographic Artwork Console</h3>
+    <h3><span class="sequence-tag">04</span> Holographic Artwork Console</h3>
     <p class="form-note">Bring your artwork, the recipe profile you saved above, and the same LightBurn Material Library used for calibration. Each processed image pixel becomes a tiny square on its closest calibrated recipe layer, using that recipe’s measured Fill interval and angle.</p>
     <label class="full-width">Artwork image<input name="artwork" type="file" accept="image/*" required></label>
     <label>Saved recipe profile<input name="recipe_profile" type="file" accept=".json,application/json" required></label>
