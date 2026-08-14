@@ -44,7 +44,7 @@
     <section id="sign_in_panel" class="panel" hidden><p>Sign in to open your personal Material Library Vault.</p><a href="/login">Initialize secure operator access →</a></section>
     <div id="manager" hidden>
       <section class="panel vault-terminal">
-        <div id="settings_workspace" class="settings-workspace"><div class="settings-toolbar"><strong id="settings_modal_title">MATERIAL SETTINGS CONSOLE</strong></div><details id="vault_controls" class="settings-accordion"><summary>LOAD OR BUILD A SETTINGS LIBRARY</summary><div class="settings-accordion-content"><label for="libraries">Load one or more LightBurn Material Library files</label><input id="libraries" type="file" accept=".clb,.lbmat,.lbrn" multiple><button id="scan" type="button">Scan selected libraries</button><button id="new_library" type="button">New Settings Library</button><div id="import_plan" class="import-plan" hidden></div><button id="import" type="button" hidden>Import selected materials</button></div></details><div class="selection-actions"><span id="selected_count" class="meta">Selected settings: 0</span><button id="selected_actions" type="button" disabled>Selected actions</button></div><div id="settings_modal_body" class="settings-body"></div></div>
+        <div id="settings_workspace" class="settings-workspace"><div class="settings-toolbar"><strong id="settings_modal_title">MATERIAL SETTINGS CONSOLE</strong></div><details id="vault_controls" class="settings-accordion"><summary>LOAD OR BUILD A SETTINGS LIBRARY</summary><div class="settings-accordion-content"><label for="libraries">Load one or more LightBurn Material Library files</label><input id="libraries" type="file" accept=".clb,.lbmat,.lbrn" multiple><button id="scan" type="button">Scan selected libraries</button><button id="new_library" type="button">New Settings Library</button><div id="import_plan" class="import-plan" hidden></div><button id="import" type="button" hidden>Import selected materials</button></div></details><div class="selection-actions"><span id="selected_count" class="meta">Selected settings: 0</span><span><button id="consolidate_settings" type="button">Consolidate View</button><button id="selected_actions" type="button" disabled>Selected actions</button></span></div><div id="settings_modal_body" class="settings-body"></div></div>
         <div id="notice" class="notice" role="status"></div>
       </section>
     </div>
@@ -59,7 +59,7 @@
     const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     const selectedSettings = new Map();
     let savedLibraries = [];
-    let activeInlineEntryKey = '';
+    const activeInlineEntryKeys = new Set();
     let activeNewLibraryId = '';
     const updateSelectedCount = () => {
       const count = selectedSettings.size;
@@ -70,7 +70,7 @@
     const renderEntries = (summary, libraryId, clickable=false, selectable=false) => {
       const entries = summary?.entries || [];
       if (!entries.length) return '<p class="meta">Open settings to inspect this library.</p>';
-      return `<div class="entries"><table><thead><tr>${selectable ? '<th>Pick</th>' : ''}<th>Material</th><th>Type</th><th>Description</th></tr></thead><tbody>${entries.map((entry, index) => { const key = selectionKey(libraryId, entry); return `<tr${clickable ? ` class="entry-row" data-library-id="${esc(libraryId)}" data-entry-index="${index}"` : ''}>${selectable ? `<td><input class="entry-select" type="checkbox" data-library-id="${esc(libraryId)}" data-entry-index="${index}" ${selectedSettings.has(key) ? 'checked' : ''} aria-label="Select ${esc(entry.description)}"></td>` : ''}<td>${esc(entry.material)}</td><td>${esc(entry.type)}</td><td>${esc(entry.description)}</td></tr>${activeInlineEntryKey === key ? `<tr><td colspan="${selectable ? 4 : 3}">${inlineEntryEditor(libraryId, entry)}</td></tr>` : ''}`; }).join('')}</tbody></table></div>`;
+      return `<div class="entries"><table><thead><tr>${selectable ? '<th>Pick</th>' : ''}<th>Material</th><th>Type</th><th>Description</th></tr></thead><tbody>${entries.map((entry, index) => { const key = selectionKey(libraryId, entry); return `<tr${clickable ? ` class="entry-row" data-library-id="${esc(libraryId)}" data-entry-index="${index}"` : ''}>${selectable ? `<td><input class="entry-select" type="checkbox" data-library-id="${esc(libraryId)}" data-entry-index="${index}" ${selectedSettings.has(key) ? 'checked' : ''} aria-label="Select ${esc(entry.description)}"></td>` : ''}<td>${esc(entry.material)}</td><td>${esc(entry.type)}</td><td>${esc(entry.description)}</td></tr>${activeInlineEntryKeys.has(key) ? `<tr><td colspan="${selectable ? 4 : 3}">${inlineEntryEditor(libraryId, entry)}</td></tr>` : ''}`; }).join('')}</tbody></table></div>`;
     };
     const load = async () => {
       const response = await fetch('/account/material-libraries', {credentials:'same-origin'});
@@ -95,6 +95,10 @@
     const openSelectionActions = () => { settingsTitle.textContent = 'SELECTED MATERIAL SETTINGS'; selectionBody.innerHTML = selectionControls(); };
     const selectedActionsButton = document.getElementById('selected_actions');
     if (selectedActionsButton) selectedActionsButton.addEventListener('click', openSelectionActions);
+    document.getElementById('consolidate_settings').addEventListener('click', () => {
+      activeInlineEntryKeys.clear(); activeNewLibraryId = '';
+      settingsBody.querySelectorAll('.inline-entry-editor').forEach(editor => (editor.closest('tr') || editor).remove());
+    });
     const showSettingsWorkspace = async (expandLibraryId='') => {
       settingsTitle.textContent = 'MATERIAL SETTINGS CONSOLE';
       settingsBody.innerHTML = '<p class="meta">Loading the selected settings banks…</p>';
@@ -176,8 +180,9 @@
       }
       if (event.target.matches('.inline-cancel')) {
         const editor = event.target.closest('.inline-entry-editor');
-        (editor.closest('tr') || editor).remove();
-        activeInlineEntryKey = ''; activeNewLibraryId = ''; return;
+        if (editor.dataset.entryId) activeInlineEntryKeys.delete(`${editor.dataset.libraryId}:${editor.dataset.entryId}`);
+        else activeNewLibraryId = '';
+        (editor.closest('tr') || editor).remove(); return;
       }
       if (event.target.matches('.inline-save')) {
         const editor = event.target.closest('.inline-entry-editor');
@@ -194,7 +199,8 @@
         const response = await fetch(url, {method:entryId === '' ? 'POST' : 'PATCH', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
         const data = await response.json();
         if (!response.ok) return say(data.message || 'Could not save setting.', true);
-        activeInlineEntryKey = ''; activeNewLibraryId = ''; say('Material Library setting saved.'); await load(); await showSettingsWorkspace(libraryId); return;
+        if (entryId) activeInlineEntryKeys.delete(`${libraryId}:${entryId}`);
+        activeNewLibraryId = ''; say('Material Library setting saved.'); await load(); await showSettingsWorkspace(libraryId); return;
       }
       const row = event.target.closest('.entry-row');
       if (row) {
@@ -204,9 +210,10 @@
         activeLibraryId = row.dataset.libraryId;
         activeLibraryName = library.name;
         activeEntries = library.summary.entries;
-        activeNewLibraryId = '';
-        activeInlineEntryKey = selectionKey(activeLibraryId, entry);
-        settingsBody.querySelectorAll('.inline-entry-editor').forEach(editor => (editor.closest('tr') || editor).remove());
+        const key = selectionKey(activeLibraryId, entry);
+        const existingEditor = row.nextElementSibling?.querySelector('.inline-entry-editor');
+        if (activeInlineEntryKeys.has(key) && existingEditor) { activeInlineEntryKeys.delete(key); row.nextElementSibling.remove(); return; }
+        activeInlineEntryKeys.add(key);
         const editorRow = document.createElement('tr');
         editorRow.innerHTML = `<td colspan="4">${inlineEntryEditor(activeLibraryId, entry)}</td>`;
         row.insertAdjacentElement('afterend', editorRow);
@@ -218,9 +225,7 @@
         activeLibraryId = event.target.dataset.libraryId;
         activeLibraryName = library?.name || 'MATERIAL LIBRARY SETTINGS';
         activeEntries = library?.summary?.entries || [];
-        activeInlineEntryKey = '';
         activeNewLibraryId = activeLibraryId;
-        settingsBody.querySelectorAll('.inline-entry-editor').forEach(editor => (editor.closest('tr') || editor).remove());
         event.target.insertAdjacentHTML('afterend', inlineEntryEditor(activeLibraryId));
         return;
       }
