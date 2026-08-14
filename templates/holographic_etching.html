@@ -215,6 +215,9 @@
     <label>Matching Material Library<input name="material_settings" type="file" accept=".clb,.lbmat,.lbrn" required></label>
     <label>Maximum processing dimension, pixels<input name="max_dimension" type="number" value="96" min="8" max="1600" step="1"><span class="form-note">Start at 64–96. The 1600-pixel limit is for serious experiments, and detailed artwork can still create a very large LightBurn file.</span></label>
     <label>Physical pixel size, mm<input name="pixel_mm" type="number" value=".5" min=".05" max="5" step=".05"><span class="form-note">This sets each grating patch’s width and height.</span></label>
+    <label>Grating direction mode<select name="direction_mode"><option value="recipe">Use each calibrated recipe angle</option><option value="brightness">Map artwork brightness to angle</option><option value="linear">Sweep left to right</option><option value="radial">Radiate from image center</option><option value="fixed">Use one fixed angle</option></select><span class="form-note">Experimental modes keep measured recipe settings but independently change Offset Fill angle.</span></label>
+    <label>Direction bins<input name="direction_bins" type="number" value="6" min="2" max="12" step="1"><span class="form-note">Fewer bins create smaller, faster LightBurn projects.</span></label>
+    <label>Fixed direction, degrees<input name="fixed_direction_degrees" type="number" value="0" min="0" max="180" step="1"><span class="form-note">Used only by Fixed direction mode.</span></label>
     <div class="action-row"><button class="action" type="submit">Build Holographic Artwork</button></div>
     <p id="artwork_results" class="calibration-results" aria-live="polite"></p>
   </form>
