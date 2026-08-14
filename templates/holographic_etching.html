@@ -62,8 +62,9 @@
     .calibration-description-swatch { flex:0 0 13px; width:13px; height:13px; border:1px solid #d9d6be; border-radius:2px; box-shadow:inset 0 0 1px rgba(0,0,0,.6); }
     .form-note,.calibration-results { margin:0; color:#aaa98e; font-size:.9rem; line-height:1.45; }
     .calibration-results a { color:var(--phosphor); font-weight:700; }
-    .calibration-results .download-actions { display:flex; flex-wrap:wrap; gap:9px; margin:10px 0 7px; }
-    .calibration-results .download-actions .action { color:#edf4e9; }
+    .calibration-download-list { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0 7px; padding:0; list-style:none; }
+    .calibration-download-list li { margin:0; }
+    .calibration-download-list .action { color:#edf4e9; }
     .analysis-preview { display:block; width:min(100%,620px); margin:13px 0 8px; border:2px solid #778a64; border-radius:9px; box-shadow:0 3px 10px #000; }
     .recipe-review { grid-column:1 / -1; display:none; margin-top:12px; padding-top:15px; border-top:1px solid #5c684f; }
     .recipe-review.active { display:block; }
@@ -246,6 +247,9 @@
       document.body.classList.toggle('light-machine', themeSwitch.checked);
       localStorage.setItem('mopa-machine-theme', themeSwitch.checked ? 'light' : 'dark');
     });
+    const downloadButtonList = downloads => `<ul class="calibration-download-list">${downloads.map(({url, label}) =>
+      `<li><a class="action" href="${url}">${label}</a></li>`
+    ).join('')}</ul>`;
     const calibrationForm = document.getElementById('calibration_form');
     const savedCalibrationLibraryRow = document.getElementById('saved_calibration_library_row');
     const savedCalibrationLibrary = document.getElementById('saved_calibration_library');
@@ -385,7 +389,10 @@
         document.getElementById('profile_calibration_id').value = data.calibration_id;
         localStorage.setItem('holographic-calibration-id', data.calibration_id);
         const labelSetting = data.label_setting ? ` Label layer: ${data.label_setting}.` : '';
-        results.innerHTML = `Calibration grid ready.<span class="download-actions"><a class="action" href="${data.svg_url}">Download SVG</a><a class="action" href="${data.lightburn_url}">Download LightBurn Project</a></span>${labelSetting} Grid ID loaded into the Finished Grid Capture Console.`;
+        results.innerHTML = `Calibration grid ready.${downloadButtonList([
+          {url:data.svg_url, label:'Download SVG'},
+          {url:data.lightburn_url, label:'Download LightBurn Project'}
+        ])}${labelSetting} Grid ID loaded into the Finished Grid Capture Console.`;
       } catch (error) {
         results.textContent = error.message;
       } finally {
@@ -407,7 +414,7 @@
         if (!response.ok) throw new Error(data.message || 'Calibration profile could not be saved.');
         document.getElementById('analysis_profile_id').value = data.profile_id;
         localStorage.setItem('holographic-profile-id', data.profile_id);
-        results.innerHTML = `${data.message} <a href="${data.profile_url}">Download profile record</a>`;
+        results.innerHTML = `${data.message}${downloadButtonList([{url:data.profile_url, label:'Download Profile Record'}])}`;
       } catch (error) {
         results.textContent = error.message;
       } finally {
@@ -599,7 +606,7 @@
         const data = await response.json();
         if (!response.ok) throw new Error(data.message || 'Calibration analysis could not be completed.');
         const correction = data.correction === 'manual_corners' ? 'Your four aligned corners were used for perspective correction.' : data.correction === 'rectified' ? 'Perspective correction applied.' : data.correction === 'manual_crop' ? 'Your crop was used as the grid boundary.' : 'Grid border was not confidently found, so the rotated photo was sampled.';
-        results.innerHTML = `${data.message} Rotation: ${data.rotation_degrees}°. Crop: L${data.crop.left}% T${data.crop.top}% R${data.crop.right}% B${data.crop.bottom}%. ${correction} <a href="${data.profile_url}">Download measured profile</a><a href="${data.preview_url}" target="_blank" rel="noopener noreferrer"><img class="analysis-preview" src="${data.preview_url}" alt="Numbered calibration-grid analysis preview"></a>`;
+        results.innerHTML = `${data.message} Rotation: ${data.rotation_degrees}°. Crop: L${data.crop.left}% T${data.crop.top}% R${data.crop.right}% B${data.crop.bottom}%. ${correction}${downloadButtonList([{url:data.profile_url, label:'Download Measured Profile'}])}<a href="${data.preview_url}" target="_blank" rel="noopener noreferrer"><img class="analysis-preview" src="${data.preview_url}" alt="Numbered calibration-grid analysis preview"></a>`;
         renderRecipeReview(data.profile_id, data.cells);
         loadSampleEditor(data.preview_url, data.cells);
       } catch (error) {
@@ -629,7 +636,7 @@
           diagnostics.similar_pairs.length ? `Similar colors: ${diagnostics.similar_pairs.map(pair => `${pair.recipes[0]} / ${pair.recipes[1]}`).join(', ')}.` : '',
           diagnostics.weak_recipes.length ? `Review low-confidence recipes: ${diagnostics.weak_recipes.join(', ')}.` : ''
         ].filter(Boolean).join(' ');
-        results.innerHTML = `${data.message} ${notes} <a href="${data.profile_url}">Download recipe profile</a>`;
+        results.innerHTML = `${data.message} ${notes}${downloadButtonList([{url:data.profile_url, label:'Download Recipe Profile'}])}`;
       } catch (error) {
         results.textContent = error.message;
       } finally {
@@ -647,7 +654,11 @@
         const response = await fetch('/holographic-etching/build-artwork', {method:'POST', body:new FormData(form)});
         const data = await response.json();
         if (!response.ok) throw new Error(data.message || 'Holographic artwork could not be built.');
-        results.innerHTML = `Artwork built at ${data.source_width} × ${data.source_height} processed pixels, merged into ${data.rectangle_count.toLocaleString()} vector rectangles. <a href="${data.svg_url}">Download SVG</a> · <a href="${data.lightburn_url}">Download LightBurn project</a> · <a href="${data.metadata_url}">Download export record</a>`;
+        results.innerHTML = `Artwork built at ${data.source_width} × ${data.source_height} processed pixels, merged into ${data.rectangle_count.toLocaleString()} vector rectangles.${downloadButtonList([
+          {url:data.svg_url, label:'Download SVG'},
+          {url:data.lightburn_url, label:'Download LightBurn Project'},
+          {url:data.metadata_url, label:'Download Export Record'}
+        ])}`;
       } catch (error) {
         results.textContent = error.message;
       } finally {
