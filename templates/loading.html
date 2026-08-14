@@ -192,7 +192,7 @@
         .machine-workspace { flex-direction: column; gap: 18px; overflow-y: auto; }
         .terminal-box { flex: 0 0 55vh; min-height: 320px; }
         .files-panel { flex: 0 0 auto; min-width: 0; min-height: 220px; overflow: visible; }
-        .file-menu { width:min(270px,calc(100vw - 24px)); }
+        .file-menu { width:min(270px,calc(100vw - 24px)); max-height:calc(100vh - 24px); overflow-y:auto; }
         .file-actions { width:100%; }
         .download-button { flex: 1; text-align: center; }
     }
@@ -510,13 +510,15 @@ function positionFileMenu(row) {
     const menu = row.querySelector('.file-menu');
     if (!menu) return;
     const rowBounds = row.getBoundingClientRect();
-    const menuWidth = 270;
+    const menuBounds = menu.getBoundingClientRect();
+    const menuWidth = menuBounds.width || Math.min(270, window.innerWidth - 24);
+    const menuHeight = menuBounds.height || 160;
     const gap = 10;
     const opensLeft = rowBounds.left >= menuWidth + gap + 12;
     const left = opensLeft
       ? rowBounds.left - menuWidth - gap
       : Math.min(window.innerWidth - menuWidth - 12, rowBounds.right + gap);
-    const top = Math.max(12, Math.min(rowBounds.top - 4, window.innerHeight - 160));
+    const top = Math.max(12, Math.min(rowBounds.top - 4, window.innerHeight - menuHeight - 12));
     menu.style.setProperty('--file-menu-left', `${Math.max(12, left)}px`);
     menu.style.setProperty('--file-menu-top', `${top}px`);
 }
@@ -534,8 +536,8 @@ function bindFileMenuPositioning(root = document) {
                 item.classList.remove('menu-open')
             );
             if (shouldOpen) {
-                positionFileMenu(row);
                 row.classList.add('menu-open');
+                positionFileMenu(row);
             }
         };
         row.addEventListener('click', event => {
