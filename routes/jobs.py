@@ -26,6 +26,7 @@ from services import (
     download_task_artifact,
     download_user_material_library,
     find_task_artifact,
+    get_job_record,
     get_user_material_library,
     get_s3_artifact,
     get_job_owner,
@@ -77,7 +78,7 @@ def start_task():
     image_path = os.path.join(upload_folder, f"{task_id}_{base_name}")
     image_file.save(image_path)
     try:
-        upload_task_artifact(task_id, image_path, category="inputs")
+        image_key = upload_task_artifact(task_id, image_path, category="inputs", user_id=user_id or None)
     except RuntimeError as error:
         return jsonify({"status": "error", "message": str(error)}), 503
     material_cache_key = f"material-library:{history_session}"
@@ -89,7 +90,9 @@ def start_task():
         )
         material_settings.save(material_settings_path)
         try:
-            material_key = upload_task_artifact(task_id, material_settings_path, category="inputs")
+            material_key = upload_task_artifact(
+                task_id, material_settings_path, category="inputs", user_id=user_id or None
+            )
         except RuntimeError as error:
             return jsonify({"status": "error", "message": str(error)}), 503
         redis_client.set(
@@ -188,7 +191,8 @@ def start_task():
     if user_id:
         try:
             record_user_job(user_id, task_id, base_name, submitted_preset, submitted_filter,
-                            material_name, run_parameters)
+                            material_name, run_parameters,
+                            input_keys=[key for key in (image_key, material_key) if key])
         except RuntimeError as error:
             return jsonify({"status": "error", "message": str(error)}), 503
     add_history_entry(history_session, task_id, base_name, submitted_preset, submitted_filter,
@@ -203,7 +207,7 @@ def start_task():
             "created_at": int(time.time()), "status": "pending",
             "svg_url": f"/download/{task_id}", "lightburn_url": f"/download-lbrn2/{task_id}"})
     threading.Thread(target=long_running_script,
-        args=(task_id, user_data, image_path, material_settings_path, upload_folder)).start()
+        args=(task_id, user_data, image_path, material_settings_path, upload_folder, user_id or None)).start()
     response = make_response(render_template("loading.html", task_id=task_id,
         files=[f"/download-lbrn2/{task_id}", f"/download/{task_id}"],
         history_session=history_session, history_files=history_files, current_source_name=base_name,
@@ -228,8 +232,17 @@ def task_status(task_id):
     if access_error:
         return access_error
     log_key, status_key = f"task:{task_id}:log", f"task:{task_id}:status"
-    status = redis_client.get(status_key) or "pending"
+    status = redis_client.get(status_key)
+    durable_job = None
+    if not status:
+        try:
+            durable_job = get_job_record(task_id)
+        except RuntimeError:
+            durable_job = None
+        status = (durable_job or {}).get("status") or "pending"
     logs = redis_client.lrange(log_key, 0, -1) if redis_client.exists(log_key) else []
+    if not logs and durable_job and durable_job.get("error_message"):
+        logs = [f"Rasterizer job failed: {durable_job['error_message']}"]
     return jsonify({"status": status.strip(), "logs": logs})
 
 

@@ -2,8 +2,9 @@
 """Delete (or list) one Rasterizer task's private S3 artifact prefix.
 
 This runs inside the application pod so it uses the EC2 instance role through
-the normal boto3 credential chain.  It intentionally accepts only UUID task
-IDs and only deletes that task's `jobs/<uuid>/` prefix.
+the normal boto3 credential chain. It intentionally accepts only UUID task
+IDs. Account-owned tasks are cleaned from their private `users/<sub>/jobs/`
+prefix; older and guest tasks retain the original `jobs/<uuid>/` prefix.
 """
 
 import os
@@ -24,8 +25,15 @@ def main():
     if not bucket:
         raise SystemExit("S3_BUCKET_NAME is not configured in this pod.")
 
-    prefix = f"jobs/{sys.argv[1]}/"
-    client = boto3.client("s3")
+    region = os.environ.get("AWS_REGION", "us-east-2").strip()
+    table_name = os.environ.get("DYNAMODB_TABLE_NAME", "").strip()
+    task_id = sys.argv[1]
+    prefix = f"jobs/{task_id}/"
+    if table_name:
+        table = boto3.resource("dynamodb", region_name=region).Table(table_name)
+        record = table.get_item(Key={"pk": f"JOB#{task_id}", "sk": "OWNER"}).get("Item") or {}
+        prefix = record.get("artifact_prefix") or prefix
+    client = boto3.client("s3", region_name=region)
     keys = []
     for page in client.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
         keys.extend(item["Key"] for item in page.get("Contents", []))

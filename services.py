@@ -153,26 +153,85 @@ def download_user_material_library(library, local_path):
         raise RuntimeError("Could not retrieve the saved Material Library.") from error
 
 
-def record_user_job(user_id, task_id, source_name, image_preset, abstract_filter, material_name, run_parameters):
+def record_user_job(user_id, task_id, source_name, image_preset, abstract_filter, material_name,
+                    run_parameters, input_keys=None):
     """Write both an ordered user-history record and a direct owner lookup."""
     table = account_table()
     if not table or not user_id:
         return
     created_at = int(time.time())
+    history_sk = f"JOB#{created_at:010d}#{task_id}"
+    artifact_prefix = f"users/{user_id}/jobs/{task_id}/"
     history_item = {
-        "pk": f"USER#{user_id}", "sk": f"JOB#{created_at:010d}#{task_id}",
+        "pk": f"USER#{user_id}", "sk": history_sk,
         "task_id": task_id, "source_name": source_name,
         "image_preset": image_preset, "abstract_filter": abstract_filter,
         "material_name": material_name, "run_parameters": _dynamodb_values(run_parameters or {}),
-        "created_at": created_at,
+        "created_at": created_at, "updated_at": created_at, "status": "pending",
+        "artifact_prefix": artifact_prefix, "input_keys": list(input_keys or []),
     }
-    owner_item = {"pk": f"JOB#{task_id}", "sk": "OWNER", "user_id": user_id, "created_at": created_at}
+    owner_item = {
+        "pk": f"JOB#{task_id}", "sk": "OWNER", "user_id": user_id,
+        "created_at": created_at, "updated_at": created_at, "history_sk": history_sk,
+        "status": "pending", "artifact_prefix": artifact_prefix,
+        "input_keys": list(input_keys or []),
+    }
     try:
         with table.batch_writer() as batch:
             batch.put_item(Item=history_item)
             batch.put_item(Item=owner_item)
     except ClientError as error:
         raise RuntimeError("Could not record this job in the account history.") from error
+
+
+def get_job_record(task_id):
+    """Return the direct durable record for an account-owned job, if any."""
+    table = account_table()
+    if not table or not task_id:
+        return None
+    try:
+        item = table.get_item(Key={"pk": f"JOB#{task_id}", "sk": "OWNER"}).get("Item")
+    except ClientError as error:
+        raise RuntimeError("Could not retrieve durable job information.") from error
+    return _json_values(item) if item else None
+
+
+def update_user_job(task_id, status, output_keys=None, error_message=None):
+    """Mirror worker completion/failure into both DynamoDB job records."""
+    table = account_table()
+    if not table:
+        return
+    record = get_job_record(task_id)
+    if not record:
+        return
+    user_id, history_sk = record.get("user_id"), record.get("history_sk")
+    if not user_id or not history_sk:
+        return
+    now = int(time.time())
+    values = {":status": status, ":updated_at": now}
+    sets = ["#status = :status", "updated_at = :updated_at"]
+    if status == "completed":
+        values[":completed_at"] = now
+        sets.append("completed_at = :completed_at")
+    if output_keys is not None:
+        values[":output_keys"] = list(output_keys)
+        sets.append("output_keys = :output_keys")
+    if error_message:
+        values[":error_message"] = str(error_message)[:2000]
+        sets.append("error_message = :error_message")
+    try:
+        for key in (
+            {"pk": f"JOB#{task_id}", "sk": "OWNER"},
+            {"pk": f"USER#{user_id}", "sk": history_sk},
+        ):
+            table.update_item(
+                Key=key,
+                UpdateExpression="SET " + ", ".join(sets),
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues=_dynamodb_values(values),
+            )
+    except ClientError as error:
+        raise RuntimeError("Could not save durable job status.") from error
 
 
 def get_user_job_history(user_id, limit=100):
@@ -193,12 +252,13 @@ def get_user_job_history(user_id, limit=100):
         if not task_id:
             continue
         stored_status = redis_client.get(f"task:{task_id}:status")
+        durable_status = entry.get("status", "pending")
         # Keep account history consistent with S3 lifecycle/manual cleanup,
         # just as the guest history panel already does.
         if not stored_status and not task_artifacts_exist(task_id):
             continue
         entry.update({
-            "status": stored_status or "expired",
+            "status": stored_status or durable_status,
             "svg_url": f"/download/{task_id}", "lightburn_url": f"/download-lbrn2/{task_id}",
         })
         entry["reuse_url"] = reuse_settings_url(entry)
@@ -207,14 +267,8 @@ def get_user_job_history(user_id, limit=100):
 
 
 def get_job_owner(task_id):
-    table = account_table()
-    if not table or not task_id:
-        return None
-    try:
-        item = table.get_item(Key={"pk": f"JOB#{task_id}", "sk": "OWNER"}).get("Item") or {}
-    except ClientError as error:
-        raise RuntimeError("Could not verify job ownership.") from error
-    return item.get("user_id")
+    record = get_job_record(task_id)
+    return record.get("user_id") if record else None
 
 
 def valid_history_session(value):
@@ -385,16 +439,19 @@ def s3_artifacts_enabled():
     return bool(S3_BUCKET_NAME)
 
 
-def task_artifact_key(task_id, filename, category="outputs"):
-    """Keep every job's private artifacts under one predictable S3 prefix."""
-    return f"jobs/{task_id}/{category}/{os.path.basename(filename)}"
+def task_artifact_key(task_id, filename, category="outputs", user_id=None):
+    """Return the durable S3 key for a guest or account-owned job artifact."""
+    filename = os.path.basename(filename)
+    if user_id:
+        return f"users/{user_id}/jobs/{task_id}/{category}/{filename}"
+    return f"jobs/{task_id}/{category}/{filename}"
 
 
-def upload_task_artifact(task_id, local_file_path, category="outputs"):
+def upload_task_artifact(task_id, local_file_path, category="outputs", user_id=None):
     if not s3_artifacts_enabled():
         return None
     filename = os.path.basename(local_file_path)
-    key = task_artifact_key(task_id, filename, category)
+    key = task_artifact_key(task_id, filename, category, user_id=user_id)
     try:
         s3_client.upload_file(local_file_path, S3_BUCKET_NAME, key)
     except ClientError as error:
@@ -411,11 +468,20 @@ def download_task_artifact(key, local_path):
         raise RuntimeError(f"Could not retrieve job artifact from S3: {error}") from error
 
 
-def find_task_artifact(task_id, extension=None):
+def _task_artifact_prefix(task_id, user_id=None):
+    if user_id:
+        return f"users/{user_id}/jobs/{task_id}/"
+    record = get_job_record(task_id)
+    if record and record.get("artifact_prefix"):
+        return record["artifact_prefix"]
+    return f"jobs/{task_id}/"
+
+
+def find_task_artifact(task_id, extension=None, user_id=None):
     """Find a generated output even when the request lands on another pod."""
     if not s3_artifacts_enabled():
         return None
-    prefix = f"jobs/{task_id}/outputs/"
+    prefix = _task_artifact_prefix(task_id, user_id=user_id) + "outputs/"
     try:
         response = s3_client.list_objects_v2(Bucket=S3_BUCKET_NAME, Prefix=prefix)
     except ClientError as error:
@@ -440,7 +506,7 @@ def task_artifacts_exist(task_id):
     try:
         response = s3_client.list_objects_v2(
             Bucket=S3_BUCKET_NAME,
-            Prefix=f"jobs/{task_id}/",
+            Prefix=_task_artifact_prefix(task_id),
             MaxKeys=1,
         )
         return bool(response.get("Contents"))
@@ -484,7 +550,7 @@ def start_disk_cleanup_worker(app, interval_seconds=3600):
     threading.Thread(target=cleanup_loop, daemon=True).start()
 
 
-def long_running_script(task_id, data, image_path, material_settings_path, upload_folder):
+def long_running_script(task_id, data, image_path, material_settings_path, upload_folder, user_id=None):
     try:
         log_key, status_key = f"task:{task_id}:log", f"task:{task_id}:status"
         redis_client.set(status_key, "processing")
@@ -530,18 +596,33 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
         exit_code = process.wait()
         if exit_code == 0:
             output_paths = glob.glob(os.path.join(upload_folder, f"output_{task_id}_*"))
+            output_keys = []
             for output_path in output_paths:
                 if os.path.isfile(output_path):
-                    upload_task_artifact(task_id, output_path)
+                    key = upload_task_artifact(task_id, output_path, user_id=user_id)
+                    if key:
+                        output_keys.append(key)
             redis_client.set(status_key, "completed")
+            try:
+                update_user_job(task_id, "completed", output_keys=output_keys)
+            except RuntimeError as status_error:
+                print(f"[Thread-{task_id}] Could not save durable completion state: {status_error}", flush=True)
         else:
             redis_client.set(status_key, "failed")
+            try:
+                update_user_job(task_id, "failed", error_message=f"Rasterizer exited with code {exit_code}")
+            except RuntimeError as status_error:
+                print(f"[Thread-{task_id}] Could not save durable failure state: {status_error}", flush=True)
     except Exception as error:
         print(f"[Thread-{task_id}] Exception: {error}", flush=True)
         redis_client.set(f"task:{task_id}:status", "failed", ex=HISTORY_TTL_SECONDS)
         redis_client.rpush(f"task:{task_id}:log", f"Artifact processing failed: {error}")
         tasks[f"{task_id}_status"] = "failed"
         tasks[f"{task_id}_error"] = str(error)
+        try:
+            update_user_job(task_id, "failed", error_message=str(error))
+        except RuntimeError as status_error:
+            print(f"[Thread-{task_id}] Could not save durable failure state: {status_error}", flush=True)
 
 
 def cleanup_redis_inflight(task_id):
