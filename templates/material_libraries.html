@@ -43,8 +43,7 @@
     <section id="sign_in_panel" class="panel" hidden><p>Sign in to open your personal Material Library Vault.</p><a href="/login">Initialize secure operator access →</a></section>
     <div id="manager" hidden>
       <section class="panel vault-terminal">
-        <div id="vault_controls"><label for="libraries">Load one or more LightBurn Material Library files</label><input id="libraries" type="file" accept=".clb,.lbmat,.lbrn" multiple><button id="scan" type="button">Scan selected libraries</button><button id="new_library" type="button">New Settings Library</button><div id="import_plan" class="import-plan" hidden></div><button id="import" type="button" hidden>Import selected materials</button></div>
-        <div id="settings_workspace" class="settings-workspace" hidden><div class="settings-toolbar"><strong id="settings_modal_title">MATERIAL SETTINGS CONSOLE</strong><button id="settings_workspace_back" type="button">Back to library vault</button></div><div class="selection-actions"><span id="selected_count" class="meta">Selected settings: 0</span><button id="selected_actions" type="button" disabled>Selected actions</button></div><div id="settings_modal_body" class="settings-body"></div></div>
+        <div id="settings_workspace" class="settings-workspace"><div class="settings-toolbar"><strong id="settings_modal_title">MATERIAL SETTINGS CONSOLE</strong></div><details id="vault_controls" class="settings-accordion"><summary>LOAD OR BUILD A SETTINGS LIBRARY</summary><div class="settings-accordion-content"><label for="libraries">Load one or more LightBurn Material Library files</label><input id="libraries" type="file" accept=".clb,.lbmat,.lbrn" multiple><button id="scan" type="button">Scan selected libraries</button><button id="new_library" type="button">New Settings Library</button><div id="import_plan" class="import-plan" hidden></div><button id="import" type="button" hidden>Import selected materials</button></div></details><div class="selection-actions"><span id="selected_count" class="meta">Selected settings: 0</span><button id="selected_actions" type="button" disabled>Selected actions</button></div><div id="settings_modal_body" class="settings-body"></div></div>
         <div id="notice" class="notice" role="status"></div>
       </section>
     </div>
@@ -76,7 +75,6 @@
       if (!response.ok) throw new Error(data.message || 'Could not load libraries.');
       savedLibraries = data.libraries || [];
     };
-    const vaultControls = document.getElementById('vault_controls');
     const settingsWorkspace = document.getElementById('settings_workspace');
     const settingsTitle = document.getElementById('settings_modal_title');
     const settingsBody = document.getElementById('settings_modal_body');
@@ -84,9 +82,6 @@
     let activeEntries = [];
     let activeLibraryName = '';
     let activeLibraryId = '';
-    const closeSettings = () => { settingsWorkspace.hidden = true; vaultControls.hidden = false; };
-    const settingsWorkspaceBack = document.getElementById('settings_workspace_back');
-    if (settingsWorkspaceBack) settingsWorkspaceBack.addEventListener('click', closeSettings);
     const selectionBody = settingsBody;
     const selectionControls = () => {
       const action = document.getElementById('selection_action')?.value || 'export';
@@ -94,12 +89,10 @@
       const newName = action === 'copy_new' ? '<label>New Rasterizer library name<input id="selection_new_library_name" class="library-name-input" placeholder="My Color Settings"></label>' : '';
       return `<p class="meta">${selectedSettings.size} selected setting${selectedSettings.size === 1 ? '' : 's'} will be written under one exact Material Name.</p><label>Action<select id="selection_action" class="library-name-input"><option value="export"${action === 'export' ? ' selected' : ''}>Export to LightBurn</option><option value="copy_existing"${action === 'copy_existing' ? ' selected' : ''}>Copy to a saved library</option><option value="copy_new"${action === 'copy_new' ? ' selected' : ''}>Copy to a new saved library</option></select></label><label>Material Name<input id="selection_material_name" class="library-name-input" value="colors - stainless steel" placeholder="colors - stainless steel"></label><small>This exact name becomes the Material Name inside the exported or copied LightBurn settings.</small>${target}${newName}<button id="selection_submit" type="button">${action === 'export' ? 'Download LightBurn Library' : 'Copy selected settings'}</button>`;
     };
-    const openSelectionActions = () => { vaultControls.hidden = true; settingsWorkspace.hidden = false; settingsTitle.textContent = 'SELECTED MATERIAL SETTINGS'; selectionBody.innerHTML = selectionControls(); };
+    const openSelectionActions = () => { settingsTitle.textContent = 'SELECTED MATERIAL SETTINGS'; selectionBody.innerHTML = selectionControls(); };
     const selectedActionsButton = document.getElementById('selected_actions');
     if (selectedActionsButton) selectedActionsButton.addEventListener('click', openSelectionActions);
     const showSettingsWorkspace = async (expandLibraryId='') => {
-      vaultControls.hidden = true;
-      settingsWorkspace.hidden = false;
       settingsTitle.textContent = 'MATERIAL SETTINGS CONSOLE';
       settingsBody.innerHTML = '<p class="meta">Loading the selected settings banks…</p>';
       try {
