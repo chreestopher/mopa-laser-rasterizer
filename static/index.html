@@ -401,12 +401,12 @@
     .color-grid { grid-template-columns:repeat(4, minmax(0, 1fr)); }
   }
   .theme-toggle { display:flex; justify-content:flex-end; margin-bottom:12px; }
-  .login-link { margin-right:auto; color:var(--phosphor); font:700 11px "Courier New",monospace; letter-spacing:.08em; text-decoration:none; text-transform:uppercase; }
-  .auth-console { display:flex; align-items:center; gap:8px; margin-right:auto; color:#f2a25d; font:700 10px "Courier New",monospace; letter-spacing:.09em; text-transform:uppercase; }
+  .login-link,.auth-console { display:flex; align-items:center; gap:8px; margin-right:auto; color:#f2a25d; font:700 10px "Courier New",monospace; letter-spacing:.09em; text-decoration:none; text-transform:uppercase; }
   .auth-console[hidden] { display:none; }
-  .auth-launch-lamp { width:13px; height:13px; border:2px solid #9b3b2d; border-radius:50%; background:#4b160f; box-shadow:inset 0 0 4px #170503,0 0 0 2px #25150d; }
+  .auth-machine-switch { position:relative; width:19px; height:26px; border:2px solid #737665; border-radius:3px; background:linear-gradient(90deg,#4c5048,#b7b6a4 48%,#4b4e47); box-shadow:inset 0 0 0 2px #20231e,0 1px 2px #000; }
+  .auth-machine-switch::after { content:""; position:absolute; left:5px; bottom:4px; width:6px; height:16px; border:1px solid #1b1c18; border-radius:2px 2px 1px 1px; background:linear-gradient(90deg,#62675e,#e1dfc7 50%,#595d55); box-shadow:0 0 0 1px #b7b49c; transform-origin:50% 100%; transform:rotate(52deg); transition:transform .2s ease,box-shadow .2s ease; }
+  .auth-machine-switch.is-on::after { transform:rotate(0); box-shadow:0 0 0 1px #b7b49c,0 0 8px #80e85c; }
   .auth-console.authorized { color:#bff39a; }
-  .auth-console.authorized .auth-launch-lamp { border-color:#91cf68; background:#64bb46; box-shadow:inset 0 1px 3px #e2ffd0,0 0 10px #6dce4e,0 0 0 2px #1f3918; }
   .auth-console a { color:inherit; text-decoration:none; border-bottom:1px dotted currentColor; }
   .theme-toggle label { display:flex; align-items:center; gap:9px; font:700 11px "Courier New",monospace; letter-spacing:.1em; text-transform:uppercase; }
   .theme-toggle input { position:absolute; opacity:0; }
@@ -445,8 +445,8 @@
   </div>
 </div>
   <div class="theme-toggle">
-    <a id="login_link" class="login-link" href="/login">Sign in for unlimited runs</a>
-    <div id="auth_console" class="auth-console authorized" hidden><span class="auth-launch-lamp" aria-hidden="true"></span><span>Operator authorized</span><a href="/logout">Sign out</a></div>
+    <a id="login_link" class="login-link" href="/login"><span class="auth-machine-switch" aria-hidden="true"></span><span>Operator access, sign in</span></a>
+    <div id="auth_console" class="auth-console authorized" hidden><span class="auth-machine-switch is-on" aria-hidden="true"></span><span>Operator authorized</span><a href="/logout">Sign out</a></div>
     <label><span>Dark</span><input id="theme_switch" type="checkbox"><span class="toggle-track"></span><span>Light</span></label>
   </div>
   <div class="page-header">
