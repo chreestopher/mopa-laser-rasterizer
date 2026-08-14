@@ -201,6 +201,11 @@
         toggle?.setAttribute('aria-expanded', 'true');
         const row = libraryCard.querySelector(`.entry-row[data-entry-index="${libraryPaletteSwatch.dataset.entryIndex}"]`);
         row?.click();
+        const editor = row?.nextElementSibling?.querySelector('.inline-entry-editor');
+        if (editor) {
+          editor.scrollIntoView({behavior:'smooth', block:'center'});
+          editor.querySelector('[data-entry-field="description"]')?.focus({preventScroll:true});
+        }
         return;
       }
       const paletteOption = event.target.closest('.palette-autocomplete-option[data-palette-name]');
