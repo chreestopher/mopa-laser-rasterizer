@@ -849,6 +849,7 @@
       });
       let accountSaveTimer = null;
       let signedInAccount = false;
+      let accountPreferencesTouched = false;
       const preferenceSnapshot = () => ({
         material: materialInput.value.trim(),
         pixel_square_mm: document.getElementById('pixel_square_mm').value,
@@ -909,7 +910,11 @@
           if (signedInAccount && !new URLSearchParams(window.location.search).get('settings')) {
             fetch('/account/preferences', { credentials: 'same-origin' })
               .then(response => response.ok ? response.json() : null)
-              .then(data => applyAccountPreferences(data?.preferences))
+              .then(data => {
+                // Never let a delayed DynamoDB read overwrite a palette click
+                // or form edit the operator made after this page opened.
+                if (!accountPreferencesTouched) applyAccountPreferences(data?.preferences);
+              })
               .catch(() => {});
           }
         })
@@ -1045,8 +1050,12 @@
           showUploadError(uploadError.textContent);
         }
       });
-      uploadForm.addEventListener('input', saveAccountPreferences);
-      uploadForm.addEventListener('change', saveAccountPreferences);
+      const noteAccountPreferenceChange = () => {
+        accountPreferencesTouched = true;
+        saveAccountPreferences();
+      };
+      uploadForm.addEventListener('input', noteAccountPreferenceChange);
+      uploadForm.addEventListener('change', noteAccountPreferenceChange);
     });
 
     const squares = document.querySelectorAll('.color-square');
