@@ -58,3 +58,8 @@ def logout():
 def holographic_etching():
     """Dedicated workspace for the structural-color engraving workflow."""
     return render_template("holographic_etching.html")
+
+
+@routes.route("/material-libraries")
+def material_library_manager():
+    return render_template("material_libraries.html")

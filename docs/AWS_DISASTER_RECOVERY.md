@@ -77,6 +77,8 @@ Before applying `deployment.aws.yaml`, set its S3 bucket, DynamoDB table, Cognit
 
 ## 3. ACM, Cognito, ALB, and DNS
 
+The bootstrap script can create a replacement Cognito pool and generated-secret app client with `CREATE_COGNITO=1`. It prints the new secret exactly once, so save it immediately in a secure secret store. It can also configure the ALB, target group, listener rules, and root/`www` Route 53 aliases when invoked with `CONFIGURE_EDGE=1`. Edge setup intentionally requires VPC, subnet, security-group, instance, certificate, Route 53, and Cognito values as runtime environment variables; no secret is written to the script or repository.
+
 1. Request an ACM public certificate in `us-east-2` for the root domain and `www`; complete its Route 53 DNS validation.
 2. Create a Cognito User Pool using email sign-in and verification. Create an app client with a generated secret, OAuth code flow, scopes `openid email profile`, callback URL `https://mopa-laser-rasterizer.com/oauth2/idpresponse`, and logout URL `https://mopa-laser-rasterizer.com/`. Create a Cognito hosted-UI domain.
 3. Create an internet-facing **Application Load Balancer** in two public subnets. Its target group is type `instance`, protocol HTTP, port `30080`, health-check path `/auth-status`, and includes the EC2 instance.

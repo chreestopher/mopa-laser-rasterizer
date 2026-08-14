@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Material Library Vault · MOPA Laser Rasterizer</title>
+  <style>
+    :root { --case:#1a1d1a; --panel:#252a25; --ink:#d9d6be; --green:#8df06c; --amber:#efb94f; --red:#e76554; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; padding:clamp(18px,5vw,54px); color:var(--ink); font-family:"Courier New",monospace; background:radial-gradient(circle at 50% 0,#454a43,#111410 65%); }
+    .machine { width:min(1040px,100%); margin:auto; padding:clamp(16px,3vw,36px); border:7px solid #4f564c; border-radius:24px; background:repeating-linear-gradient(90deg,rgba(255,255,255,.025) 0 1px,transparent 1px 4px),var(--case); box-shadow:inset 0 0 0 3px #0b0d0a,0 18px 55px #000; }
+    a { color:var(--green); } h1 { margin:0; font-size:clamp(1.25rem,4vw,2rem); letter-spacing:.08em; } .sub { color:#bdb58f; margin:.5rem 0 2rem; }
+    .panel { margin-top:16px; padding:18px; border:1px solid #64705e; border-radius:14px; background:linear-gradient(145deg,#30372f,#1d221d); box-shadow:inset 0 0 20px #10130f; }
+    label { display:block; margin-bottom:9px; color:var(--amber); font-weight:bold; } input[type=file] { max-width:100%; color:var(--ink); } button { border:1px solid #9d9566; border-radius:7px; padding:9px 13px; cursor:pointer; color:#181a14; font:bold 13px "Courier New",monospace; background:linear-gradient(#d6d0a0,#a9a06d); } button:hover { filter:brightness(1.12); } button.delete { color:#fff; background:linear-gradient(#be5145,#7c2923); border-color:#e27263; } .notice { min-height:1.4em; margin:12px 0 0; color:var(--green); } .notice.error { color:#ff9485; }
+    .library { margin-top:12px; border:1px solid #596451; border-radius:11px; overflow:hidden; background:#171b17; } .library-head { display:flex; align-items:center; gap:12px; padding:13px; } .library-name { flex:1; min-width:0; color:#fff3c8; font-weight:bold; overflow-wrap:anywhere; } .meta { color:#b4bda9; font-size:.82rem; } details { border-top:1px solid #465044; } summary { padding:12px 13px; cursor:pointer; color:var(--green); } .entries { overflow:auto; max-height:360px; padding:0 13px 13px; } table { width:100%; border-collapse:collapse; font-size:.79rem; } th,td { padding:8px 6px; text-align:left; border-bottom:1px solid #374035; vertical-align:top; } th { color:var(--amber); } .empty { color:#b4bda9; text-align:center; padding:30px; } [hidden] { display:none !important; }
+  </style>
+</head>
+<body>
+  <main class="machine">
+    <a href="/" aria-label="Return to Rasterizer"><h1>MOPA-LASER-RASTERIZER</h1></a>
+    <p class="sub">MATERIAL LIBRARY VAULT · CATALOG, INSPECT, AND COMMAND YOUR SETTINGS</p>
+    <section id="sign_in_panel" class="panel" hidden><p>Sign in to open your personal Material Library Vault.</p><a href="/login">Initialize secure operator access →</a></section>
+    <div id="manager" hidden>
+      <section class="panel">
+        <label for="libraries">Load one or more LightBurn Material Library files</label>
+        <input id="libraries" type="file" accept=".clb,.lbmat,.lbrn" multiple>
+        <button id="upload" type="button">Store selected libraries</button>
+        <div id="notice" class="notice" role="status"></div>
+      </section>
+      <section class="panel"><strong>YOUR SAVED LIBRARIES</strong><div id="library_list"></div></section>
+    </div>
+  </main>
+  <script>
+    const list = document.getElementById('library_list');
+    const notice = document.getElementById('notice');
+    const say = (message, error=false) => { notice.textContent = message; notice.classList.toggle('error', error); };
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    const renderEntries = summary => {
+      const entries = summary?.entries || [];
+      if (!entries.length) return '<p class="meta">Open settings to inspect this library.</p>';
+      return `<div class="entries"><table><thead><tr><th>Material</th><th>Description</th><th>Type</th><th>Speed</th><th>Power</th></tr></thead><tbody>${entries.map(entry => `<tr><td>${esc(entry.material)}</td><td>${esc(entry.description)}</td><td>${esc(entry.type)}</td><td>${esc(entry.speed ?? '')}</td><td>${esc(entry.power ?? '')}</td></tr>`).join('')}</tbody></table></div>`;
+    };
+    const load = async () => {
+      const response = await fetch('/account/material-libraries', {credentials:'same-origin'});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Could not load libraries.');
+      const libraries = data.libraries || [];
+      list.innerHTML = libraries.length ? libraries.map(library => `<article class="library" data-id="${esc(library.library_id)}"><div class="library-head"><div class="library-name">${esc(library.name)}</div><span class="meta">${esc(library.summary?.entry_count ?? '?')} entries</span><button class="delete" type="button">Delete</button></div><details><summary>▸ Inspect Material Library entries</summary><div class="entry-content">${renderEntries(library.summary)}</div></details></article>`).join('') : '<p class="empty">No saved libraries yet. Feed the vault a .clb file.</p>';
+    };
+    list.addEventListener('click', async event => {
+      if (!event.target.matches('.delete')) return;
+      const card = event.target.closest('.library');
+      if (!confirm(`Delete ${card.querySelector('.library-name').textContent}? This removes the saved file from your account.`)) return;
+      const response = await fetch(`/account/material-libraries/${encodeURIComponent(card.dataset.id)}`, {method:'DELETE', credentials:'same-origin'});
+      const data = await response.json();
+      if (!response.ok) return say(data.message || 'Could not delete library.', true);
+      say('Library removed.'); load();
+    });
+    list.addEventListener('toggle', async event => {
+      if (!event.target.matches('details') || !event.target.open) return;
+      const content = event.target.querySelector('.entry-content');
+      if (content.dataset.loaded) return;
+      const id = event.target.closest('.library').dataset.id;
+      const response = await fetch(`/account/material-libraries/${encodeURIComponent(id)}`, {credentials:'same-origin'});
+      const data = await response.json();
+      if (response.ok) { content.innerHTML = renderEntries(data.library.summary); content.dataset.loaded = 'true'; }
+    }, true);
+    document.getElementById('upload').addEventListener('click', async () => {
+      const files = document.getElementById('libraries').files;
+      if (!files.length) return say('Choose at least one Material Library file first.', true);
+      const body = new FormData(); Array.from(files).forEach(file => body.append('libraries', file));
+      say('Cataloging settings…');
+      const response = await fetch('/account/material-libraries', {method:'POST', credentials:'same-origin', body});
+      const data = await response.json();
+      if (!response.ok) return say(data.message || 'Could not store libraries.', true);
+      document.getElementById('libraries').value = ''; say(`${data.libraries.length} library file(s) stored.`); load();
+    });
+    fetch('/auth-status', {credentials:'same-origin'}).then(response => response.json()).then(data => { document.getElementById(data.signed_in ? 'manager' : 'sign_in_panel').hidden = false; if (data.signed_in) load().catch(error => say(error.message, true)); }).catch(() => { document.getElementById('sign_in_panel').hidden = false; });
+  </script>
+</body>
+</html>

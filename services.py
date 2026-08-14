@@ -120,7 +120,7 @@ def get_user_material_library(user_id, library_id):
     return _json_values(item) if item else None
 
 
-def save_user_material_library(user_id, local_file_path, material_name=""):
+def save_user_material_library(user_id, local_file_path, material_name="", summary=None):
     """Store an uploaded LightBurn library once under its Cognito owner."""
     table = account_table()
     if not table or not S3_BUCKET_NAME:
@@ -133,7 +133,7 @@ def save_user_material_library(user_id, local_file_path, material_name=""):
             local_file_path, S3_BUCKET_NAME, s3_key,
             ExtraArgs={"Tagging": "mopa-retention=material"},
         )
-        table.put_item(Item={
+        item = {
             "pk": f"USER#{user_id}",
             "sk": f"MATERIAL#{library_id}",
             "library_id": library_id,
@@ -141,7 +141,10 @@ def save_user_material_library(user_id, local_file_path, material_name=""):
             "material_name": str(material_name or "").strip()[:160],
             "s3_key": s3_key,
             "created_at": int(time.time()),
-        })
+        }
+        if summary:
+            item["summary"] = _dynamodb_values(summary)
+        table.put_item(Item=item)
     except ClientError as error:
         raise RuntimeError("Could not save the Material Library to this account.") from error
     return {"library_id": library_id, "name": filename, "material_name": str(material_name or "").strip()}
@@ -154,6 +157,21 @@ def download_user_material_library(library, local_path):
         s3_client.download_file(S3_BUCKET_NAME, library["s3_key"], local_path)
     except ClientError as error:
         raise RuntimeError("Could not retrieve the saved Material Library.") from error
+
+
+def delete_user_material_library(user_id, library_id):
+    """Delete one account-owned library from S3 and its DynamoDB index."""
+    table = account_table()
+    library = get_user_material_library(user_id, library_id)
+    if not table or not library:
+        return False
+    try:
+        if library.get("s3_key"):
+            s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=library["s3_key"])
+        table.delete_item(Key={"pk": f"USER#{user_id}", "sk": f"MATERIAL#{library_id}"})
+    except ClientError as error:
+        raise RuntimeError("Could not delete the saved Material Library.") from error
+    return True
 
 
 def record_user_job(user_id, task_id, source_name, image_preset, abstract_filter, material_name,
