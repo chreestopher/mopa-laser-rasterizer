@@ -705,10 +705,11 @@ def calibration_grid():
         fiducial_size = min(1.2, cell_mm * .12)
         grid_left, grid_top = left_grid_margin_mm, top_label_mm
         grid_right, grid_bottom = grid_left + columns * cell_mm, grid_top + rows * cell_mm
-        for fiducial_x, fiducial_y in ((grid_left + .2, grid_top + .2),
-                                      (grid_right - fiducial_size - .2, grid_top + .2),
-                                      (grid_left + .2, grid_bottom - fiducial_size - .2),
-                                      (grid_right - fiducial_size - .2, grid_bottom - fiducial_size - .2)):
+        fiducial_gap_mm = .2
+        for fiducial_x, fiducial_y in ((grid_left - fiducial_size - fiducial_gap_mm, grid_top - fiducial_size - fiducial_gap_mm),
+                                      (grid_right + fiducial_gap_mm, grid_top - fiducial_size - fiducial_gap_mm),
+                                      (grid_left - fiducial_size - fiducial_gap_mm, grid_bottom + fiducial_gap_mm),
+                                      (grid_right + fiducial_gap_mm, grid_bottom + fiducial_gap_mm)):
             project.add(lightburn.Square(fiducial_size, fiducial_size, x=fiducial_x, y=fiducial_y).layer(label_layer_index))
         label_setting = copy(label_setting)
         label_setting.index = label_layer_index
