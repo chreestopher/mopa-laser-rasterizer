@@ -38,6 +38,15 @@ SWEEP_SETTINGS = {
     "passes": "numPasses",
 }
 
+LIGHTBURN_LAYER_ID_BY_HEX = {
+    "#B4B4B4": 8, "#000000": 0, "#0000FF": 1, "#FF0000": 2, "#00E000": 3,
+    "#D0D000": 4, "#FF8000": 5, "#00E0E0": 6, "#FF00FF": 7, "#0000A0": 9,
+    "#A00000": 10, "#00A000": 11, "#A0A000": 12, "#C08000": 13, "#00A0FF": 14,
+    "#A000A0": 15, "#808080": 16, "#7D87B9": 17, "#BB7784": 18, "#4A6FE3": 19,
+    "#D33F6A": 20, "#8CD78C": 21, "#F0B98D": 22, "#F6C4E1": 23, "#FA9ED4": 24,
+    "#500A78": 25, "#B45A00": 26, "#004754": 27, "#86FA88": 28, "#FFDB66": 29,
+}
+
 
 def _lightburn_module():
     path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "lib", "lightburn.py")
@@ -71,7 +80,7 @@ def _label_setting(lightburn, library_path, material_name, fallback):
         if str(getattr(setting, "materialName", "") or "").strip().casefold() == material_key
     ]
     if not candidates:
-        return fallback
+        return fallback, None
 
     palette_hex_by_name = {
         str(name).strip().casefold(): color_hex
@@ -89,9 +98,10 @@ def _label_setting(lightburn, library_path, material_name, fallback):
     ranked = [(black_distance(setting), setting) for setting in candidates]
     ranked = [(distance, setting) for distance, setting in ranked if distance is not None]
     if not ranked:
-        return fallback
+        return fallback, None
     _, best = min(ranked, key=lambda candidate: candidate[0])
-    return _calibration_base_layer(best)
+    selected_hex = palette_hex_by_name[str(getattr(best, "entryDesc", "") or "").strip().casefold()]
+    return _calibration_base_layer(best), LIGHTBURN_LAYER_ID_BY_HEX[selected_hex]
 
 
 def _calibration_base_layer(setting):
@@ -682,18 +692,20 @@ def calibration_grid():
     try:
         _svg_grid(os.path.join(upload_folder, svg_name), columns, rows, cell_mm, intervals, angles, top_label_mm, right_label_mm)
         project = lightburn.Lightburn()
-        fiducial_layer_index = count
-        fiducial_setting = copy(base_setting)
-        fiducial_setting.index = fiducial_layer_index
-        fiducial_setting.name = "Calibration alignment fiducials"
-        fiducial_setting.subLayers = []
-        project.add_layer(fiducial_setting)
+        label_setting, label_layer_index = _label_setting(lightburn, library_path, material, base_setting)
+        if label_layer_index is None:
+            label_layer_index = count + 1
+        cell_layer_indices = []
+        candidate_layer_index = 0
+        while len(cell_layer_indices) < count:
+            if candidate_layer_index != label_layer_index:
+                cell_layer_indices.append(candidate_layer_index)
+            candidate_layer_index += 1
         fiducial_size = min(1.2, cell_mm * .12)
         total_width, total_height = left_grid_margin_mm + columns * cell_mm + right_label_mm, rows * cell_mm + top_label_mm
         for fiducial_x, fiducial_y in ((.2, .2), (total_width - fiducial_size - .2, .2), (.2, total_height - fiducial_size - .2), (total_width - fiducial_size - .2, total_height - fiducial_size - .2)):
-            project.add(lightburn.Square(fiducial_size, fiducial_size, x=fiducial_x, y=fiducial_y).layer(fiducial_layer_index))
-        label_layer_index = count + 1
-        label_setting = copy(_label_setting(lightburn, library_path, material, base_setting))
+            project.add(lightburn.Square(fiducial_size, fiducial_size, x=fiducial_x, y=fiducial_y).layer(label_layer_index))
+        label_setting = copy(label_setting)
         label_setting.index = label_layer_index
         label_setting.name = f"Calibration labels ({getattr(label_setting, 'entryDesc', 'dark setting')})"
         label_setting.subLayers = []
@@ -706,7 +718,8 @@ def calibration_grid():
                                        x=left_grid_margin_mm + columns * cell_mm + .25, y=top_label_mm + row * cell_mm + cell_mm * .42).layer(label_layer_index))
         for index, (interval, angle) in enumerate(zip(intervals, angles)):
             setting = copy(base_setting)
-            setting.index = index
+            layer_index = cell_layer_indices[index]
+            setting.index = layer_index
             setting.name = f"Holo {index + 1:02d} {angle:g}deg {interval:.3f}mm"
             setting.interval = interval
             setting.angle = angle
@@ -721,7 +734,7 @@ def calibration_grid():
             recipe_signatures.append(signature)
             project.add_layer(setting)
             cell_x, cell_y = left_grid_margin_mm + (index % columns) * cell_mm, top_label_mm + (index // columns) * cell_mm
-            project.add(lightburn.Square(cell_mm, cell_mm, x=cell_x, y=cell_y).layer(index))
+            project.add(lightburn.Square(cell_mm, cell_mm, x=cell_x, y=cell_y).layer(layer_index))
         project.write(os.path.join(upload_folder, lbrn_name))
         with open(os.path.join(upload_folder, f"{stem}.json"), "w", encoding="utf-8") as metadata_file:
             json.dump({
