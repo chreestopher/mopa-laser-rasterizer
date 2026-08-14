@@ -433,10 +433,10 @@ def normalize_vector_parameters(
     if quantize_colors is not None:
         quantize_colors = int(quantize_colors)
 
-        max_allowable_colors = len(target_colors)
-
-        if quantize_colors > max_allowable_colors:
-            quantize_colors = max_allowable_colors
+        # This is a source-image palette size, not an export-layer count.
+        # Material Library matching can remove a layer later, but that must
+        # not reduce the requested color quantization. Pillow supports 256.
+        quantize_colors = max(1, min(256, quantize_colors))
 
     if isinstance(min_island_area, (tuple, list)):
         min_island_area = (
@@ -1528,10 +1528,10 @@ def raster_to_puzzle_and_lightburn(
         - LightBurn export
     """
 
-    # Quantization uses every available LightBurn target after material and
-    # requested-color filtering. Black-and-white photos are the sole preset
+    # Material_Library passes the number of Rasterizer palette colors left
+    # after limit_colors filtering. Black-and-white photos are the sole
     # exception and deliberately reduce the source raster to two colors.
-    quantize_colors = 2 if image_preset == "bw_dither_photograph" else len(TARGET_COLORS)
+    quantize_colors = 2 if image_preset == "bw_dither_photograph" else quantize_colors
 
     # Keep this at the beginning of the pipeline so the console records the
     # effective values used by the job before raster processing begins.
@@ -1546,7 +1546,7 @@ def raster_to_puzzle_and_lightburn(
             "quantize_colors": quantize_colors,
             "quantize_color_source": (
                 "bw_dither_preset" if image_preset == "bw_dither_photograph"
-                else "filtered_target_colors"
+                else "filtered_palette_colors"
             ),
             "min_island_area": min_island_area,
             "simplification_factor": simplification_factor,
