@@ -174,7 +174,9 @@
         say('Library removed.'); await load(); await showSettingsWorkspace(); return;
       }
       if (event.target.matches('.inline-cancel')) {
-        activeInlineEntryKey = ''; activeNewLibraryId = ''; await showSettingsWorkspace(activeLibraryId); return;
+        const editor = event.target.closest('.inline-entry-editor');
+        (editor.closest('tr') || editor).remove();
+        activeInlineEntryKey = ''; activeNewLibraryId = ''; return;
       }
       if (event.target.matches('.inline-save')) {
         const editor = event.target.closest('.inline-entry-editor');
@@ -203,7 +205,10 @@
         activeEntries = library.summary.entries;
         activeNewLibraryId = '';
         activeInlineEntryKey = selectionKey(activeLibraryId, entry);
-        await showSettingsWorkspace(activeLibraryId);
+        settingsBody.querySelectorAll('.inline-entry-editor').forEach(editor => (editor.closest('tr') || editor).remove());
+        const editorRow = document.createElement('tr');
+        editorRow.innerHTML = `<td colspan="4">${inlineEntryEditor(activeLibraryId, entry)}</td>`;
+        row.insertAdjacentElement('afterend', editorRow);
         return;
       }
       if (event.target.matches('#settings_back')) showEntryList();
@@ -214,7 +219,8 @@
         activeEntries = library?.summary?.entries || [];
         activeInlineEntryKey = '';
         activeNewLibraryId = activeLibraryId;
-        await showSettingsWorkspace(activeLibraryId);
+        settingsBody.querySelectorAll('.inline-entry-editor').forEach(editor => (editor.closest('tr') || editor).remove());
+        event.target.insertAdjacentHTML('afterend', inlineEntryEditor(activeLibraryId));
         return;
       }
       if (event.target.matches('#settings_edit')) { const rowId = settingsBody.dataset.entryId; showEntryEditor(activeEntries.find(entry => String(entry.entry_id) === String(rowId))); }
