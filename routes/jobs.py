@@ -244,14 +244,14 @@ def _output_file(task_id, extension=None):
     return None
 
 
-def _job_access_error(task_id):
+def _job_access_error(task_id, browser_navigation=False):
     """Keep account-owned jobs private while leaving legacy guest jobs usable."""
     try:
         owner_id = get_job_owner(task_id)
     except RuntimeError:
         return jsonify({"status": "error", "message": "Could not verify job ownership."}), 503
     if owner_id and request.headers.get("x-amzn-oidc-identity", "").strip() != owner_id:
-        if request.accept_mimetypes.best == "text/html":
+        if browser_navigation:
             return render_template("access_denied.html"), 403
         return jsonify({"status": "error", "message": "This job belongs to a different account."}), 403
     return None
@@ -280,7 +280,7 @@ def _stream_s3_download(key, as_attachment=True, mimetype=None):
 
 @routes.route("/download/<task_id>")
 def download_file(task_id):
-    access_error = _job_access_error(task_id)
+    access_error = _job_access_error(task_id, browser_navigation=True)
     if access_error:
         return access_error
     s3_key = _s3_output_key(task_id)
@@ -295,7 +295,7 @@ def download_file(task_id):
 
 @routes.route("/list-downloads/<task_id>")
 def list_downloads(task_id):
-    access_error = _job_access_error(task_id)
+    access_error = _job_access_error(task_id, browser_navigation=True)
     if access_error:
         return access_error
     return render_template("loading.html", status="success",
@@ -304,7 +304,7 @@ def list_downloads(task_id):
 
 @routes.route("/download-lbrn2/<task_id>")
 def download_lbrn2(task_id):
-    access_error = _job_access_error(task_id)
+    access_error = _job_access_error(task_id, browser_navigation=True)
     if access_error:
         return access_error
     s3_key = _s3_output_key(task_id, ".lbrn2")
@@ -320,7 +320,7 @@ def download_lbrn2(task_id):
 
 @routes.route("/view-image/<task_id>")
 def view_image(task_id):
-    access_error = _job_access_error(task_id)
+    access_error = _job_access_error(task_id, browser_navigation=True)
     if access_error:
         return access_error
     s3_key = _s3_output_key(task_id)
