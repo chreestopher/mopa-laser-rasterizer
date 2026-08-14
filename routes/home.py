@@ -9,7 +9,7 @@ from . import routes
 
 @routes.route("/")
 def index():
-    return current_app.send_static_file("index.html")
+    return render_template("index.html")
 
 
 @routes.route("/login")

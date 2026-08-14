@@ -1,3 +1,4 @@
+{% from "_machine_chrome.html" import machine_chrome %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -447,6 +448,7 @@
     body { zoom:.8; }
   }
 </style>
+<link rel="stylesheet" href="/static/machine_chrome.css">
 </head>
 <body>
 <div id="upload_error_modal" class="upload-error-modal" role="alertdialog" aria-modal="true" aria-labelledby="upload_error_title" hidden>
@@ -464,7 +466,7 @@
     <div id="auth_console" class="auth-console authorized" hidden><a class="auth-machine-switch is-on" href="/logout" aria-label="Sign out"></a><span>Operator authorized</span></div>
     <label><span>Dark</span><input id="theme_switch" type="checkbox"><span class="toggle-track"></span><span>Light</span></label>
   </div>
-  <div class="page-header">
+  {# <div class="page-header">
     <h1><a class="home-title" href="/" aria-label="Return to MOPA Laser Rasterizer home"><span class="facade-title" aria-hidden="true"><span>M</span><span>O</span><span>P</span><span>A</span><span>-</span><span>L</span><span>A</span><span>S</span><span>E</span><span>R</span><span>-</span><span>R</span><span>A</span><span>S</span><span>T</span><span>E</span><span>R</span><span>I</span><span>Z</span><span>E</span><span>R</span></span></a></h1>
     <div class="console-status-line">
       <div class="status-lamps" role="status" aria-label="MOPA laser processing system indicators">
@@ -477,7 +479,8 @@
       <span class="console-subtitle">VECTOR PROCESSING CONSOLE · SERIES 79</span>
     </div>
   </div>
-  <nav class="machine-nav" aria-label="Primary navigation"><a href="/" aria-current="page">Rasterizer</a><a href="/holographic-etching">Holographic Lab</a><a href="/material-libraries">Material Vault</a></nav>
+  <nav class="machine-nav" aria-label="Primary navigation"><a href="/" aria-current="page">Rasterizer</a><a href="/holographic-etching">Holographic Lab</a><a href="/material-libraries">Material Vault</a></nav> #}
+  {{ machine_chrome('rasterizer', 'VECTOR PROCESSING CONSOLE · SERIES 79') }}
   <h2>Turn any image into a laser-ready color engraving project!</h2>
   <h2>Without building every color layer by hand!</h2>
   <p class="holographic-lab-link"><a href="/holographic-etching">✦ Enter the Holographic Etching Lab</a> for experimental diffraction-color work.</p>
