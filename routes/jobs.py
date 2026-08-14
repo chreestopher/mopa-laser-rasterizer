@@ -309,17 +309,38 @@ def _s3_output_key(task_id, extension=None):
         return None
 
 
-def _stream_s3_download(key, as_attachment=True, mimetype=None):
+def _stream_s3_download(key, as_attachment=True, mimetype=None, download_name=None):
     try:
         artifact = get_s3_artifact(key)
     except RuntimeError as error:
         return jsonify({"status": "error", "message": str(error)}), 503
-    filename = os.path.basename(key)
+    filename = download_name or os.path.basename(key)
     response = Response(stream_with_context(artifact["Body"].iter_chunks(chunk_size=1024 * 1024)),
                         mimetype=mimetype or artifact.get("ContentType") or "application/octet-stream")
     if as_attachment:
         response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
+
+
+def _rasterized_lightburn_download_name(task_id, artifact_name):
+    """Build a friendly download name without changing UUID-safe artifact storage."""
+    source_name = ""
+    try:
+        source_name = (get_job_record(task_id) or {}).get("source_name") or ""
+    except RuntimeError:
+        # Guest jobs do not have a durable account record. Their UUID-prefixed
+        # output artifact still safely retains the sanitized upload name.
+        pass
+    if not source_name:
+        artifact_name = os.path.basename(artifact_name)
+        prefix = f"output_{task_id}_"
+        source_name = artifact_name[len(prefix):] if artifact_name.startswith(prefix) else artifact_name
+        for suffix in (".vector.svg.lbrn2", ".lbrn2"):
+            if source_name.lower().endswith(suffix):
+                source_name = source_name[:-len(suffix)]
+                break
+    stem = os.path.splitext(os.path.basename(source_name))[0]
+    return f"{secure_filename(stem) or 'rasterized-project'}.rasterized.lbrn2"
 
 
 @routes.route("/download/<task_id>")
@@ -354,12 +375,17 @@ def download_lbrn2(task_id):
     s3_key = _s3_output_key(task_id, ".lbrn2")
     if s3_key:
         cleanup_redis_inflight(task_id)
-        return _stream_s3_download(s3_key)
+        return _stream_s3_download(
+            s3_key, download_name=_rasterized_lightburn_download_name(task_id, s3_key)
+        )
     filename = _output_file(task_id, ".lbrn2")
     if not filename:
         return jsonify({"status": "error", "message": "LightBurn file (.lbrn2) not found on disk"}), 404
     cleanup_redis_inflight(task_id)
-    return send_from_directory(current_app.config["UPLOAD_FOLDER"], filename, as_attachment=True, download_name=filename)
+    return send_from_directory(
+        current_app.config["UPLOAD_FOLDER"], filename, as_attachment=True,
+        download_name=_rasterized_lightburn_download_name(task_id, filename),
+    )
 
 
 @routes.route("/view-image/<task_id>")
