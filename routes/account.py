@@ -91,7 +91,21 @@ def preferences():
         return jsonify({"status": "error", "message": str(error)}), 400
 
 
-def library_entries(path):
+def setting_values(setting):
+    """Serialize the meaningful primitive values from one LightBurn setting."""
+    hidden = {"materialName", "entryDesc", "entryThickness", "entryNoThickTitle", "subLayers"}
+    values = {}
+    for key, value in vars(setting).items():
+        if key in hidden or value is None:
+            continue
+        if isinstance(value, (str, int, float, bool)):
+            values[key] = value
+    if getattr(setting, "subLayers", None):
+        values["subLayers"] = [setting_values(layer) for layer in setting.subLayers]
+    return values
+
+
+def library_entries(path, include_settings=False):
     """Return a compact, safe-to-display summary of a LightBurn library."""
     settings = Lightburn().parse_material_library(path)
     entries, material_names = [], []
@@ -99,11 +113,14 @@ def library_entries(path):
         material_name = str(getattr(setting, "materialName", "") or "").strip()
         if material_name and material_name not in material_names:
             material_names.append(material_name)
-        entries.append({
+        entry = {
             "material": material_name,
             "description": str(getattr(setting, "entryDesc", "") or "").strip(),
             "type": str(getattr(setting, "type", "") or "").strip(),
-        })
+        }
+        if include_settings:
+            entry["settings"] = setting_values(setting)
+        entries.append(entry)
     entries.sort(key=lambda entry: (
         entry["material"].casefold(), entry["type"].casefold(), entry["description"].casefold(),
     ))
@@ -240,7 +257,7 @@ def material_library_detail(library_id):
             temp_path = temp_file.name
         try:
             download_user_material_library(library, temp_path)
-            return jsonify({"status": "ok", "library": {"library_id": library_id, "name": library.get("name", "Material Library"), "summary": library_entries(temp_path)}})
+            return jsonify({"status": "ok", "library": {"library_id": library_id, "name": library.get("name", "Material Library"), "summary": library_entries(temp_path, include_settings=True)}})
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
