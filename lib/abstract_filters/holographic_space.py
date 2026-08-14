@@ -12,6 +12,7 @@ from .common import number
 # applying the foil treatment to light/background swatches only.
 LIGHT_LAYERS_ONLY = True
 PRESERVE_BLACK_CANVAS = True
+PUNCH_SOURCE_GEOMETRY = True
 
 DEFAULTS = {
     "band_height": 12,

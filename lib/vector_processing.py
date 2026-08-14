@@ -844,7 +844,8 @@ def process_color_geometry(
     simplification_factor,
     smoothing_radius,
     abstract_filter,
-    filter_parameters=None
+    filter_parameters=None,
+    return_source_geometry=False,
 ):
     """
     Convert a collection of pixel boxes into finalized vector geometry.
@@ -908,6 +909,7 @@ def process_color_geometry(
     # 5. Apply abstract transformation.
     # ------------------------------------------------------------------------
 
+    source_geometry = final_geometry
     final_geometry = apply_abstract_filter(
         final_geometry,
         abstract_filter,
@@ -926,7 +928,7 @@ def process_color_geometry(
             final_geometry
         )
 
-    return final_geometry
+    return (final_geometry, source_geometry) if return_source_geometry else final_geometry
 
 
 def process_color_layers(
@@ -936,7 +938,8 @@ def process_color_layers(
     simplification_factor,
     smoothing_radius,
     abstract_filter,
-    filter_parameters=None
+    filter_parameters=None,
+    punch_layers=None,
 ):
     """
     Convert all raster color groups into finalized Shapely geometries.
@@ -946,6 +949,7 @@ def process_color_layers(
     filter_name, settings = normalize_abstract_settings(abstract_filter, filter_parameters)
     filter_module = ABSTRACT_FILTER_MODULES.get(filter_name)
     light_layers_only = bool(getattr(filter_module, "LIGHT_LAYERS_ONLY", False))
+    punch_source_geometry = bool(getattr(filter_module, "PUNCH_SOURCE_GEOMETRY", False))
     light_threshold = _number(settings.get("light_threshold", 150), 150, 0, 255)
 
     def is_light_swatch(color_hex):
@@ -1001,18 +1005,27 @@ def process_color_layers(
         if light_layers_only and not is_light_swatch(color_hex):
             layer_filter = "none"
 
-        final_geometry = process_color_geometry(
+        use_source_punch = punch_source_geometry and layer_filter != "none"
+        result = process_color_geometry(
             boxes=boxes,
             min_island_area=min_island_area,
             simplification_factor=simplification_factor,
             smoothing_radius=smoothing_radius,
             abstract_filter=layer_filter,
-            filter_parameters=filter_parameters
+            filter_parameters=filter_parameters,
+            return_source_geometry=use_source_punch,
         )
+        if use_source_punch:
+            final_geometry, source_geometry = result
+        else:
+            final_geometry = result
+            source_geometry = final_geometry
 
         processed_layers[
             color_hex
         ] = final_geometry
+        if punch_layers is not None:
+            punch_layers[color_hex] = source_geometry
 
     return processed_layers
 
@@ -1040,7 +1053,8 @@ def build_punched_black_layer(
     processed_layers,
     black_hex,
     abstract_filter,
-    filter_parameters=None
+    filter_parameters=None,
+    punch_layers=None,
 ):
     """
     Build the black layer as the canvas minus all colored geometry.
@@ -1073,7 +1087,7 @@ def build_punched_black_layer(
             printLogMessage(f"Topology cleanup warning for {label}: {error}")
             return geometry
 
-    for color_hex, geometry in processed_layers.items():
+    for color_hex, geometry in (punch_layers or processed_layers).items():
 
         if color_hex == black_hex:
             continue
@@ -1731,6 +1745,7 @@ def raster_to_puzzle_and_lightburn(
     # 5. Process every colored layer
     # =========================================================================
 
+    punch_layers = {}
     processed_layers = process_color_layers(
         pixel_boxes_by_color=pixel_boxes_by_color,
         target_colors=TARGET_COLORS,
@@ -1738,7 +1753,8 @@ def raster_to_puzzle_and_lightburn(
         simplification_factor=simplification_factor,
         smoothing_radius=smoothing_radius,
         abstract_filter=abstract_filter,
-        filter_parameters=filter_parameters
+        filter_parameters=filter_parameters,
+        punch_layers=punch_layers,
     )
 
     # =========================================================================
@@ -1759,7 +1775,8 @@ def raster_to_puzzle_and_lightburn(
             processed_layers=processed_layers,
             black_hex=black_hex,
             abstract_filter=abstract_filter,
-            filter_parameters=filter_parameters
+            filter_parameters=filter_parameters,
+            punch_layers=punch_layers,
         )
 
     elif centerline_mode:
