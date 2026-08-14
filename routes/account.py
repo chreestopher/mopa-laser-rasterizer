@@ -3,9 +3,11 @@
 import os
 import tempfile
 import json
+import io
+from copy import deepcopy
 from xml.etree import ElementTree as ET
 
-from flask import jsonify, request
+from flask import jsonify, request, send_file
 from werkzeug.utils import secure_filename
 
 from lib.lightburn import Lightburn
@@ -221,6 +223,108 @@ def mutate_library(user_id, library_id, callback):
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
+
+
+def selected_settings_library(user_id, selections, material_name):
+    """Build a valid LightBurn library containing only account-owned selections."""
+    if not isinstance(selections, list) or not selections or len(selections) > 500:
+        raise ValueError("Select between 1 and 500 Material Library settings.")
+    material_name = str(material_name or "").strip()
+    if not material_name or len(material_name) > 160:
+        raise ValueError("Provide a Material Name between 1 and 160 characters.")
+
+    requested = {}
+    for selection in selections:
+        if not isinstance(selection, dict):
+            raise ValueError("The selected settings are invalid.")
+        library_id = str(selection.get("library_id", "")).strip()
+        entry_id = selection.get("entry_id")
+        if not library_id or not isinstance(entry_id, int) or entry_id < 0:
+            raise ValueError("The selected settings are invalid.")
+        requested.setdefault(library_id, set()).add(entry_id)
+
+    target_root = ET.Element("LightBurnLibrary")
+    target_material = ET.SubElement(target_root, "Material", {"name": material_name})
+    temp_paths = []
+    try:
+        for library_id, entry_ids in requested.items():
+            library = get_user_material_library(user_id, library_id)
+            if not library:
+                raise ValueError("One of the selected Material Libraries no longer exists.")
+            with tempfile.NamedTemporaryFile(suffix=".clb", delete=False) as temp_file:
+                temp_path = temp_file.name
+            temp_paths.append(temp_path)
+            download_user_material_library(library, temp_path)
+            entries = all_xml_entries(ET.parse(temp_path).getroot())
+            for entry_id in sorted(entry_ids):
+                if entry_id >= len(entries):
+                    raise ValueError("One of the selected settings no longer exists.")
+                target_material.append(deepcopy(entries[entry_id][1]))
+        if not target_material.findall("Entry"):
+            raise ValueError("Select at least one Material Library setting.")
+        return target_root
+    finally:
+        for temp_path in temp_paths:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+
+@routes.route("/account/material-libraries/selected-settings", methods=["POST"])
+def selected_material_library_settings():
+    """Copy or export selected settings while preserving LightBurn XML intact."""
+    user_id = authenticated_user_id()
+    if not user_id:
+        return jsonify({"status": "error", "message": "Sign in to manage Material Libraries."}), 401
+    payload = request.get_json(silent=True) or {}
+    action = str(payload.get("action", "")).strip()
+    try:
+        root = selected_settings_library(user_id, payload.get("selections"), payload.get("material_name"))
+        with tempfile.NamedTemporaryFile(suffix=".clb", delete=False) as temp_file:
+            output_path = temp_file.name
+        try:
+            ET.ElementTree(root).write(output_path, encoding="utf-8", xml_declaration=True)
+            summary = library_entries(output_path)
+            material_name = str(payload.get("material_name")).strip()
+            if action == "copy_existing":
+                target_library_id = str(payload.get("target_library_id", "")).strip()
+                if not target_library_id:
+                    raise ValueError("Choose the library that should receive these settings.")
+                source_material = root.find("Material")
+                source_entries = list(source_material) if source_material is not None else []
+
+                def append_selected_entries(target_root):
+                    destination = next(
+                        (item for item in target_root.findall("Material") if item.attrib.get("name") == material_name),
+                        None,
+                    )
+                    if destination is None:
+                        destination = ET.SubElement(target_root, "Material", {"name": material_name})
+                    destination.extend(deepcopy(source_entries))
+
+                result = mutate_library(user_id, target_library_id, append_selected_entries)
+                if result is None:
+                    return jsonify({"status": "error", "message": "The destination Material Library no longer exists."}), 404
+                return jsonify({"status": "ok", "summary": result})
+            if action == "copy_new":
+                name = str(payload.get("new_library_name", "")).strip()
+                if not name or len(name) > 160:
+                    raise ValueError("Give the new Material Library a name between 1 and 160 characters.")
+                library = save_user_material_library(
+                    user_id, output_path, material_name, summary=summary, display_name=name,
+                    source_filename=f"{secure_filename(name) or 'rasterizer-material-library'}.clb",
+                )
+                return jsonify({"status": "ok", "library": library})
+            if action == "export":
+                filename = f"{secure_filename(material_name) or 'rasterizer-material-settings'}.clb"
+                with open(output_path, "rb") as export_file:
+                    return send_file(io.BytesIO(export_file.read()), mimetype="application/xml",
+                                     as_attachment=True, download_name=filename)
+            raise ValueError("Choose an action for the selected settings.")
+        finally:
+            if os.path.exists(output_path):
+                os.remove(output_path)
+    except (RuntimeError, OSError, ValueError, ET.ParseError) as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
 
 
 @routes.route("/account/material-libraries/preview", methods=["POST"])
