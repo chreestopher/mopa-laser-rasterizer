@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Holographic Etching Lab · MOPA Laser Rasterizer</title>
   <style>
-    :root { --cream:#d9d2af; --phosphor:#83f06a; --orange:#ad4f1d; --metal:#34382e; }
+    :root { --cream:#d9d2af; --phosphor:#83f06a; --control-top:#66766d; --control-base:#34443e; --control-edge:#9ba89f; --control-shadow:#18221e; --metal:#34382e; }
     * { box-sizing:border-box; }
     html { min-height:100%; background:#11130f; }
     body { max-width:1040px; margin:28px auto; padding:38px; color:var(--cream); background:repeating-linear-gradient(90deg,rgba(255,255,255,.014) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 5%,#505443,#363a30 42%,#24271f 100%); border:3px solid #777864; border-radius:30px; box-shadow:inset 0 0 0 5px #1b1e18,inset 0 0 60px #10120e,0 0 0 1px #9a9a7e,0 20px 50px #000; }
@@ -49,7 +49,7 @@
     .calibration-form input,.calibration-form select { width:100%; min-width:0; min-height:39px; padding:9px; border:2px solid #5e6853; border-radius:5px; color:var(--phosphor); background:#11170f; box-shadow:inset 0 2px 7px #000; font-family:"Courier New",monospace; }
     .calibration-form input:focus,.calibration-form select:focus { outline:none; border-color:#91a477; box-shadow:0 0 0 2px rgba(131,240,106,.18),inset 0 2px 7px #000; }
     .calibration-form input[type="file"] { padding:4px; color:#bdb58f; cursor:pointer; }
-    .calibration-form input[type="file"]::file-selector-button { margin-right:10px; padding:7px 10px; border:1px solid #e19355; border-radius:4px; color:#fff1cd; background:linear-gradient(#c96b35,var(--orange)); box-shadow:inset 0 1px rgba(255,255,255,.3),0 2px 0 #55270f; font:700 10px "Courier New",monospace; letter-spacing:.07em; cursor:pointer; text-transform:uppercase; }
+    .calibration-form input[type="file"]::file-selector-button { margin-right:10px; padding:7px 10px; border:1px solid var(--control-edge); border-radius:4px; color:#edf4e9; background:linear-gradient(var(--control-top),var(--control-base)); box-shadow:inset 0 1px rgba(255,255,255,.3),0 2px 0 var(--control-shadow); font:700 10px "Courier New",monospace; letter-spacing:.07em; cursor:pointer; text-transform:uppercase; }
     .calibration-form input[type="file"]::file-selector-button:hover { filter:brightness(1.14); }
     .calibration-form textarea { width:100%; min-width:0; min-height:78px; padding:9px; resize:vertical; border:2px solid #5e6853; border-radius:5px; color:var(--phosphor); background:#11170f; box-shadow:inset 0 2px 7px #000; font-family:"Courier New",monospace; }
     .calibration-form textarea:focus { outline:none; border-color:#91a477; box-shadow:0 0 0 2px rgba(131,240,106,.18),inset 0 2px 7px #000; }
@@ -76,11 +76,11 @@
     .sample-editor canvas { display:block; width:100%; max-height:520px; cursor:crosshair; touch-action:none; }
     .sample-editor p { margin:9px 0 0; color:#bdb58f; font:700 11px "Courier New",monospace; line-height:1.4; }
     .action-row { display:flex; flex-wrap:wrap; gap:10px; margin-top:25px; }
-    .action { display:inline-block; padding:10px 14px; border:2px solid #d07b48; border-radius:7px; color:#fff1cd; background:linear-gradient(#c96b35,var(--orange)); box-shadow:inset 0 1px rgba(255,255,255,.28),0 4px 0 #55270f; font:700 12px system-ui,sans-serif; letter-spacing:.06em; text-decoration:none; text-transform:uppercase; cursor:pointer; transition:filter .15s,transform .15s,box-shadow .15s; }
+    .action { display:inline-block; padding:10px 14px; border:2px solid var(--control-edge); border-radius:7px; color:#edf4e9; background:linear-gradient(var(--control-top),var(--control-base)); box-shadow:inset 0 1px rgba(255,255,255,.3),0 4px 0 var(--control-shadow); font:700 12px system-ui,sans-serif; letter-spacing:.06em; text-decoration:none; text-transform:uppercase; cursor:pointer; transition:filter .15s,transform .15s,box-shadow .15s; }
     .action:hover { filter:brightness(1.12); }
-    .action:active { transform:translateY(3px); box-shadow:inset 0 1px rgba(255,255,255,.28),0 1px 0 #55270f; }
+    .action:active { transform:translateY(3px); box-shadow:inset 0 1px rgba(255,255,255,.28),0 1px 0 var(--control-shadow); }
     .action:focus-visible { outline:2px solid var(--phosphor); outline-offset:3px; }
-    .action:disabled { cursor:wait; opacity:.62; filter:saturate(.55); transform:translateY(3px); box-shadow:inset 0 1px rgba(255,255,255,.18),0 1px 0 #55270f; }
+    .action:disabled { cursor:wait; opacity:.62; filter:saturate(.55); transform:translateY(3px); box-shadow:inset 0 1px rgba(255,255,255,.18),0 1px 0 var(--control-shadow); }
     .action.secondary { border-color:#888a72; background:linear-gradient(#666957,#464a3d); box-shadow:0 3px 0 #25271f; }
     .reference { margin-top:24px; padding-top:16px; border-top:1px solid #536347; color:#aaa98e; font-size:.9rem; line-height:1.5; }
     .reference a { color:var(--phosphor); }
@@ -94,7 +94,8 @@
     body.light-machine .calibration-form input { color:#171815; background:#dedfd9; border-color:#777974; box-shadow:inset 0 1px 5px #999; }
     body.light-machine .calibration-form select { color:#171815; background:#dedfd9; border-color:#777974; box-shadow:inset 0 1px 5px #999; }
     body.light-machine .calibration-form input[type="file"] { color:#343530; }
-    body.light-machine .calibration-form input[type="file"]::file-selector-button { border-color:#79431f; color:#fff5da; background:linear-gradient(#bd7544,#8a4821); }
+    body.light-machine .calibration-form input[type="file"]::file-selector-button { border-color:#69756e; color:#171815; background:linear-gradient(#e1e4df,#aeb6af); }
+    body.light-machine .action { border-color:#69756e; color:#171815; background:linear-gradient(#e1e4df,#aeb6af); box-shadow:inset 0 1px rgba(255,255,255,.8),0 3px 0 #737a74; }
     body.light-machine .calibration-form textarea { color:#171815; background:#dedfd9; border-color:#777974; box-shadow:inset 0 1px 5px #999; }
     body.light-machine .corner-editor { background:#d5d6cf; border-color:#777974; }
     body.light-machine .corner-editor p { color:#343530; }
