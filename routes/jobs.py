@@ -251,6 +251,8 @@ def _job_access_error(task_id):
     except RuntimeError:
         return jsonify({"status": "error", "message": "Could not verify job ownership."}), 503
     if owner_id and request.headers.get("x-amzn-oidc-identity", "").strip() != owner_id:
+        if request.accept_mimetypes.best == "text/html":
+            return render_template("access_denied.html"), 403
         return jsonify({"status": "error", "message": "This job belongs to a different account."}), 403
     return None
 
