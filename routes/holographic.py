@@ -135,7 +135,6 @@ def _svg_grid(path, columns, rows, cell_mm, intervals, angles):
     width, height = columns * cell_mm, rows * cell_mm
     root = ET.Element("svg", xmlns="http://www.w3.org/2000/svg", width=f"{width}mm",
                       height=f"{height}mm", viewBox=f"0 0 {width} {height}")
-    ET.SubElement(root, "rect", x="0", y="0", width=str(width), height=str(height), fill="white")
     # High-contrast registration marks make the photographed grid far easier
     # to align than a thin cell border alone.  They sit in the outer corners,
     # away from the center sampling zones.
@@ -148,23 +147,43 @@ def _svg_grid(path, columns, rows, cell_mm, intervals, angles):
         group = ET.SubElement(root, "g", id=f"cell_{index:02d}")
         ET.SubElement(group, "rect", x=str(x), y=str(y), width=str(cell_mm), height=str(cell_mm),
                       fill="none", stroke="#000", **{"stroke-width": ".1"})
-        clip_id = f"clip_{index}"
-        defs = ET.SubElement(group, "defs")
-        clip = ET.SubElement(defs, "clipPath", id=clip_id)
-        ET.SubElement(clip, "rect", x=str(x), y=str(y), width=str(cell_mm), height=str(cell_mm))
-        # Keep the grating lines clipped inside their own calibration cell.
-        # ``SubElement`` needs an element name as well as its attributes.
-        lines = ET.SubElement(group, "g", **{"clip-path": f"url(#{clip_id})"})
+        # Do not use an SVG clipPath here. LightBurn may ignore clip paths on
+        # import, which would turn every line into an oversize canvas-spanning
+        # stroke. Calculate the two real intersections with this cell instead.
         radians = math.radians(angle)
         dx, dy = math.cos(radians), math.sin(radians)
         normal_x, normal_y = -dy, dx
-        reach = cell_mm * 1.5
-        offset = -reach
-        while offset <= reach:
-            cx, cy = x + cell_mm / 2 + normal_x * offset, y + cell_mm / 2 + normal_y * offset
-            ET.SubElement(lines, "line", x1=str(cx - dx * reach), y1=str(cy - dy * reach),
-                          x2=str(cx + dx * reach), y2=str(cy + dy * reach), stroke="#000",
-                          **{"stroke-width": ".01"})
+        half_size = cell_mm / 2
+        max_offset = math.sqrt(2) * half_size
+        offset = -max_offset
+        while offset <= max_offset + 1e-9:
+            endpoints = []
+            if abs(dx) > 1e-9:
+                for edge_x in (-half_size, half_size):
+                    line_t = (edge_x - normal_x * offset) / dx
+                    edge_y = normal_y * offset + dy * line_t
+                    if -half_size - 1e-9 <= edge_y <= half_size + 1e-9:
+                        endpoints.append((edge_x, edge_y))
+            if abs(dy) > 1e-9:
+                for edge_y in (-half_size, half_size):
+                    line_t = (edge_y - normal_y * offset) / dy
+                    edge_x = normal_x * offset + dx * line_t
+                    if -half_size - 1e-9 <= edge_x <= half_size + 1e-9:
+                        endpoints.append((edge_x, edge_y))
+            unique_endpoints = []
+            for endpoint in endpoints:
+                if not any(math.isclose(endpoint[0], existing[0], abs_tol=1e-8) and
+                           math.isclose(endpoint[1], existing[1], abs_tol=1e-8)
+                           for existing in unique_endpoints):
+                    unique_endpoints.append(endpoint)
+            if len(unique_endpoints) == 2:
+                first, second = unique_endpoints
+                ET.SubElement(
+                    group, "line",
+                    x1=str(x + half_size + first[0]), y1=str(y + half_size + first[1]),
+                    x2=str(x + half_size + second[0]), y2=str(y + half_size + second[1]),
+                    stroke="#000", **{"stroke-width": ".01"},
+                )
             offset += interval
         label = f"{index + 1:02d}  {angle:g}deg / {interval:.3f}mm"
         ET.SubElement(group, "text", x=str(x + 1), y=str(y + cell_mm - 1), fill="#000",
