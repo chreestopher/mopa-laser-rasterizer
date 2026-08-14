@@ -169,7 +169,7 @@ def apply_entry_update(root, entry_id, payload, creating=False):
     description = str(payload.get("description", "")).strip()
     setting_type = str(payload.get("type", "Scan")).strip()
     values = payload.get("settings", {})
-    if not material_name or not description or setting_type not in {"Cut", "Scan", "Image"}:
+    if not material_name or not description or setting_type not in {"Cut", "Scan", "Image", "Offset"}:
         raise ValueError("Material, Description, and a valid setting Type are required.")
     if not isinstance(values, dict) or len(values) > 80:
         raise ValueError("Settings must be a small object.")
