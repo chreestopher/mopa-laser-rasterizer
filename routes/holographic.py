@@ -523,10 +523,89 @@ def _merge_recipe_pixels(layer_map, recipe_count):
                 rectangle_height += 1
             visited[y:y + rectangle_height, x:x + rectangle_width] = True
             rectangles[int(recipe_index)].append((x, y, rectangle_width, rectangle_height))
-    return rectangles
+    return {index: _coalesce_adjacent_rectangles(items) for index, items in rectangles.items()}
 
 
-def _write_holographic_svg(path, width, height, recipes_by_name, pixel_mm):
+def _coalesce_adjacent_rectangles(rectangles):
+    """Join touching rectangles only when their union remains one rectangle.
+
+    This preserves every pixel exactly, avoids overlap, and keeps the export
+    strictly closed-rectangle geometry. Irregular silhouettes remain multiple
+    rectangles instead of being approximated by an open or overfilled path.
+    """
+    def merge_rows(items):
+        result = []
+        for x, y, width, height in sorted(items, key=lambda item: (item[1], item[3], item[0])):
+            if result:
+                previous_x, previous_y, previous_width, previous_height = result[-1]
+                if y == previous_y and height == previous_height and x == previous_x + previous_width:
+                    result[-1] = (previous_x, previous_y, previous_width + width, previous_height)
+                    continue
+            result.append((x, y, width, height))
+        return result
+
+    def merge_columns(items):
+        result = []
+        for x, y, width, height in sorted(items, key=lambda item: (item[0], item[2], item[1])):
+            if result:
+                previous_x, previous_y, previous_width, previous_height = result[-1]
+                if x == previous_x and width == previous_width and y == previous_y + previous_height:
+                    result[-1] = (previous_x, previous_y, previous_width, previous_height + height)
+                    continue
+            result.append((x, y, width, height))
+        return result
+
+    merged = list(rectangles)
+    while True:
+        previous_count = len(merged)
+        merged = merge_columns(merge_rows(merged))
+        if len(merged) == previous_count:
+            return merged
+
+
+def _merge_mask_pixels(mask):
+    """Merge a boolean mask into the largest exact, non-overlapping closed rectangles."""
+    height, width = mask.shape
+    visited = np.zeros((height, width), dtype=bool)
+    rectangles = []
+    for y in range(height):
+        for x in range(width):
+            if not mask[y, x] or visited[y, x]:
+                continue
+            rectangle_width = 1
+            while x + rectangle_width < width and mask[y, x + rectangle_width] and not visited[y, x + rectangle_width]:
+                rectangle_width += 1
+            rectangle_height = 1
+            while y + rectangle_height < height:
+                next_row = mask[y + rectangle_height, x:x + rectangle_width]
+                if visited[y + rectangle_height, x:x + rectangle_width].any() or not np.all(next_row):
+                    break
+                rectangle_height += 1
+            visited[y:y + rectangle_height, x:x + rectangle_width] = True
+            rectangles.append((x, y, rectangle_width, rectangle_height))
+    return _coalesce_adjacent_rectangles(rectangles)
+
+
+def _bw_photo_black_geometry_mask(image):
+    """Select the darker exact color from the BW Photo preset's two-color pass."""
+    quantized = image.quantize(colors=2, method=0).convert("RGB")
+    quantized_pixels = np.asarray(quantized)
+    palette_colors = {tuple(pixel) for pixel in quantized_pixels.reshape(-1, 3)}
+    if not palette_colors:
+        return np.zeros(quantized_pixels.shape[:2], dtype=bool), None
+
+    luminance = lambda rgb: .2126 * rgb[0] + .7152 * rgb[1] + .0722 * rgb[2]
+    darkest_color = min(palette_colors, key=luminance)
+    # This is intentionally the same principle as BW Photo's transparent
+    # mode: it removes the lighter quantized color and keeps the remaining
+    # dark geometry. A single bright-color image therefore creates no black
+    # overlay, while a single dark-color image remains black geometry.
+    if len(palette_colors) == 1 and luminance(darkest_color) >= 128:
+        return np.zeros(quantized_pixels.shape[:2], dtype=bool), darkest_color
+    return np.all(quantized_pixels == darkest_color, axis=2), darkest_color
+
+
+def _write_holographic_svg(path, width, height, recipes_by_name, pixel_mm, black_rectangles=None):
     """Write only filled SVG rectangles, never open-path artwork geometry."""
     root = ET.Element("svg", xmlns="http://www.w3.org/2000/svg", width=f"{width * pixel_mm}mm",
                       height=f"{height * pixel_mm}mm", viewBox=f"0 0 {width * pixel_mm} {height * pixel_mm}")
@@ -536,10 +615,16 @@ def _write_holographic_svg(path, width, height, recipes_by_name, pixel_mm):
         for x, y, rectangle_width, rectangle_height in coordinates["rectangles"]:
             ET.SubElement(group, "rect", x=str(x * pixel_mm), y=str(y * pixel_mm),
                           width=str(rectangle_width * pixel_mm), height=str(rectangle_height * pixel_mm))
+    if black_rectangles:
+        black_group = ET.SubElement(root, "g", id="preserved_black_outlines", fill="#000000")
+        for x, y, rectangle_width, rectangle_height in black_rectangles:
+            ET.SubElement(black_group, "rect", x=str(x * pixel_mm), y=str(y * pixel_mm),
+                          width=str(rectangle_width * pixel_mm), height=str(rectangle_height * pixel_mm))
     ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
 
 
-def _build_holographic_exports(upload_folder, art_file, profile_file, material_file, max_dimension, pixel_mm):
+def _build_holographic_exports(upload_folder, art_file, profile_file, material_file, max_dimension, pixel_mm,
+                               preserve_black_outlines=False):
     profile = _load_recipe_profile(profile_file)
     try:
         image = Image.open(art_file.stream).convert("RGB")
@@ -560,7 +645,11 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_f
     ))
     recipes_by_name = {}
     project = lightburn.Lightburn()
-    for layer_index, recipe in enumerate(profile["recipes"]):
+    # Reserve LightBurn's true black palette layer for the optional outline
+    # overlay. Recipe-map indexes stay zero-based for compact array handling.
+    recipe_layer_offset = 1 if preserve_black_outlines else 0
+    for map_index, recipe in enumerate(profile["recipes"]):
+        layer_index = map_index + recipe_layer_offset
         setting = copy(base_setting)
         setting.index = layer_index
         setting.name = recipe["name"]
@@ -574,16 +663,18 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_f
             setattr(setting, SWEEP_SETTINGS[override["parameter"]], value)
         setting.subLayers = []
         project.add_layer(setting)
-        recipes_by_name[recipe["name"]] = {"recipe": recipe, "layer_index": layer_index, "rectangles": []}
+        recipes_by_name[recipe["name"]] = {
+            "recipe": recipe, "map_index": map_index, "layer_index": layer_index, "rectangles": []
+        }
 
     layer_map = np.empty(pixels.shape[:2], dtype=np.int16)
     for y, row in enumerate(pixels):
         for x, pixel in enumerate(row):
             recipe = _nearest_recipe(pixel, profile["recipes"])
-            layer_map[y, x] = recipes_by_name[recipe["name"]]["layer_index"]
+            layer_map[y, x] = recipes_by_name[recipe["name"]]["map_index"]
     rectangles_by_layer = _merge_recipe_pixels(layer_map, len(profile["recipes"]))
     for bucket in recipes_by_name.values():
-        bucket["rectangles"] = rectangles_by_layer[bucket["layer_index"]]
+        bucket["rectangles"] = rectangles_by_layer[bucket["map_index"]]
         for x, y, rectangle_width, rectangle_height in bucket["rectangles"]:
             # LightBurn stores a rectangle's transform at its center, while
             # ``x`` and ``y`` above are the top-left pixel coordinates.  Put
@@ -599,9 +690,44 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_f
                 y=(y * pixel_mm) + (rectangle_height_mm / 2),
             ).layer(bucket["layer_index"]))
 
+    black_rectangles = []
+    black_setting_name = None
+    black_source_color = None
+    if preserve_black_outlines:
+        black_setting, black_layer_index = _label_setting(
+            lightburn, material_path, grid["material"], base_setting
+        )
+        if black_layer_index != 0:
+            raise ValueError(
+                "Preserve black outlines requires a Material Library setting whose Description matches the Rasterizer black swatch."
+            )
+        # Match the BW Photo preset: quantize the source to two exact colors,
+        # discard its lighter color, and retain only the dark geometry.
+        black_mask, black_source_color = _bw_photo_black_geometry_mask(image)
+        black_rectangles = _merge_mask_pixels(black_mask)
+        if black_rectangles:
+            black_setting = copy(black_setting)
+            black_setting.index = 0
+            black_setting.name = "Preserved black outlines"
+            black_setting.subLayers = []
+            project.add_layer(black_setting)
+            for x, y, rectangle_width, rectangle_height in black_rectangles:
+                rectangle_width_mm = rectangle_width * pixel_mm
+                rectangle_height_mm = rectangle_height * pixel_mm
+                project.add(lightburn.Square(
+                    rectangle_width_mm,
+                    rectangle_height_mm,
+                    x=(x * pixel_mm) + (rectangle_width_mm / 2),
+                    y=(y * pixel_mm) + (rectangle_height_mm / 2),
+                ).layer(0))
+            black_setting_name = str(getattr(black_setting, "entryDesc", "black") or "black")
+
     stem = f"holographic_art_{task_id}"
     svg_name, lbrn_name = f"{stem}.svg", f"{stem}.lbrn2"
-    _write_holographic_svg(os.path.join(upload_folder, svg_name), pixels.shape[1], pixels.shape[0], recipes_by_name, pixel_mm)
+    _write_holographic_svg(
+        os.path.join(upload_folder, svg_name), pixels.shape[1], pixels.shape[0], recipes_by_name, pixel_mm,
+        black_rectangles=black_rectangles,
+    )
     project.write(os.path.join(upload_folder, lbrn_name))
     metadata_name = f"{stem}.json"
     with open(os.path.join(upload_folder, metadata_name), "w", encoding="utf-8") as metadata_file:
@@ -612,7 +738,14 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_f
             "bounds_mm": {"left": 0, "top": 0, "right": pixels.shape[1] * pixel_mm,
                           "bottom": pixels.shape[0] * pixel_mm},
             "geometry": {"shape_type": "closed_rectangles", "open_paths": False},
-            "vector_rectangles": sum(len(bucket["rectangles"]) for bucket in recipes_by_name.values()),
+            "preserved_black_outlines": {
+                "enabled": preserve_black_outlines,
+                "selection": "bw_photo_two_color_dark_geometry",
+                "source_quantized_dark_rgb": list(black_source_color) if black_source_color else None,
+                "rectangle_count": len(black_rectangles),
+                "material_setting": black_setting_name,
+            },
+            "vector_rectangles": sum(len(bucket["rectangles"]) for bucket in recipes_by_name.values()) + len(black_rectangles),
             "source_pixel_count": int(pixels.shape[0] * pixels.shape[1]),
             "color_mapping": {
                 "method": "nearest_measured_recipe_cie_lab",
@@ -630,7 +763,7 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_f
         _store_holographic_artifact(task_id, os.path.join(upload_folder, filename))
     return svg_name, lbrn_name, metadata_name, pixels.shape[1], pixels.shape[0], sum(
         len(bucket["rectangles"]) for bucket in recipes_by_name.values()
-    )
+    ) + len(black_rectangles)
 
 
 @routes.route("/holographic-etching/calibration-grid", methods=["POST"])
@@ -1032,8 +1165,10 @@ def build_holographic_artwork():
     except ValueError:
         return jsonify({"status": "error", "message": "Processing resolution and pixel size must be numbers."}), 400
     try:
+        preserve_black_outlines = request.form.get("preserve_black_outlines") in {"on", "true", "1"}
         svg_name, lbrn_name, metadata_name, width, height, rectangle_count = _build_holographic_exports(
-            current_app.config["UPLOAD_FOLDER"], artwork, profile_file, material_file, max_dimension, pixel_mm
+            current_app.config["UPLOAD_FOLDER"], artwork, profile_file, material_file, max_dimension, pixel_mm,
+            preserve_black_outlines=preserve_black_outlines,
         )
     except (OSError, ValueError, ET.ParseError, KeyError, TypeError) as error:
         current_app.logger.exception("Holographic artwork export failed")

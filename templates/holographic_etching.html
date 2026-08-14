@@ -55,6 +55,8 @@
     .calibration-form textarea { width:100%; min-width:0; min-height:78px; padding:9px; resize:vertical; border:2px solid #5e6853; border-radius:5px; color:var(--phosphor); background:#11170f; box-shadow:inset 0 2px 7px #000; font-family:"Courier New",monospace; }
     .calibration-form textarea:focus { outline:none; border-color:#91a477; box-shadow:0 0 0 2px rgba(131,240,106,.18),inset 0 2px 7px #000; }
     .calibration-form .full-width { grid-column:1 / -1; }
+    .calibration-form .outline-toggle { display:flex; align-items:center; gap:9px; padding:10px; border:1px solid #5e6853; border-radius:5px; color:#ddd7b8; background:rgba(10,14,9,.46); cursor:pointer; }
+    .calibration-form .outline-toggle input { width:18px; min-height:18px; margin:0; padding:0; accent-color:#83f06a; box-shadow:none; }
     .calibration-description-autocomplete { position:relative; }
     .calibration-description-menu { position:absolute; z-index:12; top:calc(100% + 4px); right:0; left:0; max-height:190px; overflow-y:auto; border:1px solid #677663; border-radius:6px; background:#111510; box-shadow:0 9px 20px rgba(0,0,0,.55); }
     .calibration-description-option { display:flex; align-items:center; gap:8px; width:100%; padding:8px 9px; border:0; border-bottom:1px solid #303a2e; color:#edf4e9; background:transparent; font:700 11px "Courier New",monospace; letter-spacing:.04em; text-align:left; cursor:pointer; }
@@ -109,6 +111,7 @@
     body.light-machine .calibration-description-option:hover,body.light-machine .calibration-description-option:focus { background:#b8d2aa; }
     body.light-machine .action { border-color:#69756e; color:#171815; background:linear-gradient(#e1e4df,#aeb6af); box-shadow:inset 0 1px rgba(255,255,255,.8),0 3px 0 #737a74; }
     body.light-machine .calibration-form textarea { color:#171815; background:#dedfd9; border-color:#777974; box-shadow:inset 0 1px 5px #999; }
+    body.light-machine .calibration-form .outline-toggle { color:#171815; border-color:#777974; background:#d5d6cf; }
     body.light-machine .corner-editor { background:#d5d6cf; border-color:#777974; }
     body.light-machine .corner-editor p { color:#343530; }
     body.light-machine .sample-editor { background:#d5d6cf; border-color:#777974; }
@@ -216,6 +219,7 @@
     <label>Matching Material Library<input name="material_settings" type="file" accept=".clb,.lbmat,.lbrn" required></label>
     <label>Maximum processing dimension, pixels<input name="max_dimension" type="number" value="96" min="8" max="1600" step="1"><span class="form-note">Start at 64–96. The 1600-pixel limit is for serious experiments, and detailed artwork can still create a very large LightBurn file.</span></label>
     <label>Physical pixel size, mm<input name="pixel_mm" type="number" value=".5" min=".05" max="5" step=".05"><span class="form-note">This sets each grating patch’s width and height.</span></label>
+    <label class="outline-toggle"><input name="preserve_black_outlines" type="checkbox">Preserve black outlines<span class="form-note">Uses the BW Photo two-color pass, then places its dark geometry on the Black Material Library layer.</span></label>
     <label>Grating direction mode<select name="direction_mode"><option value="recipe">Use each calibrated recipe angle</option><option value="brightness">Map artwork brightness to angle</option><option value="linear">Sweep left to right</option><option value="radial">Radiate from image center</option><option value="fixed">Use one fixed angle</option></select><span class="form-note">Experimental modes keep measured recipe settings but independently change Offset Fill angle.</span></label>
     <label>Direction bins<input name="direction_bins" type="number" value="6" min="2" max="12" step="1"><span class="form-note">Fewer bins create smaller, faster LightBurn projects.</span></label>
     <label>Fixed direction, degrees<input name="fixed_direction_degrees" type="number" value="0" min="0" max="180" step="1"><span class="form-note">Used only by Fixed direction mode.</span></label>
@@ -234,8 +238,13 @@
     const rememberHolographicSettings = () => sessionStorage.setItem(holographicSettingsKey, JSON.stringify(rememberedHolographicSettings));
     document.querySelectorAll('.calibration-form').forEach(form => {
       form.querySelectorAll('input[name], select[name], textarea[name]').forEach(field => {
-        if (field.type === 'file' || field.type === 'hidden' || field.type === 'checkbox') return;
+        if (field.type === 'file' || field.type === 'hidden') return;
         const key = `${form.id}:${field.name}`;
+        if (field.type === 'checkbox') {
+          if (Object.hasOwn(rememberedHolographicSettings, key)) field.checked = Boolean(rememberedHolographicSettings[key]);
+          field.addEventListener('change', () => { rememberedHolographicSettings[key] = field.checked; rememberHolographicSettings(); });
+          return;
+        }
         if (Object.hasOwn(rememberedHolographicSettings, key)) field.value = rememberedHolographicSettings[key];
         field.addEventListener('input', () => { rememberedHolographicSettings[key] = field.value; rememberHolographicSettings(); });
         field.addEventListener('change', () => { rememberedHolographicSettings[key] = field.value; rememberHolographicSettings(); });
