@@ -9,6 +9,7 @@ import re
 import subprocess
 import threading
 import time
+from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
@@ -24,6 +25,7 @@ redis_client = redis.Redis(
 )
 s3_client = boto3.client("s3")
 S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME", "").strip()
+DYNAMODB_TABLE_NAME = os.environ.get("DYNAMODB_TABLE_NAME", "").strip()
 ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
     "crystal", "ripple", "centerline", "glitch", "shattered", "deep_fryer",
@@ -34,6 +36,60 @@ HISTORY_TTL_SECONDS = 7 * 24 * 60 * 60
 DAILY_JOB_LIMIT = max(1, int(os.environ.get("DAILY_JOB_LIMIT", "3")))
 manager = multiprocessing.Manager()
 tasks = manager.dict()
+
+
+def account_table():
+    """Return the optional durable account-data table without affecting guests."""
+    if not DYNAMODB_TABLE_NAME:
+        return None
+    return boto3.resource("dynamodb").Table(DYNAMODB_TABLE_NAME)
+
+
+def _dynamodb_values(value):
+    """DynamoDB resources require Decimal rather than Python float values."""
+    if isinstance(value, float):
+        return Decimal(str(value))
+    if isinstance(value, dict):
+        return {key: _dynamodb_values(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_dynamodb_values(item) for item in value]
+    return value
+
+
+def _json_values(value):
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, dict):
+        return {key: _json_values(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_values(item) for item in value]
+    return value
+
+
+def get_user_preferences(user_id):
+    table = account_table()
+    if not table or not user_id:
+        return {}
+    try:
+        item = table.get_item(Key={"pk": f"USER#{user_id}", "sk": "PREFERENCES"}).get("Item", {})
+    except ClientError as error:
+        raise RuntimeError("Could not load account preferences.") from error
+    preferences = item.get("preferences", {})
+    return _json_values(preferences) if isinstance(preferences, dict) else {}
+
+
+def save_user_preferences(user_id, preferences):
+    table = account_table()
+    if not table:
+        raise RuntimeError("Account storage is not configured.")
+    if not user_id:
+        raise ValueError("An authenticated account is required.")
+    table.put_item(Item={
+        "pk": f"USER#{user_id}",
+        "sk": "PREFERENCES",
+        "preferences": _dynamodb_values(preferences),
+        "updated_at": int(time.time()),
+    })
 
 
 def valid_history_session(value):

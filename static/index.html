@@ -847,11 +847,71 @@
         document.body.classList.toggle('light-machine', themeSwitch.checked);
         localStorage.setItem('mopa-machine-theme', themeSwitch.checked ? 'light' : 'dark');
       });
+      let accountSaveTimer = null;
+      let signedInAccount = false;
+      const preferenceSnapshot = () => ({
+        material: materialInput.value.trim(),
+        pixel_square_mm: document.getElementById('pixel_square_mm').value,
+        new_width: newWidthInput.value,
+        new_height: newHeightInput.value,
+        image_preset: document.getElementById('image_preset').value,
+        selected_color_hexes: Array.from(selectedColorHexes),
+        color_name_overrides: JSON.parse(colorNameOverrides.value || '{}'),
+        abstract_filter_parameters: JSON.parse(document.getElementById('abstract_filter_parameters').value || '{}'),
+      });
+      const saveAccountPreferences = () => {
+        if (!signedInAccount) return;
+        clearTimeout(accountSaveTimer);
+        accountSaveTimer = setTimeout(() => {
+          fetch('/account/preferences', {
+            method: 'PUT', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(preferenceSnapshot()),
+          }).catch(() => {});
+        }, 500);
+      };
+      const applyAccountPreferences = preferences => {
+        if (!preferences || typeof preferences !== 'object') return;
+        materialInput.value = preferences.material || materialInput.value;
+        document.getElementById('pixel_square_mm').value = preferences.pixel_square_mm ?? document.getElementById('pixel_square_mm').value;
+        newWidthInput.value = preferences.new_width ?? newWidthInput.value;
+        newHeightInput.value = preferences.new_height ?? newHeightInput.value;
+        if (preferences.image_preset) document.getElementById('image_preset').value = preferences.image_preset;
+        paletteCards.forEach(card => {
+          const hex = card.querySelector('.color-hex').textContent.trim().toUpperCase();
+          const name = preferences.color_name_overrides?.[hex];
+          if (name) card.querySelector('.color-name').textContent = name;
+        });
+        if (Array.isArray(preferences.selected_color_hexes)) {
+          selectedColorHexes.clear();
+          preferences.selected_color_hexes.forEach(hex => selectedColorHexes.add(hex));
+          paletteCards.forEach(card => {
+            const hex = card.querySelector('.color-hex').textContent.trim().toUpperCase();
+            card.querySelector('.color-square').classList.toggle('selected', !selectedColorHexes.has(hex));
+          });
+        }
+        renderFilterControls();
+        Object.entries(preferences.abstract_filter_parameters || {}).forEach(([name, value]) => {
+          const control = document.querySelector(`#filter_controls [data-parameter="${CSS.escape(name)}"]`);
+          if (!control) return;
+          if (control.type === 'checkbox') control.checked = Boolean(value);
+          else control.value = value;
+        });
+        updateFilterParameters();
+        updatePaletteFields();
+      };
       fetch('/auth-status', { credentials: 'same-origin' })
         .then(response => response.ok ? response.json() : { signed_in: false })
         .then(({ signed_in }) => {
+          signedInAccount = Boolean(signed_in);
           loginLink.hidden = Boolean(signed_in);
           authConsole.hidden = !signed_in;
+          if (signedInAccount && !new URLSearchParams(window.location.search).get('settings')) {
+            fetch('/account/preferences', { credentials: 'same-origin' })
+              .then(response => response.ok ? response.json() : null)
+              .then(data => applyAccountPreferences(data?.preferences))
+              .catch(() => {});
+          }
         })
         .catch(() => {});
       const sessionFromLink = new URLSearchParams(window.location.search).get('history_session');
@@ -887,6 +947,7 @@
       }
       materialInput.addEventListener('input', () => {
         sessionStorage.setItem(materialNameKey, materialInput.value.trim());
+        saveAccountPreferences();
       });
       materialLibraryInput.addEventListener('change', () => {
         if (!materialLibraryInput.files.length) return;
@@ -984,6 +1045,8 @@
           showUploadError(uploadError.textContent);
         }
       });
+      uploadForm.addEventListener('input', saveAccountPreferences);
+      uploadForm.addEventListener('change', saveAccountPreferences);
     });
 
     const squares = document.querySelectorAll('.color-square');
@@ -1006,6 +1069,7 @@
       });
       colorInput.value = selectedNames.join(', ');
       colorNameOverrides.value = JSON.stringify(overrides);
+      colorNameOverrides.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
     paletteCards.forEach(card => {

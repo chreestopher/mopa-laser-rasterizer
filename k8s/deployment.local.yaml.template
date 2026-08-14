@@ -24,6 +24,9 @@ spec:
       - name: mopa-laser-rasterizer
         image: mopa-laser-rasterizer:local
         imagePullPolicy: IfNotPresent
+        # Send worker print()/stderr output to the container log stream.
+        command: ["gunicorn"]
+        args: ["--workers=1", "--threads=4", "--timeout=1200", "--bind", "0.0.0.0:8000", "--error-logfile=-", "--capture-output", "app:app"]
         env:
         - name: REDIS_HOST
           value: "redis-service"
