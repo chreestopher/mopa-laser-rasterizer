@@ -617,6 +617,7 @@
           <option value="abstract_glitch">Digital Glitch</option>
           <option value="abstract_deep_fryer">Deep Fryer</option>
           <option value="abstract_shattered">Shattered</option>
+          <option value="abstract_holographic_space">Holographic Space</option>
           <option value="abstract_none">Abstract: None</option>
         </optgroup>
       </select>
@@ -714,6 +715,14 @@
           ['fall_distance', 20, 0, 160, 1], ['gravity_bias', 1.4, .2, 4, .1],
           ['rotation', 22, 0, 180, 1], ['break_origin_x', .5, 0, 1, .01],
           ['break_origin_y', .35, 0, 1, .01], ['seed', 1, 0, 999999, 1]]
+      },
+      holographic_space: {
+        description: 'Holographizes only the light/background swatches while preserving darker artwork as a crisp foreground. Band Height and Segment Width set the scale of the scan pattern, Gap opens the seams, Diffraction controls the sideways rainbow-like shift, Phase Stride changes its rhythm, Echo Count and Spacing create repeated light trails, Density decides how much of the light area catches the effect, Light Threshold chooses which swatches count as light, and Seed creates a new repeatable holographic arrangement. No calibration is required.',
+        controls: [['band_height', 12, 3, 100, 1], ['segment_width', 54, 8, 240, 1],
+          ['gap', .6, 0, 12, .1], ['diffraction', 18, 0, 160, 1],
+          ['phase_stride', 1.35, .1, 8, .05], ['echo_count', 2, 0, 5, 1],
+          ['echo_spacing', 5, 0, 50, 1], ['density', .78, 0, 1, .05],
+          ['light_threshold', 150, 0, 255, 1], ['seed', 1, 0, 999999, 1]]
       },
       none: { description: 'Keeps the clean abstract-vector workflow without adding a geometric effect. Choose this when you want the source image to do the talking.', controls: [] }
     };
