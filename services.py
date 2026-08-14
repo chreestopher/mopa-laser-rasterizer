@@ -153,6 +153,70 @@ def download_user_material_library(library, local_path):
         raise RuntimeError("Could not retrieve the saved Material Library.") from error
 
 
+def record_user_job(user_id, task_id, source_name, image_preset, abstract_filter, material_name, run_parameters):
+    """Write both an ordered user-history record and a direct owner lookup."""
+    table = account_table()
+    if not table or not user_id:
+        return
+    created_at = int(time.time())
+    history_item = {
+        "pk": f"USER#{user_id}", "sk": f"JOB#{created_at:010d}#{task_id}",
+        "task_id": task_id, "source_name": source_name,
+        "image_preset": image_preset, "abstract_filter": abstract_filter,
+        "material_name": material_name, "run_parameters": _dynamodb_values(run_parameters or {}),
+        "created_at": created_at,
+    }
+    owner_item = {"pk": f"JOB#{task_id}", "sk": "OWNER", "user_id": user_id, "created_at": created_at}
+    try:
+        with table.batch_writer() as batch:
+            batch.put_item(Item=history_item)
+            batch.put_item(Item=owner_item)
+    except ClientError as error:
+        raise RuntimeError("Could not record this job in the account history.") from error
+
+
+def get_user_job_history(user_id, limit=100):
+    table = account_table()
+    if not table or not user_id:
+        return []
+    try:
+        response = table.query(
+            KeyConditionExpression=Key("pk").eq(f"USER#{user_id}") & Key("sk").begins_with("JOB#"),
+            ScanIndexForward=False, Limit=limit,
+        )
+    except ClientError as error:
+        raise RuntimeError("Could not load account job history.") from error
+    entries = []
+    for item in response.get("Items", []):
+        entry = _json_values(item)
+        task_id = entry.get("task_id")
+        if not task_id:
+            continue
+        stored_status = redis_client.get(f"task:{task_id}:status")
+        # Keep account history consistent with S3 lifecycle/manual cleanup,
+        # just as the guest history panel already does.
+        if not stored_status and not task_artifacts_exist(task_id):
+            continue
+        entry.update({
+            "status": stored_status or "expired",
+            "svg_url": f"/download/{task_id}", "lightburn_url": f"/download-lbrn2/{task_id}",
+        })
+        entry["reuse_url"] = reuse_settings_url(entry)
+        entries.append(entry)
+    return entries
+
+
+def get_job_owner(task_id):
+    table = account_table()
+    if not table or not task_id:
+        return None
+    try:
+        item = table.get_item(Key={"pk": f"JOB#{task_id}", "sk": "OWNER"}).get("Item") or {}
+    except ClientError as error:
+        raise RuntimeError("Could not verify job ownership.") from error
+    return item.get("user_id")
+
+
 def valid_history_session(value):
     value = str(value or "").strip().lower()
     return value if HISTORY_SESSION_RE.fullmatch(value) else None

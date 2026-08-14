@@ -28,7 +28,9 @@ from services import (
     find_task_artifact,
     get_user_material_library,
     get_s3_artifact,
+    get_job_owner,
     redis_client,
+    record_user_job,
     save_user_material_library,
     tasks,
     upload_task_artifact,
@@ -183,6 +185,12 @@ def start_task():
         "color_name_overrides": color_name_overrides,
         "filter_parameters": filter_parameters,
     }
+    if user_id:
+        try:
+            record_user_job(user_id, task_id, base_name, submitted_preset, submitted_filter,
+                            material_name, run_parameters)
+        except RuntimeError as error:
+            return jsonify({"status": "error", "message": str(error)}), 503
     add_history_entry(history_session, task_id, base_name, submitted_preset, submitted_filter,
                       material_name, run_parameters)
     history_files = get_history_entries(history_session)
@@ -216,6 +224,9 @@ def file_history(session_id):
 
 @routes.route("/task-status/<task_id>")
 def task_status(task_id):
+    access_error = _job_access_error(task_id)
+    if access_error:
+        return access_error
     log_key, status_key = f"task:{task_id}:log", f"task:{task_id}:status"
     status = redis_client.get(status_key) or "pending"
     logs = redis_client.lrange(log_key, 0, -1) if redis_client.exists(log_key) else []
@@ -230,6 +241,17 @@ def _output_file(task_id, extension=None):
     for file_path in matches:
         if not file_path.endswith(".lbrn2"):
             return os.path.basename(file_path)
+    return None
+
+
+def _job_access_error(task_id):
+    """Keep account-owned jobs private while leaving legacy guest jobs usable."""
+    try:
+        owner_id = get_job_owner(task_id)
+    except RuntimeError:
+        return jsonify({"status": "error", "message": "Could not verify job ownership."}), 503
+    if owner_id and request.headers.get("x-amzn-oidc-identity", "").strip() != owner_id:
+        return jsonify({"status": "error", "message": "This job belongs to a different account."}), 403
     return None
 
 
@@ -256,6 +278,9 @@ def _stream_s3_download(key, as_attachment=True, mimetype=None):
 
 @routes.route("/download/<task_id>")
 def download_file(task_id):
+    access_error = _job_access_error(task_id)
+    if access_error:
+        return access_error
     s3_key = _s3_output_key(task_id)
     if s3_key:
         return _stream_s3_download(s3_key, mimetype="image/svg+xml" if s3_key.endswith(".svg") else None)
@@ -268,12 +293,18 @@ def download_file(task_id):
 
 @routes.route("/list-downloads/<task_id>")
 def list_downloads(task_id):
+    access_error = _job_access_error(task_id)
+    if access_error:
+        return access_error
     return render_template("loading.html", status="success",
         files=[f"/download-lbrn2/{task_id}", f"/download/{task_id}"]), 200
 
 
 @routes.route("/download-lbrn2/<task_id>")
 def download_lbrn2(task_id):
+    access_error = _job_access_error(task_id)
+    if access_error:
+        return access_error
     s3_key = _s3_output_key(task_id, ".lbrn2")
     if s3_key:
         cleanup_redis_inflight(task_id)
@@ -287,6 +318,9 @@ def download_lbrn2(task_id):
 
 @routes.route("/view-image/<task_id>")
 def view_image(task_id):
+    access_error = _job_access_error(task_id)
+    if access_error:
+        return access_error
     s3_key = _s3_output_key(task_id)
     if s3_key:
         lower = s3_key.lower()

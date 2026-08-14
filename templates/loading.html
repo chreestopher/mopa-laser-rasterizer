@@ -560,11 +560,20 @@ document.addEventListener('click', event => {
 });
 
 async function refreshFileHistory() {
-    if (!historySession) {
+    try {
+      // Signed-in operators receive durable account history from DynamoDB.
+      // Guests retain the existing browser-session history as a fallback.
+      const accountResponse = await fetch('/account/jobs', {cache: 'no-store'});
+      if (accountResponse.ok) {
+        const accountData = await accountResponse.json();
+        const accountFiles = accountData.files || [];
+        if (accountFiles.length) upsertFileRows(accountFiles);
+        return;
+      }
+      if (!historySession) {
         console.warn('File history session was not carried to the loading page.');
         return;
-    }
-    try {
+      }
       const response = await fetch(`/file-history/${encodeURIComponent(historySession)}`, {cache: 'no-store'});
       if (!response.ok) throw new Error(`History request returned ${response.status}`);
       const data = await response.json();

@@ -6,6 +6,7 @@ from services import (
     ABSTRACT_FILTER_NAMES,
     list_user_material_libraries,
     get_user_preferences,
+    get_user_job_history,
     normalize_dimension,
     save_user_preferences,
 )
@@ -92,5 +93,16 @@ def material_libraries():
             }
             for item in libraries
         ]})
+    except RuntimeError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+
+@routes.route("/account/jobs")
+def jobs():
+    user_id = authenticated_user_id()
+    if not user_id:
+        return jsonify({"status": "error", "message": "Sign in to use account job history."}), 401
+    try:
+        return jsonify({"status": "ok", "files": get_user_job_history(user_id)})
     except RuntimeError as error:
         return jsonify({"status": "error", "message": str(error)}), 400
