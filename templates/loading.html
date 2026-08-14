@@ -390,7 +390,7 @@
             </div>
             <ul id="download-list" class="download-list">
                 {% for file in history_files %}
-                <li class="file-item" data-task-id="{{ file.task_id }}" tabindex="0">
+                <li class="file-item" data-task-id="{{ file.task_id }}" data-created-at="{{ file.created_at or 0 }}" tabindex="0">
                     <div class="file-summary"><span class="file-time" data-created-at="{{ file.created_at }}"></span><span class="source-name">{{ file.source_name }}</span></div>
                     <div class="file-menu">
                         <div class="file-menu-details"><span><strong>Style:</strong> <span class="file-meta">{{ file.image_preset|replace('_', ' ') }}{% if file.abstract_filter and file.abstract_filter != 'none' %} · {{ file.abstract_filter|replace('_', ' ') }}{% endif %}</span></span>{% if file.material_name %}<span><strong>Material:</strong> {{ file.material_name }}</span>{% endif %}<span><strong>Status:</strong> <span class="file-status">[{{ file.status }}]</span></span></div>
@@ -406,7 +406,7 @@
                     </div>
                 </li>
                 {% else %}
-                <li class="file-item" data-task-id="{{ task_id }}" tabindex="0">
+                <li class="file-item" data-task-id="{{ task_id }}" data-created-at="0" tabindex="0">
                     <div class="file-summary"><span class="file-time">now</span><span class="source-name">{{ current_source_name }}</span></div>
                     <div class="file-menu">
                         <div class="file-menu-details"><span><strong>Style:</strong> <span class="file-meta">{{ current_image_preset|replace('_', ' ') }}{% if current_abstract_filter and current_abstract_filter != 'none' %} · {{ current_abstract_filter|replace('_', ' ') }}{% endif %}</span></span>{% if current_material_name %}<span><strong>Material:</strong> {{ current_material_name }}</span>{% endif %}<span><strong>Status:</strong> <span class="file-status">[pending]</span></span></div>
@@ -507,6 +507,7 @@ function upsertFileRows(files) {
             row.tabIndex = 0;
             downloadList.prepend(row);
         }
+        row.dataset.createdAt = String(file.created_at || 0);
         const openMenu = row.classList.contains('menu-open');
         const existingMenu = row.querySelector('.file-menu');
         const menuLeft = existingMenu?.style.getPropertyValue('--file-menu-left');
@@ -519,6 +520,12 @@ function upsertFileRows(files) {
         }
         bindFileMenuPositioning(row);
     });
+    // Server-rendered session history and asynchronously loaded account
+    // history can overlap. Always establish one unambiguous newest-first
+    // display order after merging either source.
+    [...downloadList.querySelectorAll('.file-item')]
+      .sort((left, right) => Number(right.dataset.createdAt || 0) - Number(left.dataset.createdAt || 0))
+      .forEach(row => downloadList.append(row));
 }
 
 function positionFileMenu(row) {

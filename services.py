@@ -12,6 +12,7 @@ import threading
 import time
 import uuid
 from decimal import Decimal
+from numbers import Integral, Real
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
@@ -64,7 +65,15 @@ def account_table():
 
 def _dynamodb_values(value):
     """DynamoDB resources require Decimal rather than Python float values."""
+    if isinstance(value, bool):
+        return value
     if isinstance(value, float):
+        return Decimal(str(value))
+    # LightBurn and NumPy occasionally expose numeric scalar subclasses. They
+    # look like ordinary values in Python but boto3 will not serialize them.
+    if isinstance(value, Integral):
+        return int(value)
+    if isinstance(value, Real):
         return Decimal(str(value))
     if isinstance(value, dict):
         return {key: _dynamodb_values(item) for key, item in value.items()}
@@ -201,7 +210,7 @@ def record_setting_usage(task_id, resolved_settings, library=None):
                         ":setting_values": setting.get("setting_values", {}), ":now": now, ":task_id": task_id,
                     }),
                 )
-    except ClientError as error:
+    except Exception as error:
         raise RuntimeError("Could not record Material Library setting usage.") from error
 
 
