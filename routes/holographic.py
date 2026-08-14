@@ -75,6 +75,54 @@ def _calibration_base_layer(setting):
     return selected
 
 
+def _numeric_setting(setting, name, default=0.0):
+    """Read one LightBurn setting without letting malformed libraries break a grid."""
+    try:
+        return float(getattr(setting, name, default))
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _grating_signature(setting, fill_interval_mm, scan_angle_degrees, override=None):
+    """Describe the laser motion that produces one calibrated grating cell.
+
+    LightBurn Material Libraries store MOPA frequency in Hz and scan speed in
+    mm/s. The resulting pulse pitch in µm is therefore
+    ``speed_mm_s / frequency_hz * 1000``: 300 mm/s / 300,000 Hz = 1 µm.
+    The macro fill interval is deliberately separate; it controls neighbouring
+    scan-line spacing and heat overlap.
+    """
+    override = override or {}
+    speed_mm_s = _numeric_setting(setting, "speed")
+    frequency_hz = _numeric_setting(setting, "frequency")
+    property_name = SWEEP_SETTINGS.get(override.get("parameter"))
+    if property_name == "speed":
+        speed_mm_s = float(override["value"])
+    elif property_name == "frequency":
+        frequency_hz = float(override["value"])
+    pulse_pitch_um = speed_mm_s / frequency_hz * 1000 if speed_mm_s > 0 and frequency_hz > 0 else None
+    return {
+        "scan_speed_mm_s": speed_mm_s,
+        "pulse_frequency_hz": frequency_hz,
+        "pulse_pitch_um": pulse_pitch_um,
+        "pulse_width_ns": _numeric_setting(setting, "QPulseWidth"),
+        "minimum_power_percent": _numeric_setting(setting, "minPower"),
+        "maximum_power_percent": _numeric_setting(setting, "maxPower"),
+        "passes": _numeric_setting(setting, "numPasses", 1),
+        "fill_interval_mm": float(fill_interval_mm),
+        "scan_direction_degrees": float(scan_angle_degrees) % 180,
+        # The visible grating direction is normal to the scan travel direction.
+        "grating_axis_degrees": (float(scan_angle_degrees) + 90) % 180,
+    }
+
+
+def _rgb_to_lab(rgb):
+    """Return CIE-like Lab coordinates from an sRGB triplet for recipe matching."""
+    sample = np.uint8([[[int(channel) for channel in rgb]]])
+    lab = cv2.cvtColor(sample, cv2.COLOR_RGB2LAB)[0, 0]
+    return [float(lab[0]) * 100 / 255, float(lab[1]) - 128, float(lab[2]) - 128]
+
+
 def _svg_grid(path, columns, rows, cell_mm, intervals, angles):
     width, height = columns * cell_mm, rows * cell_mm
     root = ET.Element("svg", xmlns="http://www.w3.org/2000/svg", width=f"{width}mm",
@@ -238,6 +286,7 @@ def _measure_grid_photo(photo_path, grid, rotation_degrees=0, crop=None, max_edg
     rows, columns = int(grid["rows"]), int(grid["columns"])
     height, width = rectified.shape[:2]
     intervals, angles = grid["intervals_mm"], grid["angles_degrees"]
+    recipe_signatures = grid.get("grating_recipe_signatures") or []
     cells = []
     manual_sample_points = manual_sample_points or {}
     preview = rectified.copy()
@@ -261,6 +310,7 @@ def _measure_grid_photo(photo_path, grid, rotation_degrees=0, crop=None, max_edg
         median_rgb = [int(median_bgr[2]), int(median_bgr[1]), int(median_bgr[0])]
         if reference_correction:
             median_rgb = [int(np.clip(channel * scale, 0, 255)) for channel, scale in zip(median_rgb, reference_correction)]
+        observed_lab = _rgb_to_lab(median_rgb)
         sample_hsv = cv2.cvtColor(sample, cv2.COLOR_BGR2HSV)
         median_hsv = cv2.cvtColor(np.uint8([[median_bgr]]), cv2.COLOR_BGR2HSV)[0, 0]
         saturation = float(np.median(sample_hsv[:, :, 1])) / 255
@@ -278,6 +328,7 @@ def _measure_grid_photo(photo_path, grid, rotation_degrees=0, crop=None, max_edg
             "index": index + 1, "row": row + 1, "column": column + 1,
             "interval_mm": intervals[index], "angle_degrees": angles[index],
             "observed_rgb": median_rgb,
+            "observed_lab": observed_lab,
             "observed_hex": "#{:02X}{:02X}{:02X}".format(*median_rgb),
             "observed_hsv_opencv": [int(value) for value in median_hsv],
             "confidence": confidence,
@@ -287,6 +338,7 @@ def _measure_grid_photo(photo_path, grid, rotation_degrees=0, crop=None, max_edg
                 {"parameter": grid["sweep"]["parameter"], "value": grid["sweep"]["values"][index]}
                 if grid.get("sweep", {}).get("parameter") else None
             ),
+            "grating_signature": recipe_signatures[index] if index < len(recipe_signatures) else {},
         })
         cv2.rectangle(preview, (x0, y0), (x1, y1), (40, 240, 135), 2)
         cv2.putText(preview, str(index + 1), (x0 + 8, y0 + 25), cv2.FONT_HERSHEY_SIMPLEX, .75, (40, 240, 135), 2, cv2.LINE_AA)
@@ -311,12 +363,14 @@ def _load_recipe_profile(profile_file):
 
 
 def _nearest_recipe(pixel, recipes):
-    # Image pixels arrive as uint8 values.  Convert before subtraction so
-    # distances such as 0 - 255 do not wrap around to a positive uint8 value.
-    red, green, blue = (int(channel) for channel in pixel)
+    """Choose the calibrated structural-color recipe closest in Lab space."""
+    target_lab = _rgb_to_lab(pixel)
     return min(
         recipes,
-        key=lambda recipe: sum((channel - int(reference)) ** 2 for channel, reference in zip((red, green, blue), recipe["observed_rgb"])),
+        key=lambda recipe: sum(
+            (channel - reference) ** 2
+            for channel, reference in zip(target_lab, recipe.get("observed_lab") or _rgb_to_lab(recipe["observed_rgb"]))
+        ),
     )
 
 
@@ -417,7 +471,17 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_f
             "pixel_size_mm": pixel_mm, "physical_size_mm": [pixels.shape[1] * pixel_mm, pixels.shape[0] * pixel_mm],
             "vector_rectangles": sum(len(bucket["rectangles"]) for bucket in recipes_by_name.values()),
             "source_pixel_count": int(pixels.shape[0] * pixels.shape[1]),
-            "recipes": [{"name": recipe["name"], "interval_mm": recipe["interval_mm"], "angle_degrees": recipe["angle_degrees"]} for recipe in profile["recipes"]],
+            "color_mapping": {
+                "method": "nearest_measured_recipe_cie_lab",
+                "note": "Each artwork pixel is assigned to the perceptually nearest measured diffraction recipe.",
+            },
+            "recipes": [{
+                "name": recipe["name"], "interval_mm": recipe["interval_mm"],
+                "angle_degrees": recipe["angle_degrees"],
+                "observed_rgb": recipe["observed_rgb"],
+                "observed_lab": recipe.get("observed_lab") or _rgb_to_lab(recipe["observed_rgb"]),
+                "grating_signature": recipe.get("grating_signature", {}),
+            } for recipe in profile["recipes"]],
         }, metadata_file, indent=2)
     return svg_name, lbrn_name, metadata_name, pixels.shape[1], pixels.shape[0], sum(
         len(bucket["rectangles"]) for bucket in recipes_by_name.values()
@@ -484,6 +548,7 @@ def calibration_grid():
     intervals = [interval_low + (interval_high - interval_low) * index / max(count - 1, 1) for index in range(count)]
     angles = [180 * index / max(count - 1, 1) for index in range(count)]
     sweep_values = [sweep_low + (sweep_high - sweep_low) * index / max(count - 1, 1) for index in range(count)]
+    recipe_signatures = []
     stem = f"holographic_calibration_{task_id}"
     svg_name, lbrn_name = f"{stem}.svg", f"{stem}.lbrn2"
     try:
@@ -507,6 +572,12 @@ def calibration_grid():
             if SWEEP_SETTINGS[sweep_key]:
                 value = round(sweep_values[index]) if sweep_key in {"frequency", "passes"} else sweep_values[index]
                 setattr(setting, SWEEP_SETTINGS[sweep_key], value)
+            signature = _grating_signature(
+                setting, interval, angle,
+                {"parameter": sweep_key, "value": value} if SWEEP_SETTINGS[sweep_key] else None,
+            )
+            signature["cell_index"] = index + 1
+            recipe_signatures.append(signature)
             project.add_layer(setting)
             project.add(lightburn.Square(cell_mm, cell_mm, x=(index % columns) * cell_mm,
                                         y=(index // columns) * cell_mm).layer(index))
@@ -518,6 +589,7 @@ def calibration_grid():
                 "lens_field_of_view_mm": lens_field_mm, "columns": columns, "rows": rows,
                 "cell_size_mm": cell_mm, "interval_range_mm": [interval_low, interval_high],
                 "angles_degrees": angles, "intervals_mm": intervals,
+                "grating_recipe_signatures": recipe_signatures,
                 "sweep": {
                     "parameter": sweep_key if SWEEP_SETTINGS[sweep_key] else None,
                     "lightburn_property": SWEEP_SETTINGS[sweep_key],

@@ -571,7 +571,10 @@
         name.type = 'text'; name.value = `Holographic ${String(cell.index).padStart(2, '0')}`; name.dataset.nameFor = cell.index;
         details.append(swatch, name);
         const metadata = document.createElement('small');
-        metadata.textContent = `${cell.observed_hex} · ${Number(cell.interval_mm).toFixed(3)} mm · ${Number(cell.angle_degrees).toFixed(1)}° · confidence ${cell.confidence}%${cell.quality_flags.length ? `, ${cell.quality_flags.join(', ')}` : ''}`;
+        const grating = cell.grating_signature || {};
+        const pitch = Number.isFinite(Number(grating.pulse_pitch_um)) ? ` · ${Number(grating.pulse_pitch_um).toFixed(3)} µm pulse pitch` : '';
+        const axis = Number.isFinite(Number(grating.grating_axis_degrees)) ? ` · grating axis ${Number(grating.grating_axis_degrees).toFixed(1)}°` : '';
+        metadata.textContent = `${cell.observed_hex} · ${Number(cell.interval_mm).toFixed(3)} mm fill · ${Number(cell.angle_degrees).toFixed(1)}° scan${pitch}${axis} · confidence ${cell.confidence}%${cell.quality_flags.length ? `, ${cell.quality_flags.join(', ')}` : ''}`;
         if (cell.confidence < 45 || cell.quality_flags.length) card.classList.add('low-confidence');
         card.append(keep, details, metadata);
         grid.appendChild(card);
