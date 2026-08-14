@@ -379,7 +379,8 @@
         if (!response.ok) throw new Error(data.message || 'Calibration grid could not be created.');
         document.getElementById('profile_calibration_id').value = data.calibration_id;
         localStorage.setItem('holographic-calibration-id', data.calibration_id);
-        results.innerHTML = `Calibration grid ready: <a href="${data.svg_url}">Download SVG</a> · <a href="${data.lightburn_url}">Download LightBurn project</a> · Grid ID loaded into the Finished Grid Capture Console.`;
+        const labelSetting = data.label_setting ? ` Label layer: ${data.label_setting}.` : '';
+        results.innerHTML = `Calibration grid ready: <a href="${data.svg_url}">Download SVG</a> · <a href="${data.lightburn_url}">Download LightBurn project</a> ·${labelSetting} Grid ID loaded into the Finished Grid Capture Console.`;
       } catch (error) {
         results.textContent = error.message;
       } finally {

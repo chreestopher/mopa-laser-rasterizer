@@ -163,8 +163,9 @@ def _rgb_to_lab(rgb):
     return [float(lab[0]) * 100 / 255, float(lab[1]) - 128, float(lab[2]) - 128]
 
 
-def _svg_grid(path, columns, rows, cell_mm, intervals, angles, label_band_mm):
-    width, height = columns * cell_mm, rows * cell_mm
+def _svg_grid(path, columns, rows, cell_mm, intervals, angles, top_label_mm, right_label_mm):
+    grid_width, grid_height = columns * cell_mm, rows * cell_mm
+    width, height = grid_width + right_label_mm, grid_height + top_label_mm
     root = ET.Element("svg", xmlns="http://www.w3.org/2000/svg", width=f"{width}mm",
                       height=f"{height}mm", viewBox=f"0 0 {width} {height}")
     # High-contrast registration marks make the photographed grid far easier
@@ -173,20 +174,27 @@ def _svg_grid(path, columns, rows, cell_mm, intervals, angles, label_band_mm):
     mark_size = min(1.2, cell_mm * .12)
     for mark_x, mark_y in ((.2, .2), (width - mark_size - .2, .2), (.2, height - mark_size - .2), (width - mark_size - .2, height - mark_size - .2)):
         ET.SubElement(root, "rect", x=str(mark_x), y=str(mark_y), width=str(mark_size), height=str(mark_size), fill="#000")
+    for column in range(columns):
+        interval = intervals[column]
+        ET.SubElement(root, "text", x=str(column * cell_mm + .35), y=str(top_label_mm * .68), fill="#000",
+                      **{"font-size": str(min(.9, top_label_mm * .45)), "font-family": "monospace"}).text = f"I {interval:.3f}"
+    for row in range(rows):
+        angle = angles[row * columns]
+        ET.SubElement(root, "text", x=str(grid_width + .25), y=str(top_label_mm + row * cell_mm + cell_mm * .55), fill="#000",
+                      **{"font-size": str(min(.9, right_label_mm * .45)), "font-family": "monospace"}).text = f"A {angle:g}°"
     for index, (interval, angle) in enumerate(zip(intervals, angles)):
         column, row = index % columns, index // columns
-        x, y = column * cell_mm, row * cell_mm
+        x, y = column * cell_mm, top_label_mm + row * cell_mm
         group = ET.SubElement(root, "g", id=f"cell_{index:02d}")
         ET.SubElement(group, "rect", x=str(x), y=str(y), width=str(cell_mm), height=str(cell_mm),
                       fill="none", stroke="#000", **{"stroke-width": ".1"})
         # Do not use an SVG clipPath here. LightBurn may ignore clip paths on
         # import, which would turn every line into an oversize canvas-spanning
         # stroke. Calculate the two real intersections with this cell instead.
-        grating_height = cell_mm - label_band_mm
         radians = math.radians(angle)
         dx, dy = math.cos(radians), math.sin(radians)
         normal_x, normal_y = -dy, dx
-        half_width, half_height = cell_mm / 2, grating_height / 2
+        half_width, half_height = cell_mm / 2, cell_mm / 2
         max_offset = math.hypot(half_width, half_height)
         offset = -max_offset
         while offset <= max_offset + 1e-9:
@@ -218,9 +226,6 @@ def _svg_grid(path, columns, rows, cell_mm, intervals, angles, label_band_mm):
                     stroke="#000", **{"stroke-width": ".01"},
                 )
             offset += interval
-        label = f"{index + 1:02d}  {angle:g}deg / {interval:.3f}mm"
-        ET.SubElement(group, "text", x=str(x + .45), y=str(y + grating_height + label_band_mm * .7), fill="#000",
-                      **{"font-size": str(min(2.0, label_band_mm * .58)), "font-family": "monospace"}).text = label
     ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
 
 
@@ -388,13 +393,20 @@ def _measure_grid_photo(photo_path, grid, rotation_degrees=0, crop=None, max_edg
     height, width = rectified.shape[:2]
     intervals, angles = grid["intervals_mm"], grid["angles_degrees"]
     recipe_signatures = grid.get("grating_recipe_signatures") or []
+    top_label_mm = float(grid.get("top_label_band_mm", 0) or 0)
+    right_label_mm = float(grid.get("right_label_band_mm", 0) or 0)
+    grid_width_mm = columns * float(grid["cell_size_mm"])
+    grid_height_mm = rows * float(grid["cell_size_mm"])
+    grid_right = round(width * grid_width_mm / (grid_width_mm + right_label_mm)) if right_label_mm else width
+    grid_top = round(height * top_label_mm / (grid_height_mm + top_label_mm)) if top_label_mm else 0
     cells = []
     manual_sample_points = manual_sample_points or {}
     preview = rectified.copy()
     for index in range(rows * columns):
         row, column = divmod(index, columns)
-        x0, x1 = round(column * width / columns), round((column + 1) * width / columns)
-        y0, y1 = round(row * height / rows), round((row + 1) * height / rows)
+        x0, x1 = round(column * grid_right / columns), round((column + 1) * grid_right / columns)
+        y0, y1 = (grid_top + round(row * (height - grid_top) / rows),
+                  grid_top + round((row + 1) * (height - grid_top) / rows))
         # Avoid the engraved border and label, which are not representative of
         # the cell's structural color.
         point = manual_sample_points.get(str(index + 1))
@@ -648,16 +660,18 @@ def calibration_grid():
         return jsonify({"status": "error", "message": str(error)}), 400
 
     count = columns * rows
-    intervals = [interval_low + (interval_high - interval_low) * index / max(count - 1, 1) for index in range(count)]
-    angles = [180 * index / max(count - 1, 1) for index in range(count)]
+    column_intervals = [interval_low + (interval_high - interval_low) * index / max(columns - 1, 1) for index in range(columns)]
+    row_angles = [180 * index / max(rows - 1, 1) for index in range(rows)]
+    intervals = [column_intervals[index % columns] for index in range(count)]
+    angles = [row_angles[index // columns] for index in range(count)]
     sweep_values = [sweep_low + (sweep_high - sweep_low) * index / max(count - 1, 1) for index in range(count)]
-    label_band_mm = min(3.0, max(1.7, cell_mm * .24))
-    grating_cell_height_mm = cell_mm - label_band_mm
+    top_label_mm = min(2.2, max(1.4, cell_mm * .16))
+    right_label_mm = min(2.2, max(1.4, cell_mm * .16))
     recipe_signatures = []
     stem = f"holographic_calibration_{task_id}"
     svg_name, lbrn_name = f"{stem}.svg", f"{stem}.lbrn2"
     try:
-        _svg_grid(os.path.join(upload_folder, svg_name), columns, rows, cell_mm, intervals, angles, label_band_mm)
+        _svg_grid(os.path.join(upload_folder, svg_name), columns, rows, cell_mm, intervals, angles, top_label_mm, right_label_mm)
         project = lightburn.Lightburn()
         fiducial_layer_index = count
         fiducial_setting = copy(base_setting)
@@ -666,7 +680,8 @@ def calibration_grid():
         fiducial_setting.subLayers = []
         project.add_layer(fiducial_setting)
         fiducial_size = min(1.2, cell_mm * .12)
-        for fiducial_x, fiducial_y in ((.2, .2), (columns * cell_mm - fiducial_size - .2, .2), (.2, rows * cell_mm - fiducial_size - .2), (columns * cell_mm - fiducial_size - .2, rows * cell_mm - fiducial_size - .2)):
+        total_width, total_height = columns * cell_mm + right_label_mm, rows * cell_mm + top_label_mm
+        for fiducial_x, fiducial_y in ((.2, .2), (total_width - fiducial_size - .2, .2), (.2, total_height - fiducial_size - .2), (total_width - fiducial_size - .2, total_height - fiducial_size - .2)):
             project.add(lightburn.Square(fiducial_size, fiducial_size, x=fiducial_x, y=fiducial_y).layer(fiducial_layer_index))
         label_layer_index = count + 1
         label_setting = copy(_label_setting(lightburn, library_path, material, base_setting))
@@ -674,6 +689,12 @@ def calibration_grid():
         label_setting.name = f"Calibration labels ({getattr(label_setting, 'entryDesc', 'dark setting')})"
         label_setting.subLayers = []
         project.add_layer(label_setting)
+        for column, interval in enumerate(column_intervals):
+            project.add(lightburn.Text(min(.9, top_label_mm * .45), f"I {interval:.3f}",
+                                       x=column * cell_mm + .35, y=.25).layer(label_layer_index))
+        for row, angle in enumerate(row_angles):
+            project.add(lightburn.Text(min(.9, right_label_mm * .45), f"A {angle:g}°",
+                                       x=columns * cell_mm + .25, y=top_label_mm + row * cell_mm + cell_mm * .42).layer(label_layer_index))
         for index, (interval, angle) in enumerate(zip(intervals, angles)):
             setting = copy(base_setting)
             setting.index = index
@@ -690,11 +711,8 @@ def calibration_grid():
             signature["cell_index"] = index + 1
             recipe_signatures.append(signature)
             project.add_layer(setting)
-            cell_x, cell_y = (index % columns) * cell_mm, (index // columns) * cell_mm
-            project.add(lightburn.Square(cell_mm, grating_cell_height_mm, x=cell_x, y=cell_y).layer(index))
-            label = f"{index + 1:02d}  {angle:g}deg / {interval:.3f}mm"
-            project.add(lightburn.Text(min(2.0, label_band_mm * .58), label,
-                                       x=cell_x + .45, y=cell_y + grating_cell_height_mm + .25).layer(label_layer_index))
+            cell_x, cell_y = (index % columns) * cell_mm, top_label_mm + (index // columns) * cell_mm
+            project.add(lightburn.Square(cell_mm, cell_mm, x=cell_x, y=cell_y).layer(index))
         project.write(os.path.join(upload_folder, lbrn_name))
         with open(os.path.join(upload_folder, f"{stem}.json"), "w", encoding="utf-8") as metadata_file:
             json.dump({
@@ -702,7 +720,8 @@ def calibration_grid():
                 "setting_description": description, "laser_source": laser_source,
                 "lens_field_of_view_mm": lens_field_mm, "columns": columns, "rows": rows,
                 "cell_size_mm": cell_mm, "interval_range_mm": [interval_low, interval_high],
-                "label_band_mm": label_band_mm, "grating_cell_height_mm": grating_cell_height_mm,
+                "top_label_band_mm": top_label_mm, "right_label_band_mm": right_label_mm,
+                "grid_width_mm": columns * cell_mm, "grid_height_mm": rows * cell_mm,
                 "angles_degrees": angles, "intervals_mm": intervals,
                 "grating_recipe_signatures": recipe_signatures,
                 "sweep": {
@@ -721,7 +740,8 @@ def calibration_grid():
         }), 500
     return jsonify({"status": "completed", "calibration_id": task_id,
                     "svg_url": f"/holographic-etching/download/{svg_name}",
-                    "lightburn_url": f"/holographic-etching/download/{lbrn_name}"})
+                    "lightburn_url": f"/holographic-etching/download/{lbrn_name}",
+                    "label_setting": str(getattr(label_setting, "entryDesc", ""))})
 
 
 @routes.route("/holographic-etching/calibration-profile", methods=["POST"])
