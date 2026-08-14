@@ -60,14 +60,14 @@ def clean_preferences(payload):
     colors = payload.get("selected_color_hexes")
     if isinstance(colors, list):
         clean["selected_color_hexes"] = [
-            str(color).upper() for color in colors[:30]
+            str(color).upper() for color in colors[:64]
             if len(str(color)) == 7 and str(color).startswith("#")
         ]
     overrides = payload.get("color_name_overrides")
     if isinstance(overrides, dict):
         clean["color_name_overrides"] = {
             str(color).upper(): str(name).strip()[:80]
-            for color, name in list(overrides.items())[:30]
+            for color, name in list(overrides.items())[:64]
             if len(str(color)) == 7 and str(color).startswith("#") and str(name).strip()
         }
     parameters = payload.get("abstract_filter_parameters")

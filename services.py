@@ -641,7 +641,7 @@ def parse_color_name_overrides(raw_value):
         overrides = json.loads(raw_value)
     except json.JSONDecodeError as error:
         raise ValueError("Palette names are not valid JSON") from error
-    if not isinstance(overrides, dict) or len(overrides) > 30:
+    if not isinstance(overrides, dict) or len(overrides) > 64:
         raise ValueError("Palette names must be a small object")
     clean, seen_names = {}, set()
     for color_hex, name in overrides.items():
