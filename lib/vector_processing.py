@@ -131,6 +131,24 @@ def resize_to_specific_height_or_width( image, width=0, height=0 ):
 
 found_lb_hex = {}
 
+
+def nearest_available_swatch(r, g, b, target_colors, prefer_non_black=True):
+    """Choose a configured swatch by RGB distance when a neutral fallback is absent."""
+    candidates = list(target_colors)
+    if prefer_non_black:
+        non_black = [color for color in candidates if color.upper() != "#000000"]
+        if non_black:
+            candidates = non_black
+    if not candidates:
+        return "#000000"
+    return min(
+        candidates,
+        key=lambda color: sum(
+            (channel - reference) ** 2
+            for channel, reference in zip((r, g, b), hex_to_rgb(color))
+        ),
+    )
+
 def get_closest_color(r, g, b, TARGET_COLORS):
     """
     Determines the output color based on the input pixel's value (luminance) and hue.
@@ -146,7 +164,9 @@ def get_closest_color(r, g, b, TARGET_COLORS):
 
         # 2. Apply Luminance Threshold Rules
         if V < 25:
-            return "#000000"  # Black
+            return "#000000" if "#000000" in TARGET_COLORS else nearest_available_swatch(
+                r, g, b, TARGET_COLORS, prefer_non_black=False
+            )
         
         # if (V > 250):
         #     return "#B4B4B4"  # Light Gray
@@ -165,7 +185,14 @@ def get_closest_color(r, g, b, TARGET_COLORS):
         # We proceed with hue matching only if saturation/value is decent.
         if s_float < 0.45 or v_float < 0.15:
             # If not colorful enough, treat it as a shade of gray based on its value
-            return "#B4B4B4" if v_float > 0.5 else "#000000"
+            if v_float <= 0.5 and "#000000" in TARGET_COLORS:
+                return "#000000"
+            if "#B4B4B4" in TARGET_COLORS:
+                return "#B4B4B4"
+            # Some libraries intentionally omit Light-Gray. Do not leave
+            # those pixels without a layer and let the black canvas consume
+            # them; use the nearest configured engraving swatch instead.
+            return nearest_available_swatch(r, g, b, TARGET_COLORS)
             
         
         min_diff = 360
