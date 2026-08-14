@@ -395,16 +395,20 @@ def _measure_grid_photo(photo_path, grid, rotation_degrees=0, crop=None, max_edg
     recipe_signatures = grid.get("grating_recipe_signatures") or []
     top_label_mm = float(grid.get("top_label_band_mm", 0) or 0)
     right_label_mm = float(grid.get("right_label_band_mm", 0) or 0)
+    left_margin_mm = float(grid.get("left_grid_margin_mm", 0) or 0)
     grid_width_mm = columns * float(grid["cell_size_mm"])
     grid_height_mm = rows * float(grid["cell_size_mm"])
-    grid_right = round(width * grid_width_mm / (grid_width_mm + right_label_mm)) if right_label_mm else width
+    total_width_mm = left_margin_mm + grid_width_mm + right_label_mm
+    grid_left = round(width * left_margin_mm / total_width_mm) if left_margin_mm else 0
+    grid_right = round(width * (left_margin_mm + grid_width_mm) / total_width_mm) if right_label_mm or left_margin_mm else width
     grid_top = round(height * top_label_mm / (grid_height_mm + top_label_mm)) if top_label_mm else 0
     cells = []
     manual_sample_points = manual_sample_points or {}
     preview = rectified.copy()
     for index in range(rows * columns):
         row, column = divmod(index, columns)
-        x0, x1 = round(column * grid_right / columns), round((column + 1) * grid_right / columns)
+        x0, x1 = (grid_left + round(column * (grid_right - grid_left) / columns),
+                  grid_left + round((column + 1) * (grid_right - grid_left) / columns))
         y0, y1 = (grid_top + round(row * (height - grid_top) / rows),
                   grid_top + round((row + 1) * (height - grid_top) / rows))
         # Avoid the engraved border and label, which are not representative of
@@ -665,8 +669,9 @@ def calibration_grid():
     intervals = [column_intervals[index % columns] for index in range(count)]
     angles = [row_angles[index // columns] for index in range(count)]
     sweep_values = [sweep_low + (sweep_high - sweep_low) * index / max(count - 1, 1) for index in range(count)]
-    top_label_mm = min(2.2, max(1.4, cell_mm * .16))
+    top_label_mm = min(3.2, max(2.4, cell_mm * .22))
     right_label_mm = min(2.2, max(1.4, cell_mm * .16))
+    left_grid_margin_mm = min(2.2, max(1.4, cell_mm * .16))
     recipe_signatures = []
     stem = f"holographic_calibration_{task_id}"
     svg_name, lbrn_name = f"{stem}.svg", f"{stem}.lbrn2"
@@ -680,7 +685,7 @@ def calibration_grid():
         fiducial_setting.subLayers = []
         project.add_layer(fiducial_setting)
         fiducial_size = min(1.2, cell_mm * .12)
-        total_width, total_height = columns * cell_mm + right_label_mm, rows * cell_mm + top_label_mm
+        total_width, total_height = left_grid_margin_mm + columns * cell_mm + right_label_mm, rows * cell_mm + top_label_mm
         for fiducial_x, fiducial_y in ((.2, .2), (total_width - fiducial_size - .2, .2), (.2, total_height - fiducial_size - .2), (total_width - fiducial_size - .2, total_height - fiducial_size - .2)):
             project.add(lightburn.Square(fiducial_size, fiducial_size, x=fiducial_x, y=fiducial_y).layer(fiducial_layer_index))
         label_layer_index = count + 1
@@ -691,10 +696,10 @@ def calibration_grid():
         project.add_layer(label_setting)
         for column, interval in enumerate(column_intervals):
             project.add(lightburn.Text(min(.9, top_label_mm * .45), f"I {interval:.3f}",
-                                       x=column * cell_mm + .35, y=.25).layer(label_layer_index))
+                                       x=left_grid_margin_mm + column * cell_mm + .35, y=.5).layer(label_layer_index))
         for row, angle in enumerate(row_angles):
             project.add(lightburn.Text(min(.9, right_label_mm * .45), f"A {angle:g}°",
-                                       x=columns * cell_mm + .25, y=top_label_mm + row * cell_mm + cell_mm * .42).layer(label_layer_index))
+                                       x=left_grid_margin_mm + columns * cell_mm + .25, y=top_label_mm + row * cell_mm + cell_mm * .42).layer(label_layer_index))
         for index, (interval, angle) in enumerate(zip(intervals, angles)):
             setting = copy(base_setting)
             setting.index = index
@@ -711,7 +716,7 @@ def calibration_grid():
             signature["cell_index"] = index + 1
             recipe_signatures.append(signature)
             project.add_layer(setting)
-            cell_x, cell_y = (index % columns) * cell_mm, top_label_mm + (index // columns) * cell_mm
+            cell_x, cell_y = left_grid_margin_mm + (index % columns) * cell_mm, top_label_mm + (index // columns) * cell_mm
             project.add(lightburn.Square(cell_mm, cell_mm, x=cell_x, y=cell_y).layer(index))
         project.write(os.path.join(upload_folder, lbrn_name))
         with open(os.path.join(upload_folder, f"{stem}.json"), "w", encoding="utf-8") as metadata_file:
@@ -721,6 +726,7 @@ def calibration_grid():
                 "lens_field_of_view_mm": lens_field_mm, "columns": columns, "rows": rows,
                 "cell_size_mm": cell_mm, "interval_range_mm": [interval_low, interval_high],
                 "top_label_band_mm": top_label_mm, "right_label_band_mm": right_label_mm,
+                "left_grid_margin_mm": left_grid_margin_mm,
                 "grid_width_mm": columns * cell_mm, "grid_height_mm": rows * cell_mm,
                 "angles_degrees": angles, "intervals_mm": intervals,
                 "grating_recipe_signatures": recipe_signatures,
