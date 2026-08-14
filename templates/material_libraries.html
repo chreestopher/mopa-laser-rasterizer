@@ -44,7 +44,7 @@
     <div id="manager" hidden>
       <section class="panel vault-terminal">
         <div id="vault_controls"><label for="libraries">Load one or more LightBurn Material Library files</label><input id="libraries" type="file" accept=".clb,.lbmat,.lbrn" multiple><button id="scan" type="button">Scan selected libraries</button><button id="new_library" type="button">New Settings Library</button><div id="import_plan" class="import-plan" hidden></div><button id="import" type="button" hidden>Import selected materials</button></div>
-        <div id="settings_workspace" class="settings-workspace" hidden><div class="settings-toolbar"><strong id="settings_modal_title">MATERIAL SETTINGS CONSOLE</strong><button id="settings_back" type="button">Back to library vault</button></div><div id="settings_modal_body" class="settings-body"></div></div>
+        <div id="settings_workspace" class="settings-workspace" hidden><div class="settings-toolbar"><strong id="settings_modal_title">MATERIAL SETTINGS CONSOLE</strong><button id="settings_workspace_back" type="button">Back to library vault</button></div><div id="settings_modal_body" class="settings-body"></div></div>
         <div id="notice" class="notice" role="status"></div>
       </section>
       <section class="panel vault-files-panel"><strong>YOUR SAVED LIBRARIES</strong><div class="selection-actions"><span id="selected_count" class="meta">Selected settings: 0</span><button id="selected_actions" type="button" disabled>Selected actions</button></div><div id="library_list"></div></section>
@@ -66,11 +66,11 @@
       document.getElementById('selected_count').textContent = `Selected settings: ${count}`;
       document.getElementById('selected_actions').disabled = !count;
     };
-    const selectionKey = entry => `${activeLibraryId}:${entry.entry_id}`;
-    const renderEntries = (summary, clickable=false, selectable=false) => {
+    const selectionKey = (libraryId, entry) => `${libraryId}:${entry.entry_id}`;
+    const renderEntries = (summary, libraryId, clickable=false, selectable=false) => {
       const entries = summary?.entries || [];
       if (!entries.length) return '<p class="meta">Open settings to inspect this library.</p>';
-      return `<div class="entries"><table><thead><tr>${selectable ? '<th>Pick</th>' : ''}<th>Material</th><th>Type</th><th>Description</th></tr></thead><tbody>${entries.map((entry, index) => `<tr${clickable ? ` class="entry-row" data-entry-index="${index}"` : ''}>${selectable ? `<td><input class="entry-select" type="checkbox" data-entry-index="${index}" ${selectedSettings.has(selectionKey(entry)) ? 'checked' : ''} aria-label="Select ${esc(entry.description)}"></td>` : ''}<td>${esc(entry.material)}</td><td>${esc(entry.type)}</td><td>${esc(entry.description)}</td></tr>`).join('')}</tbody></table></div>`;
+      return `<div class="entries"><table><thead><tr>${selectable ? '<th>Pick</th>' : ''}<th>Material</th><th>Type</th><th>Description</th></tr></thead><tbody>${entries.map((entry, index) => `<tr${clickable ? ` class="entry-row" data-library-id="${esc(libraryId)}" data-entry-index="${index}"` : ''}>${selectable ? `<td><input class="entry-select" type="checkbox" data-library-id="${esc(libraryId)}" data-entry-index="${index}" ${selectedSettings.has(selectionKey(libraryId, entry)) ? 'checked' : ''} aria-label="Select ${esc(entry.description)}"></td>` : ''}<td>${esc(entry.material)}</td><td>${esc(entry.type)}</td><td>${esc(entry.description)}</td></tr>`).join('')}</tbody></table></div>`;
     };
     const load = async () => {
       const response = await fetch('/account/material-libraries', {credentials:'same-origin'});
@@ -79,33 +79,42 @@
       savedLibraries = data.libraries || [];
       list.innerHTML = savedLibraries.length ? savedLibraries.map(library => `<article class="library" data-id="${esc(library.library_id)}"><div class="library-head"><span class="meta">Settings: ${esc(library.summary?.entry_count ?? '?')}</span><div class="rename"><input class="library-name-input" value="${esc(library.name)}" aria-label="Library name"><button class="rename-button" type="button">Rename</button></div><button class="inspect" type="button">Settings</button><button class="delete" type="button">Delete</button></div></article>`).join('') : '<p class="empty">No saved libraries yet. Feed the vault a .clb file.</p>';
     };
-    const settingsModal = document.getElementById('settings_modal');
+    const vaultControls = document.getElementById('vault_controls');
+    const settingsWorkspace = document.getElementById('settings_workspace');
     const settingsTitle = document.getElementById('settings_modal_title');
     const settingsBody = document.getElementById('settings_modal_body');
+    let detailedLibraries = new Map();
     let activeEntries = [];
     let activeLibraryName = '';
     let activeLibraryId = '';
-    const closeSettings = () => { settingsModal.hidden = true; };
-    document.getElementById('settings_modal_close').addEventListener('click', closeSettings);
-    settingsModal.addEventListener('click', event => { if (event.target === settingsModal) closeSettings(); });
-    document.addEventListener('keydown', event => { if (event.key === 'Escape') closeSettings(); });
-    const selectionModal = document.getElementById('selection_modal');
-    const selectionBody = document.getElementById('selection_modal_body');
-    const closeSelection = () => { selectionModal.hidden = true; };
-    document.getElementById('selection_modal_close').addEventListener('click', closeSelection);
-    selectionModal.addEventListener('click', event => { if (event.target === selectionModal) closeSelection(); });
+    const closeSettings = () => { settingsWorkspace.hidden = true; vaultControls.hidden = false; };
+    document.getElementById('settings_workspace_back').addEventListener('click', closeSettings);
+    const selectionBody = settingsBody;
     const selectionControls = () => {
       const action = document.getElementById('selection_action')?.value || 'export';
       const target = action === 'copy_existing' ? `<label>Destination Rasterizer library<select id="selection_target_library" class="library-name-input">${savedLibraries.map(library => `<option value="${esc(library.library_id)}">${esc(library.name)}</option>`).join('')}</select></label>` : '';
       const newName = action === 'copy_new' ? '<label>New Rasterizer library name<input id="selection_new_library_name" class="library-name-input" placeholder="My Color Settings"></label>' : '';
       return `<p class="meta">${selectedSettings.size} selected setting${selectedSettings.size === 1 ? '' : 's'} will be written under one exact Material Name.</p><label>Action<select id="selection_action" class="library-name-input"><option value="export"${action === 'export' ? ' selected' : ''}>Export to LightBurn</option><option value="copy_existing"${action === 'copy_existing' ? ' selected' : ''}>Copy to a saved library</option><option value="copy_new"${action === 'copy_new' ? ' selected' : ''}>Copy to a new saved library</option></select></label><label>Material Name<input id="selection_material_name" class="library-name-input" value="colors - stainless steel" placeholder="colors - stainless steel"></label><small>This exact name becomes the Material Name inside the exported or copied LightBurn settings.</small>${target}${newName}<button id="selection_submit" type="button">${action === 'export' ? 'Download LightBurn Library' : 'Copy selected settings'}</button>`;
     };
-    const openSelectionActions = () => { document.getElementById('selection_modal_title').textContent = 'SELECTED MATERIAL SETTINGS'; selectionBody.innerHTML = selectionControls(); selectionModal.hidden = false; };
+    const openSelectionActions = () => { vaultControls.hidden = true; settingsWorkspace.hidden = false; settingsTitle.textContent = 'SELECTED MATERIAL SETTINGS'; selectionBody.innerHTML = selectionControls(); };
     document.getElementById('selected_actions').addEventListener('click', openSelectionActions);
-    const showEntryList = () => {
-      settingsTitle.textContent = activeLibraryName || 'MATERIAL LIBRARY SETTINGS';
-      settingsBody.innerHTML = `<button id="settings_add" type="button">Add Setting</button><p class="meta">Check settings to place them in the export tray. Click an entry row to view or edit its full LightBurn settings.</p>${renderEntries({entries: activeEntries}, true, true)}`;
+    const showSettingsWorkspace = async (expandLibraryId='') => {
+      vaultControls.hidden = true;
+      settingsWorkspace.hidden = false;
+      settingsTitle.textContent = 'MATERIAL SETTINGS CONSOLE';
+      settingsBody.innerHTML = '<p class="meta">Loading the selected settings banks…</p>';
+      try {
+        const loaded = await Promise.all(savedLibraries.map(async library => {
+          const response = await fetch(`/account/material-libraries/${encodeURIComponent(library.library_id)}`, {credentials:'same-origin'});
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.message || `Could not read ${library.name}.`);
+          return data.library;
+        }));
+        detailedLibraries = new Map(loaded.map(library => [library.library_id, library]));
+        settingsBody.innerHTML = `<p class="meta">Open any settings bank, check entries for the shared export tray, or click an entry to inspect and edit it.</p>${loaded.map(library => `<details class="settings-accordion" data-library-id="${esc(library.library_id)}" ${library.library_id === expandLibraryId ? 'open' : ''}><summary><span>${esc(library.name)}</span><span class="meta">Settings: ${esc(library.summary?.entry_count ?? 0)}</span></summary><div class="settings-accordion-content"><button class="settings-add-library" data-library-id="${esc(library.library_id)}" type="button">Add Setting</button>${renderEntries(library.summary, library.library_id, true, true)}</div></details>`).join('')}`;
+      } catch (error) { settingsBody.innerHTML = `<p class="notice error">${esc(error.message)}</p>`; }
     };
+    const showEntryList = () => showSettingsWorkspace(activeLibraryId);
     const showEntrySettings = entry => {
       settingsTitle.textContent = `${entry.material || 'Material'} · ${entry.type || 'Setting'} · ${entry.description || 'Untitled'}`;
       settingsBody.dataset.entryId = entry.entry_id;
@@ -150,9 +159,24 @@
     settingsBody.addEventListener('click', async event => {
       if (event.target.matches('.entry-select')) return;
       const row = event.target.closest('.entry-row');
-      if (row) showEntrySettings(activeEntries[Number(row.dataset.entryIndex)]);
+      if (row) {
+        const library = detailedLibraries.get(row.dataset.libraryId);
+        const entry = library?.summary?.entries?.[Number(row.dataset.entryIndex)];
+        if (!entry) return;
+        activeLibraryId = row.dataset.libraryId;
+        activeLibraryName = library.name;
+        activeEntries = library.summary.entries;
+        showEntrySettings(entry);
+        return;
+      }
       if (event.target.matches('#settings_back')) showEntryList();
-      if (event.target.matches('#settings_add')) showEntryEditor(null);
+      if (event.target.matches('.settings-add-library')) {
+        const library = detailedLibraries.get(event.target.dataset.libraryId);
+        activeLibraryId = event.target.dataset.libraryId;
+        activeLibraryName = library?.name || 'MATERIAL LIBRARY SETTINGS';
+        activeEntries = library?.summary?.entries || [];
+        showEntryEditor(null);
+      }
       if (event.target.matches('#settings_edit')) { const rowId = settingsBody.dataset.entryId; showEntryEditor(activeEntries.find(entry => String(entry.entry_id) === String(rowId))); }
       if (event.target.matches('#settings_cancel')) showEntryList();
       if (event.target.matches('#settings_save')) {
@@ -173,10 +197,11 @@
     });
     settingsBody.addEventListener('change', event => {
       if (!event.target.matches('.entry-select')) return;
-      const entry = activeEntries[Number(event.target.dataset.entryIndex)];
+      const library = detailedLibraries.get(event.target.dataset.libraryId);
+      const entry = library?.summary?.entries?.[Number(event.target.dataset.entryIndex)];
       if (!entry) return;
-      const key = selectionKey(entry);
-      if (event.target.checked) selectedSettings.set(key, {library_id:activeLibraryId, entry_id:entry.entry_id});
+      const key = selectionKey(event.target.dataset.libraryId, entry);
+      if (event.target.checked) selectedSettings.set(key, {library_id:event.target.dataset.libraryId, entry_id:entry.entry_id});
       else selectedSettings.delete(key);
       updateSelectedCount();
     });
@@ -202,8 +227,7 @@
         if (!response.ok) return say(data.message || 'Could not process the selected settings.', true);
         say(action === 'copy_new' ? 'New Rasterizer Material Library created.' : 'Selected settings copied into the saved library.');
       }
-      selectedSettings.clear(); updateSelectedCount(); closeSelection(); load();
-      if (!settingsModal.hidden) showEntryList();
+      selectedSettings.clear(); updateSelectedCount(); await load(); await showSettingsWorkspace();
     });
     list.addEventListener('click', async event => {
       if (event.target.matches('.rename-button')) {
@@ -217,14 +241,7 @@
       if (event.target.matches('.inspect')) {
         activeLibraryName = card.querySelector('.library-name-input').value.trim() || 'MATERIAL LIBRARY SETTINGS';
         activeLibraryId = card.dataset.id;
-        settingsTitle.textContent = activeLibraryName;
-        settingsBody.innerHTML = '<p class="meta">Reading settings from the vault…</p>';
-        settingsModal.hidden = false;
-        const response = await fetch(`/account/material-libraries/${encodeURIComponent(card.dataset.id)}`, {credentials:'same-origin'});
-        const data = await response.json();
-        if (!response.ok) { settingsBody.innerHTML = `<p class="notice error">${esc(data.message || 'Could not read this library.')}</p>`; return; }
-        activeEntries = data.library.summary.entries || [];
-        showEntryList();
+        await showSettingsWorkspace(card.dataset.id);
         return;
       }
       if (!event.target.matches('.delete')) return;
