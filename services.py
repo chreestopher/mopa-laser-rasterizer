@@ -129,7 +129,10 @@ def save_user_material_library(user_id, local_file_path, material_name=""):
     filename = os.path.basename(local_file_path)
     s3_key = f"users/{user_id}/materials/{library_id}/{filename}"
     try:
-        s3_client.upload_file(local_file_path, S3_BUCKET_NAME, s3_key)
+        s3_client.upload_file(
+            local_file_path, S3_BUCKET_NAME, s3_key,
+            ExtraArgs={"Tagging": "mopa-retention=material"},
+        )
         table.put_item(Item={
             "pk": f"USER#{user_id}",
             "sk": f"MATERIAL#{library_id}",
@@ -453,7 +456,13 @@ def upload_task_artifact(task_id, local_file_path, category="outputs", user_id=N
     filename = os.path.basename(local_file_path)
     key = task_artifact_key(task_id, filename, category, user_id=user_id)
     try:
-        s3_client.upload_file(local_file_path, S3_BUCKET_NAME, key)
+        upload_args = {}
+        if user_id:
+            # Account job keys sit below users/<sub>/jobs/, which cannot be
+            # targeted by a single S3 prefix rule. A lifecycle tag keeps them
+            # on the same seven-day retention schedule as guest jobs.
+            upload_args["ExtraArgs"] = {"Tagging": "mopa-retention=job"}
+        s3_client.upload_file(local_file_path, S3_BUCKET_NAME, key, **upload_args)
     except ClientError as error:
         raise RuntimeError(f"Could not store job artifact in S3: {error}") from error
     return key
