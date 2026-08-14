@@ -101,9 +101,10 @@ def library_entries(path):
             "material": material_name,
             "description": str(getattr(setting, "entryDesc", "") or "").strip(),
             "type": str(getattr(setting, "type", "") or "").strip(),
-            "speed": getattr(setting, "speed", None),
-            "power": getattr(setting, "maxPower", None),
         })
+    entries.sort(key=lambda entry: (
+        entry["material"].casefold(), entry["type"].casefold(), entry["description"].casefold(),
+    ))
     return {"entry_count": len(entries), "material_names": material_names, "entries": entries[:500]}
 
 

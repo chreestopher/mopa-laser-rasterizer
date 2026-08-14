@@ -38,7 +38,7 @@
     const renderEntries = summary => {
       const entries = summary?.entries || [];
       if (!entries.length) return '<p class="meta">Open settings to inspect this library.</p>';
-      return `<div class="entries"><table><thead><tr><th>Material</th><th>Description</th><th>Type</th><th>Speed</th><th>Power</th></tr></thead><tbody>${entries.map(entry => `<tr><td>${esc(entry.material)}</td><td>${esc(entry.description)}</td><td>${esc(entry.type)}</td><td>${esc(entry.speed ?? '')}</td><td>${esc(entry.power ?? '')}</td></tr>`).join('')}</tbody></table></div>`;
+      return `<div class="entries"><table><thead><tr><th>Material</th><th>Type</th><th>Description</th></tr></thead><tbody>${entries.map(entry => `<tr><td>${esc(entry.material)}</td><td>${esc(entry.type)}</td><td>${esc(entry.description)}</td></tr>`).join('')}</tbody></table></div>`;
     };
     const load = async () => {
       const response = await fetch('/account/material-libraries', {credentials:'same-origin'});
