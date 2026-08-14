@@ -943,6 +943,18 @@ def process_color_layers(
     """
 
     processed_layers = {}
+    filter_name, settings = normalize_abstract_settings(abstract_filter, filter_parameters)
+    filter_module = ABSTRACT_FILTER_MODULES.get(filter_name)
+    light_layers_only = bool(getattr(filter_module, "LIGHT_LAYERS_ONLY", False))
+    light_threshold = _number(settings.get("light_threshold", 150), 150, 0, 255)
+
+    def is_light_swatch(color_hex):
+        """Use perceived brightness so dark artwork remains the foreground."""
+        try:
+            red, green, blue = (int(color_hex[index:index + 2], 16) for index in (1, 3, 5))
+        except (TypeError, ValueError):
+            return False
+        return .2126 * red + .7152 * green + .0722 * blue >= light_threshold
 
     total_layers = len(
         pixel_boxes_by_color
@@ -985,12 +997,16 @@ def process_color_layers(
             f"[{layer_color_name}])"
         )
 
+        layer_filter = abstract_filter
+        if light_layers_only and not is_light_swatch(color_hex):
+            layer_filter = "none"
+
         final_geometry = process_color_geometry(
             boxes=boxes,
             min_island_area=min_island_area,
             simplification_factor=simplification_factor,
             smoothing_radius=smoothing_radius,
-            abstract_filter=abstract_filter,
+            abstract_filter=layer_filter,
             filter_parameters=filter_parameters
         )
 
@@ -1007,6 +1023,10 @@ def process_color_layers(
 
 def build_black_canvas(width, height, abstract_filter, filter_parameters=None):
     """Build the complete black canvas used for LightBurn nesting."""
+    filter_name, _ = normalize_abstract_settings(abstract_filter, filter_parameters)
+    filter_module = ABSTRACT_FILTER_MODULES.get(filter_name)
+    if bool(getattr(filter_module, "PRESERVE_BLACK_CANVAS", False)):
+        return box(0, 0, width, height)
     return apply_abstract_filter(
         box(0, 0, width, height),
         abstract_filter,
