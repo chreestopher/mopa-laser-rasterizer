@@ -3,6 +3,7 @@
 import json
 import base64
 import glob
+import hashlib
 import multiprocessing
 import os
 import re
@@ -18,6 +19,7 @@ import boto3
 import redis
 from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key
+from lib.lightburn import Lightburn
 
 
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-2").strip()
@@ -29,6 +31,18 @@ redis_client = redis.Redis(
 s3_client = boto3.client("s3", region_name=AWS_REGION)
 S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME", "").strip()
 DYNAMODB_TABLE_NAME = os.environ.get("DYNAMODB_TABLE_NAME", "").strip()
+LIGHTBURN_PALETTE_NAMES = {
+    "#B4B4B4": "Light-Gray", "#000000": "Black", "#0000FF": "Blue",
+    "#FF0000": "Red", "#00E000": "Green", "#D0D000": "Yellow",
+    "#FF8000": "Orange", "#00E0E0": "Cyan", "#FF00FF": "Magenta",
+    "#0000A0": "Dark-Blue", "#A00000": "Dark-Red", "#00A000": "Dark-Green",
+    "#A0A000": "Dark-Yellow", "#C08000": "Dark-Orange", "#00A0FF": "Light-Blue",
+    "#A000A0": "Dark-Magenta", "#808080": "Medium-Gray", "#7D87B9": "Slate-Blue",
+    "#BB7784": "Rose", "#4A6FE3": "Periwinkle-Blue", "#D33F6A": "Raspberry",
+    "#8CD78C": "Sage-Green", "#F0B98D": "Peach", "#F6C4E1": "Light-Pink",
+    "#FA9ED4": "Orchid-Pink", "#500A78": "Deep-Purple", "#B45A00": "Rust-Brown",
+    "#004754": "Teal", "#86FA88": "Bright-Mint-Green", "#FFDB66": "Light-Gold",
+}
 ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
     "crystal", "ripple", "centerline", "glitch", "shattered", "deep_fryer",
@@ -67,6 +81,128 @@ def _json_values(value):
     if isinstance(value, list):
         return [_json_values(item) for item in value]
     return value
+
+
+def _setting_values(setting):
+    """Keep the actual LightBurn controls, including Offset Fill sublayers."""
+    hidden = {"materialName", "entryDesc", "entryThickness", "entryNoThickTitle", "subLayers"}
+    values = {}
+    for key, value in vars(setting).items():
+        if key not in hidden and value is not None and isinstance(value, (str, int, float, bool)):
+            values[key] = value
+    if getattr(setting, "subLayers", None):
+        values["subLayers"] = [_setting_values(layer) for layer in setting.subLayers]
+    return values
+
+
+def resolve_material_setting_usage(material_settings_path, material_name, selected_colors,
+                                   color_name_overrides=None):
+    """Resolve the exact settings a raster job will map to each palette swatch.
+
+    This deliberately mirrors the production parser's exact, case-insensitive
+    material and Description/cut-setting matching rules.  It is telemetry only:
+    a malformed or unusual library must never prevent the actual job from running.
+    """
+    names = dict(LIGHTBURN_PALETTE_NAMES)
+    for swatch, name in (color_name_overrides or {}).items():
+        swatch = str(swatch).upper().strip()
+        if swatch in names and str(name).strip():
+            names[swatch] = str(name).strip()
+    chosen = {str(name).strip().casefold() for name in selected_colors if str(name).strip()}
+    if not chosen:
+        chosen = {name.casefold() for name in names.values()}
+    chosen.update({names["#000000"].casefold(), names["#B4B4B4"].casefold()})
+    requested_material = str(material_name or "").strip().casefold()
+    matched = {}
+    for setting in Lightburn().parse_material_library(material_settings_path):
+        if str(getattr(setting, "materialName", "") or "").strip().casefold() != requested_material:
+            continue
+        labels = {
+            str(getattr(setting, "entryDesc", "") or "").strip().casefold(),
+            str(getattr(setting, "name", "") or "").strip().casefold(),
+        }
+        for swatch, swatch_name in names.items():
+            if swatch_name.casefold() in chosen and swatch_name.casefold() in labels and swatch not in matched:
+                matched[swatch] = {
+                    "swatch_hex": swatch,
+                    "swatch_name": swatch_name,
+                    "material": str(getattr(setting, "materialName", "") or "").strip(),
+                    "description": str(getattr(setting, "entryDesc", "") or "").strip(),
+                    "type": str(getattr(setting, "type", "") or "").strip(),
+                    "setting_values": _setting_values(setting),
+                }
+                break
+    return list(matched.values())
+
+
+def _usage_dimension_key(kind, value):
+    normalized = str(value or "Unspecified").strip() or "Unspecified"
+    digest = hashlib.sha256(normalized.casefold().encode("utf-8")).hexdigest()[:24]
+    return f"USAGE#{kind}#{digest}", normalized
+
+
+def record_setting_usage(task_id, resolved_settings, library=None):
+    """Atomically increment setting-use counters for future recommendations.
+
+    One compact aggregate is written for every individual lookup dimension and
+    for their full combination. No artwork, user identity, or uploaded file
+    name is stored in these shared aggregates.
+    """
+    table = account_table()
+    if not table or not resolved_settings:
+        return
+    laser_source = str((library or {}).get("laser_source") or "").strip() or "Unspecified"
+    lens_field_of_view = str((library or {}).get("lens_field_of_view") or "").strip() or "Unspecified"
+    now = int(time.time())
+    try:
+        for setting in resolved_settings:
+            material = str(setting.get("material") or "Unspecified").strip() or "Unspecified"
+            swatch = f"{setting.get('swatch_hex', '')} {setting.get('swatch_name', '')}".strip()
+            fingerprint_source = {
+                "material": material, "swatch_hex": setting.get("swatch_hex", ""),
+                "description": setting.get("description", ""), "type": setting.get("type", ""),
+                "setting_values": setting.get("setting_values", {}),
+            }
+            fingerprint = hashlib.sha256(
+                json.dumps(fingerprint_source, sort_keys=True, default=str).encode("utf-8")
+            ).hexdigest()
+            dimensions = (
+                ("LASER", laser_source),
+                ("LENS", lens_field_of_view),
+                ("MATERIAL", material),
+                ("SWATCH", swatch),
+                ("COMBINATION", json.dumps({"laser_source": laser_source, "lens_field_of_view": lens_field_of_view, "material": material, "swatch": swatch}, sort_keys=True)),
+            )
+            for dimension, value in dimensions:
+                pk, display_value = _usage_dimension_key(dimension, value)
+                table.update_item(
+                    Key={"pk": pk, "sk": f"SETTING#{fingerprint}"},
+                    UpdateExpression=("SET #count = if_not_exists(#count, :zero) + :one, "
+                                      "#dimension = :dimension, #dimension_value = :dimension_value, "
+                                      "#laser = :laser_source, #lens = :lens_field_of_view, "
+                                      "#material = :material, #swatch_hex = :swatch_hex, #swatch_name = :swatch_name, "
+                                      "#description = :description, #setting_type = :setting_type, #setting_values = :setting_values, "
+                                      "#last_used = :now, #last_task = :task_id"),
+                    ExpressionAttributeNames={
+                        "#count": "usage_count", "#dimension": "dimension",
+                        "#dimension_value": "dimension_value", "#laser": "laser_source",
+                        "#lens": "lens_field_of_view", "#material": "material",
+                        "#swatch_hex": "swatch_hex", "#swatch_name": "swatch_name",
+                        "#description": "description", "#setting_type": "setting_type",
+                        "#setting_values": "setting_values", "#last_used": "last_used_at",
+                        "#last_task": "last_task_id",
+                    },
+                    ExpressionAttributeValues=_dynamodb_values({
+                        ":zero": 0, ":one": 1, ":dimension": dimension,
+                        ":dimension_value": display_value, ":laser_source": laser_source,
+                        ":lens_field_of_view": lens_field_of_view, ":material": material,
+                        ":swatch_hex": setting.get("swatch_hex", ""), ":swatch_name": setting.get("swatch_name", ""),
+                        ":description": setting.get("description", ""), ":setting_type": setting.get("type", ""),
+                        ":setting_values": setting.get("setting_values", {}), ":now": now, ":task_id": task_id,
+                    }),
+                )
+    except ClientError as error:
+        raise RuntimeError("Could not record Material Library setting usage.") from error
 
 
 def get_user_preferences(user_id):

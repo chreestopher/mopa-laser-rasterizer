@@ -32,6 +32,8 @@ from services import (
     get_job_owner,
     redis_client,
     record_user_job,
+    record_setting_usage,
+    resolve_material_setting_usage,
     save_user_material_library,
     tasks,
     upload_task_artifact,
@@ -62,6 +64,7 @@ def start_task():
         or valid_history_session(request.cookies.get("mopa_history_session")) or str(uuid.uuid4()))
     image_file = request.files["image"]
     material_settings = request.files.get("material_settings")
+    usage_library = None
     try:
         with Image.open(image_file.stream) as image_probe:
             image_probe.verify()
@@ -102,7 +105,9 @@ def start_task():
         )
         if user_id:
             try:
-                save_user_material_library(user_id, material_settings_path, user_data.get("material", ""))
+                usage_library = save_user_material_library(
+                    user_id, material_settings_path, user_data.get("material", "")
+                )
             except RuntimeError as error:
                 return jsonify({"status": "error", "message": str(error)}), 503
     elif saved_library_id:
@@ -118,6 +123,7 @@ def start_task():
             material_settings_path = os.path.join(upload_folder, f"{task_id}_saved_material_{material_filename}")
             download_user_material_library(saved_library, material_settings_path)
             material_key = saved_library.get("s3_key")
+            usage_library = saved_library
         except RuntimeError as error:
             return jsonify({"status": "error", "message": str(error)}), 503
     else:
@@ -191,12 +197,32 @@ def start_task():
         "filter_parameters": filter_parameters,
     }
     if user_id:
+        resolved_settings = []
+        try:
+            # Capture the real setting each palette swatch resolves to while
+            # the original Material Library is available locally. This shared
+            # telemetry intentionally excludes artwork and account identity.
+            resolved_settings = resolve_material_setting_usage(
+                material_settings_path,
+                material_name,
+                run_parameters["colors"],
+                color_name_overrides,
+            )
+            run_parameters["resolved_material_settings"] = resolved_settings
+        except Exception as error:
+            # The worker retains the authoritative validation path. A library
+            # that its telemetry reader cannot inspect must not reject a job.
+            current_app.logger.warning("Could not resolve Material Library usage for %s: %s", task_id, error)
         try:
             record_user_job(user_id, task_id, base_name, submitted_preset, submitted_filter,
                             material_name, run_parameters,
                             input_keys=[key for key in (image_key, material_key) if key])
         except RuntimeError as error:
             return jsonify({"status": "error", "message": str(error)}), 503
+        try:
+            record_setting_usage(task_id, resolved_settings, usage_library)
+        except RuntimeError as error:
+            current_app.logger.warning("Could not record Material Library usage for %s: %s", task_id, error)
     add_history_entry(history_session, task_id, base_name, submitted_preset, submitted_filter,
                       material_name, run_parameters)
     history_files = get_history_entries(history_session)
