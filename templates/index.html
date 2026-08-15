@@ -98,6 +98,15 @@
     opacity: 0.5;
     transform: scale(0.95); /* Slightly shrinks to show it is tucked away */
   }
+  @keyframes holographic-swatch-shift { to { background-position:200% center; } }
+  .color-card[data-holographic-setting] .color-square {
+    background:linear-gradient(100deg,#ff3b30,#ffcc00,#5ce65c,#25d9e8,#3f7cff,#a855f7,#ff4eb8,#ff3b30) !important;
+    background-size:200% 100% !important;
+    animation:holographic-swatch-shift 5s linear infinite;
+  }
+  @media (prefers-reduced-motion:reduce) {
+    .color-card[data-holographic-setting] .color-square { animation:none; background-position:50% center; }
+  }
 
 
   .color-hex {
@@ -618,7 +627,7 @@
           <option value="abstract_glitch">Digital Glitch</option>
           <option value="abstract_deep_fryer">Deep Fryer</option>
           <option value="abstract_shattered">Shattered</option>
-          <option value="abstract_holographic_space">Holographic Space</option>
+          <option value="abstract_holographic">Holographic</option>
           <option value="abstract_none">Abstract: None</option>
         </optgroup>
       </select>
@@ -717,13 +726,14 @@
           ['rotation', 22, 0, 180, 1], ['break_origin_x', .5, 0, 1, .01],
           ['break_origin_y', .35, 0, 1, .01], ['seed', 1, 0, 999999, 1]]
       },
-      holographic_space: {
-        description: 'Holographizes only the light/background swatches while preserving darker artwork as a crisp foreground. The optional Holographic palette swatch supplies the Material Library setting used for every holographic band; it is off by default and can be renamed to match your library. Band Height and Segment Width set the scan pattern scale, Gap opens seams, Diffraction controls the shift, and the remaining controls tune its rhythm and density. No calibration is required.',
+      holographic: {
+        description: 'Holographizes only the light/background swatches while preserving darker artwork as a crisp foreground. Enable Invert Threshold to holographize swatches at or below the Light Threshold instead. The optional Holographic palette swatch supplies the Material Library setting used for every holographic band; it is off by default and can be renamed to match your library. Band Height and Segment Width set the scan pattern scale, Gap opens seams, Diffraction controls the shift, and the remaining controls tune its rhythm and density. No calibration is required.',
         controls: [['band_height', 12, 3, 100, 1], ['segment_width', 54, 8, 240, 1],
           ['gap', .6, 0, 12, .1], ['diffraction', 18, 0, 160, 1],
           ['phase_stride', 1.35, .1, 8, .05], ['echo_count', 2, 0, 5, 1],
           ['echo_spacing', 5, 0, 50, 1], ['density', .78, 0, 1, .05],
-          ['light_threshold', 150, 0, 255, 1], ['seed', 1, 0, 999999, 1]]
+          ['light_threshold', 150, 0, 255, 1], ['seed', 1, 0, 999999, 1]],
+        toggles: [['invert_threshold', false]]
       },
       none: { description: 'Keeps the clean abstract-vector workflow without adding a geometric effect. Choose this when you want the source image to do the talking.', controls: [] }
     };
@@ -745,11 +755,42 @@
         const valueInput = input.closest('.filter-control').querySelector('.value-input');
         if (valueInput && input.type === 'range') valueInput.value = input.value;
       });
-      if (document.getElementById('image_preset').value === 'abstract_holographic_space') {
+      if (document.getElementById('image_preset').value === 'abstract_holographic') {
         const holographicCard = document.querySelector('[data-holographic-setting]');
         if (holographicCard) values.setting_name = holographicCard.querySelector('.color-name').textContent.trim();
       }
       document.getElementById('abstract_filter_parameters').value = JSON.stringify(values);
+      updateHolographicSwatchReadout(values);
+    }
+
+    function updateHolographicSwatchReadout(values = {}) {
+      let readout = document.getElementById('holographic_swatch_readout');
+      if (document.getElementById('image_preset').value !== 'abstract_holographic') {
+        if (readout) readout.remove();
+        return;
+      }
+      if (!readout) {
+        readout = document.createElement('p');
+        readout.id = 'holographic_swatch_readout';
+        readout.className = 'filter-description';
+        document.getElementById('filter_controls').after(readout);
+      }
+      const threshold = Number(values.light_threshold ?? 150);
+      const inverted = Boolean(values.invert_threshold);
+      const normalNames = Array.from(document.querySelectorAll('.color-card'))
+        .filter(card => !card.hasAttribute('data-holographic-setting'))
+        .filter(card => {
+          const hex = card.querySelector('.color-hex').textContent.trim();
+          if (hex.toUpperCase() === '#000000' || card.querySelector('.color-square').classList.contains('selected')) return false;
+          const rgb = [1, 3, 5].map(index => Number.parseInt(hex.slice(index, index + 2), 16));
+          const brightness = .2126 * rgb[0] + .7152 * rgb[1] + .0722 * rgb[2];
+          const holographic = inverted ? brightness <= threshold : brightness >= threshold;
+          return !holographic;
+        })
+        .map(card => card.querySelector('.color-name').textContent.trim());
+      const direction = inverted ? 'at or below' : 'above';
+      readout.textContent = `Normal Material Library settings (${normalNames.length}): ` +
+        `${normalNames.join(', ') || 'none'}. Holographic applies to enabled swatches ${direction} ${threshold}; Black remains on its Black setting.`;
     }
 
     function updateTumblerReadout(values) {
@@ -913,7 +954,8 @@
         document.getElementById('pixel_square_mm').value = preferences.pixel_square_mm ?? document.getElementById('pixel_square_mm').value;
         newWidthInput.value = preferences.new_width ?? newWidthInput.value;
         newHeightInput.value = preferences.new_height ?? newHeightInput.value;
-        if (preferences.image_preset) document.getElementById('image_preset').value = preferences.image_preset;
+        if (preferences.image_preset) document.getElementById('image_preset').value =
+          preferences.image_preset === 'abstract_holographic_space' ? 'abstract_holographic' : preferences.image_preset;
         paletteCards.forEach(card => {
           const hex = card.querySelector('.color-hex').textContent.trim().toUpperCase();
           const name = preferences.color_name_overrides?.[hex];
@@ -1034,7 +1076,8 @@
           document.getElementById('pixel_square_mm').value = settings.pixel_square_mm || '1';
           newWidthInput.value = settings.new_width ?? '0';
           newHeightInput.value = settings.new_height ?? '0';
-          document.getElementById('image_preset').value = settings.image_preset || 'cartoon';
+          document.getElementById('image_preset').value = settings.image_preset === 'abstract_holographic_space'
+            ? 'abstract_holographic' : (settings.image_preset || 'cartoon');
           sessionStorage.setItem(materialNameKey, materialInput.value.trim());
           paletteCards.forEach(card => {
             const hex = card.querySelector('.color-hex').textContent.trim().toUpperCase();
@@ -1141,6 +1184,7 @@
       colorInput.value = selectedNames.join(', ');
       colorNameOverrides.value = JSON.stringify(overrides);
       colorNameOverrides.dispatchEvent(new Event('change', { bubbles: true }));
+      updateHolographicSwatchReadout(JSON.parse(document.getElementById('abstract_filter_parameters').value || '{}'));
     }
 
     paletteCards.forEach(card => {

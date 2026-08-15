@@ -27,6 +27,7 @@ DEFAULTS = {
     "density": .78,
     "setting_name": "holographic",
     "light_threshold": 150,
+    "invert_threshold": False,
     "seed": 1,
 }
 

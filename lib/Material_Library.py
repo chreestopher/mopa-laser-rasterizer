@@ -50,10 +50,12 @@ def main(argv=None):
     if image_preset.startswith("abstract_"):
         abstract_filter = image_preset.removeprefix("abstract_")
         image_preset = "abstract"
+    if abstract_filter == "holographic_space":
+        abstract_filter = "holographic"
     if image_preset not in vector_processing.PHOTO_TYPE_PRESETS:
         raise SystemExit(f"Unknown image preset: {image_preset}")
     required_setting_names = []
-    if abstract_filter == "holographic_space":
+    if abstract_filter == "holographic":
         required_setting_names.append(str(filter_parameters.get("setting_name", "holographic")).strip())
     preset = vector_processing.PHOTO_TYPE_PRESETS[image_preset]
     vector_processing.image_preset = image_preset

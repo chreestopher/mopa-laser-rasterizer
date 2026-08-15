@@ -130,11 +130,14 @@ def resize_to_specific_height_or_width( image, width=0, height=0 ):
     return resized_img
 
 found_lb_hex = {}
+# Settings-only palette entries may be loaded as LightBurn layers but must
+# never become a raster-color destination.
+NON_IMAGE_SWATCHES = {"#7A00FF"}
 
 
 def nearest_available_swatch(r, g, b, target_colors, prefer_non_black=True):
     """Choose a configured swatch by RGB distance when a neutral fallback is absent."""
-    candidates = list(target_colors)
+    candidates = [color for color in target_colors if color.upper() not in NON_IMAGE_SWATCHES]
     if prefer_non_black:
         non_black = [color for color in candidates if color.upper() != "#000000"]
         if non_black:
@@ -164,7 +167,7 @@ def get_closest_color(r, g, b, TARGET_COLORS):
         # Palette quantization above deliberately produces these exact RGB
         # values. Preserve that deliberate swatch assignment before the
         # generic low-saturation (gray) and hue fallback rules examine it.
-        if exact_swatch in TARGET_COLORS:
+        if exact_swatch in TARGET_COLORS and exact_swatch not in NON_IMAGE_SWATCHES:
             found_lb_hex[(r, g, b)] = exact_swatch
             return exact_swatch
         V = max(r, g, b)
@@ -207,6 +210,8 @@ def get_closest_color(r, g, b, TARGET_COLORS):
 
         # Iterate through target hues to find the minimum angular difference
         for hex_code, (target_hue, layer_index, layer_name) in TARGET_COLORS.items():
+            if hex_code.upper() in NON_IMAGE_SWATCHES:
+                continue
             # Calculate the angular difference, handling the wrap-around at 0/360 degrees
             diff = abs(pixel_hue - target_hue)
             
@@ -1001,6 +1006,7 @@ def process_color_layers(
     setting_parameter = getattr(filter_module, "SETTING_NAME_PARAMETER", None)
     setting_layer_id = (filter_parameters or {}).get("_setting_layer_id")
     light_threshold = _number(settings.get("light_threshold", 150), 150, 0, 255)
+    invert_threshold = bool(settings.get("invert_threshold", False))
 
     def is_light_swatch(color_hex):
         """Use perceived brightness so dark artwork remains the foreground."""
@@ -1008,7 +1014,8 @@ def process_color_layers(
             red, green, blue = (int(color_hex[index:index + 2], 16) for index in (1, 3, 5))
         except (TypeError, ValueError):
             return False
-        return .2126 * red + .7152 * green + .0722 * blue >= light_threshold
+        brightness = .2126 * red + .7152 * green + .0722 * blue
+        return brightness <= light_threshold if invert_threshold else brightness >= light_threshold
 
     total_layers = len(
         pixel_boxes_by_color
@@ -1714,7 +1721,10 @@ def raster_to_puzzle_and_lightburn(
         # BW photo mode intentionally uses Pillow's adaptive two-color
         # reduction so its transparent-light-area option can inspect the two
         # actual source values. Every other preset uses real LightBurn swatches.
-        target_colors=None if image_preset == "bw_dither_photograph" else TARGET_COLORS
+        target_colors=(None if image_preset == "bw_dither_photograph" else {
+            color_hex: metadata for color_hex, metadata in TARGET_COLORS.items()
+            if color_hex.upper() not in NON_IMAGE_SWATCHES
+        })
     )
 
     width, height = img.size

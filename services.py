@@ -47,7 +47,7 @@ LIGHTBURN_PALETTE_NAMES = {
 }
 ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
-    "crystal", "ripple", "centerline", "glitch", "shattered", "deep_fryer", "holographic_space",
+    "crystal", "ripple", "centerline", "glitch", "shattered", "deep_fryer", "holographic", "holographic_space",
 }
 ABSTRACT_PRESET_PREFIX = "abstract_"
 HISTORY_SESSION_RE = re.compile(r"^[a-f0-9-]{32,36}$")
@@ -620,9 +620,9 @@ def parse_abstract_filter_parameters(raw_value):
             clean[key] = value
         elif key == "setting_name" and isinstance(value, str) and 1 <= len(value.strip()) <= 80:
             clean[key] = value.strip()
-        elif key == "transparent" and isinstance(value, bool):
+        elif key in {"transparent", "invert_threshold"} and isinstance(value, bool):
             clean[key] = value
-        elif key == "transparent" and isinstance(value, str) and value.lower() in ("true", "false"):
+        elif key in {"transparent", "invert_threshold"} and isinstance(value, str) and value.lower() in ("true", "false"):
             # Form submissions from an older cached page can serialize a
             # checkbox as text. Normalize it to the same boolean used by the
             # current JSON-producing UI.
