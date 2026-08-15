@@ -1527,6 +1527,7 @@ def export_processed_layers(
     lb_project_instance,
     punch_through_black=False,
     black_lightburn_geometry=None,
+    black_punch_geometries=None,
     layer_overrides=None,
     abstract_filter=None,
     filter_parameters=None,
@@ -1706,12 +1707,25 @@ def export_processed_layers(
             )
 
             if punch_through_black and color_hex != black_hex:
+                source_punch_geometry = (black_punch_geometries or {}).get(color_hex)
+                punch_geometry = (
+                    source_punch_geometry
+                    if source_punch_geometry is not None
+                    else export_geometry
+                )
+                if scale_factor != 1.0 and source_punch_geometry is not None:
+                    punch_geometry = scale(
+                        punch_geometry,
+                        xfact=scale_factor,
+                        yfact=scale_factor,
+                        origin=(0, 0),
+                    )
                 printLogMessage(
                     f" -> Adding {layer_color_name} geometry to Black "
                     "Layer for LightBurn punch-through"
                 )
                 push_geometry_to_lightburn(
-                    export_geometry,
+                    punch_geometry,
                     color_hex,
                     target_colors,
                     lb_project_instance,
@@ -2143,13 +2157,12 @@ def raster_to_puzzle_and_lightburn(
             punch_layers=punch_layers,
         )
         if direct_punched_black:
-            # Sacred Keep Black already subtracts the original, pre-grating
-            # color masks. Export that punched polygon directly instead of a
-            # complete LightBurn black canvas nested with the later ribbons.
-            black_lightburn_geometry = None
+            # SVG receives the already-subtracted black geometry. LightBurn
+            # retains its complete black canvas and receives the original
+            # pre-grating color masks as nested punch-through paths below.
             printLogMessage(
-                "Sacred Keep Black: exporting the source-mask-punched black "
-                "geometry directly."
+                "Sacred Keep Black: retaining the complete LightBurn black "
+                "canvas for source-mask punch-through."
             )
 
     elif centerline_mode:
@@ -2185,8 +2198,9 @@ def raster_to_puzzle_and_lightburn(
         scale_factor=scale_factor,
         root=root,
         lb_project_instance=lb_project_instance,
-        punch_through_black=not preserve_source_black and not direct_punched_black,
+        punch_through_black=not preserve_source_black,
         black_lightburn_geometry=black_lightburn_geometry,
+        black_punch_geometries=punch_layers if direct_punched_black else None,
         layer_overrides=layer_overrides,
         abstract_filter=abstract_filter,
         filter_parameters=filter_parameters,
