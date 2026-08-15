@@ -1508,6 +1508,7 @@ def export_processed_layers(
     punch_through_black=False,
     black_lightburn_geometry=None,
     layer_overrides=None,
+    punch_exclude_colors=None,
 ):
     """
     Sort, scale, and export all finalized geometry to SVG and LightBurn.
@@ -1623,7 +1624,11 @@ def export_processed_layers(
                 override_layer_id=layer_id,
             )
 
-            if punch_through_black and color_hex != black_hex:
+            if (
+                punch_through_black
+                and color_hex != black_hex
+                and color_hex not in (punch_exclude_colors or set())
+            ):
                 printLogMessage(
                     f" -> Adding {layer_color_name} geometry to Black "
                     "Layer for LightBurn punch-through"
@@ -1953,6 +1958,8 @@ def raster_to_puzzle_and_lightburn(
         punch_through_black=not preserve_source_black,
         black_lightburn_geometry=black_lightburn_geometry,
         layer_overrides=layer_overrides,
+        punch_exclude_colors={filter_module.HOLOGRAPHIC_COLOR}
+        if filter_name == "holographic" else None,
     )
 
     # =========================================================================
