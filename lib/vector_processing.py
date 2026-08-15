@@ -896,6 +896,17 @@ def remove_small_islands(
     return geometry
 
 
+def _geometry_object_count(geometry):
+    """Count geometry components without logging individual objects."""
+    if geometry is None or geometry.is_empty:
+        return 0
+    if geometry.geom_type in ("Polygon", "LineString"):
+        return 1
+    if hasattr(geometry, "geoms"):
+        return sum(_geometry_object_count(item) for item in geometry.geoms)
+    return 1
+
+
 def process_color_geometry(
     boxes,
     min_island_area,
@@ -904,87 +915,59 @@ def process_color_geometry(
     abstract_filter,
     filter_parameters=None,
     return_source_geometry=False,
+    progress_context=None,
 ):
-    """
-    Convert a collection of pixel boxes into finalized vector geometry.
-
-    Processing order intentionally matches the original function:
-
-        1. Union pixels
-        2. Morphological smoothing
-        3. Remove tiny islands
-        4. Douglas-Peucker simplification
-        5. Abstract transformation
-    """
-
+    """Convert one color's pixel batch into finalized vector geometry."""
     filter_name, settings = normalize_abstract_settings(abstract_filter, filter_parameters)
+    context = progress_context or "color layer"
+    input_count = len(boxes)
+
+    def stage(step, operation, state, geometry=None, count=None):
+        object_count = count if count is not None else _geometry_object_count(geometry)
+        printLogMessage(
+            f"[{context}] Step {step}/6 {state}: {operation}; "
+            f"batch objects {object_count}/{input_count} source objects."
+        )
+
     if filter_name == "centerline":
-        return ABSTRACT_FILTER_MODULES["centerline"].process_boxes(
+        stage(1, "centerline tracing", "START", count=input_count)
+        result = ABSTRACT_FILTER_MODULES["centerline"].process_boxes(
             boxes, settings, boxes_to_centerlines
         )
+        stage(6, "centerline tracing and topology output", "DONE", geometry=result)
+        return result
 
-    # ------------------------------------------------------------------------
-    # 1. Weld all same-color pixels together.
-    # ------------------------------------------------------------------------
+    stage(1, "same-color pixel union", "START", count=input_count)
+    welded_layer = unary_union(boxes)
+    stage(1, "same-color pixel union", "DONE", geometry=welded_layer)
 
-    welded_layer = unary_union(
-        boxes
-    )
+    stage(2, "morphological smoothing", "START", geometry=welded_layer)
+    final_geometry = welded_layer.buffer(smoothing_radius).buffer(-smoothing_radius)
+    stage(2, "morphological smoothing", "DONE", geometry=final_geometry)
 
-    # ------------------------------------------------------------------------
-    # 2. Morphological opening / smoothing.
-    # ------------------------------------------------------------------------
+    stage(3, "small-island removal", "START", geometry=final_geometry)
+    final_geometry = remove_small_islands(final_geometry, min_island_area)
+    stage(3, "small-island removal", "DONE", geometry=final_geometry)
 
-    final_geometry = (
-        welded_layer
-        .buffer(smoothing_radius)
-        .buffer(-smoothing_radius)
-    )
-
-    # ------------------------------------------------------------------------
-    # 3. Remove tiny noise islands.
-    # ------------------------------------------------------------------------
-
-    final_geometry = remove_small_islands(
-        final_geometry,
-        min_island_area
-    )
-
-    # ------------------------------------------------------------------------
-    # 4. Simplify jagged raster edges.
-    # ------------------------------------------------------------------------
-
+    stage(4, "boundary simplification", "START", geometry=final_geometry)
     if simplification_factor > 0.0:
-
-        final_geometry = (
-            final_geometry.simplify(
-                simplification_factor,
-                preserve_topology=True
-            )
+        final_geometry = final_geometry.simplify(
+            simplification_factor, preserve_topology=True
         )
-
-    # ------------------------------------------------------------------------
-    # 5. Apply abstract transformation.
-    # ------------------------------------------------------------------------
+    stage(4, "boundary simplification", "DONE", geometry=final_geometry)
 
     source_geometry = final_geometry
+    stage(5, f"abstract filter '{filter_name}'", "START", geometry=final_geometry)
     final_geometry = apply_abstract_filter(
-        final_geometry,
-        abstract_filter,
-        filter_parameters
+        final_geometry, abstract_filter, filter_parameters
     )
+    stage(5, f"abstract filter '{filter_name}'", "DONE", geometry=final_geometry)
 
-    # Final topology repair before this geometry is used
-    # anywhere else in the pipeline.
+    stage(6, "final topology validation", "START", geometry=final_geometry)
     if not final_geometry.is_valid:
-
-        printLogMessage(
-            "Repairing invalid geometry after processing..."
-        )
-
-        final_geometry = make_valid(
-            final_geometry
-        )
+        printLogMessage(f"[{context}] Repairing invalid geometry after processing.")
+        final_geometry = make_valid(final_geometry)
+    stage(6, "final topology validation", "DONE", geometry=final_geometry)
 
     return (final_geometry, source_geometry) if return_source_geometry else final_geometry
 
@@ -1077,13 +1060,13 @@ def process_color_layers(
         brightness = .2126 * red + .7152 * green + .0722 * blue
         return brightness <= light_threshold if invert_threshold else brightness >= light_threshold
 
-    total_layers = len(
-        pixel_boxes_by_color
-    )
+    total_layers = len(pixel_boxes_by_color)
+    total_source_objects = sum(len(boxes) for boxes in pixel_boxes_by_color.values())
 
     printLogMessage(
         f"Beginning vector union math for "
-        f"{total_layers} unique layers..."
+        f"{total_layers} unique layers containing "
+        f"{total_source_objects} source objects..."
     )
 
     for idx, (color_hex, boxes) in enumerate(
@@ -1117,6 +1100,10 @@ def process_color_layers(
             f"Layer: {layer_id} "
             f"[{layer_color_name}])"
         )
+        progress_context = (
+            f"Color {idx}/{total_layers} {color_hex} / "
+            f"Layer {layer_id} {layer_color_name}"
+        )
 
         layer_filter = abstract_filter
         if light_layers_only and not is_light_swatch(color_hex):
@@ -1140,6 +1127,7 @@ def process_color_layers(
             abstract_filter=layer_filter,
             filter_parameters=layer_filter_parameters,
             return_source_geometry=use_source_punch,
+            progress_context=progress_context,
         )
         if use_source_punch:
             final_geometry, source_geometry = result
@@ -1150,6 +1138,11 @@ def process_color_layers(
         processed_layers[
             color_hex
         ] = final_geometry
+        printLogMessage(
+            f"[{progress_context}] LAYER DONE: "
+            f"{_geometry_object_count(final_geometry)} output objects from "
+            f"{len(boxes)} source objects."
+        )
         if punch_layers is not None:
             punch_layers[color_hex] = source_geometry
         if layer_overrides is not None and layer_filter != "none" and setting_parameter and setting_layer_id is not None:
@@ -1249,7 +1242,13 @@ def build_punched_black_layer(
     # geometry is valid on its own.  A tiny grid snap is visually invisible
     # at raster scale and makes the overlay operation deterministic.
     punched_black_layer = topology_safe(canvas_frame, "black canvas")
-    for color_geometry in colored_geometries:
+    total_punch_layers = len(colored_geometries)
+    for punch_index, color_geometry in enumerate(colored_geometries, 1):
+        punch_objects = _geometry_object_count(color_geometry)
+        printLogMessage(
+            f"[Black punch {punch_index}/{total_punch_layers}] START: "
+            f"subtracting {punch_objects} geometry objects."
+        )
         try:
             punched_black_layer = punched_black_layer.difference(
                 color_geometry, grid_size=precision_grid
@@ -1266,6 +1265,11 @@ def build_punched_black_layer(
             )
         punched_black_layer = topology_safe(
             punched_black_layer, "partially punched black canvas"
+        )
+        printLogMessage(
+            f"[Black punch {punch_index}/{total_punch_layers}] DONE: "
+            f"subtracted {punch_objects} geometry objects; "
+            f"black layer now has {_geometry_object_count(punched_black_layer)} objects."
         )
 
     printLogMessage(
@@ -1541,12 +1545,14 @@ def export_processed_layers(
         "=============================================="
     )
 
-    for color_hex, geometry in sorted_layers:
+    exportable_layers = [
+        (color_hex, geometry) for color_hex, geometry in sorted_layers
+        if not geometry.is_empty
+        or (color_hex == black_hex and black_lightburn_geometry is not None)
+    ]
+    total_export_layers = len(exportable_layers)
 
-        if geometry.is_empty and not (
-            color_hex == black_hex and black_lightburn_geometry is not None
-        ):
-            continue
+    for export_index, (color_hex, geometry) in enumerate(exportable_layers, 1):
 
         layer_meta = target_colors[
             color_hex
@@ -1554,11 +1560,12 @@ def export_processed_layers(
 
         layer_id = (layer_overrides or {}).get(color_hex, layer_meta[1])
         layer_color_name = layer_meta[2]
+        geometry_count = _geometry_object_count(geometry)
 
         printLogMessage(
-            f"Processing and welding layer "
-            f"{layer_id} color: "
-            f"{layer_color_name}"
+            f"[Export layer {export_index}/{total_export_layers}] START: "
+            f"color {color_hex}, LightBurn layer {layer_id} {layer_color_name}; "
+            f"batch objects {geometry_count}/{geometry_count}."
         )
 
         # --------------------------------------------------------------------
@@ -1570,8 +1577,8 @@ def export_processed_layers(
         if scale_factor != 1.0:
 
             printLogMessage(
-                f"Scaling {layer_color_name} geometry "
-                f"by a factor of {scale_factor}x"
+                f"[Export layer {export_index}/{total_export_layers}] START: "
+                f"scaling {geometry_count}/{geometry_count} objects by {scale_factor}x."
             )
 
             export_geometry = scale(
@@ -1580,15 +1587,27 @@ def export_processed_layers(
                 yfact=scale_factor,
                 origin=(0, 0)
             )
+            printLogMessage(
+                f"[Export layer {export_index}/{total_export_layers}] DONE: "
+                f"scaled {geometry_count}/{geometry_count} objects."
+            )
 
         # --------------------------------------------------------------------
         # SVG
         # --------------------------------------------------------------------
 
+        printLogMessage(
+            f"[Export layer {export_index}/{total_export_layers}] START: "
+            f"writing {geometry_count}/{geometry_count} objects to SVG."
+        )
         add_geometry_to_svg(
             root,
             export_geometry,
             color_hex
+        )
+        printLogMessage(
+            f"[Export layer {export_index}/{total_export_layers}] DONE: "
+            f"wrote {geometry_count}/{geometry_count} objects to SVG."
         )
 
         # --------------------------------------------------------------------
@@ -1598,10 +1617,9 @@ def export_processed_layers(
         if color_hex in target_colors:
 
             printLogMessage(
-                f"Pushing scaled "
-                f"{layer_color_name} geometry "
-                f"into LightBurn Layer ID: "
-                f"{layer_id}"
+                f"[Export layer {export_index}/{total_export_layers}] START: "
+                f"writing {geometry_count}/{geometry_count} objects to "
+                f"LightBurn layer {layer_id} {layer_color_name}."
             )
 
             lightburn_geometry = export_geometry
@@ -1622,6 +1640,11 @@ def export_processed_layers(
                 lb_project_instance,
                 override_layer_id=layer_id,
             )
+            printLogMessage(
+                f"[Export layer {export_index}/{total_export_layers}] DONE: "
+                f"wrote {geometry_count}/{geometry_count} objects to "
+                f"LightBurn layer {layer_id} {layer_color_name}."
+            )
 
             if punch_through_black and color_hex != black_hex:
                 printLogMessage(
@@ -1635,6 +1658,11 @@ def export_processed_layers(
                     lb_project_instance,
                     override_layer_id=target_colors[black_hex][1]
                 )
+        printLogMessage(
+            f"[Export layer {export_index}/{total_export_layers}] LAYER DONE: "
+            f"processed {geometry_count}/{geometry_count} objects for "
+            f"color {color_hex}, layer {layer_id} {layer_color_name}."
+        )
 
 def save_vector_output(
     root,
@@ -1645,6 +1673,11 @@ def save_vector_output(
     Write SVG and LightBurn output files.
     """
 
+    lightburn_object_count = len(getattr(lb_project_instance, "objects", []))
+    printLogMessage(
+        f"[File serialization 1/2] START: writing SVG with "
+        f"{len(root)} top-level objects to {output_svg_path}."
+    )
     tree = ET.ElementTree(
         root
     )
@@ -1660,9 +1693,22 @@ def save_vector_output(
         encoding="utf-8",
         xml_declaration=True
     )
+    printLogMessage(
+        f"[File serialization 1/2] DONE: wrote {len(root)}/{len(root)} "
+        "top-level SVG objects."
+    )
 
+    printLogMessage(
+        f"[File serialization 2/2] START: writing "
+        f"{lightburn_object_count}/{lightburn_object_count} LightBurn objects to "
+        f"{output_svg_path}.lbrn2."
+    )
     lb_project_instance.write(
         output_svg_path + ".lbrn2"
+    )
+    printLogMessage(
+        f"[File serialization 2/2] DONE: wrote "
+        f"{lightburn_object_count}/{lightburn_object_count} LightBurn objects."
     )
 
     printLogMessage(
@@ -1782,6 +1828,9 @@ def raster_to_puzzle_and_lightburn(
     # 3. Load and prepare raster
     # =========================================================================
 
+    printLogMessage(
+        "[Raster preparation 1/1] START: loading, resizing, and quantizing the source image."
+    )
     img = prepare_raster_image(
         raster_image_path=raster_image_path,
         new_height=new_height,
@@ -1797,6 +1846,10 @@ def raster_to_puzzle_and_lightburn(
     )
 
     width, height = img.size
+    printLogMessage(
+        f"[Raster preparation 1/1] DONE: prepared {width * height}/{width * height} "
+        f"pixels at {width}x{height}."
+    )
 
     # Every color layer must use the same radial center and extent.  Keeping
     # this internal value shared prevents independently warped layers from
@@ -1854,18 +1907,36 @@ def raster_to_puzzle_and_lightburn(
         # Quantized filled color regions cannot produce faithful line art.
         # Select dark source-image outlines first, then trace them only on the
         # user's black LightBurn layer.
+        printLogMessage(
+            f"[Centerline source extraction 1/2] START: preparing "
+            f"{width * height}/{width * height} source pixels."
+        )
         source_img = prepare_raster_image(
             raster_image_path=raster_image_path,
             new_height=new_height,
             new_width=new_width,
             quantize_colors=None,
         )
+        printLogMessage(
+            f"[Centerline source extraction 1/2] DONE: prepared "
+            f"{source_img.width * source_img.height}/{source_img.width * source_img.height} pixels."
+        )
+        printLogMessage("[Centerline source extraction 2/2] START: locating dark line-art pixels.")
         pixel_boxes_by_color = {
             black_hex: ABSTRACT_FILTER_MODULES["centerline"].line_art_boxes(
                 source_img, filter_parameters
             )
         }
+        centerline_count = sum(len(boxes) for boxes in pixel_boxes_by_color.values())
+        printLogMessage(
+            f"[Centerline source extraction 2/2] DONE: produced "
+            f"{centerline_count}/{centerline_count} line-art source objects."
+        )
     else:
+        printLogMessage(
+            f"[Pixel classification 1/1] START: classifying "
+            f"{width * height}/{width * height} pixels into color-layer batches."
+        )
         pixel_boxes_by_color = classify_raster_pixels(
             img=img,
             target_colors=TARGET_COLORS,
@@ -1881,6 +1952,12 @@ def raster_to_puzzle_and_lightburn(
                 ),
                 225, 128, 255
             )
+        )
+        classified_count = sum(len(boxes) for boxes in pixel_boxes_by_color.values())
+        printLogMessage(
+            f"[Pixel classification 1/1] DONE: classified {width * height}/{width * height} "
+            f"pixels into {len(pixel_boxes_by_color)} layer batches containing "
+            f"{classified_count} geometry objects."
         )
 
     # =========================================================================
