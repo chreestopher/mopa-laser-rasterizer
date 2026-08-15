@@ -16,6 +16,7 @@ DEFAULTS = {
     "base_angle": 0,
     "step_size": .75,
     "seed": 1,
+    "keep_black": False,
 }
 CONTROLS = (
     ("grating_spacing", .5, 12, .1),
@@ -40,6 +41,7 @@ PRESERVE_BACKGROUND_TRANSPARENCY = True
 PER_COLOR_BASE_ANGLE = True
 DEFER_TO_EXPORT = True
 BUFFER_BATCH_SIZE = 8
+PRESERVE_BLACK_PARAMETER = "keep_black"
 
 
 def _field_direction(

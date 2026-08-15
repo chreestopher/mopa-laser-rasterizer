@@ -3,6 +3,10 @@
 import json
 import os
 import signal
+import time
+
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from services import (
     RASTER_JOB_PROCESSING_QUEUE,
@@ -63,9 +67,14 @@ def main():
     recover_interrupted_jobs()
     print("[Raster-Worker] Waiting for jobs.", flush=True)
     while not stop_requested:
-        raw_payload = redis_client.brpoplpush(
-            RASTER_JOB_QUEUE, RASTER_JOB_PROCESSING_QUEUE, timeout=5
-        )
+        try:
+            raw_payload = redis_client.brpoplpush(
+                RASTER_JOB_QUEUE, RASTER_JOB_PROCESSING_QUEUE, timeout=5
+            )
+        except (RedisTimeoutError, RedisConnectionError) as error:
+            print(f"[Raster-Worker] Redis queue wait interrupted; retrying: {error}", flush=True)
+            time.sleep(1)
+            continue
         if raw_payload is None:
             continue
         try:
@@ -80,7 +89,16 @@ def main():
                 redis_client.set(f"task:{task_id}:status", "failed", ex=7 * 24 * 60 * 60)
                 redis_client.rpush(f"task:{task_id}:log", f"Raster worker failed: {error}")
         finally:
-            redis_client.lrem(RASTER_JOB_PROCESSING_QUEUE, 1, raw_payload)
+            while True:
+                try:
+                    redis_client.lrem(RASTER_JOB_PROCESSING_QUEUE, 1, raw_payload)
+                    break
+                except (RedisTimeoutError, RedisConnectionError) as error:
+                    print(
+                        f"[Raster-Worker] Redis acknowledgement interrupted; retrying: {error}",
+                        flush=True,
+                    )
+                    time.sleep(1)
     print("[Raster-Worker] Shutdown complete.", flush=True)
 
 

@@ -1057,6 +1057,10 @@ def process_color_layers(
     punch_source_geometry = bool(getattr(filter_module, "PUNCH_SOURCE_GEOMETRY", False))
     setting_parameter = getattr(filter_module, "SETTING_NAME_PARAMETER", None)
     per_color_base_angle = bool(getattr(filter_module, "PER_COLOR_BASE_ANGLE", False))
+    preserve_black_parameter = getattr(filter_module, "PRESERVE_BLACK_PARAMETER", None)
+    preserve_black = bool(
+        preserve_black_parameter and settings.get(preserve_black_parameter, False)
+    )
     setting_layer_id = (filter_parameters or {}).get("_setting_layer_id")
     light_threshold = _number(settings.get("light_threshold", 150), 150, 0, 255)
     invert_threshold = bool(settings.get("invert_threshold", False))
@@ -1117,6 +1121,8 @@ def process_color_layers(
 
         layer_filter = abstract_filter
         if light_layers_only and not is_light_swatch(color_hex):
+            layer_filter = "none"
+        if preserve_black and color_hex.upper() == "#000000":
             layer_filter = "none"
 
         use_source_punch = punch_source_geometry and layer_filter != "none"
@@ -1566,6 +1572,11 @@ def export_processed_layers(
     export_filter_name, _ = normalize_abstract_settings(abstract_filter, filter_parameters)
     export_filter_module = ABSTRACT_FILTER_MODULES.get(export_filter_name)
     deferred_filter = bool(getattr(export_filter_module, "DEFER_TO_EXPORT", False))
+    preserve_black_parameter = getattr(export_filter_module, "PRESERVE_BLACK_PARAMETER", None)
+    preserve_black = bool(
+        preserve_black_parameter
+        and (filter_parameters or {}).get(preserve_black_parameter, False)
+    )
 
     for export_index, (color_hex, geometry) in enumerate(exportable_layers, 1):
 
@@ -1588,7 +1599,10 @@ def export_processed_layers(
         # --------------------------------------------------------------------
 
         export_geometry = geometry
-        if deferred_filter:
+        defer_this_layer = deferred_filter and not (
+            preserve_black and color_hex.upper() == black_hex.upper()
+        )
+        if defer_this_layer:
             deferred_parameters = dict(filter_parameters or {})
             if bool(getattr(export_filter_module, "PER_COLOR_BASE_ANGLE", False)):
                 deferred_parameters["_color_base_angle"] = (
@@ -2060,6 +2074,44 @@ def raster_to_puzzle_and_lightburn(
             f"Holographic assigned to cut layer {holographic_layer_id} after "
             f"{geometry_layer_count} image layer(s)."
         )
+        preserve_black_parameter = getattr(filter_module, "PRESERVE_BLACK_PARAMETER", None)
+        preserve_black = bool(
+            preserve_black_parameter
+            and filter_parameters.get(preserve_black_parameter, False)
+        )
+        if preserve_black and black_hex in TARGET_COLORS:
+            black_layer_id = holographic_layer_id + 1
+            if black_layer_id >= 30:
+                raise ValueError(
+                    "Sacred cannot place the preserved Black layer after Holographic "
+                    "without entering LightBurn's tool-layer range"
+                )
+            black_hue, previous_black_layer_id, _ = TARGET_COLORS[black_hex]
+            black_setting = next(
+                (layer for layer in configured_layers
+                 if getattr(layer, "index", None) == previous_black_layer_id),
+                None,
+            )
+            if black_setting is None:
+                raise ValueError(
+                    "Sacred Keep Black requires a Black setting in the Material Library"
+                )
+            configured_layers[:] = [
+                layer for layer in configured_layers
+                if getattr(layer, "index", None) != black_layer_id
+                or layer in (holographic_setting, black_setting)
+            ]
+            black_setting.index = black_layer_id
+            black_setting.name = "Black"
+            TARGET_COLORS[black_hex] = (black_hue, black_layer_id, "Black")
+            layer_overrides.pop(black_hex, None)
+            move_lightburn_layer_after(
+                lb_project_instance, black_layer_id, holographic_layer_id
+            )
+            printLogMessage(
+                f"Sacred Keep Black assigned original coalesced black polygons to "
+                f"cut layer {black_layer_id}, immediately after Holographic."
+            )
 
     # =========================================================================
     # 6. Build the BLACK layer around the colored geometry
