@@ -8,9 +8,10 @@ NAMESPACE=${2:-default}
 IMAGE_REFERENCE=${3:-}
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 AWS_DEPLOYMENT_MANIFEST="$SCRIPT_DIR/../k8s/deployment.aws.yaml"
+AWS_WORKER_MANIFEST="$SCRIPT_DIR/../k8s/worker.aws.yaml"
 
-if [ ! -f "$AWS_DEPLOYMENT_MANIFEST" ]; then
-    echo "AWS deployment manifest not found: $AWS_DEPLOYMENT_MANIFEST" >&2
+if [ ! -f "$AWS_DEPLOYMENT_MANIFEST" ] || [ ! -f "$AWS_WORKER_MANIFEST" ]; then
+    echo "AWS deployment manifests not found." >&2
     exit 1
 fi
 
@@ -24,9 +25,14 @@ run_kubectl() {
 
 echo "Applying $AWS_DEPLOYMENT_MANIFEST"
 run_kubectl apply -f "$AWS_DEPLOYMENT_MANIFEST"
+run_kubectl apply -f "$AWS_WORKER_MANIFEST"
 if [ -n "$IMAGE_REFERENCE" ]; then
     run_kubectl set image "deployment/$DEPLOYMENT_NAME" \
         "mopa-laser-rasterizer=$IMAGE_REFERENCE" -n "$NAMESPACE"
+    run_kubectl set image deployment/mopa-laser-raster-worker \
+        "raster-worker=$IMAGE_REFERENCE" -n "$NAMESPACE"
 fi
 run_kubectl rollout restart "deployment/$DEPLOYMENT_NAME" -n "$NAMESPACE"
+run_kubectl rollout restart deployment/mopa-laser-raster-worker -n "$NAMESPACE"
 run_kubectl rollout status "deployment/$DEPLOYMENT_NAME" -n "$NAMESPACE"
+run_kubectl rollout status deployment/mopa-laser-raster-worker -n "$NAMESPACE" --timeout=7200s
