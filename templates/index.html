@@ -180,6 +180,12 @@
     font-size: 0.78rem;
     line-height: 1.4;
   }
+  .holographic-normal-readout { display:grid; gap:7px; }
+  .holographic-normal-summary { margin:0; }
+  .holographic-normal-swatches { display:flex; flex-wrap:wrap; gap:5px; }
+  .holographic-normal-chip { display:inline-flex; align-items:center; gap:4px; padding:3px 6px 3px 4px; border:1px solid #cbd5e1; border-radius:999px; background:#fff; color:#475569; font-size:.72rem; line-height:1; }
+  .holographic-normal-chip-color { width:12px; height:12px; border:1px solid rgba(15,23,42,.35); border-radius:50%; flex:0 0 12px; }
+  body.light-machine .holographic-normal-chip { border-color:#69756e; background:#dedfd9; color:#343530; }
   .filter-controls {
     display: grid;
     gap: 12px;
@@ -767,14 +773,14 @@
         return;
       }
       if (!readout) {
-        readout = document.createElement('p');
+        readout = document.createElement('div');
         readout.id = 'holographic_swatch_readout';
-        readout.className = 'filter-description';
+        readout.className = 'filter-description holographic-normal-readout';
         document.getElementById('filter_controls').after(readout);
       }
       const threshold = Number(values.light_threshold ?? 150);
       const inverted = Boolean(values.invert_threshold);
-      const normalNames = Array.from(document.querySelectorAll('.color-card'))
+      const normalSwatches = Array.from(document.querySelectorAll('.color-card'))
         .filter(card => !card.hasAttribute('data-holographic-setting'))
         .filter(card => {
           const hex = card.querySelector('.color-hex').textContent.trim();
@@ -784,10 +790,38 @@
           const holographic = inverted ? brightness <= threshold : brightness >= threshold;
           return !holographic;
         })
-        .map(card => card.querySelector('.color-name').textContent.trim());
+        .map(card => ({
+          name: card.querySelector('.color-name').textContent.trim(),
+          hex: card.querySelector('.color-hex').textContent.trim()
+        }));
       const direction = inverted ? 'at or below' : 'above';
-      readout.textContent = `Normal Material Library settings (${normalNames.length}): ` +
-        `${normalNames.join(', ') || 'none'}. Holographic applies to enabled swatches ${direction} ${threshold}; Black remains on its Black setting.`;
+      readout.replaceChildren();
+      const summary = document.createElement('div');
+      summary.className = 'holographic-normal-summary';
+      summary.textContent = `Normal Material Library settings (${normalSwatches.length}) · ` +
+        `Holographic applies to enabled swatches ${direction} ${threshold}; Black remains on its Black setting.`;
+      readout.appendChild(summary);
+      const swatchGroup = document.createElement('div');
+      swatchGroup.className = 'holographic-normal-swatches';
+      if (!normalSwatches.length) {
+        const empty = document.createElement('span');
+        empty.textContent = 'All enabled swatches are holographic.';
+        swatchGroup.appendChild(empty);
+      } else {
+        normalSwatches.forEach(({name, hex}) => {
+          const chip = document.createElement('span');
+          chip.className = 'holographic-normal-chip';
+          chip.title = `${name} · ${hex}`;
+          const color = document.createElement('span');
+          color.className = 'holographic-normal-chip-color';
+          color.style.backgroundColor = hex;
+          const label = document.createElement('span');
+          label.textContent = name;
+          chip.append(color, label);
+          swatchGroup.appendChild(chip);
+        });
+      }
+      readout.appendChild(swatchGroup);
     }
 
     function updateTumblerReadout(values) {
