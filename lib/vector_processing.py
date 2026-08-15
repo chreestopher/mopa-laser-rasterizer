@@ -957,17 +957,27 @@ def process_color_geometry(
     stage(4, "boundary simplification", "DONE", geometry=final_geometry)
 
     source_geometry = final_geometry
-    stage(5, f"abstract filter '{filter_name}'", "START", geometry=final_geometry)
-    final_geometry = apply_abstract_filter(
-        final_geometry, abstract_filter, filter_parameters
-    )
-    stage(5, f"abstract filter '{filter_name}'", "DONE", geometry=final_geometry)
+    filter_module = ABSTRACT_FILTER_MODULES.get(filter_name)
+    defer_filter = bool(getattr(filter_module, "DEFER_TO_EXPORT", False))
+    if defer_filter:
+        stage(5, f"abstract filter '{filter_name}' deferred to export", "DONE",
+              geometry=final_geometry)
+    else:
+        stage(5, f"abstract filter '{filter_name}'", "START", geometry=final_geometry)
+        final_geometry = apply_abstract_filter(
+            final_geometry, abstract_filter, filter_parameters
+        )
+        stage(5, f"abstract filter '{filter_name}'", "DONE", geometry=final_geometry)
 
-    stage(6, "final topology validation", "START", geometry=final_geometry)
-    if not final_geometry.is_valid:
-        printLogMessage(f"[{context}] Repairing invalid geometry after processing.")
-        final_geometry = make_valid(final_geometry)
-    stage(6, "final topology validation", "DONE", geometry=final_geometry)
+    if defer_filter:
+        stage(6, "final topology validation deferred to export", "DONE",
+              geometry=final_geometry)
+    else:
+        stage(6, "final topology validation", "START", geometry=final_geometry)
+        if not final_geometry.is_valid:
+            printLogMessage(f"[{context}] Repairing invalid geometry after processing.")
+            final_geometry = make_valid(final_geometry)
+        stage(6, "final topology validation", "DONE", geometry=final_geometry)
 
     return (final_geometry, source_geometry) if return_source_geometry else final_geometry
 
@@ -1512,6 +1522,8 @@ def export_processed_layers(
     punch_through_black=False,
     black_lightburn_geometry=None,
     layer_overrides=None,
+    abstract_filter=None,
+    filter_parameters=None,
 ):
     """
     Sort, scale, and export all finalized geometry to SVG and LightBurn.
@@ -1551,6 +1563,9 @@ def export_processed_layers(
         or (color_hex == black_hex and black_lightburn_geometry is not None)
     ]
     total_export_layers = len(exportable_layers)
+    export_filter_name, _ = normalize_abstract_settings(abstract_filter, filter_parameters)
+    export_filter_module = ABSTRACT_FILTER_MODULES.get(export_filter_name)
+    deferred_filter = bool(getattr(export_filter_module, "DEFER_TO_EXPORT", False))
 
     for export_index, (color_hex, geometry) in enumerate(exportable_layers, 1):
 
@@ -1573,6 +1588,36 @@ def export_processed_layers(
         # --------------------------------------------------------------------
 
         export_geometry = geometry
+        if deferred_filter:
+            deferred_parameters = dict(filter_parameters or {})
+            if bool(getattr(export_filter_module, "PER_COLOR_BASE_ANGLE", False)):
+                deferred_parameters["_color_base_angle"] = (
+                    layer_meta[1] * 137.50776405003785
+                ) % 180
+            deferred_parameters["_progress_logger"] = lambda message: printLogMessage(
+                f"[Export layer {export_index}/{total_export_layers} "
+                f"{color_hex} / Layer {layer_id} {layer_color_name}] {message}"
+            )
+            printLogMessage(
+                f"[Export layer {export_index}/{total_export_layers}] START: "
+                f"materializing deferred abstract filter '{export_filter_name}' for "
+                f"{geometry_count} source objects."
+            )
+            export_geometry = apply_abstract_filter(
+                geometry, abstract_filter, deferred_parameters
+            )
+            if not export_geometry.is_valid:
+                printLogMessage(
+                    f"[Export layer {export_index}/{total_export_layers}] "
+                    "Repairing invalid deferred-filter geometry."
+                )
+                export_geometry = make_valid(export_geometry)
+            geometry_count = _geometry_object_count(export_geometry)
+            printLogMessage(
+                f"[Export layer {export_index}/{total_export_layers}] DONE: "
+                f"materialized deferred abstract filter '{export_filter_name}' as "
+                f"{geometry_count} output objects."
+            )
 
         if scale_factor != 1.0:
 
@@ -1582,7 +1627,7 @@ def export_processed_layers(
             )
 
             export_geometry = scale(
-                geometry,
+                export_geometry,
                 xfact=scale_factor,
                 yfact=scale_factor,
                 origin=(0, 0)
@@ -2074,6 +2119,8 @@ def raster_to_puzzle_and_lightburn(
         punch_through_black=not preserve_source_black,
         black_lightburn_geometry=black_lightburn_geometry,
         layer_overrides=layer_overrides,
+        abstract_filter=abstract_filter,
+        filter_parameters=filter_parameters,
     )
 
     # =========================================================================

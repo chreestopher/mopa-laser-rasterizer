@@ -38,36 +38,52 @@ LAYER_AFTER_GEOMETRY = True
 PUNCH_SOURCE_GEOMETRY = True
 PRESERVE_BACKGROUND_TRANSPARENCY = True
 PER_COLOR_BASE_ANGLE = True
+DEFER_TO_EXPORT = True
 
 
-def _field_direction(x, y, bounds, scale, strength, symmetry, base_angle, phase):
+def _field_direction(
+    x,
+    y,
+    x1,
+    y1,
+    scale,
+    strength,
+    symmetry,
+    base_angle,
+    phase,
+    row_height,
+    half_scale,
+    base_vx,
+    base_vy,
+    radius,
+    influence_width,
+    maximum_distance,
+    two_pi,
+):
     """Return a smooth tangent sampled from an invisible sacred lattice."""
-    x1, y1, _, _ = bounds
-    row_height = scale * math.sqrt(3) / 2
     row = round((y - y1 - phase) / row_height)
-    col = round((x - x1 - phase - (scale / 2 if row & 1 else 0)) / scale)
-    vx = math.cos(base_angle) * (1 - strength)
-    vy = math.sin(base_angle) * (1 - strength)
-    radius = scale * .72
+    col = round((x - x1 - phase - (half_scale if row & 1 else 0)) / scale)
+    vx = base_vx
+    vy = base_vy
 
     for row_offset in (-1, 0, 1):
         lattice_row = row + row_offset
-        offset = scale / 2 if lattice_row & 1 else 0
+        offset = half_scale if lattice_row & 1 else 0
         cy = y1 + lattice_row * row_height + phase
         for col_offset in (-1, 0, 1):
             lattice_col = col + col_offset
             cx = x1 + lattice_col * scale + offset + phase
             dx, dy = x - cx, y - cy
             distance = math.hypot(dx, dy)
-            if distance < 1e-6 or distance > scale * 1.6:
+            if distance < 1e-6 or distance > maximum_distance:
                 continue
             angle = math.atan2(dy, dx)
             # Quantized radial phase supplies the rotational symmetry without
             # ever drawing the circles, petals, or polygon scaffold itself.
-            sector = round((angle - base_angle) * symmetry / (2 * math.pi))
-            sacred_angle = base_angle + sector * 2 * math.pi / symmetry
+            sector = round((angle - base_angle) * symmetry / two_pi)
+            sacred_angle = base_angle + sector * two_pi / symmetry
             tangent = angle + math.pi / 2
-            influence = math.exp(-((distance - radius) / (scale * .42)) ** 2)
+            influence = math.exp(-((distance - radius) / influence_width) ** 2)
             influence *= .55 + .45 * math.cos(symmetry * (angle - sacred_angle))
             vx += math.cos(tangent) * influence * strength
             vy += math.sin(tangent) * influence * strength
@@ -90,16 +106,44 @@ def _grating(bounds, settings):
     seed = int(number(settings.get("seed"), 1, 0, 2147483647))
     rng = np.random.default_rng(seed)
     phase = (seed * .6180339887498949 % 1) * scale
+    row_height = scale * math.sqrt(3) / 2
+    half_scale = scale / 2
+    base_vx = math.cos(base_angle) * (1 - strength)
+    base_vy = math.sin(base_angle) * (1 - strength)
+    radius = scale * .72
+    influence_width = scale * .42
+    maximum_distance = scale * 1.6
+    two_pi = 2 * math.pi
     lines = []
     margin = max(x2 - x1, y2 - y1) * .35
+    progress = settings.get("_progress_logger")
+    start_positions = np.arange(y1 - margin, y2 + margin + spacing, spacing)
+    if callable(progress):
+        progress(f"Sacred streamline generation START: {len(start_positions)} line batches.")
 
-    for start_y in np.arange(y1 - margin, y2 + margin + spacing, spacing):
+    for start_y in start_positions:
         y = float(start_y + rng.uniform(-spacing * .08, spacing * .08))
         points = [(x1 - margin, y)]
         x = x1 - margin
         while x < x2 + margin:
             angle = _field_direction(
-                x, y, bounds, scale, strength, symmetry, base_angle, phase
+                x,
+                y,
+                x1,
+                y1,
+                scale,
+                strength,
+                symmetry,
+                base_angle,
+                phase,
+                row_height,
+                half_scale,
+                base_vx,
+                base_vy,
+                radius,
+                influence_width,
+                maximum_distance,
+                two_pi,
             )
             x += step
             y += math.tan(max(-1.25, min(1.25, angle))) * step
@@ -108,11 +152,27 @@ def _grating(bounds, settings):
                 break
         if len(points) > 1:
             lines.append(LineString(points))
-    return unary_union(lines) if lines else box(0, 0, 0, 0)
+    if callable(progress):
+        progress(f"Sacred streamline generation DONE: {len(lines)} line batches.")
+        progress(f"Sacred line union START: {len(lines)} line batches.")
+    result = unary_union(lines) if lines else box(0, 0, 0, 0)
+    if callable(progress):
+        progress(f"Sacred line union DONE: {len(lines)} line batches.")
+    return result
 
 
 def apply(geometry, settings):
     bounds = settings.get("_canvas_bounds") or geometry.bounds
     width = number(settings.get("line_width"), .3, .02, 20)
-    ribbons = _grating(bounds, settings).buffer(width / 2, cap_style=2, join_style=2)
-    return geometry.intersection(ribbons)
+    progress = settings.get("_progress_logger")
+    grating = _grating(bounds, settings)
+    if callable(progress):
+        progress("Sacred ribbon buffer START.")
+    ribbons = grating.buffer(width / 2, cap_style=2, join_style=2)
+    if callable(progress):
+        progress("Sacred ribbon buffer DONE.")
+        progress("Sacred color-mask intersection START.")
+    result = geometry.intersection(ribbons)
+    if callable(progress):
+        progress("Sacred color-mask intersection DONE.")
+    return result
