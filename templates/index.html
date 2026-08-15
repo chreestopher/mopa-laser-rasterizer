@@ -736,7 +736,7 @@
       holographic: {
         description: 'Applies one continuous, calibration-free holographic grating to the light/background swatches. The Holographic palette swatch supplies the Material Library operation type and laser values—its interval, angle, power, speed, frequency, and pulse width are used unchanged. Fill Mode defaults to From Setting, matching the Holographic Etching Lab; choose Fill, Offset Fill, or Line to override that behavior explicitly. Rename the Holographic swatch to match your library. Enable Invert Threshold to apply the grating to swatches at or below the Light Threshold instead. Keep Black preserves dark source-image geometry on the normal Black material setting, like the Holographic Etching Lab.',
         controls: [['light_threshold', 150, 0, 255, 1]],
-        selects: [['fill_mode', 'from_setting', [['fill', 'Fill'], ['offset_fill', 'Offset Fill'], ['line', 'Line'], ['from_setting', 'From Setting']]]],
+        selects: [['fill_mode', 'from_setting', [['fill', 'Fill'], ['offset_fill', 'Offset Fill'], ['from_setting', 'From Setting'], ['line', 'Line']]]],
         toggles: [['invert_threshold', false], ['keep_black', false]]
       },
       none: { description: 'Keeps the clean abstract-vector workflow without adding a geometric effect. Choose this when you want the source image to do the talking.', controls: [] }

@@ -11,7 +11,7 @@ import svgwrite
 import potrace
 import xml.etree.ElementTree as ET
 from collections import defaultdict
-from shapely.geometry import Polygon, box, Point, MultiPoint, LineString, MultiLineString
+from shapely.geometry import Polygon, box, Point, MultiPoint, LineString, MultiLineString, GeometryCollection
 from shapely.ops import unary_union, voronoi_diagram, transform
 from shapely.affinity import scale, affine_transform
 from shapely.validation import make_valid
@@ -984,6 +984,59 @@ def process_color_geometry(
     return (final_geometry, source_geometry) if return_source_geometry else final_geometry
 
 
+def _raster_boxes_to_rectangles(boxes):
+    """Convert unit pixel boxes into exact, non-overlapping rectangles."""
+    remaining = set()
+    for item in boxes:
+        min_x, min_y, max_x, max_y = item.bounds
+        if max_x - min_x == 1 and max_y - min_y == 1:
+            remaining.add((int(round(min_x)), int(round(min_y))))
+
+    rectangles = []
+    while remaining:
+        x, y = min(remaining, key=lambda point: (point[1], point[0]))
+        width = 1
+        while (x + width, y) in remaining:
+            width += 1
+        height = 1
+        while all((x + offset, y + height) in remaining for offset in range(width)):
+            height += 1
+        for row in range(height):
+            for column in range(width):
+                remaining.remove((x + column, y + row))
+        rectangles.append((x, y, width, height))
+
+    def merge_rows(items):
+        merged = []
+        for item in sorted(items, key=lambda value: (value[1], value[3], value[0])):
+            if merged:
+                px, py, pw, ph = merged[-1]
+                x, y, width, height = item
+                if y == py and height == ph and x == px + pw:
+                    merged[-1] = (px, py, pw + width, height)
+                    continue
+            merged.append(item)
+        return merged
+
+    def merge_columns(items):
+        merged = []
+        for item in sorted(items, key=lambda value: (value[0], value[2], value[1])):
+            if merged:
+                px, py, pw, ph = merged[-1]
+                x, y, width, height = item
+                if x == px and width == pw and y == py + ph:
+                    merged[-1] = (px, py, width, ph + height)
+                    continue
+            merged.append(item)
+        return merged
+
+    while True:
+        previous_count = len(rectangles)
+        rectangles = merge_columns(merge_rows(rectangles))
+        if len(rectangles) == previous_count:
+            return [box(x, y, x + width, y + height) for x, y, width, height in rectangles]
+
+
 def process_color_layers(
     pixel_boxes_by_color,
     target_colors,
@@ -1006,6 +1059,9 @@ def process_color_layers(
     punch_source_geometry = bool(getattr(filter_module, "PUNCH_SOURCE_GEOMETRY", False))
     setting_parameter = getattr(filter_module, "SETTING_NAME_PARAMETER", None)
     setting_layer_id = (filter_parameters or {}).get("_setting_layer_id")
+    rectangle_mode = bool(getattr(filter_module, "RASTER_RECTANGLE_MODE", False))
+    holographic_color = getattr(filter_module, "HOLOGRAPHIC_COLOR", None)
+    holographic_boxes = []
     light_threshold = _number(settings.get("light_threshold", 150), 150, 0, 255)
     invert_threshold = bool(settings.get("invert_threshold", False))
 
@@ -1063,6 +1119,10 @@ def process_color_layers(
         if light_layers_only and not is_light_swatch(color_hex):
             layer_filter = "none"
 
+        if rectangle_mode and layer_filter != "none":
+            holographic_boxes.extend(boxes)
+            continue
+
         use_source_punch = punch_source_geometry and layer_filter != "none"
         result = process_color_geometry(
             boxes=boxes,
@@ -1086,6 +1146,14 @@ def process_color_layers(
             punch_layers[color_hex] = source_geometry
         if layer_overrides is not None and layer_filter != "none" and setting_parameter and setting_layer_id is not None:
             layer_overrides[color_hex] = setting_layer_id
+
+    if rectangle_mode and holographic_boxes and holographic_color in target_colors:
+        holographic_geometry = GeometryCollection(_raster_boxes_to_rectangles(holographic_boxes))
+        processed_layers[holographic_color] = holographic_geometry
+        if punch_layers is not None:
+            punch_layers[holographic_color] = holographic_geometry
+        if layer_overrides is not None and setting_parameter and setting_layer_id is not None:
+            layer_overrides[holographic_color] = setting_layer_id
 
     return processed_layers
 

@@ -133,6 +133,17 @@ def main(argv=None):
         elif fill_mode == "line":
             holographic_layer.type = "Cut"
 
+        # Keep one synthetic image swatch for the aggregate rectangle
+        # geometry. It is settings-only and is excluded from pixel matching.
+        holographic_hex = vector_processing.ABSTRACT_FILTER_MODULES[
+            "holographic"
+        ].HOLOGRAPHIC_COLOR
+        target_colors[holographic_hex] = (
+            268,
+            holographic_layer_id,
+            str(getattr(holographic_layer, "name", "") or "Holographic"),
+        )
+
         # Preserve the selected Fill/Scan setting's interval, angle, power,
         # speed, frequency, pulse width, and passes without adjustment.
         vector_processing.move_lightburn_layer_after(
