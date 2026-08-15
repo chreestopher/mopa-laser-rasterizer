@@ -133,6 +133,28 @@ def main(argv=None):
         elif fill_mode == "line":
             holographic_layer.type = "Cut"
 
+        # Keep the known-good geometry path, but move the generated
+        # Holographic setting off the material library's source/tool index.
+        used_layer_ids = [
+            int(metadata[1])
+            for metadata in target_colors.values()
+            if metadata and len(metadata) > 1
+        ]
+        output_layer_id = len(used_layer_ids)
+        while output_layer_id in used_layer_ids:
+            output_layer_id += 1
+        output_layer = copy(holographic_layer)
+        output_layer.index = output_layer_id
+        output_layer.name = getattr(holographic_layer, "name", "") or "Holographic"
+        output_layer.subLayers = []
+        lb._layers[lb._layers.index(holographic_layer)] = output_layer
+        holographic_layer = output_layer
+        holographic_layer_id = output_layer_id
+        filter_parameters["_setting_layer_id"] = holographic_layer_id
+        vector_processing.printLogMessage(
+            f"Holographic output assigned to new LightBurn layer {output_layer_id}."
+        )
+
         # Keep one synthetic image swatch for the aggregate rectangle
         # geometry. It is settings-only and is excluded from pixel matching.
         holographic_hex = vector_processing.ABSTRACT_FILTER_MODULES[
