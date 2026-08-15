@@ -39,6 +39,7 @@ PUNCH_SOURCE_GEOMETRY = True
 PRESERVE_BACKGROUND_TRANSPARENCY = True
 PER_COLOR_BASE_ANGLE = True
 DEFER_TO_EXPORT = True
+BUFFER_BATCH_SIZE = 8
 
 
 def _field_direction(
@@ -154,25 +155,44 @@ def _grating(bounds, settings):
             lines.append(LineString(points))
     if callable(progress):
         progress(f"Sacred streamline generation DONE: {len(lines)} line batches.")
-        progress(f"Sacred line union START: {len(lines)} line batches.")
-    result = unary_union(lines) if lines else box(0, 0, 0, 0)
-    if callable(progress):
-        progress(f"Sacred line union DONE: {len(lines)} line batches.")
-    return result
+    return lines
 
 
 def apply(geometry, settings):
     bounds = settings.get("_canvas_bounds") or geometry.bounds
     width = number(settings.get("line_width"), .3, .02, 20)
     progress = settings.get("_progress_logger")
-    grating = _grating(bounds, settings)
+    lines = _grating(bounds, settings)
+    if not lines:
+        return box(0, 0, 0, 0)
+
+    total_batches = math.ceil(len(lines) / BUFFER_BATCH_SIZE)
+    clipped_batches = []
     if callable(progress):
-        progress("Sacred ribbon buffer START.")
-    ribbons = grating.buffer(width / 2, cap_style=2, join_style=2)
+        progress(
+            f"Sacred bounded ribbon buffer START: {len(lines)} lines in "
+            f"{total_batches} batches."
+        )
+    for batch_index, start in enumerate(range(0, len(lines), BUFFER_BATCH_SIZE), 1):
+        line_batch = unary_union(lines[start:start + BUFFER_BATCH_SIZE])
+        ribbons = line_batch.buffer(width / 2, cap_style=2, join_style=2)
+        clipped = geometry.intersection(ribbons)
+        if not clipped.is_empty:
+            clipped_batches.append(clipped)
+        if callable(progress) and (
+            batch_index == 1 or batch_index == total_batches or batch_index % 10 == 0
+        ):
+            progress(
+                f"Sacred bounded ribbon buffer: batch {batch_index}/{total_batches}; "
+                f"{min(start + BUFFER_BATCH_SIZE, len(lines))}/{len(lines)} lines processed."
+            )
     if callable(progress):
-        progress("Sacred ribbon buffer DONE.")
-        progress("Sacred color-mask intersection START.")
-    result = geometry.intersection(ribbons)
+        progress(
+            f"Sacred bounded ribbon buffer DONE: {len(clipped_batches)} non-empty "
+            f"clipped batches from {total_batches} batches."
+        )
+        progress(f"Sacred clipped-batch union START: {len(clipped_batches)} batches.")
+    result = unary_union(clipped_batches) if clipped_batches else box(0, 0, 0, 0)
     if callable(progress):
-        progress("Sacred color-mask intersection DONE.")
+        progress(f"Sacred clipped-batch union DONE: {len(clipped_batches)} batches.")
     return result

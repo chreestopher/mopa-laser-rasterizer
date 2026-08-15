@@ -296,7 +296,10 @@ def task_status(task_id):
     logs = redis_client.lrange(log_key, 0, -1) if redis_client.exists(log_key) else []
     if not logs and durable_job and durable_job.get("error_message"):
         logs = [f"Rasterizer job failed: {durable_job['error_message']}"]
-    return jsonify({"status": status.strip(), "logs": logs})
+    response = jsonify({"status": status.strip(), "logs": logs})
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
 
 
 def _output_file(task_id, extension=None):

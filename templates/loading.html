@@ -719,7 +719,7 @@ function updateStatusLamps(status) {
 // Start checking logs immediately
 const checkStatus = setInterval(async () => {
     try {
-        const response = await fetch(`/task-status/${taskId}`);
+        const response = await fetch(`/task-status/${taskId}`, {cache:'no-store'});
 
         if (!response.ok) {
             console.warn(
