@@ -315,10 +315,20 @@ def task_status(task_id):
                 redis_client.set(
                     position_key, position_value, ex=HISTORY_TTL_SECONDS
                 )
-    logs = redis_client.lrange(log_key, 0, -1) if redis_client.exists(log_key) else []
+    try:
+        log_after = max(0, int(request.args.get("after", "0")))
+    except (TypeError, ValueError):
+        log_after = 0
+    log_count = redis_client.llen(log_key)
+    logs = redis_client.lrange(log_key, log_after, -1) if log_count > log_after else []
     if not logs and durable_job and durable_job.get("error_message"):
         logs = [f"Rasterizer job failed: {durable_job['error_message']}"]
-    response = jsonify({"status": status.strip(), "logs": logs, "queue": queue})
+    response = jsonify({
+        "status": status.strip(),
+        "logs": logs,
+        "log_count": log_count,
+        "queue": queue,
+    })
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     return response

@@ -71,7 +71,13 @@ def main():
             raw_payload = redis_client.brpoplpush(
                 RASTER_JOB_QUEUE, RASTER_JOB_PROCESSING_QUEUE, timeout=5
             )
-        except (RedisTimeoutError, RedisConnectionError) as error:
+        except RedisTimeoutError:
+            # Some Redis/socket configurations surface an expired blocking
+            # queue read as a socket timeout instead of returning ``None``.
+            # This is a normal idle poll; reconnect on the next iteration
+            # without filling the worker log with non-actionable warnings.
+            continue
+        except RedisConnectionError as error:
             print(f"[Raster-Worker] Redis queue wait interrupted; retrying: {error}", flush=True)
             time.sleep(1)
             continue
