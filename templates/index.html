@@ -733,11 +733,11 @@
           ['break_origin_y', .35, 0, 1, .01], ['seed', 1, 0, 999999, 1]]
       },
       sacred: {
-        description: 'Redraws the image as fine diffraction-grating ribbons. An invisible sacred-geometry lattice controls the local direction of the ribbons, bending them along its circular and rotational contours without exporting the lattice itself. Every ribbon uses the first material-library setting whose name or description contains holographic and is written to the Holographic LightBurn layer.',
-        controls: [['grating_spacing', 3, .5, 12, .1], ['line_width', .35, .05, 3, .05],
-          ['field_scale', 42, 10, 160, 1], ['field_strength', .7, 0, 1, .05],
+        description: 'Redraws the image as fine diffraction-grating ribbons. Every source color receives its own stable base angle, and every disconnected region of that color uses that same angle. An invisible sacred-geometry lattice then bends the ribbons locally along its circular and rotational contours without exporting the lattice itself. Base Angle rotates all color angles together. Every ribbon uses the first material-library setting whose name or description contains holographic and is written to the Holographic LightBurn layer.',
+        controls: [['grating_spacing', 1.25, .5, 12, .1], ['line_width', .3, .05, 3, .05],
+          ['field_scale', 60, 10, 160, 1], ['field_strength', .35, 0, 1, .05],
           ['symmetry', 6, 3, 12, 1], ['base_angle', 0, -180, 180, 1],
-          ['step_size', 1.5, .25, 5, .25], ['seed', 1, 0, 999999, 1]]
+          ['step_size', .75, .25, 5, .25], ['seed', 1, 0, 999999, 1]]
       },
       /* Retired Abstract Holographic preset.
       holographic: {
