@@ -43,11 +43,10 @@ LIGHTBURN_PALETTE_NAMES = {
     "#8CD78C": "Sage-Green", "#F0B98D": "Peach", "#F6C4E1": "Light-Pink",
     "#FA9ED4": "Orchid-Pink", "#500A78": "Deep-Purple", "#B45A00": "Rust-Brown",
     "#004754": "Teal", "#86FA88": "Bright-Mint-Green", "#FFDB66": "Light-Gold",
-    "#7A00FF": "Holographic",
 }
 ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
-    "crystal", "ripple", "centerline", "glitch", "shattered", "deep_fryer", "holographic", "holographic_space",
+    "crystal", "ripple", "centerline", "glitch", "shattered", "deep_fryer",
 }
 ABSTRACT_PRESET_PREFIX = "abstract_"
 HISTORY_SESSION_RE = re.compile(r"^[a-f0-9-]{32,36}$")

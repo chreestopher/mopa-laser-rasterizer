@@ -6,7 +6,6 @@ Flask continues to execute this filename. All processing lives in
 import json
 import os
 import sys
-from copy import copy
 
 # Support deployment with this file under lib/ and modules either beside it
 # or one project directory above it.
@@ -51,13 +50,8 @@ def main(argv=None):
     if image_preset.startswith("abstract_"):
         abstract_filter = image_preset.removeprefix("abstract_")
         image_preset = "abstract"
-    if abstract_filter == "holographic_space":
-        abstract_filter = "holographic"
     if image_preset not in vector_processing.PHOTO_TYPE_PRESETS:
         raise SystemExit(f"Unknown image preset: {image_preset}")
-    required_setting_names = []
-    if abstract_filter == "holographic":
-        required_setting_names.append(str(filter_parameters.get("setting_name", "holographic")).strip())
     preset = vector_processing.PHOTO_TYPE_PRESETS[image_preset]
     vector_processing.image_preset = image_preset
 
@@ -80,7 +74,7 @@ def main(argv=None):
             target_colors,
             material_name=material_name,
             material_layer_report=material_layer_report,
-            required_setting_names=required_setting_names,
+            required_setting_names=[],
             return_setting_layers=True,
         )
     except ValueError as error:
@@ -88,92 +82,6 @@ def main(argv=None):
         # already emitted the useful material list, so avoid adding a Python
         # traceback to the task console.
         raise SystemExit(str(error))
-    if required_setting_names:
-        filter_parameters["_setting_layer_id"] = filter_setting_layers[required_setting_names[0].casefold()]
-        holographic_layer_id = filter_parameters["_setting_layer_id"]
-        holographic_layer = next(
-            (layer for layer in lb._layers if getattr(layer, "index", None) == holographic_layer_id),
-            None,
-        )
-        if holographic_layer is None:
-            raise SystemExit("Holographic Material Library setting was not added to the LightBurn project.")
-
-        fill_mode = str(filter_parameters.get("fill_mode", "from_setting")).strip().lower()
-        if fill_mode not in {"from_setting", "fill", "offset_fill", "line"}:
-            raise SystemExit("Holographic Fill Mode must be Fill, Offset Fill, Line, or From Setting.")
-
-        # Offset Fill material settings store their individual scan passes as
-        # child layers.  The lab uses the first concrete pass; use that same
-        # pass for an explicit Offset Fill choice and for From Setting when
-        # the chosen library entry is an Offset Fill setting.
-        sublayers = getattr(holographic_layer, "subLayers", None) or []
-        use_offset_fill = fill_mode == "offset_fill" or (
-            fill_mode == "from_setting" and bool(sublayers)
-        )
-        if use_offset_fill and sublayers:
-            scan_layer = copy(sublayers[0])
-            scan_layer.index = holographic_layer_id
-            scan_layer.name = holographic_layer.name
-            scan_layer.materialName = getattr(holographic_layer, "materialName", "")
-            scan_layer.entryDesc = getattr(holographic_layer, "entryDesc", "")
-            scan_layer.subLayers = []
-            lb._layers[lb._layers.index(holographic_layer)] = scan_layer
-            holographic_layer = scan_layer
-
-        if use_offset_fill and not sublayers:
-            vector_processing.printLogMessage(
-                "Holographic Offset Fill requested, but the setting has no sublayer; using its direct settings."
-            )
-        # From Setting matches the Etching Lab: preserve the selected
-        # material entry's native operation type and laser values.  The
-        # explicit Fill choice is the only mode that intentionally overrides
-        # that type.
-        if fill_mode == "fill":
-            holographic_layer.type = "Scan"
-        elif fill_mode == "line":
-            holographic_layer.type = "Cut"
-
-        # Keep the known-good geometry path, but move the generated
-        # Holographic setting off the material library's source/tool index.
-        used_layer_ids = [
-            int(metadata[1])
-            for metadata in target_colors.values()
-            if metadata and len(metadata) > 1
-        ]
-        output_layer_id = len(used_layer_ids)
-        while output_layer_id in used_layer_ids:
-            output_layer_id += 1
-        output_layer = copy(holographic_layer)
-        output_layer.index = output_layer_id
-        output_layer.name = getattr(holographic_layer, "name", "") or "Holographic"
-        output_layer.subLayers = []
-        lb._layers[lb._layers.index(holographic_layer)] = output_layer
-        holographic_layer = output_layer
-        holographic_layer_id = output_layer_id
-        filter_parameters["_setting_layer_id"] = holographic_layer_id
-        vector_processing.printLogMessage(
-            f"Holographic output assigned to new LightBurn layer {output_layer_id}."
-        )
-
-        # Keep one synthetic image swatch for the aggregate rectangle
-        # geometry. It is settings-only and is excluded from pixel matching.
-        holographic_hex = vector_processing.ABSTRACT_FILTER_MODULES[
-            "holographic"
-        ].HOLOGRAPHIC_COLOR
-        target_colors[holographic_hex] = (
-            268,
-            holographic_layer_id,
-            str(getattr(holographic_layer, "name", "") or "Holographic"),
-        )
-
-        # Preserve the selected Fill/Scan setting's interval, angle, power,
-        # speed, frequency, pulse width, and passes without adjustment.
-        vector_processing.move_lightburn_layer_after(
-            lb,
-            target_colors["#000000"][1],
-            holographic_layer_id,
-        )
-
     vector_settings = dict(preset)
     for name in ("min_island_area", "simplification_factor", "smoothing_radius"):
         if name in filter_parameters:

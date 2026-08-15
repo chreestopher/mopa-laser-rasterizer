@@ -132,7 +132,7 @@ def resize_to_specific_height_or_width( image, width=0, height=0 ):
 found_lb_hex = {}
 # Settings-only palette entries may be loaded as LightBurn layers but must
 # never become a raster-color destination.
-NON_IMAGE_SWATCHES = {"#7A00FF"}
+NON_IMAGE_SWATCHES = set()
 
 
 def nearest_available_swatch(r, g, b, target_colors, prefer_non_black=True):
@@ -1059,9 +1059,6 @@ def process_color_layers(
     punch_source_geometry = bool(getattr(filter_module, "PUNCH_SOURCE_GEOMETRY", False))
     setting_parameter = getattr(filter_module, "SETTING_NAME_PARAMETER", None)
     setting_layer_id = (filter_parameters or {}).get("_setting_layer_id")
-    rectangle_mode = bool(getattr(filter_module, "RASTER_RECTANGLE_MODE", False))
-    holographic_color = getattr(filter_module, "HOLOGRAPHIC_COLOR", None)
-    holographic_boxes = []
     light_threshold = _number(settings.get("light_threshold", 150), 150, 0, 255)
     invert_threshold = bool(settings.get("invert_threshold", False))
 
@@ -1119,10 +1116,6 @@ def process_color_layers(
         if light_layers_only and not is_light_swatch(color_hex):
             layer_filter = "none"
 
-        if rectangle_mode and layer_filter != "none":
-            holographic_boxes.extend(boxes)
-            continue
-
         use_source_punch = punch_source_geometry and layer_filter != "none"
         result = process_color_geometry(
             boxes=boxes,
@@ -1146,14 +1139,6 @@ def process_color_layers(
             punch_layers[color_hex] = source_geometry
         if layer_overrides is not None and layer_filter != "none" and setting_parameter and setting_layer_id is not None:
             layer_overrides[color_hex] = setting_layer_id
-
-    if rectangle_mode and holographic_boxes and holographic_color in target_colors:
-        holographic_geometry = GeometryCollection(_raster_boxes_to_rectangles(holographic_boxes))
-        processed_layers[holographic_color] = holographic_geometry
-        if punch_layers is not None:
-            punch_layers[holographic_color] = holographic_geometry
-        if layer_overrides is not None and setting_parameter and setting_layer_id is not None:
-            layer_overrides[holographic_color] = setting_layer_id
 
     return processed_layers
 
@@ -1508,7 +1493,6 @@ def export_processed_layers(
     punch_through_black=False,
     black_lightburn_geometry=None,
     layer_overrides=None,
-    punch_exclude_colors=None,
 ):
     """
     Sort, scale, and export all finalized geometry to SVG and LightBurn.
@@ -1624,11 +1608,7 @@ def export_processed_layers(
                 override_layer_id=layer_id,
             )
 
-            if (
-                punch_through_black
-                and color_hex != black_hex
-                and color_hex not in (punch_exclude_colors or set())
-            ):
+            if punch_through_black and color_hex != black_hex:
                 printLogMessage(
                     f" -> Adding {layer_color_name} geometry to Black "
                     "Layer for LightBurn punch-through"
@@ -1958,8 +1938,6 @@ def raster_to_puzzle_and_lightburn(
         punch_through_black=not preserve_source_black,
         black_lightburn_geometry=black_lightburn_geometry,
         layer_overrides=layer_overrides,
-        punch_exclude_colors={filter_module.HOLOGRAPHIC_COLOR}
-        if filter_name == "holographic" else None,
     )
 
     # =========================================================================

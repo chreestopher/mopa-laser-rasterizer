@@ -609,7 +609,6 @@
           <div class="color-card"><span class="color-name">teal</span><div class="color-square" style="background-color: #004754;"></div><span class="color-hex">#004754</span></div>
           <div class="color-card"><span class="color-name">bright-mint-green</span><div class="color-square" style="background-color: #86FA88;"></div><span class="color-hex">#86FA88</span></div>
           <div class="color-card"><span class="color-name">light-gold</span><div class="color-square" style="background-color: #FFDB66;"></div><span class="color-hex">#FFDB66</span></div>
-          <div class="color-card" data-default-excluded data-holographic-setting><span class="color-name">holographic</span><div class="color-square selected" style="background-color: #7A00FF;"></div><span class="color-hex">#7A00FF</span></div>
         </div>
       </div>  
     </div>
@@ -634,7 +633,6 @@
           <option value="abstract_glitch">Digital Glitch</option>
           <option value="abstract_deep_fryer">Deep Fryer</option>
           <option value="abstract_shattered">Shattered</option>
-          <option value="abstract_holographic">Holographic</option>
           <option value="abstract_none">Abstract: None</option>
         </optgroup>
       </select>
@@ -733,12 +731,13 @@
           ['rotation', 22, 0, 180, 1], ['break_origin_x', .5, 0, 1, .01],
           ['break_origin_y', .35, 0, 1, .01], ['seed', 1, 0, 999999, 1]]
       },
+      /* Retired Abstract Holographic preset.
       holographic: {
         description: 'Applies one continuous, calibration-free holographic grating to the light/background swatches. The Holographic palette swatch supplies the Material Library operation type and laser values—its interval, angle, power, speed, frequency, and pulse width are used unchanged. Fill Mode defaults to From Setting, matching the Holographic Etching Lab; choose Fill, Offset Fill, or Line to override that behavior explicitly. Rename the Holographic swatch to match your library. Enable Invert Threshold to apply the grating to swatches at or below the Light Threshold instead. Keep Black preserves dark source-image geometry on the normal Black material setting, like the Holographic Etching Lab.',
         controls: [['light_threshold', 150, 0, 255, 1]],
         selects: [['fill_mode', 'from_setting', [['fill', 'Fill'], ['offset_fill', 'Offset Fill'], ['from_setting', 'From Setting'], ['line', 'Line']]]],
         toggles: [['invert_threshold', false], ['keep_black', false]]
-      },
+      }, */
       none: { description: 'Keeps the clean abstract-vector workflow without adding a geometric effect. Choose this when you want the source image to do the talking.', controls: [] }
     };
 
@@ -759,14 +758,10 @@
         const valueInput = input.closest('.filter-control').querySelector('.value-input');
         if (valueInput && input.type === 'range') valueInput.value = input.value;
       });
-      if (document.getElementById('image_preset').value === 'abstract_holographic') {
-        const holographicCard = document.querySelector('[data-holographic-setting]');
-        if (holographicCard) values.setting_name = holographicCard.querySelector('.color-name').textContent.trim();
-      }
       document.getElementById('abstract_filter_parameters').value = JSON.stringify(values);
-      updateHolographicSwatchReadout(values);
     }
 
+    /* Retired Abstract Holographic readout.
     function updateHolographicSwatchReadout(values = {}) {
       let readout = document.getElementById('holographic_swatch_readout');
       if (document.getElementById('image_preset').value !== 'abstract_holographic') {
@@ -826,6 +821,7 @@
       readout.appendChild(swatchGroup);
     }
 
+    */
     function updateTumblerReadout(values) {
       let readout = document.getElementById('tumbler_readout');
       if (document.getElementById('image_preset').value !== 'abstract_tumbler') {
@@ -1008,8 +1004,7 @@
         document.getElementById('pixel_square_mm').value = preferences.pixel_square_mm ?? document.getElementById('pixel_square_mm').value;
         newWidthInput.value = preferences.new_width ?? newWidthInput.value;
         newHeightInput.value = preferences.new_height ?? newHeightInput.value;
-        if (preferences.image_preset) document.getElementById('image_preset').value =
-          preferences.image_preset === 'abstract_holographic_space' ? 'abstract_holographic' : preferences.image_preset;
+        if (preferences.image_preset) document.getElementById('image_preset').value = preferences.image_preset;
         paletteCards.forEach(card => {
           const hex = card.querySelector('.color-hex').textContent.trim().toUpperCase();
           const name = preferences.color_name_overrides?.[hex];
@@ -1130,8 +1125,7 @@
           document.getElementById('pixel_square_mm').value = settings.pixel_square_mm || '1';
           newWidthInput.value = settings.new_width ?? '0';
           newHeightInput.value = settings.new_height ?? '0';
-          document.getElementById('image_preset').value = settings.image_preset === 'abstract_holographic_space'
-            ? 'abstract_holographic' : (settings.image_preset || 'cartoon');
+          document.getElementById('image_preset').value = settings.image_preset || 'cartoon';
           sessionStorage.setItem(materialNameKey, materialInput.value.trim());
           paletteCards.forEach(card => {
             const hex = card.querySelector('.color-hex').textContent.trim().toUpperCase();
@@ -1254,10 +1248,6 @@
         updatePaletteFields();
       });
       name.addEventListener('input', updatePaletteFields);
-      if (card.hasAttribute('data-holographic-setting')) {
-        name.addEventListener('input', updateFilterParameters);
-        name.addEventListener('blur', updateFilterParameters);
-      }
     });
 
     squares.forEach(square => {
