@@ -8,13 +8,13 @@ from .common import number
 
 
 DEFAULTS = {
-    "grating_spacing": 3,
-    "line_width": .35,
-    "field_scale": 42,
-    "field_strength": .7,
+    "grating_spacing": 1.25,
+    "line_width": .3,
+    "field_scale": 60,
+    "field_strength": .35,
     "symmetry": 6,
     "base_angle": 0,
-    "step_size": 1.5,
+    "step_size": .75,
     "seed": 1,
 }
 CONTROLS = (
@@ -34,8 +34,10 @@ SETTING_NAME = "holographic"
 SETTING_NAME_PARAMETER = "holographic"
 LAYER_NAME = "Holographic"
 LAYER_COLOR = "#FEFEFE"
+LAYER_AFTER_GEOMETRY = True
 PUNCH_SOURCE_GEOMETRY = True
 PRESERVE_BACKGROUND_TRANSPARENCY = True
+PER_COLOR_BASE_ANGLE = True
 
 
 def _field_direction(x, y, bounds, scale, strength, symmetry, base_angle, phase):
@@ -77,12 +79,14 @@ def _field_direction(x, y, bounds, scale, strength, symmetry, base_angle, phase)
 
 def _grating(bounds, settings):
     x1, y1, x2, y2 = bounds
-    spacing = number(settings.get("grating_spacing"), 3, .25, 100)
-    scale = number(settings.get("field_scale"), 42, 5, 1000)
-    strength = number(settings.get("field_strength"), .7, 0, 1)
+    spacing = number(settings.get("grating_spacing"), 1.25, .25, 100)
+    scale = number(settings.get("field_scale"), 60, 5, 1000)
+    strength = number(settings.get("field_strength"), .35, 0, 1)
     symmetry = int(number(settings.get("symmetry"), 6, 3, 24))
-    base_angle = math.radians(number(settings.get("base_angle"), 0, -180, 180))
-    step = number(settings.get("step_size"), 1.5, .1, 10)
+    user_angle = number(settings.get("base_angle"), 0, -180, 180)
+    color_angle = number(settings.get("_color_base_angle"), 0, 0, 180)
+    base_angle = math.radians((user_angle + color_angle) % 180)
+    step = number(settings.get("step_size"), .75, .1, 10)
     seed = int(number(settings.get("seed"), 1, 0, 2147483647))
     rng = np.random.default_rng(seed)
     phase = (seed * .6180339887498949 % 1) * scale
@@ -109,6 +113,6 @@ def _grating(bounds, settings):
 
 def apply(geometry, settings):
     bounds = settings.get("_canvas_bounds") or geometry.bounds
-    width = number(settings.get("line_width"), .35, .02, 20)
+    width = number(settings.get("line_width"), .3, .02, 20)
     ribbons = _grating(bounds, settings).buffer(width / 2, cap_style=2, join_style=2)
     return geometry.intersection(ribbons)

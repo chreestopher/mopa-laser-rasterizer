@@ -446,8 +446,7 @@ def init_lightburn(the_colors_limit, color_name_overrides=None):
         '#B45A00': (30, 26, 'Rust-Brown'),
         '#004754': (189, 27, 'Teal'),
         '#86FA88': (121, 28, 'Bright-Mint-Green'),
-        '#FFDB66': (46, 29, 'Light-Gold'),
-        '#7A00FF': (268, 30, 'Holographic')
+        '#FFDB66': (46, 29, 'Light-Gold')
     }
     for color_hex, label in (color_name_overrides or {}).items():
         color_hex = str(color_hex).strip().upper()
@@ -1064,6 +1063,7 @@ def process_color_layers(
     light_layers_only = bool(getattr(filter_module, "LIGHT_LAYERS_ONLY", False))
     punch_source_geometry = bool(getattr(filter_module, "PUNCH_SOURCE_GEOMETRY", False))
     setting_parameter = getattr(filter_module, "SETTING_NAME_PARAMETER", None)
+    per_color_base_angle = bool(getattr(filter_module, "PER_COLOR_BASE_ANGLE", False))
     setting_layer_id = (filter_parameters or {}).get("_setting_layer_id")
     light_threshold = _number(settings.get("light_threshold", 150), 150, 0, 255)
     invert_threshold = bool(settings.get("invert_threshold", False))
@@ -1123,13 +1123,22 @@ def process_color_layers(
             layer_filter = "none"
 
         use_source_punch = punch_source_geometry and layer_filter != "none"
+        layer_filter_parameters = filter_parameters
+        if per_color_base_angle and layer_filter != "none":
+            layer_filter_parameters = dict(filter_parameters or {})
+            # Line orientation repeats at 180 degrees. The golden angle gives
+            # every LightBurn palette layer a stable, well-separated base
+            # direction without depending on object order or geometry count.
+            layer_filter_parameters["_color_base_angle"] = (
+                layer_id * 137.50776405003785
+            ) % 180
         result = process_color_geometry(
             boxes=boxes,
             min_island_area=min_island_area,
             simplification_factor=simplification_factor,
             smoothing_radius=smoothing_radius,
             abstract_filter=layer_filter,
-            filter_parameters=filter_parameters,
+            filter_parameters=layer_filter_parameters,
             return_source_geometry=use_source_punch,
         )
         if use_source_punch:
@@ -1891,6 +1900,44 @@ def raster_to_puzzle_and_lightburn(
         punch_layers=punch_layers,
         layer_overrides=layer_overrides,
     )
+
+    if bool(getattr(filter_module, "LAYER_AFTER_GEOMETRY", False)):
+        geometry_layer_count = sum(
+            1 for geometry in processed_layers.values() if not geometry.is_empty
+        )
+        holographic_layer_id = geometry_layer_count + 1
+        if holographic_layer_id >= 30:
+            raise ValueError(
+                "Sacred produced too many image layers to place Holographic "
+                "before LightBurn's tool-layer range"
+            )
+        previous_layer_id = filter_parameters.get("_setting_layer_id")
+        configured_layers = getattr(lb_project_instance, "_layers", [])
+        holographic_setting = next(
+            (layer for layer in configured_layers
+             if getattr(layer, "index", None) == previous_layer_id),
+            None,
+        )
+        configured_layers[:] = [
+            layer for layer in configured_layers
+            if getattr(layer, "index", None) != holographic_layer_id
+            or layer is holographic_setting
+        ]
+        if holographic_setting is not None:
+            holographic_setting.index = holographic_layer_id
+            holographic_setting.name = getattr(filter_module, "LAYER_NAME", "Holographic")
+        for color_hex, layer_id in list(layer_overrides.items()):
+            if layer_id == previous_layer_id:
+                layer_overrides[color_hex] = holographic_layer_id
+        layer_color = str(getattr(filter_module, "LAYER_COLOR", "#FEFEFE")).upper()
+        if layer_color in TARGET_COLORS:
+            hue, _, layer_name = TARGET_COLORS[layer_color]
+            TARGET_COLORS[layer_color] = (hue, holographic_layer_id, layer_name)
+        filter_parameters["_setting_layer_id"] = holographic_layer_id
+        printLogMessage(
+            f"Holographic assigned to cut layer {holographic_layer_id} after "
+            f"{geometry_layer_count} image layer(s)."
+        )
 
     # =========================================================================
     # 6. Build the BLACK layer around the colored geometry
