@@ -89,6 +89,16 @@ def main(argv=None):
         raise SystemExit(str(error))
     if required_setting_names:
         filter_parameters["_setting_layer_id"] = filter_setting_layers[required_setting_names[0].casefold()]
+        # Holographic geometry is made from narrow diffraction bands.  Its
+        # dedicated material setting supplies every laser parameter, but its
+        # LightBurn operation must always be Line rather than Fill/Scan.  Do
+        # not touch the ordinary palette layers: those retain exactly the
+        # operation type stored in their own material-library settings.
+        vector_processing.set_lightburn_layer_type(
+            lb,
+            filter_parameters["_setting_layer_id"],
+            "Cut",
+        )
         vector_processing.move_lightburn_layer_after(
             lb,
             target_colors["#000000"][1],

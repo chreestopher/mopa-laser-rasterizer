@@ -378,6 +378,25 @@ def move_lightburn_layer_after(lb_project, layer_id, after_layer_id):
     layers.insert(layers.index(after_layer) + 1, layer)
     return True
 
+
+def set_lightburn_layer_type(lb_project, layer_id, layer_type):
+    """Change only a configured LightBurn layer's operation type.
+
+    Material-library settings carry the remaining cut parameters on the same
+    layer object, so changing ``type`` preserves power, speed, frequency,
+    pulse width, passes, and any other imported setting values.
+    """
+    layers = getattr(lb_project, "_layers", None)
+    if not isinstance(layers, list):
+        return False
+    layer = next((item for item in layers if getattr(item, "index", None) == layer_id), None)
+    if layer is None:
+        return False
+    if layer_type != "Cut":
+        raise ValueError(f"Unsupported forced LightBurn layer type: {layer_type}")
+    layer.type = layer_type
+    return layer.type == "Cut"
+
 def init_lightburn(the_colors_limit, color_name_overrides=None):
     """
         This Function:
