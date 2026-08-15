@@ -44,10 +44,6 @@ PER_COLOR_BASE_ANGLE = True
 DEFER_TO_EXPORT = True
 BUFFER_BATCH_SIZE = 8
 PRESERVE_BLACK_PARAMETER = "keep_black"
-# Keep Black must begin with the pixels classified as black. Reconstructing
-# black as the complement of smoothed color masks erases narrow source details
-# when neighboring color polygons expand across them during preprocessing.
-KEEP_SOURCE_BLACK_PARAMETER = "keep_black"
 
 
 def _field_direction(
