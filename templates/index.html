@@ -727,13 +727,10 @@
           ['break_origin_y', .35, 0, 1, .01], ['seed', 1, 0, 999999, 1]]
       },
       holographic: {
-        description: 'Holographizes only the light/background swatches while preserving darker artwork as a crisp foreground. Enable Invert Threshold to holographize swatches at or below the Light Threshold instead. The optional Holographic palette swatch supplies the Material Library setting used for every holographic band; it is off by default and can be renamed to match your library. Band Smoothing rounds sharp corners and tiny pinholes before the bands are cut, keeping the image recognizable while making the foil treatment flow more gently. No calibration is required.',
-        controls: [['band_height', 12, 3, 100, 1], ['segment_width', 54, 8, 240, 1],
-          ['gap', .6, 0, 12, .1], ['diffraction', 18, 0, 160, 1],
-          ['phase_stride', 1.35, .1, 8, .05], ['echo_count', 2, 0, 5, 1],
-          ['echo_spacing', 5, 0, 50, 1], ['density', .78, 0, 1, .05], ['band_smoothing', 1.2, 0, 8, .1],
-          ['light_threshold', 150, 0, 255, 1], ['seed', 1, 0, 999999, 1]],
-        toggles: [['invert_threshold', false]]
+        description: 'Applies one continuous, calibration-free holographic grating to the light/background swatches. The Holographic palette swatch supplies the Material Library Fill/Scan setting—its interval, angle, power, speed, frequency, and pulse width are used unchanged. Fill Mode defaults to From Setting, which follows the selected library setting; choose Fill or Offset Fill when you want to select that behavior explicitly. Rename the Holographic swatch to match your library. Enable Invert Threshold to apply the grating to swatches at or below the Light Threshold instead. Keep Black preserves dark source-image geometry on the normal Black material setting, like the Holographic Etching Lab.',
+        controls: [['light_threshold', 150, 0, 255, 1]],
+        selects: [['fill_mode', 'from_setting', [['fill', 'Fill'], ['offset_fill', 'Offset Fill'], ['from_setting', 'From Setting']]]],
+        toggles: [['invert_threshold', false], ['keep_black', false]]
       },
       none: { description: 'Keeps the clean abstract-vector workflow without adding a geometric effect. Choose this when you want the source image to do the talking.', controls: [] }
     };
@@ -825,6 +822,27 @@
         row.innerHTML = `<label class="checkbox-label"><input id="filter_${name}_enabled" name="filter_${name}_enabled" type="checkbox" data-parameter="${name}" ${value ? 'checked' : ''}>` +
           `<span>${friendlyName(name)}</span></label>`;
         row.querySelector('input').addEventListener('change', updateFilterParameters);
+        controls.appendChild(row);
+      });
+      (filter.selects || []).forEach(([name, value, options]) => {
+        const row = document.createElement('div');
+        row.className = 'filter-control';
+        const select = document.createElement('select');
+        select.id = `filter_${name}`;
+        select.name = `filter_${name}`;
+        select.dataset.parameter = name;
+        options.forEach(([optionValue, label]) => {
+          const option = document.createElement('option');
+          option.value = optionValue;
+          option.textContent = label;
+          option.selected = optionValue === value;
+          select.appendChild(option);
+        });
+        const label = document.createElement('label');
+        label.htmlFor = select.id;
+        label.textContent = friendlyName(name);
+        row.append(label, select);
+        select.addEventListener('change', updateFilterParameters);
         controls.appendChild(row);
       });
       filter.controls.forEach(([name, value, min, max, step]) => {

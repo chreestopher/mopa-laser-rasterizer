@@ -6,6 +6,7 @@ Flask continues to execute this filename. All processing lives in
 import json
 import os
 import sys
+from copy import copy
 
 # Support deployment with this file under lib/ and modules either beside it
 # or one project directory above it.
@@ -89,20 +90,52 @@ def main(argv=None):
         raise SystemExit(str(error))
     if required_setting_names:
         filter_parameters["_setting_layer_id"] = filter_setting_layers[required_setting_names[0].casefold()]
-        # Holographic geometry is made from narrow diffraction bands.  Its
-        # dedicated material setting supplies every laser parameter, but its
-        # LightBurn operation must always be Line rather than Fill/Scan.  Do
-        # not touch the ordinary palette layers: those retain exactly the
-        # operation type stored in their own material-library settings.
-        vector_processing.set_lightburn_layer_type(
-            lb,
-            filter_parameters["_setting_layer_id"],
-            "Cut",
+        holographic_layer_id = filter_parameters["_setting_layer_id"]
+        holographic_layer = next(
+            (layer for layer in lb._layers if getattr(layer, "index", None) == holographic_layer_id),
+            None,
         )
+        if holographic_layer is None:
+            raise SystemExit("Holographic Material Library setting was not added to the LightBurn project.")
+
+        fill_mode = str(filter_parameters.get("fill_mode", "from_setting")).strip().lower()
+        if fill_mode not in {"from_setting", "fill", "offset_fill"}:
+            raise SystemExit("Holographic Fill Mode must be Fill, Offset Fill, or From Setting.")
+
+        # Offset Fill material settings store their individual scan passes as
+        # child layers.  The lab uses the first concrete pass; use that same
+        # pass for an explicit Offset Fill choice and for From Setting when
+        # the chosen library entry is an Offset Fill setting.
+        sublayers = getattr(holographic_layer, "subLayers", None) or []
+        use_offset_fill = fill_mode == "offset_fill" or (
+            fill_mode == "from_setting" and bool(sublayers)
+        )
+        if use_offset_fill and not sublayers:
+            raise SystemExit(
+                "Holographic Offset Fill requires a Material Library setting with an Offset Fill scan sublayer."
+            )
+        if use_offset_fill:
+            scan_layer = copy(sublayers[0])
+            scan_layer.index = holographic_layer_id
+            scan_layer.name = holographic_layer.name
+            scan_layer.materialName = getattr(holographic_layer, "materialName", "")
+            scan_layer.entryDesc = getattr(holographic_layer, "entryDesc", "")
+            scan_layer.subLayers = []
+            lb._layers[lb._layers.index(holographic_layer)] = scan_layer
+            holographic_layer = scan_layer
+
+        if getattr(holographic_layer, "type", None) != "Scan":
+            raise SystemExit(
+                "Holographic requires the selected Material Library setting to use Fill/Scan, "
+                "so its grating interval and angle can be used."
+            )
+
+        # Preserve the selected Fill/Scan setting's interval, angle, power,
+        # speed, frequency, pulse width, and passes without adjustment.
         vector_processing.move_lightburn_layer_after(
             lb,
             target_colors["#000000"][1],
-            filter_parameters["_setting_layer_id"],
+            holographic_layer_id,
         )
 
     vector_settings = dict(preset)

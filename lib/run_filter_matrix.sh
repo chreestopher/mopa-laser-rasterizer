@@ -125,7 +125,7 @@ declare -A filter_json=(
   [glitch]='{"slice_height":18,"fragment_width":70,"shift_amount":28,"echo_count":2,"echo_spacing":9,"density":0.55,"fibonacci_stride":2,"vertical_jitter":3,"seed":1}'
   [deep_fryer]='{"block_size":24,"band_height":34,"compression_gap":0.7,"smear_amount":18,"echo_count":2,"echo_spacing":5,"degradation":0.35,"seed":1}'
   [shattered]='{"min_shard_size":8,"max_shard_size":32,"density":0.6,"minimum_gap":0.7,"gap_variation":2.2,"horizontal_spread":12,"fall_distance":20,"gravity_bias":1.4,"rotation":22,"break_origin_x":0.5,"break_origin_y":0.35,"seed":1}'
-  [holographic]='{"band_height":12,"segment_width":54,"gap":0.6,"diffraction":18,"phase_stride":1.35,"echo_count":2,"echo_spacing":5,"density":0.78,"band_smoothing":1.2,"setting_name":"holographic","light_threshold":150,"invert_threshold":false,"seed":1}'
+  [holographic]='{"setting_name":"holographic","fill_mode":"from_setting","light_threshold":150,"invert_threshold":false,"keep_black":true}'
 )
 
 base_name=$(basename -- "$input_file")

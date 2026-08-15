@@ -1,119 +1,31 @@
-"""Deterministic diffraction-band geometry for the Holographic Space filter."""
+"""Calibration-free holographic grating treatment.
 
-import math
+The selected light swatches retain their recognizable source geometry.  The
+Holographic Material Library setting supplies the Fill/Scan grating itself,
+just as a single recipe does in the Holographic Etching Lab.
+"""
 
-from shapely.affinity import translate
-from shapely.geometry import box
-from shapely.ops import unary_union
-
-from .common import number
-
-# The vector pipeline uses this declaration to preserve dark artwork while
-# applying the foil treatment to light/background swatches only.
+# The vector pipeline uses these declarations to preserve dark artwork while
+# applying the dedicated holographic setting to light/background swatches.
 LIGHT_LAYERS_ONLY = True
 PRESERVE_BLACK_CANVAS = True
 PUNCH_SOURCE_GEOMETRY = True
 SETTING_NAME_PARAMETER = "setting_name"
-BLACK_LAYER_LAST = True
+KEEP_SOURCE_BLACK_PARAMETER = "keep_black"
 
 DEFAULTS = {
-    "band_height": 12,
-    "segment_width": 54,
-    "gap": .6,
-    "diffraction": 18,
-    "phase_stride": 1.35,
-    "echo_count": 2,
-    "echo_spacing": 5,
-    "density": .78,
-    "band_smoothing": 1.2,
     "setting_name": "holographic",
     "light_threshold": 150,
     "invert_threshold": False,
-    "seed": 1,
+    "keep_black": False,
+    "fill_mode": "from_setting",
 }
 
 CONTROLS = (
-    ("band_height", 3, 100, 1),
-    ("segment_width", 8, 240, 1),
-    ("gap", 0, 12, .1),
-    ("diffraction", 0, 160, 1),
-    ("phase_stride", .1, 8, .05),
-    ("echo_count", 0, 5, 1),
-    ("echo_spacing", 0, 50, 1),
-    ("density", 0, 1, .05),
-    ("band_smoothing", 0, 8, .1),
     ("light_threshold", 0, 255, 1),
-    ("seed", 0, 999999, 1),
 )
 
 
-def _noise(value):
-    """Repeatable 0..1 noise without changing global random state."""
-    return math.modf(math.sin(value * 12.9898) * 43758.5453)[0] % 1
-
-
 def apply(geometry, settings):
-    if geometry.is_empty:
-        return geometry
-
-    x1, y1, x2, y2 = settings.get("_canvas_bounds") or geometry.bounds
-    canvas = box(x1, y1, x2, y2)
-    band_height = number(settings.get("band_height"), 12, 1, 2000)
-    segment_width = number(settings.get("segment_width"), 54, 1, 10000)
-    gap = number(settings.get("gap"), .6, 0, 100)
-    diffraction = number(settings.get("diffraction"), 18, 0, 2000)
-    phase_stride = number(settings.get("phase_stride"), 1.35, .01, 100)
-    echo_count = int(number(settings.get("echo_count"), 2, 0, 12))
-    echo_spacing = number(settings.get("echo_spacing"), 5, 0, 1000)
-    density = number(settings.get("density"), .78, 0, 1)
-    band_smoothing = number(settings.get("band_smoothing"), 1.2, 0, 100)
-    seed = int(number(settings.get("seed"), 1, 0, 2147483647))
-
-    # A small round buffer pass removes sharp raster corners and pinholes
-    # before slicing. It is intentionally applied once to the source shape,
-    # preserving the image silhouette more faithfully than smoothing every
-    # individual band fragment.
-    if band_smoothing:
-        softened = geometry.buffer(band_smoothing, join_style=1).buffer(
-            -band_smoothing, join_style=1
-        )
-        if not softened.is_empty:
-            geometry = softened
-
-    pieces = []
-    row = 0
-    y = y1
-    while y < y2:
-        # A whole band shares one phase, which keeps the shifts reading as
-        # iridescent scan lines rather than unrelated random fragments.
-        phase = seed * .017 + row * phase_stride
-        band_shift = math.sin(phase) * diffraction
-        x = x1
-        column = 0
-        while x < x2:
-            segment = box(x, y, min(x + segment_width, x2), min(y + band_height, y2))
-            if gap:
-                segment = segment.buffer(-gap / 2, join_style=2)
-            fragment = geometry.intersection(segment)
-            if not fragment.is_empty:
-                index = seed + row * 4099 + column * 131
-                if _noise(index) <= density:
-                    local_phase = phase + column * .618
-                    offset = band_shift + math.sin(local_phase) * diffraction * .28
-                    shifted = translate(fragment, xoff=offset).intersection(canvas)
-                    if not shifted.is_empty:
-                        pieces.append(shifted)
-                    direction = -1 if math.cos(local_phase) < 0 else 1
-                    for echo in range(1, echo_count + 1):
-                        echo_piece = translate(
-                            fragment,
-                            xoff=offset + direction * echo * echo_spacing,
-                        ).intersection(canvas)
-                        if not echo_piece.is_empty:
-                            pieces.append(echo_piece)
-            x += segment_width
-            column += 1
-        y += band_height
-        row += 1
-
-    return unary_union(pieces) if pieces else canvas.intersection(box(0, 0, 0, 0))
+    """Keep the selected image region intact for a continuous scan grating."""
+    return geometry

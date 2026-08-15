@@ -379,24 +379,6 @@ def move_lightburn_layer_after(lb_project, layer_id, after_layer_id):
     return True
 
 
-def set_lightburn_layer_type(lb_project, layer_id, layer_type):
-    """Change only a configured LightBurn layer's operation type.
-
-    Material-library settings carry the remaining cut parameters on the same
-    layer object, so changing ``type`` preserves power, speed, frequency,
-    pulse width, passes, and any other imported setting values.
-    """
-    layers = getattr(lb_project, "_layers", None)
-    if not isinstance(layers, list):
-        return False
-    layer = next((item for item in layers if getattr(item, "index", None) == layer_id), None)
-    if layer is None:
-        return False
-    if layer_type != "Cut":
-        raise ValueError(f"Unsupported forced LightBurn layer type: {layer_type}")
-    layer.type = layer_type
-    return layer.type == "Cut"
-
 def init_lightburn(the_colors_limit, color_name_overrides=None):
     """
         This Function:
@@ -1755,6 +1737,7 @@ def raster_to_puzzle_and_lightburn(
     filter_parameters["_canvas_bounds"] = (0, 0, width, height)
     filter_parameters["_scale_factor"] = scale_factor
     filter_name, _ = normalize_abstract_settings(abstract_filter, filter_parameters)
+    filter_module = ABSTRACT_FILTER_MODULES.get(filter_name)
     centerline_mode = filter_name == "centerline"
     transparent_mode = (
         (image_preset == "bw_dither_photograph"
@@ -1766,9 +1749,11 @@ def raster_to_puzzle_and_lightburn(
             )
         ))
     )
-    preserve_source_black = (
-        centerline_mode or transparent_mode
+    keep_black_parameter = getattr(filter_module, "KEEP_SOURCE_BLACK_PARAMETER", None)
+    keep_source_black = bool(
+        keep_black_parameter and filter_parameters.get(keep_black_parameter, False)
     )
+    preserve_source_black = centerline_mode or transparent_mode or keep_source_black
     transparent_rgb_values = None
     if image_preset == "bw_dither_photograph" and transparent_mode:
         # ``Image.quantize(colors=2)`` produces two exact source colors. Pick
@@ -1869,6 +1854,10 @@ def raster_to_puzzle_and_lightburn(
     elif transparent_mode:
         printLogMessage(
             "Transparent mode: light source areas remain transparent; no black canvas added."
+        )
+    elif keep_source_black:
+        printLogMessage(
+            "Holographic Keep Black: preserving dark source-image geometry on the Black setting."
         )
 
     # =========================================================================

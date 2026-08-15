@@ -260,25 +260,20 @@ class Layer:
                 f'        <name Value="{self.name}"/>\n'
                 f'        <minPower Value="{self.minPower}"/>\n'
                 f'        <maxPower Value="{self.maxPower}"/>\n'
+                f'        <maxPower2 Value="{self.maxPower2}"/>\n'
                 f'        <speed Value="{self.speed}"/>\n'
                 f'        <frequency Value="{self.frequency}"/>\n'      # if self.frequency not None else None
                 f'        <QPulseWidth Value="{self.QPulseWidth}"/>\n'  #if self.QPulseWidth not None else None
+                f'        <interval Value="{self.interval}"/>\n'        #if self.interval not None else None
+                f'        <angle Value="{self.angle}"/>\n'              #if self.angle not None else None
+                f'        <anglePerPass Value="{self.anglePerPass}"/>\n'
+                f'        <crossHatch Value="{int(self.crossHatch)}"/>\n'
                 f'        <hide Value="{int(self.hide)}"/>\n'
-                f'        <dotTime Value="{self.dotTime}"/>\n'
-                f'        <priority Value="{self.priority}"/>\n'
-                f'        <tabCount Value="{self.tabCount}"/>\n'
-                f'        <tabCountMax Value="{self.tabCountMax}"/>\n'
-        )
-        # These are Scan/Fill-only fields.  Omitting them from Line/Cut
-        # layers prevents a material-library Scan setting, repurposed for a
-        # line-only abstract effect, from becoming a mixed-mode project entry.
-        if self.type == "Scan":
-            f.write(f'        <maxPower2 Value="{self.maxPower2}"/>\n'
-                    f'        <interval Value="{self.interval}"/>\n'
-                    f'        <angle Value="{self.angle}"/>\n'
-                    f'        <anglePerPass Value="{self.anglePerPass}"/>\n'
-                    f'        <crossHatch Value="{int(self.crossHatch)}"/>\n')
-        f.write(f'        <numPasses Value="{self.numPasses}"/>\n'
+                f'        <dotTime Value="1"/>\n'
+                f'        <priority Value="0"/>\n'
+                f'        <tabCount Value="1"/>\n'
+                f'        <tabCountMax Value="1"/>\n'
+                f'        <numPasses Value="{self.numPasses}"/>\n'
                 f'    </CutSetting>\n')
 
 class CutLayer(Layer):
