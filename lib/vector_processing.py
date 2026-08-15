@@ -1578,6 +1578,24 @@ def export_processed_layers(
         preserve_black_parameter
         and (filter_parameters or {}).get(preserve_black_parameter, False)
     )
+    combined_black_punch = None
+    if punch_through_black and black_punch_geometries:
+        punch_masks = [
+            geometry
+            for color_hex, geometry in black_punch_geometries.items()
+            if color_hex.upper() != black_hex.upper() and not geometry.is_empty
+        ]
+        if punch_masks:
+            printLogMessage(
+                f"Black source-mask union START: {len(punch_masks)} color masks."
+            )
+            combined_black_punch = unary_union(punch_masks)
+            if not combined_black_punch.is_valid:
+                combined_black_punch = make_valid(combined_black_punch)
+            printLogMessage(
+                "Black source-mask union DONE: "
+                f"{_geometry_object_count(combined_black_punch)} non-overlapping objects."
+            )
 
     for export_index, (color_hex, geometry) in enumerate(exportable_layers, 1):
 
@@ -1700,32 +1718,43 @@ def export_processed_layers(
                 lb_project_instance,
                 override_layer_id=layer_id,
             )
+            if color_hex == black_hex and combined_black_punch is not None:
+                scaled_black_punch = combined_black_punch
+                if scale_factor != 1.0:
+                    scaled_black_punch = scale(
+                        scaled_black_punch,
+                        xfact=scale_factor,
+                        yfact=scale_factor,
+                        origin=(0, 0),
+                    )
+                printLogMessage(
+                    " -> Adding unified source-color geometry to Black Layer "
+                    "for LightBurn punch-through"
+                )
+                push_geometry_to_lightburn(
+                    scaled_black_punch,
+                    black_hex,
+                    target_colors,
+                    lb_project_instance,
+                    override_layer_id=layer_id,
+                )
             printLogMessage(
                 f"[Export layer {export_index}/{total_export_layers}] DONE: "
                 f"wrote {geometry_count}/{geometry_count} objects to "
                 f"LightBurn layer {layer_id} {layer_color_name}."
             )
 
-            if punch_through_black and color_hex != black_hex:
-                source_punch_geometry = (black_punch_geometries or {}).get(color_hex)
-                punch_geometry = (
-                    source_punch_geometry
-                    if source_punch_geometry is not None
-                    else export_geometry
-                )
-                if scale_factor != 1.0 and source_punch_geometry is not None:
-                    punch_geometry = scale(
-                        punch_geometry,
-                        xfact=scale_factor,
-                        yfact=scale_factor,
-                        origin=(0, 0),
-                    )
+            if (
+                punch_through_black
+                and color_hex != black_hex
+                and black_punch_geometries is None
+            ):
                 printLogMessage(
                     f" -> Adding {layer_color_name} geometry to Black "
                     "Layer for LightBurn punch-through"
                 )
                 push_geometry_to_lightburn(
-                    punch_geometry,
+                    export_geometry,
                     color_hex,
                     target_colors,
                     lb_project_instance,
