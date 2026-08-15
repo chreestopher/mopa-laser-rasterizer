@@ -99,8 +99,8 @@ def main(argv=None):
             raise SystemExit("Holographic Material Library setting was not added to the LightBurn project.")
 
         fill_mode = str(filter_parameters.get("fill_mode", "from_setting")).strip().lower()
-        if fill_mode not in {"from_setting", "fill", "offset_fill"}:
-            raise SystemExit("Holographic Fill Mode must be Fill, Offset Fill, or From Setting.")
+        if fill_mode not in {"from_setting", "fill", "offset_fill", "line"}:
+            raise SystemExit("Holographic Fill Mode must be Fill, Offset Fill, Line, or From Setting.")
 
         # Offset Fill material settings store their individual scan passes as
         # child layers.  The lab uses the first concrete pass; use that same
@@ -124,10 +124,14 @@ def main(argv=None):
             vector_processing.printLogMessage(
                 "Holographic Offset Fill requested, but the setting has no sublayer; using its direct settings."
             )
-        # The Holographic filter owns the operation mode.  Force Scan/Fill so
-        # a library entry saved as Cut/Line still completes as a grating while
-        # retaining its compatible power, speed, frequency, and pulse values.
-        holographic_layer.type = "Scan"
+        # From Setting matches the Etching Lab: preserve the selected
+        # material entry's native operation type and laser values.  The
+        # explicit Fill choice is the only mode that intentionally overrides
+        # that type.
+        if fill_mode == "fill":
+            holographic_layer.type = "Scan"
+        elif fill_mode == "line":
+            holographic_layer.type = "Cut"
 
         # Preserve the selected Fill/Scan setting's interval, angle, power,
         # speed, frequency, pulse width, and passes without adjustment.

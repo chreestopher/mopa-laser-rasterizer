@@ -620,7 +620,7 @@ def parse_abstract_filter_parameters(raw_value):
             clean[key] = value
         elif key == "setting_name" and isinstance(value, str) and 1 <= len(value.strip()) <= 80:
             clean[key] = value.strip()
-        elif key == "fill_mode" and value in {"from_setting", "fill", "offset_fill"}:
+        elif key == "fill_mode" and value in {"from_setting", "fill", "offset_fill", "line"}:
             clean[key] = value
         elif key in {"transparent", "invert_threshold", "keep_black"} and isinstance(value, bool):
             clean[key] = value
