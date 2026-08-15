@@ -110,11 +110,7 @@ def main(argv=None):
         use_offset_fill = fill_mode == "offset_fill" or (
             fill_mode == "from_setting" and bool(sublayers)
         )
-        if use_offset_fill and not sublayers:
-            raise SystemExit(
-                "Holographic Offset Fill requires a Material Library setting with an Offset Fill scan sublayer."
-            )
-        if use_offset_fill:
+        if use_offset_fill and sublayers:
             scan_layer = copy(sublayers[0])
             scan_layer.index = holographic_layer_id
             scan_layer.name = holographic_layer.name
@@ -124,11 +120,14 @@ def main(argv=None):
             lb._layers[lb._layers.index(holographic_layer)] = scan_layer
             holographic_layer = scan_layer
 
-        if getattr(holographic_layer, "type", None) != "Scan":
-            raise SystemExit(
-                "Holographic requires the selected Material Library setting to use Fill/Scan, "
-                "so its grating interval and angle can be used."
+        if use_offset_fill and not sublayers:
+            vector_processing.printLogMessage(
+                "Holographic Offset Fill requested, but the setting has no sublayer; using its direct settings."
             )
+        # The Holographic filter owns the operation mode.  Force Scan/Fill so
+        # a library entry saved as Cut/Line still completes as a grating while
+        # retaining its compatible power, speed, frequency, and pulse values.
+        holographic_layer.type = "Scan"
 
         # Preserve the selected Fill/Scan setting's interval, angle, power,
         # speed, frequency, pulse width, and passes without adjustment.
