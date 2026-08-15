@@ -43,6 +43,14 @@ spec:
           value: "mopa-laser-rasterizer-users"
         - name: UPLOAD_FOLDER
           value: "/tmp/uploads"
+        - name: RASTER_JOB_LEASE_SECONDS
+          value: "90"
+        - name: RASTER_JOB_HEARTBEAT_SECONDS
+          value: "20"
+        - name: RASTER_JOB_RECOVERY_INTERVAL_SECONDS
+          value: "15"
+        - name: RASTER_JOB_RECOVERY_LOCK_SECONDS
+          value: "10"
         resources:
           requests:
             memory: "512Mi"
