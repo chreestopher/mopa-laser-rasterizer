@@ -633,6 +633,7 @@
           <option value="abstract_glitch">Digital Glitch</option>
           <option value="abstract_deep_fryer">Deep Fryer</option>
           <option value="abstract_shattered">Shattered</option>
+          <option value="abstract_sacred">Sacred</option>
           <option value="abstract_none">Abstract: None</option>
         </optgroup>
       </select>
@@ -730,6 +731,13 @@
           ['fall_distance', 20, 0, 160, 1], ['gravity_bias', 1.4, .2, 4, .1],
           ['rotation', 22, 0, 180, 1], ['break_origin_x', .5, 0, 1, .01],
           ['break_origin_y', .35, 0, 1, .01], ['seed', 1, 0, 999999, 1]]
+      },
+      sacred: {
+        description: 'Finds the dominant foreground subject, removes its original background, and fills the cleared area with a repeatable flower-of-life inspired sacred-geometry field. The subject keeps its normal material colors; the pattern is written to a Holographic LightBurn layer using the first material-library setting whose name or description contains holographic.',
+        controls: [['cell_size', 32, 8, 120, 1], ['line_width', .45, .1, 4, .05],
+          ['rings', 3, 1, 8, 1], ['petals', 6, 3, 12, 1], ['rotation', 0, 0, 360, 1],
+          ['clearance', 2, 0, 20, .25], ['foreground_min_percent', .15, 0, 20, .05],
+          ['seed', 1, 0, 999999, 1]]
       },
       /* Retired Abstract Holographic preset.
       holographic: {

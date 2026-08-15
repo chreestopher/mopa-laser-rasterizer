@@ -310,8 +310,14 @@ def parse_material_settings(
             None,
         )
         matching_required_name = next(
-            (str(label or "").strip().casefold() for label in library_labels
-             if str(label or "").strip().casefold() in required_names),
+            (
+                required_name
+                for required_name in required_names
+                if any(
+                    required_name in str(label or "").strip().casefold()
+                    for label in library_labels
+                )
+            ),
             None,
         )
         if target is None and matching_required_name is not None:
@@ -1806,7 +1812,14 @@ def raster_to_puzzle_and_lightburn(
     keep_source_black = bool(
         keep_black_parameter and filter_parameters.get(keep_black_parameter, False)
     )
-    preserve_source_black = centerline_mode or transparent_mode or keep_source_black
+    background_generator = bool(getattr(filter_module, "BACKGROUND_GENERATOR", False))
+    preserve_background_transparency = bool(
+        getattr(filter_module, "PRESERVE_BACKGROUND_TRANSPARENCY", False)
+    )
+    preserve_source_black = (
+        centerline_mode or transparent_mode or keep_source_black
+        or preserve_background_transparency
+    )
     transparent_rgb_values = None
     if image_preset == "bw_dither_photograph" and transparent_mode:
         # ``Image.quantize(colors=2)`` produces two exact source colors. Pick
@@ -1861,6 +1874,10 @@ def raster_to_puzzle_and_lightburn(
                 225, 128, 255
             )
         )
+        if background_generator:
+            pixel_boxes_by_color = retain_dominant_foreground(
+                pixel_boxes_by_color, img, filter_parameters
+            )
 
     # =========================================================================
     # 5. Process every colored layer
@@ -1879,6 +1896,22 @@ def raster_to_puzzle_and_lightburn(
         punch_layers=punch_layers,
         layer_overrides=layer_overrides,
     )
+
+    if background_generator:
+        setting_layer_id = filter_parameters.get("_setting_layer_id")
+        layer_color = str(getattr(filter_module, "LAYER_COLOR", "#FEFEFE")).upper()
+        if setting_layer_id is None or layer_color not in TARGET_COLORS:
+            raise ValueError("Sacred requires the holographic Material Library setting")
+        subject_geometry = unary_union([
+            geometry for geometry in processed_layers.values() if not geometry.is_empty
+        ])
+        background_geometry = filter_module.background_geometry(
+            subject_geometry, filter_parameters
+        )
+        if not background_geometry.is_empty:
+            processed_layers[layer_color] = background_geometry
+            punch_layers[layer_color] = background_geometry
+            layer_overrides[layer_color] = setting_layer_id
 
     # =========================================================================
     # 6. Build the BLACK layer around the colored geometry

@@ -66,6 +66,8 @@ def main(argv=None):
         limit_list = [value[-1].lower() for value in target_colors.values()]
     limit_list.extend(("black", "light-gray"))
     material_layer_report = {"loaded": [], "skipped": []}
+    filter_module = vector_processing.ABSTRACT_FILTER_MODULES.get(abstract_filter)
+    required_setting = getattr(filter_module, "SETTING_NAME", None)
     try:
         target_colors, filter_setting_layers = vector_processing.parse_material_settings(
             lb,
@@ -74,7 +76,7 @@ def main(argv=None):
             target_colors,
             material_name=material_name,
             material_layer_report=material_layer_report,
-            required_setting_names=[],
+            required_setting_names=[required_setting] if required_setting else [],
             return_setting_layers=True,
         )
     except ValueError as error:
@@ -82,6 +84,18 @@ def main(argv=None):
         # already emitted the useful material list, so avoid adding a Python
         # traceback to the task console.
         raise SystemExit(str(error))
+    if required_setting:
+        setting_layer_id = filter_setting_layers[required_setting.casefold()]
+        filter_parameters["_setting_layer_id"] = setting_layer_id
+        layer_color = getattr(filter_module, "LAYER_COLOR", "#FEFEFE").upper()
+        layer_name = getattr(filter_module, "LAYER_NAME", required_setting)
+        target_colors[layer_color] = (0, setting_layer_id, layer_name)
+        vector_processing.NON_IMAGE_SWATCHES.add(layer_color)
+        for layer in getattr(lb, "_layers", []):
+            if getattr(layer, "index", None) == setting_layer_id:
+                layer.name = layer_name
+                break
+
     vector_settings = dict(preset)
     for name in ("min_island_area", "simplification_factor", "smoothing_radius"):
         if name in filter_parameters:

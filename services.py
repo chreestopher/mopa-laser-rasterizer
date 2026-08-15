@@ -46,7 +46,7 @@ LIGHTBURN_PALETTE_NAMES = {
 }
 ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
-    "crystal", "ripple", "centerline", "glitch", "shattered", "deep_fryer",
+    "crystal", "ripple", "centerline", "glitch", "shattered", "deep_fryer", "sacred",
 }
 ABSTRACT_PRESET_PREFIX = "abstract_"
 HISTORY_SESSION_RE = re.compile(r"^[a-f0-9-]{32,36}$")
