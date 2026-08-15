@@ -20,6 +20,7 @@ from services import (
     cleanup_redis_inflight,
     get_history_entries,
     long_running_script,
+    enqueue_raster_job,
     normalize_dimension,
     parse_abstract_filter_parameters,
     parse_color_name_overrides,
@@ -236,8 +237,20 @@ def start_task():
             "run_parameters": run_parameters,
             "created_at": int(time.time()), "status": "pending",
             "svg_url": f"/download/{task_id}", "lightburn_url": f"/download-lbrn2/{task_id}"})
-    threading.Thread(target=long_running_script,
-        args=(task_id, user_data, image_path, material_settings_path, upload_folder, user_id or None)).start()
+    if os.environ.get("RASTER_JOB_QUEUE_ENABLED", "false").lower() == "true":
+        try:
+            enqueue_raster_job(
+                task_id, user_data, image_key, material_key, output_name,
+                base_name, os.path.basename(material_settings_path), user_id or None,
+            )
+        except RuntimeError as error:
+            redis_client.set(f"task:{task_id}:status", "failed", ex=HISTORY_TTL_SECONDS)
+            redis_client.rpush(f"task:{task_id}:log", f"Could not queue raster job: {error}")
+            return jsonify({"status": "error", "message": str(error)}), 503
+    else:
+        threading.Thread(target=long_running_script,
+            args=(task_id, user_data, image_path, material_settings_path,
+                  upload_folder, user_id or None, output_name)).start()
     response = make_response(render_template("loading.html", task_id=task_id,
         files=[f"/download-lbrn2/{task_id}", f"/download/{task_id}"],
         history_session=history_session, history_files=history_files, current_source_name=base_name,

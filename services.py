@@ -49,6 +49,8 @@ ABSTRACT_FILTER_NAMES = {
     "crystal", "ripple", "centerline", "glitch", "shattered", "deep_fryer", "sacred",
 }
 ABSTRACT_PRESET_PREFIX = "abstract_"
+RASTER_JOB_QUEUE = "rasterizer:jobs"
+RASTER_JOB_PROCESSING_QUEUE = "rasterizer:jobs:processing"
 HISTORY_SESSION_RE = re.compile(r"^[a-f0-9-]{32,36}$")
 HISTORY_TTL_SECONDS = 7 * 24 * 60 * 60
 DAILY_JOB_LIMIT = max(1, int(os.environ.get("DAILY_JOB_LIMIT", "3")))
@@ -781,7 +783,8 @@ def start_disk_cleanup_worker(app, interval_seconds=3600):
     threading.Thread(target=cleanup_loop, daemon=True).start()
 
 
-def long_running_script(task_id, data, image_path, material_settings_path, upload_folder, user_id=None):
+def long_running_script(task_id, data, image_path, material_settings_path, upload_folder,
+                        user_id=None, output_name=None):
     try:
         log_key, status_key = f"task:{task_id}:log", f"task:{task_id}:status"
         redis_client.set(status_key, "processing")
@@ -799,7 +802,11 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
             abstract_filter = "none"
         process = subprocess.Popen([
             "python", "-u", "lib/Material_Library.py", image_path,
-            os.path.join(upload_folder, tasks[f"{task_id}_filename"]),
+            os.path.join(
+                upload_folder,
+                output_name or tasks.get(f"{task_id}_filename")
+                or f"output_{task_id}_{os.path.basename(image_path)}",
+            ),
             str(data.get("pixel_square_mm", "1")), str(normalize_dimension(data.get("new_width"))),
             str(normalize_dimension(data.get("new_height"))), material_settings_path,
             material_name, str(data.get("colors", "")), image_preset, abstract_filter,
@@ -840,8 +847,12 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
                 print(f"[Thread-{task_id}] Could not save durable completion state: {status_error}", flush=True)
         else:
             redis_client.set(status_key, "failed")
+            failure_message = f"Rasterizer exited with code {exit_code}"
+            if exit_code in (-9, 137):
+                failure_message += " (the worker may have been killed or exceeded its memory limit)"
+            redis_client.rpush(log_key, failure_message)
             try:
-                update_user_job(task_id, "failed", error_message=f"Rasterizer exited with code {exit_code}")
+                update_user_job(task_id, "failed", error_message=failure_message)
             except RuntimeError as status_error:
                 print(f"[Thread-{task_id}] Could not save durable failure state: {status_error}", flush=True)
     except Exception as error:
@@ -854,6 +865,32 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
             update_user_job(task_id, "failed", error_message=str(error))
         except RuntimeError as status_error:
             print(f"[Thread-{task_id}] Could not save durable failure state: {status_error}", flush=True)
+
+
+def enqueue_raster_job(task_id, data, image_key, material_key, output_name,
+                       image_name, material_name, user_id=None):
+    """Place a portable raster job on Redis for the dedicated worker pod."""
+    if not image_key or not material_key:
+        raise RuntimeError("Queued raster jobs require durable image and material artifacts")
+    payload = {
+        "task_id": task_id,
+        "data": data,
+        "image_key": image_key,
+        "material_key": material_key,
+        "output_name": output_name,
+        "image_name": secure_artifact_name(image_name, "image"),
+        "material_name": secure_artifact_name(material_name, "materials.clb"),
+        "user_id": user_id,
+    }
+    redis_client.lpush(RASTER_JOB_QUEUE, json.dumps(payload, separators=(",", ":")))
+    redis_client.rpush(f"task:{task_id}:log", "Job queued for a dedicated raster worker.")
+
+
+def secure_artifact_name(value, fallback):
+    """Keep queued artifact basenames portable without importing Flask helpers."""
+    name = os.path.basename(str(value or "")).strip()
+    name = re.sub(r"[^A-Za-z0-9_.-]+", "_", name).strip("._")
+    return name or fallback
 
 
 def cleanup_redis_inflight(task_id):

@@ -46,6 +46,8 @@ spec:
           value: "/tmp/uploads"
         - name: DAILY_JOB_LIMIT
           value: "3"
+        - name: RASTER_JOB_QUEUE_ENABLED
+          value: "true"
         - name: SESSION_COOKIE_SECURE
           value: "true"
         - name: APP_SESSION_SECRET
