@@ -25,6 +25,7 @@ DEFAULTS = {
     "echo_count": 2,
     "echo_spacing": 5,
     "density": .78,
+    "band_smoothing": 1.2,
     "setting_name": "holographic",
     "light_threshold": 150,
     "invert_threshold": False,
@@ -40,6 +41,7 @@ CONTROLS = (
     ("echo_count", 0, 5, 1),
     ("echo_spacing", 0, 50, 1),
     ("density", 0, 1, .05),
+    ("band_smoothing", 0, 8, .1),
     ("light_threshold", 0, 255, 1),
     ("seed", 0, 999999, 1),
 )
@@ -64,7 +66,19 @@ def apply(geometry, settings):
     echo_count = int(number(settings.get("echo_count"), 2, 0, 12))
     echo_spacing = number(settings.get("echo_spacing"), 5, 0, 1000)
     density = number(settings.get("density"), .78, 0, 1)
+    band_smoothing = number(settings.get("band_smoothing"), 1.2, 0, 100)
     seed = int(number(settings.get("seed"), 1, 0, 2147483647))
+
+    # A small round buffer pass removes sharp raster corners and pinholes
+    # before slicing. It is intentionally applied once to the source shape,
+    # preserving the image silhouette more faithfully than smoothing every
+    # individual band fragment.
+    if band_smoothing:
+        softened = geometry.buffer(band_smoothing, join_style=1).buffer(
+            -band_smoothing, join_style=1
+        )
+        if not softened.is_empty:
+            geometry = softened
 
     pieces = []
     row = 0
