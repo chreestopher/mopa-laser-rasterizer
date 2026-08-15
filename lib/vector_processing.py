@@ -1916,7 +1916,9 @@ def raster_to_puzzle_and_lightburn(
     filter_parameters = dict(filter_parameters or {})
     filter_parameters["_canvas_bounds"] = (0, 0, width, height)
     filter_parameters["_scale_factor"] = scale_factor
-    filter_name, _ = normalize_abstract_settings(abstract_filter, filter_parameters)
+    filter_name, filter_settings = normalize_abstract_settings(
+        abstract_filter, filter_parameters
+    )
     filter_module = ABSTRACT_FILTER_MODULES.get(filter_name)
     centerline_mode = filter_name == "centerline"
     transparent_mode = (
@@ -1936,6 +1938,12 @@ def raster_to_puzzle_and_lightburn(
     preserve_background_transparency = bool(
         getattr(filter_module, "PRESERVE_BACKGROUND_TRANSPARENCY", False)
     )
+    black_canvas_parameter = getattr(filter_module, "BLACK_CANVAS_PARAMETER", None)
+    direct_punched_black = bool(
+        black_canvas_parameter and filter_settings.get(black_canvas_parameter, False)
+    )
+    if direct_punched_black:
+        preserve_background_transparency = False
     preserve_source_black = (
         centerline_mode or transparent_mode or keep_source_black
         or preserve_background_transparency
@@ -2134,6 +2142,15 @@ def raster_to_puzzle_and_lightburn(
             filter_parameters=filter_parameters,
             punch_layers=punch_layers,
         )
+        if direct_punched_black:
+            # Sacred Keep Black already subtracts the original, pre-grating
+            # color masks. Export that punched polygon directly instead of a
+            # complete LightBurn black canvas nested with the later ribbons.
+            black_lightburn_geometry = None
+            printLogMessage(
+                "Sacred Keep Black: exporting the source-mask-punched black "
+                "geometry directly."
+            )
 
     elif centerline_mode:
         printLogMessage("Centerline Drawing: exporting dark source-image outlines as thin closed black ribbons.")
@@ -2168,7 +2185,7 @@ def raster_to_puzzle_and_lightburn(
         scale_factor=scale_factor,
         root=root,
         lb_project_instance=lb_project_instance,
-        punch_through_black=not preserve_source_black,
+        punch_through_black=not preserve_source_black and not direct_punched_black,
         black_lightburn_geometry=black_lightburn_geometry,
         layer_overrides=layer_overrides,
         abstract_filter=abstract_filter,
