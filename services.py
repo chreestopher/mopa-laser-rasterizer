@@ -886,6 +886,31 @@ def enqueue_raster_job(task_id, data, image_key, material_key, output_name,
     redis_client.rpush(f"task:{task_id}:log", "Job queued for a dedicated raster worker.")
 
 
+def raster_queue_position(task_id):
+    """Return a pending task's position including currently active worker jobs."""
+    queued_payloads = redis_client.lrange(RASTER_JOB_QUEUE, 0, -1)
+    waiting_position = None
+    # Jobs are LPUSHed and workers BRPOP from the opposite end, so the
+    # rightmost entry is next. Iterate in worker-consumption order.
+    for position, raw_payload in enumerate(reversed(queued_payloads), 1):
+        try:
+            queued_task_id = str(json.loads(raw_payload).get("task_id", ""))
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if queued_task_id == str(task_id):
+            waiting_position = position
+            break
+    if waiting_position is None:
+        return None
+    active_jobs = redis_client.llen(RASTER_JOB_PROCESSING_QUEUE)
+    overall_position = active_jobs + waiting_position
+    return {
+        "position": overall_position,
+        "jobs_ahead": max(0, overall_position - 1),
+        "active_jobs": active_jobs,
+    }
+
+
 def secure_artifact_name(value, fallback):
     """Keep queued artifact basenames portable without importing Flask helpers."""
     name = os.path.basename(str(value or "")).strip()

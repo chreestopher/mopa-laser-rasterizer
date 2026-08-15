@@ -24,6 +24,7 @@ from services import (
     normalize_dimension,
     parse_abstract_filter_parameters,
     parse_color_name_overrides,
+    raster_queue_position,
     download_task_artifact,
     download_user_material_library,
     find_task_artifact,
@@ -293,10 +294,31 @@ def task_status(task_id):
         except RuntimeError:
             durable_job = None
         status = (durable_job or {}).get("status") or "pending"
+    queue = None
+    if status == "pending":
+        queue = raster_queue_position(task_id)
+        if queue:
+            position_key = f"task:{task_id}:queue-position"
+            position_value = str(queue["position"])
+            previous_position = redis_client.get(position_key)
+            if previous_position != position_value:
+                jobs_label = "job" if queue["jobs_ahead"] == 1 else "jobs"
+                active_suffix = (
+                    f"; {queue['active_jobs']} currently processing"
+                    if queue["active_jobs"] else ""
+                )
+                redis_client.rpush(
+                    log_key,
+                    f"Queue position {queue['position']}: {queue['jobs_ahead']} "
+                    f"{jobs_label} ahead{active_suffix}.",
+                )
+                redis_client.set(
+                    position_key, position_value, ex=HISTORY_TTL_SECONDS
+                )
     logs = redis_client.lrange(log_key, 0, -1) if redis_client.exists(log_key) else []
     if not logs and durable_job and durable_job.get("error_message"):
         logs = [f"Rasterizer job failed: {durable_job['error_message']}"]
-    response = jsonify({"status": status.strip(), "logs": logs})
+    response = jsonify({"status": status.strip(), "logs": logs, "queue": queue})
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     return response
