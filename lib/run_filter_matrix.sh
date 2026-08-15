@@ -125,7 +125,7 @@ declare -A filter_json=(
   [glitch]='{"slice_height":18,"fragment_width":70,"shift_amount":28,"echo_count":2,"echo_spacing":9,"density":0.55,"fibonacci_stride":2,"vertical_jitter":3,"seed":1}'
   [deep_fryer]='{"block_size":24,"band_height":34,"compression_gap":0.7,"smear_amount":18,"echo_count":2,"echo_spacing":5,"degradation":0.35,"seed":1}'
   [shattered]='{"min_shard_size":8,"max_shard_size":32,"density":0.6,"minimum_gap":0.7,"gap_variation":2.2,"horizontal_spread":12,"fall_distance":20,"gravity_bias":1.4,"rotation":22,"break_origin_x":0.5,"break_origin_y":0.35,"seed":1}'
-  [sacred]='{"cell_size":32,"line_width":0.45,"rings":3,"petals":6,"rotation":0,"clearance":2,"foreground_min_percent":0.15,"seed":1}'
+  [sacred]='{"grating_spacing":3,"line_width":0.35,"field_scale":42,"field_strength":0.7,"symmetry":6,"base_angle":0,"step_size":1.5,"seed":1}'
 )
 
 base_name=$(basename -- "$input_file")

@@ -733,11 +733,11 @@
           ['break_origin_y', .35, 0, 1, .01], ['seed', 1, 0, 999999, 1]]
       },
       sacred: {
-        description: 'Finds the dominant foreground subject, removes its original background, and fills the cleared area with a repeatable flower-of-life inspired sacred-geometry field. The subject keeps its normal material colors; the pattern is written to a Holographic LightBurn layer using the first material-library setting whose name or description contains holographic.',
-        controls: [['cell_size', 32, 8, 120, 1], ['line_width', .45, .1, 4, .05],
-          ['rings', 3, 1, 8, 1], ['petals', 6, 3, 12, 1], ['rotation', 0, 0, 360, 1],
-          ['clearance', 2, 0, 20, .25], ['foreground_min_percent', .15, 0, 20, .05],
-          ['seed', 1, 0, 999999, 1]]
+        description: 'Redraws the image as fine diffraction-grating ribbons. An invisible sacred-geometry lattice controls the local direction of the ribbons, bending them along its circular and rotational contours without exporting the lattice itself. Every ribbon uses the first material-library setting whose name or description contains holographic and is written to the Holographic LightBurn layer.',
+        controls: [['grating_spacing', 3, .5, 12, .1], ['line_width', .35, .05, 3, .05],
+          ['field_scale', 42, 10, 160, 1], ['field_strength', .7, 0, 1, .05],
+          ['symmetry', 6, 3, 12, 1], ['base_angle', 0, -180, 180, 1],
+          ['step_size', 1.5, .25, 5, .25], ['seed', 1, 0, 999999, 1]]
       },
       /* Retired Abstract Holographic preset.
       holographic: {
