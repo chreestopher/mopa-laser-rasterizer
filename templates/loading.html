@@ -188,11 +188,12 @@
     }
     .empty-files { color: #94a3b8; padding: 12px 0; }
     @media (max-width: 700px) {
-        body { padding: 3vh 3vw; }
+        body { height: auto; min-height: 100vh; padding: 3vh 3vw; overflow-y: auto; }
         .page-header h1 { font-size: clamp(18px, 6vw, 25px); }
-        .machine-workspace { flex-direction: column; gap: 18px; overflow-y: auto; }
-        .terminal-box { flex: 0 0 55vh; min-height: 320px; }
+        .machine-workspace { flex: 0 0 auto; flex-direction: column; gap: 18px; overflow: visible; }
+        .terminal-box { flex: 0 0 auto; min-height: 320px; overflow-y: visible; }
         .files-panel { flex: 0 0 auto; min-width: 0; min-height: 220px; overflow: visible; }
+        .download-list { flex: 0 0 auto; overflow-y: visible; }
         .file-menu { width:min(270px,calc(100vw - 24px)); max-height:calc(100vh - 24px); overflow-y:auto; }
         .file-actions { width:100%; }
         .download-button { flex: 1; text-align: center; }
@@ -368,14 +369,20 @@
         body { zoom:.8; width:125vw; height:125vh; padding:38px 6.25vw; }
     }
     .machine-nav { flex:0 0 auto; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; width:100%; margin:0; padding:6px; border:1px solid #6d725d; border-radius:10px; background:linear-gradient(#252b24,#151914); box-shadow:inset 0 0 0 2px #0d100c,0 3px 0 #0a0c09; } .machine-nav a { display:flex; align-items:center; justify-content:center; min-height:30px; padding:5px 8px; border:1px solid #596451; border-radius:5px; color:#d9d2af; background:linear-gradient(#465149,#29352f); font:700 clamp(8px,1.5vw,11px) "Courier New",monospace; letter-spacing:.04em; text-align:center; text-decoration:none; text-transform:uppercase; } .machine-nav a:hover,.machine-nav a:focus-visible { color:#f5f1d7; border-color:#a8c99b; background:linear-gradient(#657b6c,#3c5447); outline:0; } body.light-machine .machine-nav { border-color:#777974; background:linear-gradient(#dcddd7,#bcbeb8); box-shadow:inset 0 0 0 2px #f1f1eb,0 3px 0 #858782; } body.light-machine .machine-nav a { color:#20251f; border-color:#7b857d; background:linear-gradient(#e6e8e2,#b2bab3); text-shadow:0 1px #fff; } body.light-machine .machine-nav a:hover,body.light-machine .machine-nav a:focus-visible { color:#102b16; background:linear-gradient(#d5e5cd,#a8c89c); }
+    .machine-control-bay { display:contents; }
+    @media (max-width:700px) { body { width:100%; margin:0; padding:20px; border-radius:0; overflow-x:hidden; } .machine-control-bay { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:8px; } .machine-power-toggle { min-width:0; } .login-link,.auth-console,.theme-toggle { position:static; } .login-link,.auth-console { min-width:0; gap:8px; font-size:10px; letter-spacing:.09em; } .login-link > span:last-child,.auth-console > span:last-child { line-height:1.2; } .theme-toggle { font-size:11px; } .toggle-track { width:54px; height:26px; } .toggle-track::after { width:16px; height:16px; } .theme-toggle input:checked + .toggle-track::after { transform:translateX(26px); } }
     @media (max-width:520px) { .machine-nav { grid-template-columns:1fr; } }
     </style>
 <link rel="stylesheet" href="/static/machine_chrome.css">
 </head>
 <body>
-        <a id="login_link" class="login-link" href="/login"><span class="auth-machine-switch" aria-hidden="true"></span><span>Operator access, sign in</span></a>
-        <div id="auth_console" class="auth-console" hidden><a class="auth-machine-switch is-on" href="/logout" aria-label="Sign out"></a><span>Operator authorized</span></div>
-        <div class="theme-toggle"><span>Dark</span><label><input id="theme_switch" type="checkbox"><span class="toggle-track"></span></label><span>Light</span></div>
+        <div class="machine-control-bay">
+            <div class="machine-power-toggle">
+                <a id="login_link" class="login-link" href="/login"><span class="auth-machine-switch" aria-hidden="true"></span><span>Operator access, sign in</span></a>
+                <div id="auth_console" class="auth-console" hidden><a class="auth-machine-switch is-on" href="/logout" aria-label="Sign out"></a><span>Operator authorized</span></div>
+            </div>
+            <div class="theme-toggle"><span>Dark</span><label><input id="theme_switch" type="checkbox"><span class="toggle-track"></span></label><span>Light</span></div>
+        </div>
     
         {# <div class="page-header">
             <h1><a class="home-title" href="/" aria-label="Return to MOPA Laser Rasterizer home"><span class="facade-title" aria-hidden="true"><span>M</span><span>O</span><span>P</span><span>A</span><span>-</span><span>L</span><span>A</span><span>S</span><span>E</span><span>R</span><span>-</span><span>R</span><span>A</span><span>S</span><span>T</span><span>E</span><span>R</span><span>I</span><span>Z</span><span>E</span><span>R</span></span></a></h1>
