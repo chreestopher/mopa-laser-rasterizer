@@ -1359,6 +1359,8 @@ def holographic_artwork_status(task_id):
         result = json.loads(redis_client.get(f"holographic-artwork-result:{task_id}") or "{}")
     except (TypeError, json.JSONDecodeError):
         result = {}
+    if status == "completed" and not result.get("lightburn_url"):
+        status = "processing"
     queue = raster_queue_position(task_id) if status == "pending" else None
     return jsonify({"status": status, "logs": logs, "log_count": log_count, "queue": queue, **result})
 

@@ -854,7 +854,7 @@
               lastQueuePosition = status.queue.position;
               appendTerminalLine(`Queue position ${status.queue.position}; ${status.queue.jobs_ahead} job(s) ahead.`);
             }
-            if (status.status === 'completed') { data = status; break; }
+            if (status.status === 'completed' && status.lightburn_url && status.svg_url) { data = status; break; }
             if (status.status === 'failed' || status.status === 'error') {
               throw new Error(status.message || 'Holographic Artwork worker failed. Review the terminal log.');
             }
@@ -862,7 +862,8 @@
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
         if (!data) throw new Error('The artwork job did not finish before the monitoring window ended.');
-        results.innerHTML = `Artwork built at ${data.source_width} × ${data.source_height} processed pixels, merged into ${data.rectangle_count.toLocaleString()} vector rectangles.${downloadButtonList([
+        const rectangleCount = Number(data.rectangle_count ?? 0);
+        results.innerHTML = `Artwork built at ${data.source_width ?? '?'} × ${data.source_height ?? '?'} processed pixels, merged into ${rectangleCount.toLocaleString()} vector rectangles.${downloadButtonList([
           {url:data.svg_url, label:'Download SVG'},
           {url:data.lightburn_url, label:'Download LightBurn Project'},
           {url:data.metadata_url, label:'Download Export Record'}
