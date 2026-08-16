@@ -47,6 +47,7 @@ LIGHTBURN_PALETTE_NAMES = {
 ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
     "crystal", "ripple", "centerline", "glitch", "shattered", "deep_fryer",
+    "krasnow_grating",
 }
 ABSTRACT_PRESET_PREFIX = "abstract_"
 RASTER_JOB_QUEUE = "rasterizer:jobs"

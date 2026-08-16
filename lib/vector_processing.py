@@ -1009,6 +1009,10 @@ def _raster_boxes_to_rectangles(boxes):
             return [box(x, y, x + width, y + height) for x, y, width, height in rectangles]
 
 
+class LayerGeometryMap(dict):
+    """Dictionary of export layers with optional closed black-punch masks."""
+
+
 def process_color_layers(
     pixel_boxes_by_color,
     target_colors,
@@ -1105,6 +1109,23 @@ def process_color_layers(
             f"{len(boxes)} source objects."
         )
 
+    # A small number of filters need the complete set of cleaned color layers
+    # to perform a coherent reassignment. Existing geometry-only filters do
+    # not expose this capability and therefore keep their exact prior path.
+    remap_layers = getattr(filter_module, "remap_layers", None)
+    if callable(remap_layers):
+        printLogMessage(f"Applying cross-layer mapping for abstract filter '{filter_name}'...")
+        remapped = remap_layers(processed_layers, target_colors, settings)
+        if isinstance(remapped, tuple) and len(remapped) == 2:
+            remapped_layers, punch_layers = remapped
+            processed_layers = LayerGeometryMap(remapped_layers)
+            processed_layers.punch_layers = punch_layers
+        else:
+            processed_layers = remapped
+        printLogMessage(
+            f"Cross-layer mapping produced {len(processed_layers)} calibrated output layers."
+        )
+
     return processed_layers
 
 
@@ -1160,7 +1181,8 @@ def build_punched_black_layer(
             printLogMessage(f"Topology cleanup warning for {label}: {error}")
             return geometry
 
-    for color_hex, geometry in processed_layers.items():
+    punch_source_layers = getattr(processed_layers, "punch_layers", processed_layers)
+    for color_hex, geometry in punch_source_layers.items():
 
         if color_hex == black_hex:
             continue
@@ -1477,6 +1499,7 @@ def export_processed_layers(
         "Sorting and formatting log history..."
     )
 
+    custom_punch_layers = getattr(processed_layers, "punch_layers", None)
     sorted_layers = sorted(
         processed_layers.items(),
         key=lambda item: target_colors[
@@ -1597,7 +1620,11 @@ def export_processed_layers(
                 f"LightBurn layer {layer_id} {layer_color_name}."
             )
 
-            if punch_through_black and color_hex != black_hex:
+            if (
+                punch_through_black
+                and custom_punch_layers is None
+                and color_hex != black_hex
+            ):
                 printLogMessage(
                     f" -> Adding {layer_color_name} geometry to Black "
                     "Layer for LightBurn punch-through"
@@ -1614,6 +1641,33 @@ def export_processed_layers(
             f"processed {geometry_count}/{geometry_count} objects for "
             f"color {color_hex}, layer {layer_id} {layer_color_name}."
         )
+
+    if punch_through_black and custom_punch_layers is not None:
+        punch_items = [
+            (color_hex, geometry)
+            for color_hex, geometry in custom_punch_layers.items()
+            if color_hex != black_hex and not geometry.is_empty
+        ]
+        printLogMessage(
+            f"Writing {len(punch_items)} closed source regions to Black for "
+            "open-path grating punch-through."
+        )
+        for color_hex, geometry in punch_items:
+            punch_geometry = geometry
+            if scale_factor != 1.0:
+                punch_geometry = scale(
+                    punch_geometry,
+                    xfact=scale_factor,
+                    yfact=scale_factor,
+                    origin=(0, 0),
+                )
+            push_geometry_to_lightburn(
+                punch_geometry,
+                color_hex,
+                target_colors,
+                lb_project_instance,
+                override_layer_id=target_colors[black_hex][1],
+            )
 
 def save_vector_output(
     root,
@@ -1712,10 +1766,23 @@ def raster_to_puzzle_and_lightburn(
         - LightBurn export
     """
 
-    # Quantization uses the real LightBurn layers that survived both palette
-    # filtering and exact Material Library matching. Black-and-white photos
-    # are the sole exception and deliberately reduce the source raster to two.
-    quantize_colors = 2 if image_preset == "bw_dither_photograph" else len(TARGET_COLORS)
+    filter_parameters = dict(filter_parameters or {})
+    source_palette_hexes = {
+        str(color_hex).upper()
+        for color_hex in filter_parameters.get("_source_palette_hexes", ())
+    }
+    source_target_colors = {
+        color_hex: metadata for color_hex, metadata in TARGET_COLORS.items()
+        if not source_palette_hexes or color_hex.upper() in source_palette_hexes
+    }
+
+    # Quantization uses the real source swatches selected by the user. Filters
+    # with dedicated output-layer requirements may load additional LightBurn
+    # settings without allowing those settings to change source classification.
+    # Black-and-white photos remain the deliberate two-color exception.
+    quantize_colors = (
+        2 if image_preset == "bw_dither_photograph" else len(source_target_colors)
+    )
 
     # Keep this at the beginning of the pipeline so the console records the
     # effective values used by the job before raster processing begins.
@@ -1792,7 +1859,8 @@ def raster_to_puzzle_and_lightburn(
         # actual source values. Every other preset uses real LightBurn swatches.
         target_colors=(None if image_preset == "bw_dither_photograph" else {
             color_hex: metadata for color_hex, metadata in TARGET_COLORS.items()
-            if color_hex.upper() not in NON_IMAGE_SWATCHES
+            if color_hex in source_target_colors
+            and color_hex.upper() not in NON_IMAGE_SWATCHES
         })
     )
 
@@ -1805,12 +1873,22 @@ def raster_to_puzzle_and_lightburn(
     # Every color layer must use the same radial center and extent.  Keeping
     # this internal value shared prevents independently warped layers from
     # crossing or drifting apart at formerly common boundaries.
-    filter_parameters = dict(filter_parameters or {})
     filter_parameters["_canvas_bounds"] = (0, 0, width, height)
     filter_parameters["_scale_factor"] = scale_factor
     filter_name, _ = normalize_abstract_settings(
         abstract_filter, filter_parameters
     )
+    filter_module = ABSTRACT_FILTER_MODULES.get(filter_name)
+    if bool(getattr(filter_module, "USES_SOURCE_LUMINANCE", False)):
+        filter_parameters["_angle_image"] = prepare_raster_image(
+            raster_image_path=raster_image_path,
+            new_height=new_height,
+            new_width=new_width,
+            quantize_colors=None,
+        ).convert("L")
+        printLogMessage(
+            "Krasnow Color Grating: prepared source luminance for per-patch line angles."
+        )
     centerline_mode = filter_name == "centerline"
     transparent_mode = (
         (image_preset == "bw_dither_photograph"
@@ -1881,7 +1959,7 @@ def raster_to_puzzle_and_lightburn(
         )
         pixel_boxes_by_color = classify_raster_pixels(
             img=img,
-            target_colors=TARGET_COLORS,
+            target_colors=source_target_colors,
             black_hex=black_hex,
             ignore_background_hex=ignore_background_hex,
             include_black=preserve_source_black,

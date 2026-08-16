@@ -55,10 +55,19 @@ def main(argv=None):
     preset = vector_processing.PHOTO_TYPE_PRESETS[image_preset]
     vector_processing.image_preset = image_preset
 
-    limit_list = [item.strip() for item in limit_colors.split(",") if item.strip()]
+    filter_module = vector_processing.ABSTRACT_FILTER_MODULES.get(abstract_filter)
+    requires_full_palette = bool(getattr(filter_module, "REQUIRES_FULL_PALETTE", False))
+    effective_color_limit = "" if requires_full_palette else limit_colors
+    if requires_full_palette:
+        source_target_colors, _, _ = vector_processing.init_lightburn(
+            limit_colors, color_name_overrides=color_name_overrides
+        )
+        filter_parameters["_source_palette_hexes"] = list(source_target_colors)
+    limit_list = [item.strip() for item in effective_color_limit.split(",") if item.strip()]
     target_colors, lb, lightburn_module = vector_processing.init_lightburn(
-        limit_colors, color_name_overrides=color_name_overrides
+        effective_color_limit, color_name_overrides=color_name_overrides
     )
+    palette_metadata = dict(target_colors)
     # Keep the exporter dependency explicit at the compatibility boundary.
     # init_lightburn also registers it internally for direct API callers.
     vector_processing.lightburn = lightburn_module
@@ -66,7 +75,6 @@ def main(argv=None):
         limit_list = [value[-1].lower() for value in target_colors.values()]
     limit_list.extend(("black", "light-gray"))
     material_layer_report = {"loaded": [], "skipped": []}
-    filter_module = vector_processing.ABSTRACT_FILTER_MODULES.get(abstract_filter)
     required_setting = getattr(filter_module, "SETTING_NAME", None)
     try:
         target_colors, filter_setting_layers = vector_processing.parse_material_settings(
@@ -95,6 +103,27 @@ def main(argv=None):
             if getattr(layer, "index", None) == setting_layer_id:
                 layer.name = layer_name
                 break
+
+    required_output_swatches = tuple(
+        getattr(filter_module, "REQUIRED_OUTPUT_SWATCHES", ())
+    )
+    missing_output_swatches = [
+        color_hex for color_hex in required_output_swatches
+        if color_hex not in target_colors
+    ]
+    if missing_output_swatches:
+        missing_names = [
+            palette_metadata[color_hex][2]
+            for color_hex in missing_output_swatches
+        ]
+        raise SystemExit(
+            "Krasnow Color Grating requires calibrated Material Library settings "
+            "for all 21 grating layers. Missing: " + ", ".join(missing_names)
+        )
+
+    configure_output_layers = getattr(filter_module, "configure_output_layers", None)
+    if callable(configure_output_layers):
+        configure_output_layers(lb, target_colors)
 
     vector_settings = dict(preset)
     for name in ("min_island_area", "simplification_factor", "smoothing_radius"):

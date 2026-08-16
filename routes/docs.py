@@ -76,9 +76,9 @@ DOCS = {
         ["image-presets", "pixel-size", "lightburn-export"]),
     "abstract-filters": _page(
         "Abstract Raster-to-Vector Filters",
-        "Guide to Wave, Voronoi, Shear, Spiral, Mosaic, Crystal, Ripple, Centerline, Glitch, Deep Fryer, and Shattered presets.",
+        "Guide to Wave, Voronoi, Shear, Spiral, Mosaic, Crystal, Ripple, Centerline, Glitch, Deep Fryer, Shattered, and Krasnow Color Grating presets.",
         "Abstract filters transform coalesced image geometry into intentionally stylized vector structures before export.",
-        [("Geometry-first effects", ["Most filters operate on vector regions created from the selected palette. Their controls change the structure while the normal Material Library and LightBurn export rules still apply."]), ("Performance", ["Dense source images and aggressive settings can create many shapes. Use the job console to follow each layer and reduce processing dimensions when exploring settings."]), ("Available styles", ["Wave Flow, Voronoi, Shear, Spiral Vortex, Staggered Mosaic, Crystal Tessellation, Topographic Ripple, Centerline Drawing, Digital Glitch, Deep Fryer, and Shattered are documented individually below."])],
+        [("Geometry-first effects", ["Most filters operate on vector regions created from the selected palette. Their controls change the structure while the normal Material Library and LightBurn export rules still apply."]), ("Performance", ["Dense source images and aggressive settings can create many shapes. Use the job console to follow each layer and reduce processing dimensions when exploring settings."]), ("Available styles", ["Wave Flow, Voronoi, Shear, Spiral Vortex, Staggered Mosaic, Crystal Tessellation, Topographic Ripple, Centerline Drawing, Digital Glitch, Deep Fryer, Shattered, and Krasnow Color Grating are documented individually below."])],
         ["wave-filter", "voronoi-filter", "centerline-filter", "abstract-filter-reference"]),
     "abstract-filter-reference": _page(
         "Abstract Filter Selection Reference",
@@ -270,6 +270,7 @@ FILTER_PAGES = {
     "glitch": ("Digital Glitch", "applies deliberate block displacement and digital interruption"),
     "deep-fryer": ("Deep Fryer", "pushes geometry toward an aggressive high-contrast synthetic treatment"),
     "shattered": ("Shattered", "fragments regions into a broken angular composition"),
+    "krasnow-grating": ("Krasnow Color Grating", "rebuilds color-separated regions as vertically corrected open-path diffraction gratings"),
 }
 CONTROL_GUIDES = {
     "min_island_area": ("Minimum island area", "Removes isolated regions smaller than the selected processed-area threshold.", "Like using a sieve that lets tiny crumbs fall through while keeping larger pieces."),
@@ -327,6 +328,15 @@ CONTROL_GUIDES = {
     "rotation": ("Rotation", "Sets shard tumbling.", "Loose cards spinning as they fall."),
     "break_origin_x": ("Break origin X", "Moves the impact point left or right.", "Moving a hammer strike across glass."),
     "break_origin_y": ("Break origin Y", "Moves the impact point up or down.", "Moving that strike higher or lower."),
+    "gradient_top": ("Gradient top", "Sets the grayscale correction value at the top edge of the artwork.", "Choosing the first shade on a vertical calibration strip."),
+    "gradient_bottom": ("Gradient bottom", "Sets the grayscale correction value at the bottom edge of the artwork.", "Choosing the last shade on a vertical calibration strip."),
+    "gradient_curve": ("Gradient curve", "Bends the correction transition toward the top or bottom while preserving its endpoints.", "Changing a straight dimmer fade into an ease-in or ease-out fade."),
+    "hue_rotation": ("Hue rotation", "Rotates artwork hues around Ben's pitch-code sequence before correction.", "Turning a labeled color wheel until its red mark aligns with a reference notch."),
+    "saturation_cutoff": ("Saturation cutoff", "Treats colors below this saturation as neutral and applies only the viewing correction.", "Ignoring faint color casts on a gray calibration card."),
+    "patch_size_mm": ("Patch size", "Sets the physical width and height of each local open-line grating cell.", "Changing the size of tiles that each hold their own hatch pattern."),
+    "line_spacing_mm": ("Line spacing", "Sets the physical spacing between parallel open paths inside every patch.", "Moving the ruled lines on graph paper closer together or farther apart."),
+    "angle_min": ("Angle minimum", "Sets the open-path angle selected by black source luminance.", "Assigning the dark end of a dimmer to the first position on a protractor."),
+    "angle_max": ("Angle maximum", "Sets the open-path angle selected by white source luminance.", "Assigning the bright end of a dimmer to the last position on a protractor."),
 }
 
 filter_manifest = abstract_filter_manifest()
@@ -350,6 +360,19 @@ for slug, (name, behavior) in FILTER_PAGES.items():
         }
         for control in filter_data.get("controls", [])
     ]
+
+DOCS["krasnow-grating-filter"].update({
+    "description": "Generate Ben Krasnow-style open-path grating patches with hue-driven layers and a vertical viewing-angle correction while retaining normal color preparation and black punch-through.",
+    "intro": "Krasnow Color Grating keeps the ordinary Rasterizer preparation stages, then replaces the colored regions with open parallel-line patches. Artwork luminance controls patch angle, while artwork hue plus a generated vertical grayscale correction chooses among 21 calibrated diffraction-grating layers.",
+    "sections": [
+        ("What remains unchanged", ["The source image is still resized against the enabled source swatches, palette-separated, and cleaned into closed regions. Those closed regions become the Black punch mask, while the visible grating output is rebuilt as open paths. The 21 calibrated output carriers are loaded separately, so they do not expand the source classification palette. Other filters and image presets do not use these line-generation and punch-mask capabilities."]),
+        ("Open-path geometry", ["Each local patch is filled with parallel LineString paths clipped to the prepared artwork. The defaults match Ben's 0.4 mm patch size and 0.06 mm line spacing. The source luminance maps from -90 to +90 degrees by default, matching his grayscale-angle convention.", "The 21 grating layers are exported in LightBurn Line mode. They are not filled polygons, and the closed artwork geometry is not substituted for them."]),
+        ("How correction is applied", ["For saturated artwork, hue is rotated and inversely mapped using Ben Krasnow's 15-to-240 control range. A top-to-bottom grayscale ramp is added, clipped to 0-to-255, and quantized into 21 grating levels. Near-neutral artwork receives the correction ramp without a hue offset."]),
+        ("Required calibration", ["The 21 output swatches are layer identifiers, not guaranteed physical colors. Each needs a tested Material Library grating setting in level order. The filter does not invent safe speed, frequency, power, pulse width, or fill settings.", "The level map is: 0 Sage Green; 1 Blue; 2 Red; 3 Green; 4 Yellow; 5 Orange; 6 Cyan; 7 Magenta; 8 Light Gray; 9 Dark Blue; 10 Dark Red; 11 Dark Green; 12 Dark Yellow; 13 Dark Orange; 14 Light Blue; 15 Dark Magenta; 16 Medium Gray; 17 Slate Blue; 18 Rose; 19 Periwinkle Blue; and 20 Raspberry. True Black remains reserved for the punched background; Ben's original SVG used it as level 0."]),
+        ("Physical limitations", ["The defaults reproduce Ben's supplied approximately 165-to-90 vertical correction, but viewing geometry is installation-specific. Engrave a pitch test, observe it from the intended lamp and eye positions, then tune the endpoints and curve before producing final artwork."]),
+    ],
+    "related": ["abstract-filters", "color-layers", "diffraction-gratings", "holographic-calibration"],
+})
 
 STANDARD_PRESET_CONTROLS = {
     "cartoon-preset": [
