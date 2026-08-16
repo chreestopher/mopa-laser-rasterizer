@@ -162,7 +162,7 @@
     </label>
     <label>LightBurn Material Library<input id="calibration_material_settings" type="file" name="material_settings" accept=".clb,.lbmat,.lbrn" aria-describedby="calibration_remembered_material_library"><span id="calibration_remembered_material_library" class="remembered-input-note" hidden></span></label>
     <label>Material name<input id="calibration_material" name="material" list="calibration_material_suggestions" value="stainless - steel" required><datalist id="calibration_material_suggestions"></datalist></label>
-    <label>Setting Description<div class="calibration-description-autocomplete"><input id="calibration_setting_description" name="setting_description" autocomplete="off" placeholder="Exact Material Library Description" required><div id="calibration_setting_suggestions" class="calibration-description-menu" role="listbox" hidden></div></div><span class="form-note">Saved-library entries appear here as you type. Custom descriptions remain welcome.</span></label>
+    <label>Setting Description<div class="calibration-description-autocomplete"><input id="calibration_setting_description" name="setting_description" autocomplete="off" placeholder="Type or choose a palette color" role="combobox" aria-autocomplete="list" aria-controls="calibration_setting_suggestions" aria-expanded="false" required><div id="calibration_setting_suggestions" class="calibration-description-menu" role="listbox" hidden></div></div><span class="form-note">Type to filter the Rasterizer palette, choose a swatch, or edit the color name directly to match your Material Library Description.</span></label>
     <label>Laser source<input name="laser_source" placeholder="Example: JPT M7 100 W MOPA"></label>
     <label>Lens field of view (mm)<input name="lens_field_mm" type="number" value="110" min="1" max="1000" step="1" required></label>
     <label>Grid columns<input name="columns" type="number" value="4" min="2" max="6" required></label>
@@ -304,9 +304,7 @@
       refreshRememberedMaterial();
     };
     refreshRememberedMaterial();
-    const rasterizerPalette = [
-      ['black','#000000'],['blue','#0000FF'],['red','#FF0000'],['green','#00E000'],['yellow','#D0D000'],['orange','#FF8000'],['cyan','#00E0E0'],['magenta','#FF00FF'],['light-gray','#B4B4B4'],['dark-blue','#0000A0'],['dark-red','#A00000'],['dark-green','#00A000'],['dark-yellow','#A0A000'],['dark-orange','#C08000'],['light-blue','#00A0FF'],['dark-magenta','#A000A0'],['medium-gray','#808080'],['slate-blue','#7D87B9'],['rose','#BB7784'],['periwinkle-blue','#4A6FE3'],['raspberry','#D33F6A'],['sage-green','#8CD78C'],['peach','#F0B98D'],['light-pink','#F6C4E1'],['orchid-pink','#FA9ED4'],['deep-purple','#500A78'],['rust-brown','#B45A00'],['teal','#004754'],['bright-mint-green','#86FA88'],['light-gold','#FFDB66']
-    ];
+    const rasterizerPalette = {{ lightburn_palette | tojson }};
     let savedCalibrationEntries = [];
     const setSuggestionOptions = (target, values) => {
       target.replaceChildren(...[...new Set(values.filter(Boolean))].sort((left, right) => left.localeCompare(right, undefined, {sensitivity:'base'})).map(value => {
@@ -318,15 +316,21 @@
     const refreshCalibrationDescriptionSuggestions = () => {
       const materialKey = calibrationMaterial.value.trim().toLocaleLowerCase();
       const query = calibrationSettingDescription.value.trim().toLocaleLowerCase();
-      const descriptions = [...new Set(savedCalibrationEntries
+      const savedDescriptions = savedCalibrationEntries
         .filter(entry => !materialKey || String(entry.material || '').trim().toLocaleLowerCase() === materialKey)
         .map(entry => String(entry.description || '').trim())
-        .filter(description => description && (!query || description.toLocaleLowerCase().includes(query))))]
+        .filter(Boolean);
+      const descriptions = [...new Map([
+        ...rasterizerPalette.map(([name]) => name),
+        ...savedDescriptions,
+      ].filter(description => !query || description.toLocaleLowerCase().includes(query))
+        .map(description => [description.toLocaleLowerCase(), description])).values()]
         .sort((left, right) => left.localeCompare(right, undefined, {sensitivity:'base'}));
       calibrationSettingSuggestions.replaceChildren(...descriptions.map(description => {
         const option = document.createElement('button');
         option.type = 'button';
         option.className = 'calibration-description-option';
+        option.setAttribute('role', 'option');
         option.dataset.description = description;
         const swatch = rasterizerPalette.find(([name]) => name.toLocaleLowerCase() === description.toLocaleLowerCase());
         if (swatch) {
@@ -340,6 +344,7 @@
         return option;
       }));
       calibrationSettingSuggestions.hidden = !descriptions.length;
+      calibrationSettingDescription.setAttribute('aria-expanded', String(Boolean(descriptions.length)));
     };
     const loadSavedCalibrationLibraryEntries = libraryId => {
       if (!libraryId) {
@@ -416,7 +421,10 @@
     calibrationMaterial.addEventListener('input', refreshCalibrationDescriptionSuggestions);
     calibrationSettingDescription.addEventListener('focus', refreshCalibrationDescriptionSuggestions);
     calibrationSettingDescription.addEventListener('input', refreshCalibrationDescriptionSuggestions);
-    calibrationSettingDescription.addEventListener('blur', () => setTimeout(() => { calibrationSettingSuggestions.hidden = true; }, 120));
+    calibrationSettingDescription.addEventListener('blur', () => setTimeout(() => {
+      calibrationSettingSuggestions.hidden = true;
+      calibrationSettingDescription.setAttribute('aria-expanded', 'false');
+    }, 120));
     calibrationSettingSuggestions.addEventListener('mousedown', event => event.preventDefault());
     calibrationSettingSuggestions.addEventListener('click', event => {
       const option = event.target.closest('.calibration-description-option');
@@ -424,6 +432,7 @@
       calibrationSettingDescription.value = option.dataset.description;
       calibrationSettingDescription.dispatchEvent(new Event('change', {bubbles:true}));
       calibrationSettingSuggestions.hidden = true;
+      calibrationSettingDescription.setAttribute('aria-expanded', 'false');
       calibrationSettingDescription.focus();
     });
     fetch('/auth-status', {credentials:'same-origin'})

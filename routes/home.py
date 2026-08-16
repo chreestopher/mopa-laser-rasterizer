@@ -4,6 +4,8 @@ from urllib.parse import urlencode
 
 from flask import current_app, jsonify, redirect, render_template, request
 
+from services import LIGHTBURN_PALETTE_NAMES
+
 from . import routes
 
 
@@ -57,7 +59,11 @@ def logout():
 @routes.route("/holographic-etching")
 def holographic_etching():
     """Dedicated workspace for the structural-color engraving workflow."""
-    return render_template("holographic_etching.html")
+    palette = [
+        [name.lower(), color_hex]
+        for color_hex, name in LIGHTBURN_PALETTE_NAMES.items()
+    ]
+    return render_template("holographic_etching.html", lightburn_palette=palette)
 
 
 @routes.route("/material-libraries")
