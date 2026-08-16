@@ -7,7 +7,7 @@ MODULES={
     "deep_fryer":deep_fryer,"krasnow_grating":krasnow_grating,
 }
 ALIASES={"tessellation":"crystal","triangles":"crystal","topographic":"ripple","xenoglyph":"shattered","alien":"shattered"}
-FULL_PALETTE_FILTERS={"wave","voronoi","shear","spiral","mosaic","crystal","ripple","glitch","shattered","deep_fryer","krasnow_grating"}
+FULL_PALETTE_FILTERS={"wave","voronoi","shear","spiral","mosaic","crystal","ripple","glitch","shattered","deep_fryer"}
 
 def canonical_name(name):
     name=str(name or "none").strip().lower()

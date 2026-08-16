@@ -3,12 +3,11 @@
 The ordinary raster pipeline still prepares, color-separates, cleans, and
 punches the artwork.  This module's optional ``remap_layers`` capability then
 rebuilds those finished color regions as open parallel-line patches and
-assigns each patch to one of 21 calibrated LightBurn grating layers.
+assigns each patch across the available non-black LightBurn layers.
 
 The layer colors are identifiers, not promises about the engraved color.  The
-operator must attach monotonically ordered, tested grating recipes to them.
-True Black remains reserved for the Rasterizer's punched background, so Sage
-Green carries grating level zero instead of Ben's original Black identifier.
+operator must attach monotonically ordered, tested grating recipes to the
+selected layers. True Black remains reserved for the punched background.
 """
 
 import colorsys
@@ -20,21 +19,6 @@ from shapely.ops import unary_union
 from .common import number
 
 
-# Ben's remaining 20 SVG layer identifiers keep their original level numbers.
-# Sage Green is a spare non-black identifier used for level zero so the normal
-# Rasterizer can continue to own LightBurn's true Black layer.
-GRATING_SWATCHES = (
-    "#8CD78C",  # level 0 (Ben used #000000)
-    "#0000FF", "#FF0000", "#00E000", "#D0D000", "#FF8000",
-    "#00E0E0", "#FF00FF", "#B4B4B4", "#0000A0", "#A00000",
-    "#00A000", "#A0A000", "#C08000", "#00A0FF", "#A000A0",
-    "#808080", "#7D87B9", "#BB7784", "#4A6FE3", "#D33F6A",
-)
-
-# Material_Library.py uses this capability only for this preset.  It loads the
-# complete palette so every correction level can resolve a real cut setting.
-REQUIRES_FULL_PALETTE = True
-REQUIRED_OUTPUT_SWATCHES = GRATING_SWATCHES
 USES_SOURCE_LUMINANCE = True
 OUTPUT_PATH_MODE = "Cut"
 
@@ -69,11 +53,11 @@ def apply(geometry, settings):
 
 
 def configure_output_layers(lightburn_project, target_colors):
-    """Force only the open grating carriers to LightBurn Line mode."""
+    """Force the available non-black grating carriers to LightBurn Line mode."""
     output_layer_ids = {
-        target_colors[color_hex][1]
-        for color_hex in GRATING_SWATCHES
-        if color_hex in target_colors
+        metadata[1]
+        for color_hex, metadata in target_colors.items()
+        if str(color_hex).upper() != "#000000"
     }
     for layer in getattr(lightburn_project, "_layers", []):
         if getattr(layer, "index", None) in output_layer_ids:
@@ -113,10 +97,21 @@ def _gradient_value(y, min_y, max_y, settings):
     return top + (bottom - top) * shaped
 
 
-def _level_at_y(color_hex, y, min_y, max_y, settings):
+def _level_at_y(color_hex, y, min_y, max_y, settings, level_count):
     control = _gradient_value(y, min_y, max_y, settings) + _hue_offset(color_hex, settings)
     control = min(255.0, max(0.0, control))
-    return min(len(GRATING_SWATCHES) - 1, math.floor(control / 256 * len(GRATING_SWATCHES)))
+    return min(level_count - 1, math.floor(control / 256 * level_count))
+
+
+def _grating_swatches(target_colors):
+    """Return available carriers in their native LightBurn layer order."""
+    return [
+        color_hex
+        for color_hex, metadata in sorted(
+            target_colors.items(), key=lambda item: item[1][1]
+        )
+        if str(color_hex).upper() != "#000000"
+    ]
 
 
 def _source_angle(x, y, bounds, settings):
@@ -186,18 +181,14 @@ def remap_layers(processed_layers, target_colors, settings):
 
     bounds = tuple(number(value, 0) for value in bounds)
     min_x, min_y, max_x, max_y = bounds
-    available = [swatch for swatch in GRATING_SWATCHES if swatch in target_colors]
-    if len(available) != len(GRATING_SWATCHES):
-        missing = [swatch for swatch in GRATING_SWATCHES if swatch not in target_colors]
-        raise ValueError(
-            "Krasnow Color Grating requires all 21 calibrated grating swatches; "
-            f"missing: {', '.join(missing)}"
-        )
+    grating_swatches = _grating_swatches(target_colors)
+    if not grating_swatches:
+        return {}, dict(processed_layers)
 
     scale_factor = number(settings.get("_scale_factor"), 1, 1e-9, 1000)
     patch_size = number(settings.get("patch_size_mm"), .4, .1, 5) / scale_factor
     line_spacing = number(settings.get("line_spacing_mm"), .06, .01, .5) / scale_factor
-    pieces = {swatch: [] for swatch in GRATING_SWATCHES}
+    pieces = {swatch: [] for swatch in grating_swatches}
     punch_layers = dict(processed_layers)
 
     for source_hex, geometry in processed_layers.items():
@@ -221,9 +212,16 @@ def remap_layers(processed_layers, target_colors, settings):
                 if not region.is_empty:
                     center_x = (patch.bounds[0] + patch.bounds[2]) / 2
                     center_y = (patch.bounds[1] + patch.bounds[3]) / 2
-                    level = _level_at_y(source_hex, center_y, min_y, max_y, settings)
+                    level = _level_at_y(
+                        source_hex,
+                        center_y,
+                        min_y,
+                        max_y,
+                        settings,
+                        len(grating_swatches),
+                    )
                     angle = _source_angle(center_x, center_y, bounds, settings)
-                    pieces[GRATING_SWATCHES[level]].extend(
+                    pieces[grating_swatches[level]].extend(
                         _patch_lines(region, patch, angle, line_spacing)
                     )
                 y += patch_size

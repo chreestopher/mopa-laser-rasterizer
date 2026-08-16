@@ -1766,23 +1766,10 @@ def raster_to_puzzle_and_lightburn(
         - LightBurn export
     """
 
-    filter_parameters = dict(filter_parameters or {})
-    source_palette_hexes = {
-        str(color_hex).upper()
-        for color_hex in filter_parameters.get("_source_palette_hexes", ())
-    }
-    source_target_colors = {
-        color_hex: metadata for color_hex, metadata in TARGET_COLORS.items()
-        if not source_palette_hexes or color_hex.upper() in source_palette_hexes
-    }
-
-    # Quantization uses the real source swatches selected by the user. Filters
-    # with dedicated output-layer requirements may load additional LightBurn
-    # settings without allowing those settings to change source classification.
-    # Black-and-white photos remain the deliberate two-color exception.
-    quantize_colors = (
-        2 if image_preset == "bw_dither_photograph" else len(source_target_colors)
-    )
+    # Quantization uses the real LightBurn layers that survived both palette
+    # filtering and exact Material Library matching. Black-and-white photos
+    # are the sole exception and deliberately reduce the source raster to two.
+    quantize_colors = 2 if image_preset == "bw_dither_photograph" else len(TARGET_COLORS)
 
     # Keep this at the beginning of the pipeline so the console records the
     # effective values used by the job before raster processing begins.
@@ -1859,8 +1846,7 @@ def raster_to_puzzle_and_lightburn(
         # actual source values. Every other preset uses real LightBurn swatches.
         target_colors=(None if image_preset == "bw_dither_photograph" else {
             color_hex: metadata for color_hex, metadata in TARGET_COLORS.items()
-            if color_hex in source_target_colors
-            and color_hex.upper() not in NON_IMAGE_SWATCHES
+            if color_hex.upper() not in NON_IMAGE_SWATCHES
         })
     )
 
@@ -1873,6 +1859,7 @@ def raster_to_puzzle_and_lightburn(
     # Every color layer must use the same radial center and extent.  Keeping
     # this internal value shared prevents independently warped layers from
     # crossing or drifting apart at formerly common boundaries.
+    filter_parameters = dict(filter_parameters or {})
     filter_parameters["_canvas_bounds"] = (0, 0, width, height)
     filter_parameters["_scale_factor"] = scale_factor
     filter_name, _ = normalize_abstract_settings(
@@ -1959,7 +1946,7 @@ def raster_to_puzzle_and_lightburn(
         )
         pixel_boxes_by_color = classify_raster_pixels(
             img=img,
-            target_colors=source_target_colors,
+            target_colors=TARGET_COLORS,
             black_hex=black_hex,
             ignore_background_hex=ignore_background_hex,
             include_black=preserve_source_black,
