@@ -906,6 +906,9 @@ def calibration_grid():
         sweep_key = str(request.form.get("sweep_parameter", "none"))
         if sweep_key not in SWEEP_SETTINGS:
             raise ValueError("Unknown laser-setting sweep.")
+        cut_mode = str(request.form.get("cut_mode", "setting")).strip().lower()
+        if cut_mode not in CUT_MODE_TYPES:
+            raise ValueError("Unknown calibration cut mode.")
         sweep_low = float(request.form.get("sweep_low", 0))
         sweep_high = float(request.form.get("sweep_high", sweep_low))
     except ValueError:
@@ -997,6 +1000,8 @@ def calibration_grid():
                                        x=left_grid_margin_mm + columns * cell_mm + .25, y=top_label_mm + row * cell_mm + cell_mm * .42).layer(label_layer_index))
         for index, (interval, angle) in enumerate(zip(intervals, angles)):
             setting = copy(base_setting)
+            if CUT_MODE_TYPES[cut_mode]:
+                setting.type = CUT_MODE_TYPES[cut_mode]
             layer_index = cell_layer_indices[index]
             setting.index = layer_index
             setting.name = f"Holo {index + 1:02d} {angle:g}deg {interval:.3f}mm"
@@ -1026,6 +1031,11 @@ def calibration_grid():
                 "grid_width_mm": columns * cell_mm, "grid_height_mm": rows * cell_mm,
                 "angles_degrees": angles, "intervals_mm": intervals,
                 "grating_recipe_signatures": recipe_signatures,
+                "cut_mode": {
+                    "selection": cut_mode,
+                    "material_setting_type": str(getattr(base_setting, "type", "") or ""),
+                    "exported_type": CUT_MODE_TYPES[cut_mode] or str(getattr(base_setting, "type", "") or ""),
+                },
                 "sweep": {
                     "parameter": sweep_key if SWEEP_SETTINGS[sweep_key] else None,
                     "lightburn_property": SWEEP_SETTINGS[sweep_key],
