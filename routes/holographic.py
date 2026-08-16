@@ -1327,7 +1327,7 @@ def build_holographic_artwork():
         return fail("Provide an artwork image.", 400)
     try:
         max_dimension = max(8, min(1600, int(request.form.get("max_dimension", 96))))
-        pixel_mm = max(.05, min(5, float(request.form.get("pixel_mm", .5))))
+        pixel_mm = max(.0625, min(5, float(request.form.get("pixel_mm", .5))))
     except ValueError:
         return fail("Processing resolution and pixel size must be numbers.", 400)
     try:
