@@ -1,13 +1,14 @@
 """Ben Krasnow-style open-path grating geometry with view correction.
 
-The ordinary raster pipeline still prepares, color-separates, cleans, and
-punches the artwork.  This module's optional ``remap_layers`` capability then
+The ordinary raster pipeline still prepares, color-separates, and cleans the
+artwork. This module's optional ``remap_layers`` capability then
 rebuilds those finished color regions as open parallel-line patches and
 assigns each patch across the available non-black LightBurn layers.
 
 The layer colors are identifiers, not promises about the engraved color.  The
 operator must attach monotonically ordered, tested grating recipes to the
-selected layers. True Black remains reserved for the punched background.
+selected layers. True Black contains only geometry classified from the source
+raster; this preset does not synthesize a Black canvas or punch into Black.
 """
 
 import colorsys
@@ -20,6 +21,7 @@ from .common import number
 
 
 USES_SOURCE_LUMINANCE = True
+PRESERVE_SOURCE_BLACK = True
 OUTPUT_PATH_MODE = "Cut"
 
 DEFAULTS = {
@@ -171,7 +173,12 @@ def _patch_lines(region, patch, angle_degrees, spacing):
 
 
 def remap_layers(processed_layers, target_colors, settings):
-    """Build open grating paths and return their original closed punch masks."""
+    """Build open gratings while retaining only source-derived Black geometry."""
+    source_black = {
+        color_hex: geometry
+        for color_hex, geometry in processed_layers.items()
+        if str(color_hex).upper() == "#000000"
+    }
     bounds = settings.get("_canvas_bounds")
     if not bounds or len(bounds) != 4:
         nonempty = [geometry for geometry in processed_layers.values() if not geometry.is_empty]
@@ -183,13 +190,12 @@ def remap_layers(processed_layers, target_colors, settings):
     min_x, min_y, max_x, max_y = bounds
     grating_swatches = _grating_swatches(target_colors)
     if not grating_swatches:
-        return {}, dict(processed_layers)
+        return source_black
 
     scale_factor = number(settings.get("_scale_factor"), 1, 1e-9, 1000)
     patch_size = number(settings.get("patch_size_mm"), .4, .1, 5) / scale_factor
     line_spacing = number(settings.get("line_spacing_mm"), .06, .01, .5) / scale_factor
     pieces = {swatch: [] for swatch in grating_swatches}
-    punch_layers = dict(processed_layers)
 
     for source_hex, geometry in processed_layers.items():
         if geometry.is_empty or str(source_hex).upper() == "#000000":
@@ -227,8 +233,8 @@ def remap_layers(processed_layers, target_colors, settings):
                 y += patch_size
             x += patch_size
 
-    remapped = {}
+    remapped = dict(source_black)
     for swatch, swatch_pieces in pieces.items():
         if swatch_pieces:
             remapped[swatch] = unary_union(swatch_pieces)
-    return remapped, punch_layers
+    return remapped

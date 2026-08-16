@@ -1009,10 +1009,6 @@ def _raster_boxes_to_rectangles(boxes):
             return [box(x, y, x + width, y + height) for x, y, width, height in rectangles]
 
 
-class LayerGeometryMap(dict):
-    """Dictionary of export layers with optional closed black-punch masks."""
-
-
 def process_color_layers(
     pixel_boxes_by_color,
     target_colors,
@@ -1115,13 +1111,7 @@ def process_color_layers(
     remap_layers = getattr(filter_module, "remap_layers", None)
     if callable(remap_layers):
         printLogMessage(f"Applying cross-layer mapping for abstract filter '{filter_name}'...")
-        remapped = remap_layers(processed_layers, target_colors, settings)
-        if isinstance(remapped, tuple) and len(remapped) == 2:
-            remapped_layers, punch_layers = remapped
-            processed_layers = LayerGeometryMap(remapped_layers)
-            processed_layers.punch_layers = punch_layers
-        else:
-            processed_layers = remapped
+        processed_layers = remap_layers(processed_layers, target_colors, settings)
         printLogMessage(
             f"Cross-layer mapping produced {len(processed_layers)} calibrated output layers."
         )
@@ -1181,8 +1171,7 @@ def build_punched_black_layer(
             printLogMessage(f"Topology cleanup warning for {label}: {error}")
             return geometry
 
-    punch_source_layers = getattr(processed_layers, "punch_layers", processed_layers)
-    for color_hex, geometry in punch_source_layers.items():
+    for color_hex, geometry in processed_layers.items():
 
         if color_hex == black_hex:
             continue
@@ -1499,7 +1488,6 @@ def export_processed_layers(
         "Sorting and formatting log history..."
     )
 
-    custom_punch_layers = getattr(processed_layers, "punch_layers", None)
     sorted_layers = sorted(
         processed_layers.items(),
         key=lambda item: target_colors[
@@ -1620,11 +1608,7 @@ def export_processed_layers(
                 f"LightBurn layer {layer_id} {layer_color_name}."
             )
 
-            if (
-                punch_through_black
-                and custom_punch_layers is None
-                and color_hex != black_hex
-            ):
+            if punch_through_black and color_hex != black_hex:
                 printLogMessage(
                     f" -> Adding {layer_color_name} geometry to Black "
                     "Layer for LightBurn punch-through"
@@ -1641,33 +1625,6 @@ def export_processed_layers(
             f"processed {geometry_count}/{geometry_count} objects for "
             f"color {color_hex}, layer {layer_id} {layer_color_name}."
         )
-
-    if punch_through_black and custom_punch_layers is not None:
-        punch_items = [
-            (color_hex, geometry)
-            for color_hex, geometry in custom_punch_layers.items()
-            if color_hex != black_hex and not geometry.is_empty
-        ]
-        printLogMessage(
-            f"Writing {len(punch_items)} closed source regions to Black for "
-            "open-path grating punch-through."
-        )
-        for color_hex, geometry in punch_items:
-            punch_geometry = geometry
-            if scale_factor != 1.0:
-                punch_geometry = scale(
-                    punch_geometry,
-                    xfact=scale_factor,
-                    yfact=scale_factor,
-                    origin=(0, 0),
-                )
-            push_geometry_to_lightburn(
-                punch_geometry,
-                color_hex,
-                target_colors,
-                lb_project_instance,
-                override_layer_id=target_colors[black_hex][1],
-            )
 
 def save_vector_output(
     root,
@@ -1887,7 +1844,12 @@ def raster_to_puzzle_and_lightburn(
             )
         ))
     )
-    preserve_source_black = centerline_mode or transparent_mode
+    filter_preserves_source_black = bool(
+        getattr(filter_module, "PRESERVE_SOURCE_BLACK", False)
+    )
+    preserve_source_black = (
+        centerline_mode or transparent_mode or filter_preserves_source_black
+    )
     transparent_rgb_values = None
     if image_preset == "bw_dither_photograph" and transparent_mode:
         # ``Image.quantize(colors=2)`` produces two exact source colors. Pick
@@ -2007,6 +1969,11 @@ def raster_to_puzzle_and_lightburn(
     elif transparent_mode:
         printLogMessage(
             "Transparent mode: light source areas remain transparent; no black canvas added."
+        )
+    elif filter_preserves_source_black:
+        printLogMessage(
+            f"{filter_name}: preserving source-derived Black geometry; "
+            "no synthetic Black canvas or punch-through added."
         )
 
     # =========================================================================
