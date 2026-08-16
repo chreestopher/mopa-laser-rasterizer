@@ -371,20 +371,6 @@ def parse_material_settings(
     return (matched_settings, required_layers) if return_setting_layers else matched_settings
 
 
-def move_lightburn_layer_after(lb_project, layer_id, after_layer_id):
-    """Move one configured LightBurn layer after another in execution order."""
-    layers = getattr(lb_project, "_layers", None)
-    if not isinstance(layers, list):
-        return False
-    layer = next((item for item in layers if getattr(item, "index", None) == layer_id), None)
-    after_layer = next((item for item in layers if getattr(item, "index", None) == after_layer_id), None)
-    if layer is None or after_layer is None or layer is after_layer:
-        return False
-    layers.remove(layer)
-    layers.insert(layers.index(after_layer) + 1, layer)
-    return True
-
-
 def init_lightburn(the_colors_limit, color_name_overrides=None):
     """
         This Function:
@@ -914,7 +900,6 @@ def process_color_geometry(
     smoothing_radius,
     abstract_filter,
     filter_parameters=None,
-    return_source_geometry=False,
     progress_context=None,
 ):
     """Convert one color's pixel batch into finalized vector geometry."""
@@ -956,30 +941,19 @@ def process_color_geometry(
         )
     stage(4, "boundary simplification", "DONE", geometry=final_geometry)
 
-    source_geometry = final_geometry
-    filter_module = ABSTRACT_FILTER_MODULES.get(filter_name)
-    defer_filter = bool(getattr(filter_module, "DEFER_TO_EXPORT", False))
-    if defer_filter:
-        stage(5, f"abstract filter '{filter_name}' deferred to export", "DONE",
-              geometry=final_geometry)
-    else:
-        stage(5, f"abstract filter '{filter_name}'", "START", geometry=final_geometry)
-        final_geometry = apply_abstract_filter(
-            final_geometry, abstract_filter, filter_parameters
-        )
-        stage(5, f"abstract filter '{filter_name}'", "DONE", geometry=final_geometry)
+    stage(5, f"abstract filter '{filter_name}'", "START", geometry=final_geometry)
+    final_geometry = apply_abstract_filter(
+        final_geometry, abstract_filter, filter_parameters
+    )
+    stage(5, f"abstract filter '{filter_name}'", "DONE", geometry=final_geometry)
 
-    if defer_filter:
-        stage(6, "final topology validation deferred to export", "DONE",
-              geometry=final_geometry)
-    else:
-        stage(6, "final topology validation", "START", geometry=final_geometry)
-        if not final_geometry.is_valid:
-            printLogMessage(f"[{context}] Repairing invalid geometry after processing.")
-            final_geometry = make_valid(final_geometry)
-        stage(6, "final topology validation", "DONE", geometry=final_geometry)
+    stage(6, "final topology validation", "START", geometry=final_geometry)
+    if not final_geometry.is_valid:
+        printLogMessage(f"[{context}] Repairing invalid geometry after processing.")
+        final_geometry = make_valid(final_geometry)
+    stage(6, "final topology validation", "DONE", geometry=final_geometry)
 
-    return (final_geometry, source_geometry) if return_source_geometry else final_geometry
+    return final_geometry
 
 
 def _raster_boxes_to_rectangles(boxes):
@@ -1043,8 +1017,6 @@ def process_color_layers(
     smoothing_radius,
     abstract_filter,
     filter_parameters=None,
-    punch_layers=None,
-    layer_overrides=None,
 ):
     """
     Convert all raster color groups into finalized Shapely geometries.
@@ -1054,14 +1026,6 @@ def process_color_layers(
     filter_name, settings = normalize_abstract_settings(abstract_filter, filter_parameters)
     filter_module = ABSTRACT_FILTER_MODULES.get(filter_name)
     light_layers_only = bool(getattr(filter_module, "LIGHT_LAYERS_ONLY", False))
-    punch_source_geometry = bool(getattr(filter_module, "PUNCH_SOURCE_GEOMETRY", False))
-    setting_parameter = getattr(filter_module, "SETTING_NAME_PARAMETER", None)
-    per_color_base_angle = bool(getattr(filter_module, "PER_COLOR_BASE_ANGLE", False))
-    preserve_black_parameter = getattr(filter_module, "PRESERVE_BLACK_PARAMETER", None)
-    preserve_black = bool(
-        preserve_black_parameter and settings.get(preserve_black_parameter, False)
-    )
-    setting_layer_id = (filter_parameters or {}).get("_setting_layer_id")
     light_threshold = _number(settings.get("light_threshold", 150), 150, 0, 255)
     invert_threshold = bool(settings.get("invert_threshold", False))
 
@@ -1122,34 +1086,15 @@ def process_color_layers(
         layer_filter = abstract_filter
         if light_layers_only and not is_light_swatch(color_hex):
             layer_filter = "none"
-        if preserve_black and color_hex.upper() == "#000000":
-            layer_filter = "none"
-
-        use_source_punch = punch_source_geometry and layer_filter != "none"
-        layer_filter_parameters = filter_parameters
-        if per_color_base_angle and layer_filter != "none":
-            layer_filter_parameters = dict(filter_parameters or {})
-            # Line orientation repeats at 180 degrees. The golden angle gives
-            # every LightBurn palette layer a stable, well-separated base
-            # direction without depending on object order or geometry count.
-            layer_filter_parameters["_color_base_angle"] = (
-                layer_id * 137.50776405003785
-            ) % 180
-        result = process_color_geometry(
+        final_geometry = process_color_geometry(
             boxes=boxes,
             min_island_area=min_island_area,
             simplification_factor=simplification_factor,
             smoothing_radius=smoothing_radius,
             abstract_filter=layer_filter,
-            filter_parameters=layer_filter_parameters,
-            return_source_geometry=use_source_punch,
+            filter_parameters=filter_parameters,
             progress_context=progress_context,
         )
-        if use_source_punch:
-            final_geometry, source_geometry = result
-        else:
-            final_geometry = result
-            source_geometry = final_geometry
 
         processed_layers[
             color_hex
@@ -1159,10 +1104,6 @@ def process_color_layers(
             f"{_geometry_object_count(final_geometry)} output objects from "
             f"{len(boxes)} source objects."
         )
-        if punch_layers is not None:
-            punch_layers[color_hex] = source_geometry
-        if layer_overrides is not None and layer_filter != "none" and setting_parameter and setting_layer_id is not None:
-            layer_overrides[color_hex] = setting_layer_id
 
     return processed_layers
 
@@ -1173,10 +1114,6 @@ def process_color_layers(
 
 def build_black_canvas(width, height, abstract_filter, filter_parameters=None):
     """Build the complete black canvas used for LightBurn nesting."""
-    filter_name, _ = normalize_abstract_settings(abstract_filter, filter_parameters)
-    filter_module = ABSTRACT_FILTER_MODULES.get(filter_name)
-    if bool(getattr(filter_module, "PRESERVE_BLACK_CANVAS", False)):
-        return box(0, 0, width, height)
     return apply_abstract_filter(
         box(0, 0, width, height),
         abstract_filter,
@@ -1191,7 +1128,6 @@ def build_punched_black_layer(
     black_hex,
     abstract_filter,
     filter_parameters=None,
-    punch_layers=None,
 ):
     """
     Build the black layer as the canvas minus all colored geometry.
@@ -1224,7 +1160,7 @@ def build_punched_black_layer(
             printLogMessage(f"Topology cleanup warning for {label}: {error}")
             return geometry
 
-    for color_hex, geometry in (punch_layers or processed_layers).items():
+    for color_hex, geometry in processed_layers.items():
 
         if color_hex == black_hex:
             continue
@@ -1527,10 +1463,6 @@ def export_processed_layers(
     lb_project_instance,
     punch_through_black=False,
     black_lightburn_geometry=None,
-    black_punch_geometries=None,
-    layer_overrides=None,
-    abstract_filter=None,
-    filter_parameters=None,
 ):
     """
     Sort, scale, and export all finalized geometry to SVG and LightBurn.
@@ -1570,32 +1502,6 @@ def export_processed_layers(
         or (color_hex == black_hex and black_lightburn_geometry is not None)
     ]
     total_export_layers = len(exportable_layers)
-    export_filter_name, _ = normalize_abstract_settings(abstract_filter, filter_parameters)
-    export_filter_module = ABSTRACT_FILTER_MODULES.get(export_filter_name)
-    deferred_filter = bool(getattr(export_filter_module, "DEFER_TO_EXPORT", False))
-    preserve_black_parameter = getattr(export_filter_module, "PRESERVE_BLACK_PARAMETER", None)
-    preserve_black = bool(
-        preserve_black_parameter
-        and (filter_parameters or {}).get(preserve_black_parameter, False)
-    )
-    combined_black_punch = None
-    if punch_through_black and black_punch_geometries:
-        punch_masks = [
-            geometry
-            for color_hex, geometry in black_punch_geometries.items()
-            if color_hex.upper() != black_hex.upper() and not geometry.is_empty
-        ]
-        if punch_masks:
-            printLogMessage(
-                f"Black source-mask union START: {len(punch_masks)} color masks."
-            )
-            combined_black_punch = unary_union(punch_masks)
-            if not combined_black_punch.is_valid:
-                combined_black_punch = make_valid(combined_black_punch)
-            printLogMessage(
-                "Black source-mask union DONE: "
-                f"{_geometry_object_count(combined_black_punch)} non-overlapping objects."
-            )
 
     for export_index, (color_hex, geometry) in enumerate(exportable_layers, 1):
 
@@ -1603,7 +1509,7 @@ def export_processed_layers(
             color_hex
         ]
 
-        layer_id = (layer_overrides or {}).get(color_hex, layer_meta[1])
+        layer_id = layer_meta[1]
         layer_color_name = layer_meta[2]
         geometry_count = _geometry_object_count(geometry)
 
@@ -1618,39 +1524,6 @@ def export_processed_layers(
         # --------------------------------------------------------------------
 
         export_geometry = geometry
-        defer_this_layer = deferred_filter and not (
-            preserve_black and color_hex.upper() == black_hex.upper()
-        )
-        if defer_this_layer:
-            deferred_parameters = dict(filter_parameters or {})
-            if bool(getattr(export_filter_module, "PER_COLOR_BASE_ANGLE", False)):
-                deferred_parameters["_color_base_angle"] = (
-                    layer_meta[1] * 137.50776405003785
-                ) % 180
-            deferred_parameters["_progress_logger"] = lambda message: printLogMessage(
-                f"[Export layer {export_index}/{total_export_layers} "
-                f"{color_hex} / Layer {layer_id} {layer_color_name}] {message}"
-            )
-            printLogMessage(
-                f"[Export layer {export_index}/{total_export_layers}] START: "
-                f"materializing deferred abstract filter '{export_filter_name}' for "
-                f"{geometry_count} source objects."
-            )
-            export_geometry = apply_abstract_filter(
-                geometry, abstract_filter, deferred_parameters
-            )
-            if not export_geometry.is_valid:
-                printLogMessage(
-                    f"[Export layer {export_index}/{total_export_layers}] "
-                    "Repairing invalid deferred-filter geometry."
-                )
-                export_geometry = make_valid(export_geometry)
-            geometry_count = _geometry_object_count(export_geometry)
-            printLogMessage(
-                f"[Export layer {export_index}/{total_export_layers}] DONE: "
-                f"materialized deferred abstract filter '{export_filter_name}' as "
-                f"{geometry_count} output objects."
-            )
 
         if scale_factor != 1.0:
 
@@ -1718,37 +1591,13 @@ def export_processed_layers(
                 lb_project_instance,
                 override_layer_id=layer_id,
             )
-            if color_hex == black_hex and combined_black_punch is not None:
-                scaled_black_punch = combined_black_punch
-                if scale_factor != 1.0:
-                    scaled_black_punch = scale(
-                        scaled_black_punch,
-                        xfact=scale_factor,
-                        yfact=scale_factor,
-                        origin=(0, 0),
-                    )
-                printLogMessage(
-                    " -> Adding unified source-color geometry to Black Layer "
-                    "for LightBurn punch-through"
-                )
-                push_geometry_to_lightburn(
-                    scaled_black_punch,
-                    black_hex,
-                    target_colors,
-                    lb_project_instance,
-                    override_layer_id=layer_id,
-                )
             printLogMessage(
                 f"[Export layer {export_index}/{total_export_layers}] DONE: "
                 f"wrote {geometry_count}/{geometry_count} objects to "
                 f"LightBurn layer {layer_id} {layer_color_name}."
             )
 
-            if (
-                punch_through_black
-                and color_hex != black_hex
-                and black_punch_geometries is None
-            ):
+            if punch_through_black and color_hex != black_hex:
                 printLogMessage(
                     f" -> Adding {layer_color_name} geometry to Black "
                     "Layer for LightBurn punch-through"
@@ -1959,10 +1808,9 @@ def raster_to_puzzle_and_lightburn(
     filter_parameters = dict(filter_parameters or {})
     filter_parameters["_canvas_bounds"] = (0, 0, width, height)
     filter_parameters["_scale_factor"] = scale_factor
-    filter_name, filter_settings = normalize_abstract_settings(
+    filter_name, _ = normalize_abstract_settings(
         abstract_filter, filter_parameters
     )
-    filter_module = ABSTRACT_FILTER_MODULES.get(filter_name)
     centerline_mode = filter_name == "centerline"
     transparent_mode = (
         (image_preset == "bw_dither_photograph"
@@ -1974,23 +1822,7 @@ def raster_to_puzzle_and_lightburn(
             )
         ))
     )
-    keep_black_parameter = getattr(filter_module, "KEEP_SOURCE_BLACK_PARAMETER", None)
-    keep_source_black = bool(
-        keep_black_parameter and filter_parameters.get(keep_black_parameter, False)
-    )
-    preserve_background_transparency = bool(
-        getattr(filter_module, "PRESERVE_BACKGROUND_TRANSPARENCY", False)
-    )
-    black_canvas_parameter = getattr(filter_module, "BLACK_CANVAS_PARAMETER", None)
-    direct_punched_black = bool(
-        black_canvas_parameter and filter_settings.get(black_canvas_parameter, False)
-    )
-    if direct_punched_black:
-        preserve_background_transparency = False
-    preserve_source_black = (
-        centerline_mode or transparent_mode or keep_source_black
-        or preserve_background_transparency
-    )
+    preserve_source_black = centerline_mode or transparent_mode
     transparent_rgb_values = None
     if image_preset == "bw_dither_photograph" and transparent_mode:
         # ``Image.quantize(colors=2)`` produces two exact source colors. Pick
@@ -2074,8 +1906,6 @@ def raster_to_puzzle_and_lightburn(
     # 5. Process every colored layer
     # =========================================================================
 
-    punch_layers = {}
-    layer_overrides = {}
     processed_layers = process_color_layers(
         pixel_boxes_by_color=pixel_boxes_by_color,
         target_colors=TARGET_COLORS,
@@ -2084,85 +1914,7 @@ def raster_to_puzzle_and_lightburn(
         smoothing_radius=smoothing_radius,
         abstract_filter=abstract_filter,
         filter_parameters=filter_parameters,
-        punch_layers=punch_layers,
-        layer_overrides=layer_overrides,
     )
-
-    if bool(getattr(filter_module, "LAYER_AFTER_GEOMETRY", False)):
-        geometry_layer_count = sum(
-            1 for geometry in processed_layers.values() if not geometry.is_empty
-        )
-        holographic_layer_id = geometry_layer_count + 1
-        if holographic_layer_id >= 30:
-            raise ValueError(
-                "Sacred produced too many image layers to place Holographic "
-                "before LightBurn's tool-layer range"
-            )
-        previous_layer_id = filter_parameters.get("_setting_layer_id")
-        configured_layers = getattr(lb_project_instance, "_layers", [])
-        holographic_setting = next(
-            (layer for layer in configured_layers
-             if getattr(layer, "index", None) == previous_layer_id),
-            None,
-        )
-        configured_layers[:] = [
-            layer for layer in configured_layers
-            if getattr(layer, "index", None) != holographic_layer_id
-            or layer is holographic_setting
-        ]
-        if holographic_setting is not None:
-            holographic_setting.index = holographic_layer_id
-            holographic_setting.name = getattr(filter_module, "LAYER_NAME", "Holographic")
-        for color_hex, layer_id in list(layer_overrides.items()):
-            if layer_id == previous_layer_id:
-                layer_overrides[color_hex] = holographic_layer_id
-        layer_color = str(getattr(filter_module, "LAYER_COLOR", "#FEFEFE")).upper()
-        if layer_color in TARGET_COLORS:
-            hue, _, layer_name = TARGET_COLORS[layer_color]
-            TARGET_COLORS[layer_color] = (hue, holographic_layer_id, layer_name)
-        filter_parameters["_setting_layer_id"] = holographic_layer_id
-        printLogMessage(
-            f"Holographic assigned to cut layer {holographic_layer_id} after "
-            f"{geometry_layer_count} image layer(s)."
-        )
-        preserve_black_parameter = getattr(filter_module, "PRESERVE_BLACK_PARAMETER", None)
-        preserve_black = bool(
-            preserve_black_parameter
-            and filter_parameters.get(preserve_black_parameter, False)
-        )
-        if preserve_black and black_hex in TARGET_COLORS:
-            black_layer_id = holographic_layer_id + 1
-            if black_layer_id >= 30:
-                raise ValueError(
-                    "Sacred cannot place the preserved Black layer after Holographic "
-                    "without entering LightBurn's tool-layer range"
-                )
-            black_hue, previous_black_layer_id, _ = TARGET_COLORS[black_hex]
-            black_setting = next(
-                (layer for layer in configured_layers
-                 if getattr(layer, "index", None) == previous_black_layer_id),
-                None,
-            )
-            if black_setting is None:
-                raise ValueError(
-                    "Sacred Keep Black requires a Black setting in the Material Library"
-                )
-            configured_layers[:] = [
-                layer for layer in configured_layers
-                if getattr(layer, "index", None) != black_layer_id
-                or layer in (holographic_setting, black_setting)
-            ]
-            black_setting.index = black_layer_id
-            black_setting.name = "Black"
-            TARGET_COLORS[black_hex] = (black_hue, black_layer_id, "Black")
-            layer_overrides.pop(black_hex, None)
-            move_lightburn_layer_after(
-                lb_project_instance, black_layer_id, holographic_layer_id
-            )
-            printLogMessage(
-                f"Sacred Keep Black assigned original coalesced black polygons to "
-                f"cut layer {black_layer_id}, immediately after Holographic."
-            )
 
     # =========================================================================
     # 6. Build the BLACK layer around the colored geometry
@@ -2183,26 +1935,13 @@ def raster_to_puzzle_and_lightburn(
             black_hex=black_hex,
             abstract_filter=abstract_filter,
             filter_parameters=filter_parameters,
-            punch_layers=punch_layers,
         )
-        if direct_punched_black:
-            # SVG receives the already-subtracted black geometry. LightBurn
-            # retains its complete black canvas and receives the original
-            # pre-grating color masks as nested punch-through paths below.
-            printLogMessage(
-                "Sacred Keep Black: retaining the complete LightBurn black "
-                "canvas for source-mask punch-through."
-            )
 
     elif centerline_mode:
         printLogMessage("Centerline Drawing: exporting dark source-image outlines as thin closed black ribbons.")
     elif transparent_mode:
         printLogMessage(
             "Transparent mode: light source areas remain transparent; no black canvas added."
-        )
-    elif keep_source_black:
-        printLogMessage(
-            "Holographic Keep Black: preserving dark source-image geometry on the Black setting."
         )
 
     # =========================================================================
@@ -2229,10 +1968,6 @@ def raster_to_puzzle_and_lightburn(
         lb_project_instance=lb_project_instance,
         punch_through_black=not preserve_source_black,
         black_lightburn_geometry=black_lightburn_geometry,
-        black_punch_geometries=punch_layers if direct_punched_black else None,
-        layer_overrides=layer_overrides,
-        abstract_filter=abstract_filter,
-        filter_parameters=filter_parameters,
     )
 
     # =========================================================================

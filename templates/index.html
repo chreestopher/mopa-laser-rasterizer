@@ -633,7 +633,6 @@
           <option value="abstract_glitch">Digital Glitch</option>
           <option value="abstract_deep_fryer">Deep Fryer</option>
           <option value="abstract_shattered">Shattered</option>
-          <option value="abstract_sacred">Sacred</option>
           <option value="abstract_none">Abstract: None</option>
         </optgroup>
       </select>
@@ -731,14 +730,6 @@
           ['fall_distance', 20, 0, 160, 1], ['gravity_bias', 1.4, .2, 4, .1],
           ['rotation', 22, 0, 180, 1], ['break_origin_x', .5, 0, 1, .01],
           ['break_origin_y', .35, 0, 1, .01], ['seed', 1, 0, 999999, 1]]
-      },
-      sacred: {
-        description: 'Redraws the image as fine diffraction-grating ribbons. Every source color receives its own stable base angle, and every disconnected region of that color uses that same angle. An invisible sacred-geometry lattice then bends the ribbons locally along its circular and rotational contours without exporting the lattice itself. Base Angle rotates all color angles together. Every ribbon uses the first material-library setting whose name or description contains holographic and is written to the Holographic LightBurn layer. Enable Keep Black for the standard black canvas, punched out with every non-black color\'s original coalesced polygon before those polygons are replaced by diffraction lines; its Black cut layer runs immediately after Holographic.',
-        controls: [['grating_spacing', 1.25, .5, 12, .1], ['line_width', .3, .05, 3, .05],
-          ['field_scale', 60, 10, 160, 1], ['field_strength', .35, 0, 1, .05],
-          ['symmetry', 6, 3, 12, 1], ['base_angle', 0, -180, 180, 1],
-          ['step_size', .75, .25, 5, .25], ['seed', 1, 0, 999999, 1]],
-        toggles: [['keep_black', false]]
       },
       /* Retired Abstract Holographic preset.
       holographic: {

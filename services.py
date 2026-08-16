@@ -46,7 +46,7 @@ LIGHTBURN_PALETTE_NAMES = {
 }
 ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
-    "crystal", "ripple", "centerline", "glitch", "shattered", "deep_fryer", "sacred",
+    "crystal", "ripple", "centerline", "glitch", "shattered", "deep_fryer",
 }
 ABSTRACT_PRESET_PREFIX = "abstract_"
 RASTER_JOB_QUEUE = "rasterizer:jobs"
