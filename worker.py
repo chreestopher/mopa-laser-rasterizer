@@ -17,6 +17,8 @@ from services import (
     long_running_script,
     redis_client,
     secure_artifact_name,
+    update_user_job,
+    upload_task_artifact,
 )
 
 
@@ -173,6 +175,10 @@ def acknowledge_job(raw_payload, task_id):
 
 def record_job_failure(task_id, error):
     """Persist a terminal failure without letting a Redis blip kill the worker."""
+    try:
+        update_user_job(task_id, "failed", error_message=str(error))
+    except Exception as durable_error:
+        print(f"[Raster-Worker] Could not persist durable failure for {task_id}: {durable_error}", flush=True)
     for attempt in range(1, 4):
         try:
             pipeline = redis_client.pipeline()
@@ -252,6 +258,15 @@ def run_holographic_artwork_job(payload, upload_folder):
         "lightburn_url": f"/holographic-etching/download/{lbrn_name}",
         "metadata_url": f"/holographic-etching/download/{metadata_name}",
     }
+    output_keys = []
+    for output_name in (svg_name, lbrn_name, metadata_name):
+        output_key = upload_task_artifact(
+            task_id, os.path.join(upload_folder, output_name), category="outputs",
+            user_id=payload.get("user_id"),
+        )
+        if output_key:
+            output_keys.append(output_key)
+    update_user_job(task_id, "completed", output_keys=output_keys)
     redis_client.set(f"holographic-artwork-result:{task_id}", json.dumps(result), ex=HISTORY_TTL_SECONDS)
     redis_client.set(f"task:{task_id}:status", "completed", ex=HISTORY_TTL_SECONDS)
     redis_client.rpush(log_key, f"Holographic Artwork complete: {rectangle_count} vector rectangles ready.")

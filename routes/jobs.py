@@ -415,6 +415,28 @@ def download_file(task_id):
         download_name=image_file, mimetype="image/svg+xml" if image_file.endswith(".svg") else None)
 
 
+@routes.route("/download-svg/<task_id>")
+def download_svg(task_id):
+    """Download the exact SVG output for any shared-history job type."""
+    access_error = _job_access_error(task_id, browser_navigation=True)
+    if access_error:
+        return access_error
+    s3_key = _s3_output_key(task_id, ".svg")
+    if s3_key:
+        return _stream_s3_download(s3_key, mimetype="image/svg+xml")
+    candidates = (
+        glob.glob(os.path.join(current_app.config["UPLOAD_FOLDER"], f"holographic_art_{task_id}.svg"))
+        + glob.glob(os.path.join(current_app.config["UPLOAD_FOLDER"], f"output_{task_id}_*.svg"))
+    )
+    if not candidates:
+        return jsonify({"status": "error", "message": "SVG file not found"}), 404
+    filename = os.path.basename(candidates[0])
+    return send_from_directory(
+        current_app.config["UPLOAD_FOLDER"], filename, as_attachment=True,
+        download_name=filename, mimetype="image/svg+xml",
+    )
+
+
 @routes.route("/list-downloads/<task_id>")
 def list_downloads(task_id):
     access_error = _job_access_error(task_id, browser_navigation=True)

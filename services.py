@@ -551,11 +551,8 @@ def get_user_job_history(user_id, limit=100):
         # just as the guest history panel already does.
         if not stored_status and not task_artifacts_exist(task_id):
             continue
-        entry.update({
-            "status": stored_status or durable_status,
-            "svg_url": f"/download/{task_id}", "lightburn_url": f"/download-lbrn2/{task_id}",
-        })
-        entry["reuse_url"] = reuse_settings_url(entry)
+        entry["status"] = stored_status or durable_status
+        entry.update(job_history_links(entry))
         entries.append(entry)
     return entries
 
@@ -635,6 +632,25 @@ def reuse_settings_url(entry):
     return f"/?{urlencode({'settings': encoded})}"
 
 
+def job_history_links(entry):
+    """Return job-type-aware actions for the shared processing history."""
+    task_id = entry.get("task_id", "")
+    parameters = entry.get("run_parameters") or {}
+    if parameters.get("job_type") == "holographic_artwork":
+        return {
+            "svg_url": f"/download-svg/{task_id}",
+            "lightburn_url": f"/download-lbrn2/{task_id}",
+            "reuse_url": "/holographic-etching",
+            "reuse_label": "Open Lab",
+        }
+    return {
+        "svg_url": f"/download/{task_id}",
+        "lightburn_url": f"/download-lbrn2/{task_id}",
+        "reuse_url": reuse_settings_url(entry),
+        "reuse_label": "Reuse Settings",
+    }
+
+
 def get_history_entries(session_id):
     if not session_id:
         return []
@@ -663,9 +679,8 @@ def get_history_entries(session_id):
             "material_name": entry.get("material_name"),
             "run_parameters": entry.get("run_parameters") or {},
             "created_at": entry.get("created_at"), "status": status,
-            "svg_url": f"/download/{task_id}", "lightburn_url": f"/download-lbrn2/{task_id}",
         }
-        history_entry["reuse_url"] = reuse_settings_url(history_entry)
+        history_entry.update(job_history_links(history_entry))
         entries.append(history_entry)
     if stale_records:
         pipeline = redis_client.pipeline()

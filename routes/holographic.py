@@ -11,7 +11,7 @@ from xml.etree import ElementTree as ET
 
 import cv2
 import numpy as np
-from flask import Response, current_app, jsonify, request, send_from_directory, stream_with_context
+from flask import Response, current_app, jsonify, make_response, request, send_from_directory, stream_with_context
 from PIL import Image, UnidentifiedImageError
 from werkzeug.utils import secure_filename
 
@@ -19,6 +19,7 @@ from services import (
     HISTORY_TTL_SECONDS,
     LIGHTBURN_PALETTE_NAMES,
     RASTER_JOB_QUEUE,
+    add_history_entry,
     download_task_artifact,
     download_user_holographic_recipe,
     download_user_material_library,
@@ -27,6 +28,7 @@ from services import (
     get_user_holographic_recipe,
     redis_client,
     raster_queue_position,
+    record_user_job,
     save_user_material_library,
     save_user_holographic_recipe,
     upload_task_artifact,
@@ -1351,14 +1353,40 @@ def build_holographic_artwork():
         material_key = upload_task_artifact(artwork_task_id, library_path, category="inputs", user_id=user_id)
         if not all((artwork_key, recipe_key, material_key)):
             raise RuntimeError("Queued Holographic Artwork jobs require durable artifact storage.")
+        with open(recipe_path, encoding="utf-8") as recipe_stream:
+            recipe_summary = json.load(recipe_stream)
+        history_session = (valid_history_session(request.form.get("history_session"))
+                           or valid_history_session(request.cookies.get("mopa_history_session"))
+                           or str(uuid.uuid4()))
+        display_material = (recipe_summary.get("grid") or {}).get("material") or os.path.basename(library_path)
+        run_parameters = {
+            "job_type": "holographic_artwork",
+            "recipe_name": recipe_summary.get("profile_name") or os.path.basename(recipe_path),
+            "material_library": os.path.basename(library_path),
+            "processing_width_px": max_dimension,
+            "processing_height_px": max_dimension,
+            "pixel_size_mm": pixel_mm,
+            "cut_mode": cut_mode,
+            "preserve_black_outlines": preserve_black_outlines,
+        }
         payload = {
             "job_type": "holographic_artwork", "task_id": artwork_task_id,
             "artwork_key": artwork_key, "recipe_key": recipe_key, "material_key": material_key,
             "artwork_name": artwork_name, "recipe_name": os.path.basename(recipe_path),
             "material_name": os.path.basename(library_path), "max_dimension": max_dimension,
             "pixel_mm": pixel_mm, "preserve_black_outlines": preserve_black_outlines,
-            "cut_mode": cut_mode,
+            "cut_mode": cut_mode, "user_id": user_id,
         }
+        if user_id:
+            record_user_job(
+                user_id, artwork_task_id, artwork_name, "holographic_artwork", "none",
+                display_material, run_parameters,
+                input_keys=[artwork_key, recipe_key, material_key],
+            )
+        add_history_entry(
+            history_session, artwork_task_id, artwork_name, "holographic_artwork", "none",
+            display_material, run_parameters,
+        )
         redis_client.lpush(RASTER_JOB_QUEUE, json.dumps(payload, separators=(",", ":")))
         redis_client.set(f"task:{artwork_task_id}:status", "pending", ex=HISTORY_TTL_SECONDS)
         redis_client.rpush(f"task:{artwork_task_id}:log", "Holographic Artwork job queued for a dedicated worker.")
@@ -1373,7 +1401,12 @@ def build_holographic_artwork():
     except (OSError, ValueError, ET.ParseError, KeyError, TypeError) as error:
         current_app.logger.exception("Holographic artwork export failed")
         return fail(f"Could not build holographic artwork: {error}", 400)
-    return jsonify({"status": "pending", "task_id": artwork_task_id}), 202
+    response = make_response(jsonify({"status": "pending", "task_id": artwork_task_id}), 202)
+    response.set_cookie(
+        "mopa_history_session", history_session, max_age=HISTORY_TTL_SECONDS,
+        secure=request.is_secure, httponly=True, samesite="Lax",
+    )
+    return response
 
 
 @routes.route("/holographic-etching/artwork-status/<task_id>")

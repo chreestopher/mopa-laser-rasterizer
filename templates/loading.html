@@ -407,10 +407,10 @@
                         <div class="file-menu-details"><span><strong>Style:</strong> <span class="file-meta">{{ file.image_preset|replace('_', ' ') }}{% if file.abstract_filter and file.abstract_filter != 'none' %} · {{ file.abstract_filter|replace('_', ' ') }}{% endif %}</span></span>{% if file.material_name %}<span><strong>Material:</strong> {{ file.material_name }}</span>{% endif %}<span><strong>Status:</strong> <span class="file-status">[{{ file.status }}]</span></span></div>
                         <div class="file-run-parameters">
                             {% set parameters = file.run_parameters or {} %}
-                            {% if parameters %}<span><strong>Pixel size:</strong> {{ parameters.pixel_size_mm }} mm</span><span><strong>Processing:</strong> {{ parameters.processing_width_px }} × {{ parameters.processing_height_px }} px</span><span><strong>Colors:</strong> {{ parameters.colors|join(', ') or 'all available' }}</span>{% for key, value in (parameters.filter_parameters or {}).items() %}<span><strong>{{ key|replace('_', ' ') }}:</strong> {{ value }}</span>{% endfor %}{% else %}<span>Detailed parameters were not recorded for this older run.</span>{% endif %}
+                            {% if parameters.job_type == 'holographic_artwork' %}<span><strong>Recipe:</strong> {{ parameters.recipe_name }}</span><span><strong>Pixel size:</strong> {{ parameters.pixel_size_mm }} mm</span><span><strong>Maximum processing size:</strong> {{ parameters.processing_width_px }} px</span><span><strong>Cut mode:</strong> {{ parameters.cut_mode|replace('-', ' ') }}</span>{% elif parameters %}<span><strong>Pixel size:</strong> {{ parameters.pixel_size_mm }} mm</span><span><strong>Processing:</strong> {{ parameters.processing_width_px }} × {{ parameters.processing_height_px }} px</span><span><strong>Colors:</strong> {{ parameters.colors|join(', ') or 'all available' }}</span>{% for key, value in (parameters.filter_parameters or {}).items() %}<span><strong>{{ key|replace('_', ' ') }}:</strong> {{ value }}</span>{% endfor %}{% else %}<span>Detailed parameters were not recorded for this older run.</span>{% endif %}
                         </div>
                         <div class="file-actions">
-                        <a class="download-button reuse-settings-button" href="{{ file.reuse_url }}">Reuse Settings</a>
+                        <a class="download-button reuse-settings-button" href="{{ file.reuse_url }}">{{ file.reuse_label or 'Reuse Settings' }}</a>
                         <a class="download-button{% if file.status != 'completed' %} disabled{% endif %}" href="{{ file.svg_url }}">SVG</a>
                         <a class="download-button{% if file.status != 'completed' %} disabled{% endif %}" href="{{ file.lightburn_url }}">LBRN2</a>
                         <button class="download-button log-button" type="button" data-task-id="{{ file.task_id }}">Logs</button>
@@ -486,6 +486,12 @@ function fileParametersHtml(parameters) {
     if (!parameters || !Object.keys(parameters).length) {
         return '<div class="file-run-parameters"><span>Detailed parameters were not recorded for this older run.</span></div>';
     }
+    if (parameters.job_type === 'holographic_artwork') {
+        return `<div class="file-run-parameters"><span><strong>Recipe:</strong> ${escapeHtml(parameters.recipe_name || 'Holographic Recipe')}</span>` +
+          `<span><strong>Pixel size:</strong> ${escapeHtml(parameters.pixel_size_mm)} mm</span>` +
+          `<span><strong>Maximum processing size:</strong> ${escapeHtml(parameters.processing_width_px)} px</span>` +
+          `<span><strong>Cut mode:</strong> ${escapeHtml(String(parameters.cut_mode || 'setting').replaceAll('-', ' '))}</span></div>`;
+    }
     const colors = Array.isArray(parameters.colors) && parameters.colors.length
       ? parameters.colors.map(escapeHtml).join(', ')
       : 'all available';
@@ -512,10 +518,11 @@ function fileRowHtml(file) {
     const status = escapeHtml(file.status || 'pending');
     const parameters = fileParametersHtml(file.run_parameters);
     const reuseUrl = escapeHtml(file.reuse_url || '/');
+    const reuseLabel = escapeHtml(file.reuse_label || 'Reuse Settings');
     return `<div class="file-summary"><span class="file-time">${timestamp}</span><span class="source-name">${name}</span></div>` +
       `<div class="file-menu"><div class="file-menu-details"><span><strong>Style:</strong> <span class="file-meta">${preset}${filter}</span></span>` +
       `${material ? `<span><strong>Material:</strong> ${material}</span>` : ''}<span><strong>Status:</strong> <span class="file-status">[${status}]</span></span></div>${parameters}` +
-      `<div class="file-actions"><a class="download-button reuse-settings-button" href="${reuseUrl}">Reuse Settings</a><a class="download-button${disabled}" href="${file.svg_url}">SVG</a>` +
+      `<div class="file-actions"><a class="download-button reuse-settings-button" href="${reuseUrl}">${reuseLabel}</a><a class="download-button${disabled}" href="${file.svg_url}">SVG</a>` +
       `<a class="download-button${disabled}" href="${file.lightburn_url}">LBRN2</a><button class="download-button log-button" type="button" data-task-id="${escapeHtml(file.task_id)}">Logs</button></div></div>`;
 }
 
