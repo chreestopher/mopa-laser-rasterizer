@@ -441,6 +441,15 @@
       refreshCalibrationDescriptionSuggestions();
     });
     calibrationSettingDescription.addEventListener('input', refreshCalibrationDescriptionSuggestions);
+    calibrationSettingDescription.addEventListener('keydown', event => {
+      if (event.key !== 'Tab' || calibrationSettingSuggestions.hidden) return;
+      const firstOption = calibrationSettingSuggestions.querySelector('.calibration-description-option');
+      if (!firstOption) return;
+      calibrationSettingDescription.value = firstOption.dataset.description;
+      calibrationSettingDescription.dispatchEvent(new Event('change', {bubbles:true}));
+      calibrationSettingSuggestions.hidden = true;
+      calibrationSettingDescription.setAttribute('aria-expanded', 'false');
+    });
     calibrationSettingDescription.addEventListener('blur', () => setTimeout(() => {
       calibrationSettingSuggestions.hidden = true;
       calibrationSettingDescription.setAttribute('aria-expanded', 'false');
