@@ -324,6 +324,77 @@ def delete_user_material_library(user_id, library_id):
     return True
 
 
+def list_user_holographic_recipes(user_id):
+    table = account_table()
+    if not table or not user_id:
+        return []
+    try:
+        response = table.query(
+            KeyConditionExpression=Key("pk").eq(f"USER#{user_id}") & Key("sk").begins_with("HOLORECIPE#"),
+            ScanIndexForward=False,
+        )
+    except ClientError as error:
+        raise RuntimeError("Could not load saved Holographic Recipes.") from error
+    return [_json_values(item) for item in response.get("Items", [])]
+
+
+def get_user_holographic_recipe(user_id, recipe_id):
+    table = account_table()
+    if not table or not user_id or not recipe_id:
+        return None
+    try:
+        item = table.get_item(Key={"pk": f"USER#{user_id}", "sk": f"HOLORECIPE#{recipe_id}"}).get("Item")
+    except ClientError as error:
+        raise RuntimeError("Could not load the saved Holographic Recipe.") from error
+    return _json_values(item) if item else None
+
+
+def save_user_holographic_recipe(user_id, local_file_path, display_name=None, metadata=None,
+                                 source_filename=None):
+    table = account_table()
+    if not table or not S3_BUCKET_NAME:
+        raise RuntimeError("Account Holographic Recipe storage is not configured.")
+    recipe_id = str(uuid.uuid4())
+    filename = os.path.basename(source_filename or local_file_path)
+    name = str(display_name or os.path.splitext(filename)[0]).strip()[:160] or "Holographic Recipe"
+    s3_key = f"users/{user_id}/holographic-recipes/{recipe_id}/{filename}"
+    try:
+        s3_client.upload_file(local_file_path, S3_BUCKET_NAME, s3_key)
+        item = {
+            "pk": f"USER#{user_id}", "sk": f"HOLORECIPE#{recipe_id}",
+            "recipe_id": recipe_id, "name": name, "original_name": filename,
+            "s3_key": s3_key, "created_at": int(time.time()),
+            "metadata": _dynamodb_values(metadata or {}),
+        }
+        table.put_item(Item=item)
+    except ClientError as error:
+        raise RuntimeError("Could not save the Holographic Recipe to this account.") from error
+    return _json_values(item)
+
+
+def download_user_holographic_recipe(recipe, local_path):
+    if not recipe or not recipe.get("s3_key"):
+        raise RuntimeError("Saved Holographic Recipe is unavailable.")
+    try:
+        s3_client.download_file(S3_BUCKET_NAME, recipe["s3_key"], local_path)
+    except ClientError as error:
+        raise RuntimeError("Could not retrieve the saved Holographic Recipe.") from error
+
+
+def delete_user_holographic_recipe(user_id, recipe_id):
+    table = account_table()
+    recipe = get_user_holographic_recipe(user_id, recipe_id)
+    if not table or not recipe:
+        return False
+    try:
+        if recipe.get("s3_key"):
+            s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=recipe["s3_key"])
+        table.delete_item(Key={"pk": f"USER#{user_id}", "sk": f"HOLORECIPE#{recipe_id}"})
+    except ClientError as error:
+        raise RuntimeError("Could not delete the saved Holographic Recipe.") from error
+    return True
+
+
 def rename_user_material_library(user_id, library_id, display_name, laser_source=None, lens_field_of_view=None, notes=None):
     table = account_table()
     if not table or not get_user_material_library(user_id, library_id):

@@ -19,11 +19,14 @@ from services import (
     HISTORY_TTL_SECONDS,
     LIGHTBURN_PALETTE_NAMES,
     download_task_artifact,
+    download_user_holographic_recipe,
     download_user_material_library,
     get_s3_artifact,
     get_user_material_library,
+    get_user_holographic_recipe,
     redis_client,
     save_user_material_library,
+    save_user_holographic_recipe,
     upload_task_artifact,
     valid_history_session,
 )
@@ -108,6 +111,53 @@ def _resolve_material_library(task_id, uploaded_library, saved_library_id, histo
     raise ValueError("Choose a LightBurn Material Library file")
 
 
+def _resolve_holographic_recipe(task_id, uploaded_recipe, saved_recipe_id, history_session):
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    user_id = request.headers.get("x-amzn-oidc-identity", "").strip()
+    history_session = (valid_history_session(history_session)
+                       or valid_history_session(request.cookies.get("mopa_history_session")))
+    cache_key = f"holographic-recipe:{history_session}" if history_session else None
+    if uploaded_recipe and uploaded_recipe.filename:
+        filename = secure_filename(uploaded_recipe.filename) or "holographic-recipe.json"
+        path = os.path.join(upload_folder, f"{task_id}_holographic_recipe_{filename}")
+        uploaded_recipe.save(path)
+        with open(path, encoding="utf-8") as recipe_file:
+            profile = _load_recipe_profile(recipe_file)
+        artifact_key = upload_task_artifact(task_id, path, category="inputs", user_id=user_id or None)
+        if cache_key:
+            redis_client.set(cache_key, json.dumps({"path": path, "filename": filename, "key": artifact_key}), ex=HISTORY_TTL_SECONDS)
+        if user_id:
+            save_user_holographic_recipe(
+                user_id, path, profile.get("profile_name"),
+                metadata={"profile_name": profile.get("profile_name", ""), "recipe_count": len(profile["recipes"]),
+                          "material": profile.get("grid", {}).get("material", "")},
+                source_filename=filename,
+            )
+        return path
+    if saved_recipe_id:
+        if not user_id:
+            raise PermissionError("Sign in to use a saved Holographic Recipe.")
+        recipe = get_user_holographic_recipe(user_id, saved_recipe_id)
+        if not recipe:
+            raise FileNotFoundError("That saved Holographic Recipe is no longer available.")
+        filename = secure_filename(recipe.get("original_name") or "holographic-recipe.json")
+        path = os.path.join(upload_folder, f"{task_id}_saved_holographic_recipe_{filename}")
+        download_user_holographic_recipe(recipe, path)
+        return path
+    if cache_key:
+        try:
+            cached = json.loads(redis_client.get(cache_key) or "{}")
+        except (TypeError, json.JSONDecodeError):
+            cached = {}
+        path = cached.get("path")
+        if cached.get("key") and not os.path.isfile(path or ""):
+            path = os.path.join(upload_folder, f"{task_id}_cached_holographic_recipe_{secure_filename(cached.get('filename') or 'recipe.json')}")
+            download_task_artifact(cached["key"], path)
+        if path and os.path.isfile(path):
+            return path
+    raise ValueError("Choose a Holographic Etching Recipe JSON file")
+
+
 def _lightburn_module():
     path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "lib", "lightburn.py")
     spec = importlib.util.spec_from_file_location("holographic_lightburn", path)
@@ -173,7 +223,8 @@ def _calibration_base_layer(setting):
     """
     sublayers = getattr(setting, "subLayers", None) or []
     if not sublayers:
-        return setting
+    return setting
+
 
     selected = copy(sublayers[0])
     # Keep the selected library entry identifiable in the exported project and
@@ -1195,7 +1246,24 @@ def save_holographic_recipes():
     profile["palette_diagnostics"] = {"similar_pairs": similar_pairs, "weak_recipes": weak_recipes}
     with open(profile_path, "w", encoding="utf-8") as profile_file:
         json.dump(profile, profile_file, indent=2)
-    _store_holographic_artifact(profile_id, profile_path)
+    recipe_artifact_key = _store_holographic_artifact(profile_id, profile_path)
+    history_session = (valid_history_session(request.form.get("history_session"))
+                       or valid_history_session(request.cookies.get("mopa_history_session")))
+    if history_session:
+        redis_client.set(
+            f"holographic-recipe:{history_session}",
+            json.dumps({"path": profile_path, "filename": os.path.basename(profile_path),
+                        "key": recipe_artifact_key}),
+            ex=HISTORY_TTL_SECONDS,
+        )
+    user_id = request.headers.get("x-amzn-oidc-identity", "").strip()
+    if user_id:
+        save_user_holographic_recipe(
+            user_id, profile_path, profile.get("profile_name"),
+            metadata={"profile_name": profile.get("profile_name", ""), "recipe_count": len(recipes),
+                      "material": profile.get("grid", {}).get("material", "")},
+            source_filename=os.path.basename(profile_path),
+        )
     current_app.logger.info("Saved %s holographic recipes for profile %s.", len(recipes), profile_id)
     return jsonify({
         "status": "saved",
@@ -1210,25 +1278,30 @@ def save_holographic_recipes():
 def build_holographic_artwork():
     artwork = request.files.get("artwork")
     profile_file = request.files.get("recipe_profile")
+    saved_recipe_id = str(request.form.get("saved_holographic_recipe_id", "")).strip()
     material_file = request.files.get("material_settings")
     saved_library_id = str(request.form.get("saved_material_library_id", "")).strip()
-    if not all((artwork, artwork.filename, profile_file, profile_file.filename)):
-        return jsonify({"status": "error", "message": "Provide artwork and a saved recipe profile."}), 400
+    if not artwork or not artwork.filename:
+        return jsonify({"status": "error", "message": "Provide an artwork image."}), 400
     try:
         max_dimension = max(8, min(1600, int(request.form.get("max_dimension", 96))))
         pixel_mm = max(.05, min(5, float(request.form.get("pixel_mm", .5))))
     except ValueError:
         return jsonify({"status": "error", "message": "Processing resolution and pixel size must be numbers."}), 400
     try:
+        recipe_path = _resolve_holographic_recipe(
+            str(uuid.uuid4()), profile_file, saved_recipe_id, request.form.get("history_session")
+        )
         library_path = _resolve_material_library(
             str(uuid.uuid4()), material_file, saved_library_id,
             request.form.get("history_session"), request.form.get("material", "")
         )
         preserve_black_outlines = request.form.get("preserve_black_outlines") in {"on", "true", "1"}
-        svg_name, lbrn_name, metadata_name, width, height, rectangle_count = _build_holographic_exports(
-            current_app.config["UPLOAD_FOLDER"], artwork, profile_file, library_path, max_dimension, pixel_mm,
-            preserve_black_outlines=preserve_black_outlines,
-        )
+        with open(recipe_path, encoding="utf-8") as recipe_file:
+            svg_name, lbrn_name, metadata_name, width, height, rectangle_count = _build_holographic_exports(
+                current_app.config["UPLOAD_FOLDER"], artwork, recipe_file, library_path, max_dimension, pixel_mm,
+                preserve_black_outlines=preserve_black_outlines,
+            )
     except PermissionError as error:
         return jsonify({"status": "error", "message": str(error)}), 401
     except FileNotFoundError as error:

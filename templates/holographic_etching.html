@@ -219,7 +219,10 @@
     <h3><span class="sequence-tag">04</span> Holographic Artwork Console</h3>
     <p class="form-note">Bring your artwork, the recipe profile you saved above, and the same LightBurn Material Library used for calibration. Each processed image pixel becomes a tiny square on its closest calibrated recipe layer, using that recipe’s measured Fill interval and angle.</p>
     <label class="full-width">Artwork image<input name="artwork" type="file" accept="image/*" required></label>
-    <label>Saved recipe profile<input name="recipe_profile" type="file" accept=".json,application/json" required></label>
+    <label id="saved_holographic_recipe_row" class="full-width" hidden>Saved Holographic Recipe
+      <select id="saved_holographic_recipe" name="saved_holographic_recipe_id"><option value="">Choose an account recipe…</option></select>
+    </label>
+    <label>Holographic Recipe<input id="holographic_recipe_file" name="recipe_profile" type="file" accept=".json,application/json" aria-describedby="remembered_holographic_recipe"><span id="remembered_holographic_recipe" class="remembered-input-note" hidden></span></label>
     <label id="saved_artwork_library_row" class="full-width" hidden>Saved Material Vault library
       <select id="saved_artwork_library" name="saved_material_library_id"><option value="">Choose an account library…</option></select>
       <span class="form-note">Signed-in operators can reuse the same account libraries available in the Rasterizer.</span>
@@ -245,6 +248,7 @@
     }
     document.querySelectorAll('.material-history-session').forEach(field => { field.value = historySession; });
     const rememberedMaterialKey = `mopa-material-library:${historySession}`;
+    const rememberedRecipeKey = `mopa-holographic-recipe:${historySession}`;
     // Keep repeat-use Holographic Lab settings for this browser session. File
     // inputs are deliberately excluded because browsers do not permit a file
     // selection to be restored programmatically.
@@ -284,6 +288,10 @@
     const savedArtworkLibrary = document.getElementById('saved_artwork_library');
     const artworkMaterialSettings = document.getElementById('artwork_material_settings');
     const artworkRememberedMaterial = document.getElementById('artwork_remembered_material_library');
+    const savedHolographicRecipeRow = document.getElementById('saved_holographic_recipe_row');
+    const savedHolographicRecipe = document.getElementById('saved_holographic_recipe');
+    const holographicRecipeFile = document.getElementById('holographic_recipe_file');
+    const rememberedHolographicRecipe = document.getElementById('remembered_holographic_recipe');
     const calibrationMaterial = document.getElementById('calibration_material');
     const calibrationSettingDescription = document.getElementById('calibration_setting_description');
     const calibrationMaterialSuggestions = document.getElementById('calibration_material_suggestions');
@@ -304,6 +312,12 @@
       refreshRememberedMaterial();
     };
     refreshRememberedMaterial();
+    const refreshRememberedRecipe = () => {
+      const filename = sessionStorage.getItem(rememberedRecipeKey) || '';
+      rememberedHolographicRecipe.hidden = !filename;
+      rememberedHolographicRecipe.textContent = filename ? `Remembered for this browser session: ${filename}` : '';
+    };
+    refreshRememberedRecipe();
     const rasterizerPalette = {{ lightburn_palette | tojson }};
     const holographicPalette = [
       ['holographic-etching', 'linear-gradient(90deg,#ff496c,#ffca3a,#8cff98,#45d7ff,#8f70ff,#ff61d8)'],
@@ -415,6 +429,24 @@
         }
       })
       .catch(() => {});
+    const loadSavedHolographicRecipes = () => fetch('/account/holographic-recipes', {credentials:'same-origin'})
+      .then(response => response.ok ? response.json() : null)
+      .then(data => {
+        const recipes = data?.recipes || [];
+        if (!recipes.length) return;
+        savedHolographicRecipeRow.hidden = false;
+        recipes.forEach(recipe => {
+          const option = document.createElement('option');
+          option.value = recipe.recipe_id;
+          const count = recipe.metadata?.recipe_count;
+          option.textContent = count ? `${recipe.name} · ${count} recipes` : recipe.name;
+          savedHolographicRecipe.appendChild(option);
+        });
+        const rememberedRecipeId = rememberedHolographicSettings['artwork_form:saved_holographic_recipe_id'];
+        if (rememberedRecipeId && [...savedHolographicRecipe.options].some(option => option.value === rememberedRecipeId)) {
+          savedHolographicRecipe.value = rememberedRecipeId;
+        }
+      }).catch(() => {});
     savedCalibrationLibrary.addEventListener('change', () => {
       if (savedCalibrationLibrary.value) calibrationMaterialSettings.value = '';
       loadSavedCalibrationLibraryEntries(savedCalibrationLibrary.value);
@@ -434,6 +466,15 @@
         savedArtworkLibrary.value = '';
         rememberUploadedMaterial(artworkMaterialSettings);
       }
+    });
+    savedHolographicRecipe.addEventListener('change', () => {
+      if (savedHolographicRecipe.value) holographicRecipeFile.value = '';
+    });
+    holographicRecipeFile.addEventListener('change', () => {
+      if (!holographicRecipeFile.files.length) return;
+      savedHolographicRecipe.value = '';
+      sessionStorage.setItem(rememberedRecipeKey, holographicRecipeFile.files[0].name);
+      refreshRememberedRecipe();
     });
     calibrationMaterial.addEventListener('input', refreshCalibrationDescriptionSuggestions);
     calibrationSettingDescription.addEventListener('focus', () => {
@@ -469,7 +510,10 @@
       .then(({signed_in}) => {
         document.getElementById('login_link').hidden = Boolean(signed_in);
         document.getElementById('auth_console').hidden = !signed_in;
-        if (signed_in) loadSavedCalibrationLibraries();
+        if (signed_in) {
+          loadSavedCalibrationLibraries();
+          loadSavedHolographicRecipes();
+        }
       }).catch(() => {});
     calibrationForm.addEventListener('submit', async event => {
       event.preventDefault();
@@ -734,9 +778,13 @@
         const body = new FormData();
         body.set('profile_id', measuredProfileId);
         body.set('recipes', JSON.stringify(recipes));
+        body.set('history_session', historySession);
         const response = await fetch('/holographic-etching/save-recipes', {method:'POST', body});
         const data = await response.json();
         if (!response.ok) throw new Error(data.message || 'Recipe palette could not be saved.');
+        const savedRecipeFilename = decodeURIComponent(String(data.profile_url || '').split('/').pop() || 'holographic-recipe.json');
+        sessionStorage.setItem(rememberedRecipeKey, savedRecipeFilename);
+        refreshRememberedRecipe();
         const diagnostics = data.palette_diagnostics;
         const notes = [
           diagnostics.similar_pairs.length ? `Similar colors: ${diagnostics.similar_pairs.map(pair => `${pair.recipes[0]} / ${pair.recipes[1]}`).join(', ')}.` : '',
@@ -754,6 +802,10 @@
       const form = event.currentTarget;
       const results = document.getElementById('artwork_results');
       const button = form.querySelector('button[type="submit"]');
+      if (!savedHolographicRecipe.value && !holographicRecipeFile.files.length && !sessionStorage.getItem(rememberedRecipeKey)) {
+        results.textContent = 'Choose a saved Holographic Recipe or upload an Etching Recipe JSON file.';
+        return;
+      }
       if (!savedArtworkLibrary.value && !artworkMaterialSettings.files.length && !rememberedMaterialFilename()) {
         results.textContent = 'Choose a saved Material Vault library or upload a LightBurn Material Library file.';
         return;

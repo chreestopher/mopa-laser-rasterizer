@@ -1,4 +1,4 @@
-"""Authenticated, durable account preferences and Material Libraries."""
+"""Authenticated preferences, Material Libraries, and Holographic Recipes."""
 
 import os
 import tempfile
@@ -15,14 +15,19 @@ from lib.lightburn import Lightburn
 from services import (
     ABSTRACT_FILTER_NAMES,
     delete_user_material_library,
+    delete_user_holographic_recipe,
+    download_user_holographic_recipe,
     download_user_material_library,
     get_user_material_library,
+    get_user_holographic_recipe,
+    list_user_holographic_recipes,
     list_user_material_libraries,
     get_user_preferences,
     get_user_job_history,
     normalize_dimension,
     save_user_preferences,
     save_user_material_library,
+    save_user_holographic_recipe,
     rename_user_material_library,
     update_user_material_library_file,
 )
@@ -144,6 +149,84 @@ def uploaded_library_files():
             raise ValueError("Material Libraries must be .clb, .lbmat, or .lbrn files.")
         clean.append((file, filename))
     return clean
+
+
+def holographic_recipe_summary(path):
+    with open(path, encoding="utf-8") as recipe_file:
+        payload = json.load(recipe_file)
+    recipes = payload.get("recipes")
+    if payload.get("kind") != "holographic_calibration_profile" or not isinstance(recipes, list) or not recipes:
+        raise ValueError("Choose a Holographic Etching Recipe JSON file with at least one saved recipe.")
+    return {
+        "profile_name": str(payload.get("profile_name") or "").strip()[:160],
+        "recipe_count": len(recipes),
+        "material": str(payload.get("grid", {}).get("material") or "").strip()[:160],
+    }
+
+
+@routes.route("/account/holographic-recipes", methods=["GET", "POST"])
+def holographic_recipes():
+    user_id = authenticated_user_id()
+    if not user_id:
+        return jsonify({"status": "error", "message": "Sign in to use saved Holographic Recipes."}), 401
+    try:
+        if request.method == "GET":
+            return jsonify({"status": "ok", "recipes": [{
+                "recipe_id": recipe.get("recipe_id"),
+                "name": recipe.get("name", "Holographic Recipe"),
+                "original_name": recipe.get("original_name", ""),
+                "metadata": recipe.get("metadata", {}),
+                "created_at": recipe.get("created_at"),
+            } for recipe in list_user_holographic_recipes(user_id)]})
+        upload = request.files.get("recipe")
+        filename = secure_filename(upload.filename if upload else "")
+        if not upload or not filename or os.path.splitext(filename)[1].lower() != ".json":
+            raise ValueError("Choose a Holographic Etching Recipe JSON file.")
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as temp_file:
+            temp_path = temp_file.name
+        try:
+            upload.save(temp_path)
+            metadata = holographic_recipe_summary(temp_path)
+            recipe = save_user_holographic_recipe(
+                user_id, temp_path, request.form.get("name") or metadata.get("profile_name"),
+                metadata=metadata, source_filename=filename,
+            )
+            return jsonify({"status": "ok", "recipe": recipe}), 201
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+    except (RuntimeError, OSError, ValueError, json.JSONDecodeError) as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+
+@routes.route("/account/holographic-recipes/<recipe_id>", methods=["GET", "DELETE"])
+def holographic_recipe_detail(recipe_id):
+    user_id = authenticated_user_id()
+    if not user_id:
+        return jsonify({"status": "error", "message": "Sign in to manage Holographic Recipes."}), 401
+    try:
+        recipe = get_user_holographic_recipe(user_id, recipe_id)
+        if not recipe:
+            return jsonify({"status": "error", "message": "That Holographic Recipe no longer exists."}), 404
+        if request.method == "DELETE":
+            delete_user_holographic_recipe(user_id, recipe_id)
+            return jsonify({"status": "ok"})
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as temp_file:
+            temp_path = temp_file.name
+        try:
+            download_user_holographic_recipe(recipe, temp_path)
+            with open(temp_path, "rb") as recipe_file:
+                contents = recipe_file.read()
+            return send_file(
+                io.BytesIO(contents), as_attachment=True,
+                download_name=recipe.get("original_name") or "holographic-recipe.json",
+                mimetype="application/json",
+            )
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+    except RuntimeError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
 
 
 def filtered_material_library(source_path, destination_path, selected_materials):
