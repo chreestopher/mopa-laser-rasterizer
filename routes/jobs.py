@@ -276,8 +276,23 @@ def job_history():
     """Open the shared console in history mode for account or guest runs."""
     history_session = valid_history_session(request.cookies.get("mopa_history_session", "")) or ""
     history_files = get_history_entries(history_session) if history_session else []
-    return render_template("loading.html", task_id="", history_session=history_session,
-                           history_files=history_files, history_mode=True)
+    active_task_id = valid_history_session(request.args.get("task_id", "")) or ""
+    if active_task_id:
+        access_error = _job_access_error(active_task_id, browser_navigation=True)
+        if access_error:
+            return access_error
+    active_file = next(
+        (entry for entry in history_files if entry.get("task_id") == active_task_id), {}
+    )
+    return render_template(
+        "loading.html", task_id=active_task_id, history_session=history_session,
+        history_files=history_files, history_mode=True,
+        current_source_name=active_file.get("source_name", "Holographic Artwork"),
+        current_image_preset=active_file.get("image_preset", "holographic_artwork"),
+        current_abstract_filter=active_file.get("abstract_filter", "none"),
+        current_material_name=active_file.get("material_name", ""),
+        current_created_at=active_file.get("created_at", int(time.time())),
+    )
 
 
 @routes.route("/task-status/<task_id>")
