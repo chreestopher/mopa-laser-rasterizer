@@ -623,8 +623,9 @@ def _nearest_recipe(pixel, recipes):
     )
 
 
-def _merge_recipe_pixels(layer_map, recipe_count):
+def _merge_recipe_pixels(layer_map, recipe_count, progress=None):
     """Greedily combine same-recipe pixels into non-overlapping closed rectangles."""
+    progress = progress or (lambda _message: None)
     height, width = layer_map.shape
     visited = np.zeros((height, width), dtype=bool)
     rectangles = {index: [] for index in range(recipe_count)}
@@ -644,7 +645,18 @@ def _merge_recipe_pixels(layer_map, recipe_count):
                 rectangle_height += 1
             visited[y:y + rectangle_height, x:x + rectangle_width] = True
             rectangles[int(recipe_index)].append((x, y, rectangle_width, rectangle_height))
-    return {index: _coalesce_adjacent_rectangles(items) for index, items in rectangles.items()}
+    merged = {}
+    for index, items in rectangles.items():
+        progress(
+            f"[Step 4/8] [Color layer {index + 1}/{recipe_count}] START: "
+            f"coalescing {len(items)} initial rectangles."
+        )
+        merged[index] = _coalesce_adjacent_rectangles(items)
+        progress(
+            f"[Step 4/8] [Color layer {index + 1}/{recipe_count}] DONE: "
+            f"coalesced {len(items)} initial rectangles into {len(merged[index])} output rectangles."
+        )
+    return merged
 
 
 def _coalesce_adjacent_rectangles(rectangles):
@@ -745,7 +757,10 @@ def _write_holographic_svg(path, width, height, recipes_by_name, pixel_mm, black
 
 
 def _build_holographic_exports(upload_folder, art_file, profile_file, material_path, max_dimension, pixel_mm,
-                               preserve_black_outlines=False, task_id=None, cut_mode="setting"):
+                               preserve_black_outlines=False, task_id=None, cut_mode="setting",
+                               progress=None):
+    progress = progress or (lambda _message: None)
+    progress("[Step 1/8] START: loading Holographic Recipe and artwork image.")
     profile = _load_recipe_profile(profile_file)
     try:
         image = Image.open(art_file.stream).convert("RGB")
@@ -755,8 +770,14 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
     pixels = np.asarray(image)
     if not pixels.size:
         raise ValueError("Artwork image has no usable pixels.")
+    source_pixel_count = int(pixels.shape[0] * pixels.shape[1])
+    progress(
+        f"[Step 1/8] DONE: loaded {pixels.shape[1]} x {pixels.shape[0]} artwork; "
+        f"{source_pixel_count}/{source_pixel_count} pixels and {len(profile['recipes'])} recipes ready."
+    )
 
     task_id = valid_history_session(task_id) or str(uuid.uuid4())
+    progress("[Step 2/8] START: resolving Material Library setting and building recipe layers.")
     lightburn = _lightburn_module()
     grid = profile["grid"]
     base_setting = _calibration_base_layer(_exact_setting(
@@ -789,15 +810,47 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
         recipes_by_name[recipe["name"]] = {
             "recipe": recipe, "map_index": map_index, "layer_index": layer_index, "rectangles": []
         }
+    progress(
+        f"[Step 2/8] DONE: configured {len(recipes_by_name)}/{len(profile['recipes'])} "
+        f"holographic recipe layers; cut mode {cut_mode}."
+    )
 
+    progress(
+        f"[Step 3/8] START: assigning {source_pixel_count}/{source_pixel_count} pixels "
+        "to their nearest measured holographic colors."
+    )
     layer_map = np.empty(pixels.shape[:2], dtype=np.int16)
+    row_log_interval = max(1, pixels.shape[0] // 10)
     for y, row in enumerate(pixels):
         for x, pixel in enumerate(row):
             recipe = _nearest_recipe(pixel, profile["recipes"])
             layer_map[y, x] = recipes_by_name[recipe["name"]]["map_index"]
-    rectangles_by_layer = _merge_recipe_pixels(layer_map, len(profile["recipes"]))
-    for bucket in recipes_by_name.values():
+        rows_done = y + 1
+        if rows_done == pixels.shape[0] or rows_done % row_log_interval == 0:
+            pixels_done = min(source_pixel_count, rows_done * pixels.shape[1])
+            progress(
+                f"[Step 3/8] Color assignment: {rows_done}/{pixels.shape[0]} rows; "
+                f"{pixels_done}/{source_pixel_count} pixels processed."
+            )
+    progress(f"[Step 3/8] DONE: assigned {source_pixel_count}/{source_pixel_count} pixels.")
+    progress(
+        f"[Step 4/8] START: coalescing {source_pixel_count}/{source_pixel_count} classified pixels "
+        f"across {len(profile['recipes'])} color layers."
+    )
+    rectangles_by_layer = _merge_recipe_pixels(layer_map, len(profile["recipes"]), progress=progress)
+    coalesced_count = sum(len(items) for items in rectangles_by_layer.values())
+    progress(f"[Step 4/8] DONE: coalesced pixels into {coalesced_count} rectangles.")
+    progress(f"[Step 5/8] START: writing {coalesced_count}/{coalesced_count} colored rectangles to LightBurn geometry.")
+    written_count = 0
+    for layer_number, bucket in enumerate(recipes_by_name.values(), 1):
         bucket["rectangles"] = rectangles_by_layer[bucket["map_index"]]
+        recipe = bucket["recipe"]
+        progress(
+            f"[Step 5/8] [Color layer {layer_number}/{len(recipes_by_name)} / "
+            f"Layer {bucket['layer_index']} {recipe['name']}] START: writing "
+            f"{len(bucket['rectangles'])} coalesced rectangles; angle "
+            f"{float(recipe['angle_degrees']):g} degrees."
+        )
         for x, y, rectangle_width, rectangle_height in bucket["rectangles"]:
             # LightBurn stores a rectangle's transform at its center, while
             # ``x`` and ``y`` above are the top-left pixel coordinates.  Put
@@ -812,11 +865,20 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
                 x=(x * pixel_mm) + (rectangle_width_mm / 2),
                 y=(y * pixel_mm) + (rectangle_height_mm / 2),
             ).layer(bucket["layer_index"]))
+        written_count += len(bucket["rectangles"])
+        progress(
+            f"[Step 5/8] [Color layer {layer_number}/{len(recipes_by_name)} / "
+            f"Layer {bucket['layer_index']} {recipe['name']}] DONE: wrote "
+            f"{written_count}/{coalesced_count} coalesced rectangles processed; "
+            f"angle {float(recipe['angle_degrees']):g} degrees."
+        )
+    progress(f"[Step 5/8] DONE: wrote {coalesced_count}/{coalesced_count} colored rectangles.")
 
     black_rectangles = []
     black_setting_name = None
     black_source_color = None
     if preserve_black_outlines:
+        progress("[Step 6/8] START: generating preserved black-outline geometry.")
         black_setting, black_layer_index = _label_setting(
             lightburn, material_path, grid["material"], base_setting
         )
@@ -844,9 +906,14 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
                     y=(y * pixel_mm) + (rectangle_height_mm / 2),
                 ).layer(0))
             black_setting_name = str(getattr(black_setting, "entryDesc", "black") or "black")
+        progress(f"[Step 6/8] DONE: wrote {len(black_rectangles)} preserved black rectangles.")
+    else:
+        progress("[Step 6/8] SKIPPED: preserved black outlines are disabled.")
 
     stem = f"holographic_art_{task_id}"
     svg_name, lbrn_name = f"{stem}.svg", f"{stem}.lbrn2"
+    total_rectangles = coalesced_count + len(black_rectangles)
+    progress(f"[Step 7/8] START: serializing {total_rectangles}/{total_rectangles} vector rectangles to SVG and LightBurn.")
     _write_holographic_svg(
         os.path.join(upload_folder, svg_name), pixels.shape[1], pixels.shape[0], recipes_by_name, pixel_mm,
         black_rectangles=black_rectangles,
@@ -887,8 +954,11 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
                 "grating_signature": recipe.get("grating_signature", {}),
             } for recipe in profile["recipes"]],
         }, metadata_file, indent=2)
+    progress(f"[Step 7/8] DONE: serialized {total_rectangles}/{total_rectangles} vector rectangles and metadata.")
+    progress("[Step 8/8] START: storing 3/3 Holographic Artwork output artifacts.")
     for filename in (svg_name, lbrn_name, metadata_name):
         _store_holographic_artifact(task_id, os.path.join(upload_folder, filename))
+    progress("[Step 8/8] DONE: stored 3/3 Holographic Artwork output artifacts.")
     return svg_name, lbrn_name, metadata_name, pixels.shape[1], pixels.shape[0], sum(
         len(bucket["rectangles"]) for bucket in recipes_by_name.values()
     ) + len(black_rectangles)

@@ -5,6 +5,7 @@ import os
 import signal
 import threading
 import time
+from datetime import datetime
 
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
@@ -229,8 +230,13 @@ def run_holographic_artwork_job(payload, upload_folder):
 
     task_id = str(payload["task_id"])
     log_key = f"task:{task_id}:log"
+    def progress(message):
+        line = f"[{datetime.now().strftime('%H:%M:%S')}] {message}"
+        print(f"[Task {task_id}] {line}", flush=True)
+        redis_client.rpush(log_key, line)
+
     redis_client.set(f"task:{task_id}:status", "processing", ex=HISTORY_TTL_SECONDS)
-    redis_client.rpush(log_key, "Dedicated worker claimed the Holographic Artwork job.")
+    progress("Dedicated worker claimed the Holographic Artwork job.")
     names = {
         "artwork": secure_artifact_name(payload.get("artwork_name"), "artwork.png"),
         "recipe": secure_artifact_name(payload.get("recipe_name"), "recipe.json"),
@@ -238,12 +244,16 @@ def run_holographic_artwork_job(payload, upload_folder):
     }
     paths = {name: os.path.join(upload_folder, f"{task_id}_{filename}") for name, filename in names.items()}
     os.makedirs(upload_folder, exist_ok=True)
-    redis_client.rpush(log_key, "Downloading artwork, Holographic Recipe, and Material Library inputs.")
+    progress("[Input download 1/3] START: downloading artwork.")
     download_task_artifact(payload["artwork_key"], paths["artwork"])
+    progress("[Input download 1/3] DONE: downloaded artwork.")
+    progress("[Input download 2/3] START: downloading Holographic Recipe.")
     download_task_artifact(payload["recipe_key"], paths["recipe"])
+    progress("[Input download 2/3] DONE: downloaded Holographic Recipe.")
+    progress("[Input download 3/3] START: downloading Material Library.")
     download_task_artifact(payload["material_key"], paths["material"])
-    redis_client.rpush(log_key, "Building calibrated holographic grating layers.")
-    redis_client.rpush(log_key, f"Cut mode: {payload.get('cut_mode', 'setting')}.")
+    progress("[Input download 3/3] DONE: downloaded Material Library.")
+    progress(f"Building calibrated holographic grating layers; cut mode {payload.get('cut_mode', 'setting')}.")
     with open(paths["artwork"], "rb") as artwork_stream, open(paths["recipe"], encoding="utf-8") as recipe_file:
         artwork = FileStorage(stream=artwork_stream, filename=names["artwork"])
         svg_name, lbrn_name, metadata_name, width, height, rectangle_count = _build_holographic_exports(
@@ -251,6 +261,7 @@ def run_holographic_artwork_job(payload, upload_folder):
             int(payload.get("max_dimension", 96)), float(payload.get("pixel_mm", .5)),
             preserve_black_outlines=bool(payload.get("preserve_black_outlines")), task_id=task_id,
             cut_mode=str(payload.get("cut_mode", "setting")),
+            progress=progress,
         )
     result = {
         "source_width": width, "source_height": height, "rectangle_count": rectangle_count,
@@ -258,18 +269,21 @@ def run_holographic_artwork_job(payload, upload_folder):
         "lightburn_url": f"/holographic-etching/download/{lbrn_name}",
         "metadata_url": f"/holographic-etching/download/{metadata_name}",
     }
+    output_names = (svg_name, lbrn_name, metadata_name)
     output_keys = []
-    for output_name in (svg_name, lbrn_name, metadata_name):
+    progress("[Durable output upload 1/1] START: registering 3/3 outputs with job history.")
+    for output_name in output_names:
         output_key = upload_task_artifact(
             task_id, os.path.join(upload_folder, output_name), category="outputs",
             user_id=payload.get("user_id"),
         )
         if output_key:
             output_keys.append(output_key)
+    progress(f"[Durable output upload 1/1] DONE: registered {len(output_keys)}/3 outputs with job history.")
     update_user_job(task_id, "completed", output_keys=output_keys)
     redis_client.set(f"holographic-artwork-result:{task_id}", json.dumps(result), ex=HISTORY_TTL_SECONDS)
     redis_client.set(f"task:{task_id}:status", "completed", ex=HISTORY_TTL_SECONDS)
-    redis_client.rpush(log_key, f"Holographic Artwork complete: {rectangle_count} vector rectangles ready.")
+    progress(f"Holographic Artwork complete: {rectangle_count}/{rectangle_count} vector rectangles ready.")
     redis_client.expire(log_key, HISTORY_TTL_SECONDS)
 
 
