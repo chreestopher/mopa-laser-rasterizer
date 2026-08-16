@@ -159,13 +159,15 @@
     <input class="material-history-session" type="hidden" name="history_session">
     <h3><span class="sequence-tag">01</span> Calibration Grid Console</h3>
     <p class="form-note">This first grid sweeps line angle and fill interval while copying one selected LightBurn setting onto each cell. Keep the laser, material finish, and lens setup stable while you test it.</p>
-    <label id="saved_calibration_library_row" class="full-width" hidden>Saved Material Vault library
+    <label id="saved_calibration_library_row" class="full-width" hidden>Existing Material Vault library
       <select id="saved_calibration_library" name="saved_material_library_id">
-        <option value="">Upload a one-off Material Library below</option>
+        <option value="">Choose a saved Material Library…</option>
       </select>
-      <span class="form-note">Signed-in operators can reuse any library stored in their Material Vault.</span>
+      <span class="form-note">This uses the same saved libraries as Rasterizer.</span>
     </label>
-    <label>LightBurn Material Library<input id="calibration_material_settings" type="file" name="material_settings" accept=".clb,.lbmat,.lbrn" aria-describedby="calibration_remembered_material_library"><span id="calibration_remembered_material_library" class="remembered-input-note" hidden></span></label>
+    <input id="calibration_material_settings" type="file" name="material_settings" hidden disabled>
+    <div id="calibration_remembered_material_library" class="remembered-input-note full-width" hidden></div>
+    <p class="form-note">Need another library? Add it from the <a href="/material-libraries">Material Vault</a>, then return here.</p>
     <label>Material name<input id="calibration_material" name="material" list="calibration_material_suggestions" value="stainless - steel" required><datalist id="calibration_material_suggestions"></datalist></label>
     <label>Setting Description<div class="calibration-description-autocomplete"><input id="calibration_setting_description" name="setting_description" value="holographic-etching" autocomplete="off" placeholder="Type or choose a palette color" role="combobox" aria-autocomplete="list" aria-controls="calibration_setting_suggestions" aria-expanded="false" required><div id="calibration_setting_suggestions" class="calibration-description-menu" role="listbox" hidden></div></div><span class="form-note">Type to filter the Rasterizer palette, choose a swatch, or edit the color name directly to match your Material Library Description.</span></label>
     <label>Laser source<input name="laser_source" placeholder="Example: JPT M7 100 W MOPA"></label>
@@ -228,11 +230,13 @@
       <select id="saved_holographic_recipe" name="saved_holographic_recipe_id"><option value="">Choose an account recipe…</option></select>
     </label>
     <label>Holographic Recipe<input id="holographic_recipe_file" name="recipe_profile" type="file" accept=".json,application/json" aria-describedby="remembered_holographic_recipe"><span id="remembered_holographic_recipe" class="remembered-input-note" hidden></span></label>
-    <label id="saved_artwork_library_row" class="full-width" hidden>Saved Material Vault library
+    <label id="saved_artwork_library_row" class="full-width" hidden>Existing Material Vault library
       <select id="saved_artwork_library" name="saved_material_library_id"><option value="">Choose an account library…</option></select>
-      <span class="form-note">Signed-in operators can reuse the same account libraries available in the Rasterizer.</span>
+      <span class="form-note">Choose the Material Library used to create this recipe.</span>
     </label>
-    <label>LightBurn Material Library<input id="artwork_material_settings" name="material_settings" type="file" accept=".clb,.lbmat,.lbrn" aria-describedby="artwork_remembered_material_library"><span id="artwork_remembered_material_library" class="remembered-input-note" hidden></span></label>
+    <input id="artwork_material_settings" name="material_settings" type="file" hidden disabled>
+    <div id="artwork_remembered_material_library" class="remembered-input-note full-width" hidden></div>
+    <p class="form-note">Material Libraries are managed in the <a href="/material-libraries">Material Vault</a>, not uploaded from this console.</p>
     <label>Maximum processing dimension, pixels<input name="max_dimension" type="number" value="96" min="8" max="1600" step="1"><span class="form-note">Start at 64–96. The 1600-pixel limit is for serious experiments, and detailed artwork can still create a very large LightBurn file.</span></label>
     <label>Physical pixel size, mm<input name="pixel_mm" type="number" value=".5" min=".05" max="5" step=".05"><span class="form-note">This sets each grating patch’s width and height.</span></label>
     <label class="outline-toggle"><input name="preserve_black_outlines" type="checkbox">Preserve black outlines<span class="form-note">Uses the BW Photo two-color pass, then places its dark geometry on the Black Material Library layer.</span></label>
@@ -255,6 +259,7 @@
     document.querySelectorAll('.material-history-session').forEach(field => { field.value = historySession; });
     const rememberedMaterialKey = `mopa-material-library:${historySession}`;
     const rememberedRecipeKey = `mopa-holographic-recipe:${historySession}`;
+    let operatorSignedIn = false;
     // Keep repeat-use Holographic Lab settings for this browser session. File
     // inputs are deliberately excluded because browsers do not permit a file
     // selection to be restored programmatically.
@@ -405,9 +410,9 @@
       .then(response => response.ok ? response.json() : null)
       .then(data => {
         const libraries = data?.libraries || [];
-        if (!libraries.length) return;
         savedCalibrationLibraryRow.hidden = false;
         savedArtworkLibraryRow.hidden = false;
+        if (!libraries.length) return;
         libraries.forEach(library => {
           const option = document.createElement('option');
           option.value = library.library_id;
@@ -514,6 +519,7 @@
     fetch('/auth-status', {credentials:'same-origin'})
       .then(response => response.ok ? response.json() : {signed_in:false})
       .then(({signed_in}) => {
+        operatorSignedIn = Boolean(signed_in);
         document.getElementById('login_link').hidden = Boolean(signed_in);
         document.getElementById('auth_console').hidden = !signed_in;
         if (signed_in) {
@@ -526,8 +532,10 @@
       const form = event.currentTarget;
       const results = document.getElementById('calibration_results');
       const button = form.querySelector('button[type="submit"]');
-      if (!savedCalibrationLibrary.value && !calibrationMaterialSettings.files.length && !rememberedMaterialFilename()) {
-        results.textContent = 'Choose a saved Material Vault library or upload a LightBurn Material Library file.';
+      if (!savedCalibrationLibrary.value && (operatorSignedIn || !rememberedMaterialFilename())) {
+        results.textContent = operatorSignedIn
+          ? 'Choose an existing Material Vault library. Add one in the Material Vault if the list is empty.'
+          : 'No Material Library is remembered for this browser session. Add one through Rasterizer or sign in to use the Material Vault.';
         return;
       }
       button.disabled = true;
@@ -815,8 +823,10 @@
         results.textContent = 'Choose a saved Holographic Recipe or upload an Etching Recipe JSON file.';
         return;
       }
-      if (!savedArtworkLibrary.value && !artworkMaterialSettings.files.length && !rememberedMaterialFilename()) {
-        results.textContent = 'Choose a saved Material Vault library or upload a LightBurn Material Library file.';
+      if (!savedArtworkLibrary.value && (operatorSignedIn || !rememberedMaterialFilename())) {
+        results.textContent = operatorSignedIn
+          ? 'Choose the existing Material Vault library used by this Holographic Recipe.'
+          : 'No Material Library is remembered for this browser session. Add one through Rasterizer or sign in to use the Material Vault.';
         return;
       }
       button.disabled = true;
