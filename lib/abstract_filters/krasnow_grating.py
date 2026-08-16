@@ -11,6 +11,8 @@ does not synthesize a Black canvas or punch into Black. The selected material's
 Holographic recipe is treated as a calibrated 1-micron anchor. Every non-black
 output layer receives an independent copy whose speed is scaled to create its
 target microscopic pitch while retaining the anchor's other laser values.
+Speed Spread lets the user contract or expand those speed differences around
+the unchanged 1-micron anchor speed.
 """
 
 import colorsys
@@ -33,6 +35,7 @@ PITCH_MIN_UM = .55
 PITCH_MAX_UM = 1.55
 
 DEFAULTS = {
+    "speed_spread": 1,
     "gradient_top": 165,
     "gradient_bottom": 90,
     "gradient_curve": 1,
@@ -45,6 +48,7 @@ DEFAULTS = {
 }
 
 CONTROLS = (
+    ("speed_spread", 0, 2, .001),
     ("gradient_top", 0, 255, 1),
     ("gradient_bottom", 0, 255, 1),
     ("gradient_curve", .2, 5, .05),
@@ -70,18 +74,21 @@ def _pitch_for_level(level, level_count):
     return PITCH_MIN_UM + fraction * (PITCH_MAX_UM - PITCH_MIN_UM)
 
 
-def _speed_for_pitch(reference_speed, target_pitch_um):
-    """Scale speed linearly while frequency remains fixed at the anchor value."""
+def _speed_for_pitch(reference_speed, target_pitch_um, speed_spread=1):
+    """Scale pitch deviation around the fixed 1-micron anchor speed."""
     reference_speed = number(reference_speed, 0)
     if reference_speed <= 0:
         raise ValueError(
             "The Holographic Material Library setting must have a positive speed."
         )
-    return reference_speed * target_pitch_um / REFERENCE_PITCH_UM
+    spread = number(speed_spread, 1, 0, 2)
+    pitch_ratio = target_pitch_um / REFERENCE_PITCH_UM
+    speed_ratio = 1 + spread * (pitch_ratio - 1)
+    return reference_speed * speed_ratio
 
 
 def configure_output_layers(lightburn_project, target_colors, settings=None):
-    """Clone the 1 um anchor recipe and scale speed for each target pitch."""
+    """Clone the 1 um anchor and scale each speed by pitch and Speed Spread."""
     settings = settings or {}
     setting_layer_id = settings.get("_setting_layer_id")
     project_layers = list(getattr(lightburn_project, "_layers", []))
@@ -121,7 +128,9 @@ def configure_output_layers(lightburn_project, target_colors, settings=None):
         clone.subLayers = []
         clone.speed = round(
             _speed_for_pitch(
-                getattr(setting_template, "speed", 0), target_pitch_um
+                getattr(setting_template, "speed", 0),
+                target_pitch_um,
+                settings.get("speed_spread"),
             ),
             6,
         )
