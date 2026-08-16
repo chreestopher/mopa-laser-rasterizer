@@ -162,7 +162,7 @@
     </label>
     <label>LightBurn Material Library<input id="calibration_material_settings" type="file" name="material_settings" accept=".clb,.lbmat,.lbrn" aria-describedby="calibration_remembered_material_library"><span id="calibration_remembered_material_library" class="remembered-input-note" hidden></span></label>
     <label>Material name<input id="calibration_material" name="material" list="calibration_material_suggestions" value="stainless - steel" required><datalist id="calibration_material_suggestions"></datalist></label>
-    <label>Setting Description<div class="calibration-description-autocomplete"><input id="calibration_setting_description" name="setting_description" autocomplete="off" placeholder="Type or choose a palette color" role="combobox" aria-autocomplete="list" aria-controls="calibration_setting_suggestions" aria-expanded="false" required><div id="calibration_setting_suggestions" class="calibration-description-menu" role="listbox" hidden></div></div><span class="form-note">Type to filter the Rasterizer palette, choose a swatch, or edit the color name directly to match your Material Library Description.</span></label>
+    <label>Setting Description<div class="calibration-description-autocomplete"><input id="calibration_setting_description" name="setting_description" value="holographic-etching" autocomplete="off" placeholder="Type or choose a palette color" role="combobox" aria-autocomplete="list" aria-controls="calibration_setting_suggestions" aria-expanded="false" required><div id="calibration_setting_suggestions" class="calibration-description-menu" role="listbox" hidden></div></div><span class="form-note">Type to filter the Rasterizer palette, choose a swatch, or edit the color name directly to match your Material Library Description.</span></label>
     <label>Laser source<input name="laser_source" placeholder="Example: JPT M7 100 W MOPA"></label>
     <label>Lens field of view (mm)<input name="lens_field_mm" type="number" value="110" min="1" max="1000" step="1" required></label>
     <label>Grid columns<input name="columns" type="number" value="4" min="2" max="6" required></label>
@@ -305,6 +305,10 @@
     };
     refreshRememberedMaterial();
     const rasterizerPalette = {{ lightburn_palette | tojson }};
+    const holographicPalette = [
+      ['holographic-etching', 'linear-gradient(90deg,#ff496c,#ffca3a,#8cff98,#45d7ff,#8f70ff,#ff61d8)'],
+      ...rasterizerPalette,
+    ];
     let savedCalibrationEntries = [];
     const setSuggestionOptions = (target, values) => {
       target.replaceChildren(...[...new Set(values.filter(Boolean))].sort((left, right) => left.localeCompare(right, undefined, {sensitivity:'base'})).map(value => {
@@ -321,7 +325,7 @@
         .map(entry => String(entry.description || '').trim())
         .filter(Boolean);
       const descriptions = [...new Map([
-        ...rasterizerPalette.map(([name]) => name),
+        ...holographicPalette.map(([name]) => name),
         ...savedDescriptions,
       ].filter(description => !query || description.toLocaleLowerCase().includes(query))
         .map(description => [description.toLocaleLowerCase(), description])).values()]
@@ -332,7 +336,7 @@
         option.className = 'calibration-description-option';
         option.setAttribute('role', 'option');
         option.dataset.description = description;
-        const swatch = rasterizerPalette.find(([name]) => name.toLocaleLowerCase() === description.toLocaleLowerCase());
+        const swatch = holographicPalette.find(([name]) => name.toLocaleLowerCase() === description.toLocaleLowerCase());
         if (swatch) {
           const chip = document.createElement('span');
           chip.className = 'calibration-description-swatch';
