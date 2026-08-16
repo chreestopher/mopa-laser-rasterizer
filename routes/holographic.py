@@ -18,6 +18,7 @@ from werkzeug.utils import secure_filename
 from services import (
     HISTORY_TTL_SECONDS,
     LIGHTBURN_PALETTE_NAMES,
+    RASTER_JOB_QUEUE,
     download_task_artifact,
     download_user_holographic_recipe,
     download_user_material_library,
@@ -25,6 +26,7 @@ from services import (
     get_user_material_library,
     get_user_holographic_recipe,
     redis_client,
+    raster_queue_position,
     save_user_material_library,
     save_user_holographic_recipe,
     upload_task_artifact,
@@ -1286,11 +1288,8 @@ def build_holographic_artwork():
     material_file = request.files.get("material_settings")
     saved_library_id = str(request.form.get("saved_material_library_id", "")).strip()
     artwork_task_id = valid_history_session(request.form.get("artwork_task_id")) or str(uuid.uuid4())
-    status_key = f"holographic-artwork-status:{artwork_task_id}"
-    redis_client.set(status_key, json.dumps({"status": "processing"}), ex=HISTORY_TTL_SECONDS)
     def fail(message, status_code):
         payload = {"status": "error", "message": str(message)}
-        redis_client.set(status_key, json.dumps(payload), ex=HISTORY_TTL_SECONDS)
         return jsonify(payload), status_code
     if not artwork or not artwork.filename:
         return fail("Provide an artwork image.", 400)
@@ -1301,18 +1300,33 @@ def build_holographic_artwork():
         return fail("Processing resolution and pixel size must be numbers.", 400)
     try:
         recipe_path = _resolve_holographic_recipe(
-            str(uuid.uuid4()), profile_file, saved_recipe_id, request.form.get("history_session")
+            artwork_task_id, profile_file, saved_recipe_id, request.form.get("history_session")
         )
         library_path = _resolve_material_library(
-            str(uuid.uuid4()), material_file, saved_library_id,
+            artwork_task_id, material_file, saved_library_id,
             request.form.get("history_session"), request.form.get("material", "")
         )
         preserve_black_outlines = request.form.get("preserve_black_outlines") in {"on", "true", "1"}
-        with open(recipe_path, encoding="utf-8") as recipe_file:
-            svg_name, lbrn_name, metadata_name, width, height, rectangle_count = _build_holographic_exports(
-                current_app.config["UPLOAD_FOLDER"], artwork, recipe_file, library_path, max_dimension, pixel_mm,
-                preserve_black_outlines=preserve_black_outlines, task_id=artwork_task_id,
-            )
+        artwork_name = secure_filename(artwork.filename) or "artwork.png"
+        artwork_path = os.path.join(current_app.config["UPLOAD_FOLDER"], f"{artwork_task_id}_{artwork_name}")
+        artwork.save(artwork_path)
+        user_id = request.headers.get("x-amzn-oidc-identity", "").strip() or None
+        artwork_key = upload_task_artifact(artwork_task_id, artwork_path, category="inputs", user_id=user_id)
+        recipe_key = upload_task_artifact(artwork_task_id, recipe_path, category="inputs", user_id=user_id)
+        material_key = upload_task_artifact(artwork_task_id, library_path, category="inputs", user_id=user_id)
+        if not all((artwork_key, recipe_key, material_key)):
+            raise RuntimeError("Queued Holographic Artwork jobs require durable artifact storage.")
+        payload = {
+            "job_type": "holographic_artwork", "task_id": artwork_task_id,
+            "artwork_key": artwork_key, "recipe_key": recipe_key, "material_key": material_key,
+            "artwork_name": artwork_name, "recipe_name": os.path.basename(recipe_path),
+            "material_name": os.path.basename(library_path), "max_dimension": max_dimension,
+            "pixel_mm": pixel_mm, "preserve_black_outlines": preserve_black_outlines,
+        }
+        redis_client.lpush(RASTER_JOB_QUEUE, json.dumps(payload, separators=(",", ":")))
+        redis_client.set(f"task:{artwork_task_id}:status", "pending", ex=HISTORY_TTL_SECONDS)
+        redis_client.rpush(f"task:{artwork_task_id}:log", "Holographic Artwork job queued for a dedicated worker.")
+        redis_client.expire(f"task:{artwork_task_id}:log", HISTORY_TTL_SECONDS)
     except PermissionError as error:
         return fail(error, 401)
     except FileNotFoundError as error:
@@ -1323,14 +1337,7 @@ def build_holographic_artwork():
     except (OSError, ValueError, ET.ParseError, KeyError, TypeError) as error:
         current_app.logger.exception("Holographic artwork export failed")
         return fail(f"Could not build holographic artwork: {error}", 400)
-    result = {
-        "status": "completed", "source_width": width, "source_height": height, "rectangle_count": rectangle_count,
-        "svg_url": f"/holographic-etching/download/{svg_name}",
-        "lightburn_url": f"/holographic-etching/download/{lbrn_name}",
-        "metadata_url": f"/holographic-etching/download/{metadata_name}",
-    }
-    redis_client.set(status_key, json.dumps(result), ex=HISTORY_TTL_SECONDS)
-    return jsonify(result)
+    return jsonify({"status": "pending", "task_id": artwork_task_id}), 202
 
 
 @routes.route("/holographic-etching/artwork-status/<task_id>")
@@ -1338,13 +1345,22 @@ def holographic_artwork_status(task_id):
     task_id = valid_history_session(task_id)
     if not task_id:
         return jsonify({"status": "error", "message": "Unknown artwork task."}), 404
-    try:
-        status = json.loads(redis_client.get(f"holographic-artwork-status:{task_id}") or "{}")
-    except (TypeError, json.JSONDecodeError):
-        status = {}
+    status = redis_client.get(f"task:{task_id}:status")
     if not status:
         return jsonify({"status": "error", "message": "Artwork task status was not found."}), 404
-    return jsonify(status)
+    try:
+        after = max(0, int(request.args.get("after", 0)))
+    except (TypeError, ValueError):
+        after = 0
+    log_key = f"task:{task_id}:log"
+    log_count = redis_client.llen(log_key)
+    logs = redis_client.lrange(log_key, after, -1) if log_count > after else []
+    try:
+        result = json.loads(redis_client.get(f"holographic-artwork-result:{task_id}") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        result = {}
+    queue = raster_queue_position(task_id) if status == "pending" else None
+    return jsonify({"status": status, "logs": logs, "log_count": log_count, "queue": queue, **result})
 
 
 @routes.route("/holographic-etching/profile-photo/<profile_id>")

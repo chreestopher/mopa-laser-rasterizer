@@ -195,6 +195,8 @@ def record_job_failure(task_id, error):
 def run_job(raw_payload, upload_folder):
     payload = json.loads(raw_payload)
     task_id = str(payload["task_id"])
+    if payload.get("job_type") == "holographic_artwork":
+        return run_holographic_artwork_job(payload, upload_folder)
     image_name = secure_artifact_name(payload.get("image_name"), "image")
     material_name = secure_artifact_name(payload.get("material_name"), "materials.clb")
     image_path = os.path.join(upload_folder, f"{task_id}_{image_name}")
@@ -212,6 +214,46 @@ def run_job(raw_payload, upload_folder):
         payload.get("user_id"),
         payload.get("output_name"),
     )
+
+
+def run_holographic_artwork_job(payload, upload_folder):
+    """Materialize a queued Holographic Artwork export outside the web pod."""
+    from werkzeug.datastructures import FileStorage
+    from routes.holographic import _build_holographic_exports
+
+    task_id = str(payload["task_id"])
+    log_key = f"task:{task_id}:log"
+    redis_client.set(f"task:{task_id}:status", "processing", ex=HISTORY_TTL_SECONDS)
+    redis_client.rpush(log_key, "Dedicated worker claimed the Holographic Artwork job.")
+    names = {
+        "artwork": secure_artifact_name(payload.get("artwork_name"), "artwork.png"),
+        "recipe": secure_artifact_name(payload.get("recipe_name"), "recipe.json"),
+        "material": secure_artifact_name(payload.get("material_name"), "materials.clb"),
+    }
+    paths = {name: os.path.join(upload_folder, f"{task_id}_{filename}") for name, filename in names.items()}
+    os.makedirs(upload_folder, exist_ok=True)
+    redis_client.rpush(log_key, "Downloading artwork, Holographic Recipe, and Material Library inputs.")
+    download_task_artifact(payload["artwork_key"], paths["artwork"])
+    download_task_artifact(payload["recipe_key"], paths["recipe"])
+    download_task_artifact(payload["material_key"], paths["material"])
+    redis_client.rpush(log_key, "Building calibrated holographic grating layers.")
+    with open(paths["artwork"], "rb") as artwork_stream, open(paths["recipe"], encoding="utf-8") as recipe_file:
+        artwork = FileStorage(stream=artwork_stream, filename=names["artwork"])
+        svg_name, lbrn_name, metadata_name, width, height, rectangle_count = _build_holographic_exports(
+            upload_folder, artwork, recipe_file, paths["material"],
+            int(payload.get("max_dimension", 96)), float(payload.get("pixel_mm", .5)),
+            preserve_black_outlines=bool(payload.get("preserve_black_outlines")), task_id=task_id,
+        )
+    result = {
+        "source_width": width, "source_height": height, "rectangle_count": rectangle_count,
+        "svg_url": f"/holographic-etching/download/{svg_name}",
+        "lightburn_url": f"/holographic-etching/download/{lbrn_name}",
+        "metadata_url": f"/holographic-etching/download/{metadata_name}",
+    }
+    redis_client.set(f"holographic-artwork-result:{task_id}", json.dumps(result), ex=HISTORY_TTL_SECONDS)
+    redis_client.set(f"task:{task_id}:status", "completed", ex=HISTORY_TTL_SECONDS)
+    redis_client.rpush(log_key, f"Holographic Artwork complete: {rectangle_count} vector rectangles ready.")
+    redis_client.expire(log_key, HISTORY_TTL_SECONDS)
 
 
 def main():
