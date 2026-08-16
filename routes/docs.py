@@ -328,6 +328,7 @@ CONTROL_GUIDES = {
     "rotation": ("Rotation", "Sets shard tumbling.", "Loose cards spinning as they fall."),
     "break_origin_x": ("Break origin X", "Moves the impact point left or right.", "Moving a hammer strike across glass."),
     "break_origin_y": ("Break origin Y", "Moves the impact point up or down.", "Moving that strike higher or lower."),
+    "speed_spread": ("Speed spread", "Contracts or expands each holographic layer's calculated speed difference around the unchanged 1-micron anchor speed.", "Moving evenly spaced marks closer to or farther from a fixed center mark."),
     "gradient_top": ("Gradient top", "Sets the grayscale correction value at the top edge of the artwork.", "Choosing the first shade on a vertical calibration strip."),
     "gradient_bottom": ("Gradient bottom", "Sets the grayscale correction value at the bottom edge of the artwork.", "Choosing the last shade on a vertical calibration strip."),
     "gradient_curve": ("Gradient curve", "Bends the correction transition toward the top or bottom while preserving its endpoints.", "Changing a straight dimmer fade into an ease-in or ease-out fade."),
