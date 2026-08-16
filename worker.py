@@ -237,12 +237,14 @@ def run_holographic_artwork_job(payload, upload_folder):
     download_task_artifact(payload["recipe_key"], paths["recipe"])
     download_task_artifact(payload["material_key"], paths["material"])
     redis_client.rpush(log_key, "Building calibrated holographic grating layers.")
+    redis_client.rpush(log_key, f"Cut mode: {payload.get('cut_mode', 'setting')}.")
     with open(paths["artwork"], "rb") as artwork_stream, open(paths["recipe"], encoding="utf-8") as recipe_file:
         artwork = FileStorage(stream=artwork_stream, filename=names["artwork"])
         svg_name, lbrn_name, metadata_name, width, height, rectangle_count = _build_holographic_exports(
             upload_folder, artwork, recipe_file, paths["material"],
             int(payload.get("max_dimension", 96)), float(payload.get("pixel_mm", .5)),
             preserve_black_outlines=bool(payload.get("preserve_black_outlines")), task_id=task_id,
+            cut_mode=str(payload.get("cut_mode", "setting")),
         )
     result = {
         "source_width": width, "source_height": height, "rectangle_count": rectangle_count,

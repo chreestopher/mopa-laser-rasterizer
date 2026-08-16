@@ -44,6 +44,7 @@ SWEEP_SETTINGS = {
     "pulse_width": "QPulseWidth",
     "passes": "numPasses",
 }
+CUT_MODE_TYPES = {"setting": None, "line": "Cut", "fill": "Scan", "offset-fill": "Offset"}
 
 LIGHTBURN_LAYER_ID_BY_HEX = {
     "#B4B4B4": 8, "#000000": 0, "#0000FF": 1, "#FF0000": 2, "#00E000": 3,
@@ -737,7 +738,7 @@ def _write_holographic_svg(path, width, height, recipes_by_name, pixel_mm, black
 
 
 def _build_holographic_exports(upload_folder, art_file, profile_file, material_path, max_dimension, pixel_mm,
-                               preserve_black_outlines=False, task_id=None):
+                               preserve_black_outlines=False, task_id=None, cut_mode="setting"):
     profile = _load_recipe_profile(profile_file)
     try:
         image = Image.open(art_file.stream).convert("RGB")
@@ -754,6 +755,8 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
     base_setting = _calibration_base_layer(_exact_setting(
         lightburn, material_path, grid["material"], grid["setting_description"]
     ))
+    if cut_mode not in CUT_MODE_TYPES:
+        raise ValueError("Unknown Holographic Artwork cut mode.")
     recipes_by_name = {}
     project = lightburn.Lightburn()
     # Reserve LightBurn's true black palette layer for the optional outline
@@ -762,6 +765,8 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
     for map_index, recipe in enumerate(profile["recipes"]):
         layer_index = map_index + recipe_layer_offset
         setting = copy(base_setting)
+        if CUT_MODE_TYPES[cut_mode]:
+            setting.type = CUT_MODE_TYPES[cut_mode]
         setting.index = layer_index
         setting.name = recipe["name"]
         setting.interval = float(recipe["interval_mm"])
@@ -849,6 +854,11 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
             "bounds_mm": {"left": 0, "top": 0, "right": pixels.shape[1] * pixel_mm,
                           "bottom": pixels.shape[0] * pixel_mm},
             "geometry": {"shape_type": "closed_rectangles", "open_paths": False},
+            "cut_mode": {
+                "selection": cut_mode,
+                "material_setting_type": str(getattr(base_setting, "type", "") or ""),
+                "exported_type": CUT_MODE_TYPES[cut_mode] or str(getattr(base_setting, "type", "") or ""),
+            },
             "preserved_black_outlines": {
                 "enabled": preserve_black_outlines,
                 "selection": "bw_photo_two_color_dark_geometry",
@@ -1307,6 +1317,9 @@ def build_holographic_artwork():
             request.form.get("history_session"), request.form.get("material", "")
         )
         preserve_black_outlines = request.form.get("preserve_black_outlines") in {"on", "true", "1"}
+        cut_mode = str(request.form.get("cut_mode", "setting")).strip().lower()
+        if cut_mode not in CUT_MODE_TYPES:
+            raise ValueError("Choose a valid cut mode.")
         artwork_name = secure_filename(artwork.filename) or "artwork.png"
         artwork_path = os.path.join(current_app.config["UPLOAD_FOLDER"], f"{artwork_task_id}_{artwork_name}")
         artwork.save(artwork_path)
@@ -1322,6 +1335,7 @@ def build_holographic_artwork():
             "artwork_name": artwork_name, "recipe_name": os.path.basename(recipe_path),
             "material_name": os.path.basename(library_path), "max_dimension": max_dimension,
             "pixel_mm": pixel_mm, "preserve_black_outlines": preserve_black_outlines,
+            "cut_mode": cut_mode,
         }
         redis_client.lpush(RASTER_JOB_QUEUE, json.dumps(payload, separators=(",", ":")))
         redis_client.set(f"task:{artwork_task_id}:status", "pending", ex=HISTORY_TTL_SECONDS)
