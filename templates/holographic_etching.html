@@ -52,6 +52,7 @@
     .calibration-form input[type="file"] { padding:4px; color:#bdb58f; cursor:pointer; }
     .calibration-form input[type="file"]::file-selector-button { margin-right:10px; padding:7px 10px; border:1px solid var(--control-edge); border-radius:4px; color:#edf4e9; background:linear-gradient(var(--control-top),var(--control-base)); box-shadow:inset 0 1px rgba(255,255,255,.3),0 2px 0 var(--control-shadow); font:700 10px "Courier New",monospace; letter-spacing:.07em; cursor:pointer; text-transform:uppercase; }
     .calibration-form input[type="file"]::file-selector-button:hover { filter:brightness(1.14); }
+    .remembered-input-note { margin-top:7px; padding:7px 9px; border:1px solid #5e6853; border-radius:5px; color:#bdb58f; background:#11170f; box-shadow:inset 0 2px 6px #000; font:700 11px "Courier New",monospace; letter-spacing:.03em; }
     .calibration-form textarea { width:100%; min-width:0; min-height:78px; padding:9px; resize:vertical; border:2px solid #5e6853; border-radius:5px; color:var(--phosphor); background:#11170f; box-shadow:inset 0 2px 7px #000; font-family:"Courier New",monospace; }
     .calibration-form textarea:focus { outline:none; border-color:#91a477; box-shadow:0 0 0 2px rgba(131,240,106,.18),inset 0 2px 7px #000; }
     .calibration-form .full-width { grid-column:1 / -1; }
@@ -106,6 +107,7 @@
     body.light-machine .calibration-form select { color:#171815; background:#dedfd9; border-color:#777974; box-shadow:inset 0 1px 5px #999; }
     body.light-machine .calibration-form input[type="file"] { color:#343530; }
     body.light-machine .calibration-form input[type="file"]::file-selector-button { border-color:#69756e; color:#171815; background:linear-gradient(#e1e4df,#aeb6af); }
+    body.light-machine .remembered-input-note { border-color:#777974; color:#343530; background:#dedfd9; box-shadow:inset 0 1px 5px #999; }
     body.light-machine .calibration-description-menu { border-color:#777974; background:#e1e2dc; }
     body.light-machine .calibration-description-option { color:#171815; border-color:#b2b4ae; }
     body.light-machine .calibration-description-option:hover,body.light-machine .calibration-description-option:focus { background:#b8d2aa; }
@@ -149,6 +151,7 @@
     <div class="schematic-loop"><span aria-hidden="true">↺</span> Tune the grid settings and repeat steps 01–03 whenever the material, finish, lens, laser, or viewing setup changes.</div>
   </section>
   <form id="calibration_form" class="calibration-form" enctype="multipart/form-data">
+    <input class="material-history-session" type="hidden" name="history_session">
     <h3><span class="sequence-tag">01</span> Calibration Grid Console</h3>
     <p class="form-note">This first grid sweeps line angle and fill interval while copying one selected LightBurn setting onto each cell. Keep the laser, material finish, and lens setup stable while you test it.</p>
     <label id="saved_calibration_library_row" class="full-width" hidden>Saved Material Vault library
@@ -157,7 +160,7 @@
       </select>
       <span class="form-note">Signed-in operators can reuse any library stored in their Material Vault.</span>
     </label>
-    <label>One-off Material Library file<input id="calibration_material_settings" type="file" name="material_settings" accept=".clb,.lbmat,.lbrn"><span class="form-note">Use this when a saved library is not selected.</span></label>
+    <label>LightBurn Material Library<input id="calibration_material_settings" type="file" name="material_settings" accept=".clb,.lbmat,.lbrn" aria-describedby="calibration_remembered_material_library"><span id="calibration_remembered_material_library" class="remembered-input-note" hidden></span></label>
     <label>Material name<input id="calibration_material" name="material" list="calibration_material_suggestions" value="stainless - steel" required><datalist id="calibration_material_suggestions"></datalist></label>
     <label>Setting Description<div class="calibration-description-autocomplete"><input id="calibration_setting_description" name="setting_description" autocomplete="off" placeholder="Exact Material Library Description" required><div id="calibration_setting_suggestions" class="calibration-description-menu" role="listbox" hidden></div></div><span class="form-note">Saved-library entries appear here as you type. Custom descriptions remain welcome.</span></label>
     <label>Laser source<input name="laser_source" placeholder="Example: JPT M7 100 W MOPA"></label>
@@ -212,11 +215,16 @@
     </section>
   </form>
   <form id="artwork_form" class="calibration-form" enctype="multipart/form-data">
+    <input class="material-history-session" type="hidden" name="history_session">
     <h3><span class="sequence-tag">04</span> Holographic Artwork Console</h3>
     <p class="form-note">Bring your artwork, the recipe profile you saved above, and the same LightBurn Material Library used for calibration. Each processed image pixel becomes a tiny square on its closest calibrated recipe layer, using that recipe’s measured Fill interval and angle.</p>
     <label class="full-width">Artwork image<input name="artwork" type="file" accept="image/*" required></label>
     <label>Saved recipe profile<input name="recipe_profile" type="file" accept=".json,application/json" required></label>
-    <label>Matching Material Library<input name="material_settings" type="file" accept=".clb,.lbmat,.lbrn" required></label>
+    <label id="saved_artwork_library_row" class="full-width" hidden>Saved Material Vault library
+      <select id="saved_artwork_library" name="saved_material_library_id"><option value="">Choose an account library…</option></select>
+      <span class="form-note">Signed-in operators can reuse the same account libraries available in the Rasterizer.</span>
+    </label>
+    <label>LightBurn Material Library<input id="artwork_material_settings" name="material_settings" type="file" accept=".clb,.lbmat,.lbrn" aria-describedby="artwork_remembered_material_library"><span id="artwork_remembered_material_library" class="remembered-input-note" hidden></span></label>
     <label>Maximum processing dimension, pixels<input name="max_dimension" type="number" value="96" min="8" max="1600" step="1"><span class="form-note">Start at 64–96. The 1600-pixel limit is for serious experiments, and detailed artwork can still create a very large LightBurn file.</span></label>
     <label>Physical pixel size, mm<input name="pixel_mm" type="number" value=".5" min=".05" max="5" step=".05"><span class="form-note">This sets each grating patch’s width and height.</span></label>
     <label class="outline-toggle"><input name="preserve_black_outlines" type="checkbox">Preserve black outlines<span class="form-note">Uses the BW Photo two-color pass, then places its dark geometry on the Black Material Library layer.</span></label>
@@ -229,6 +237,14 @@
   <p class="reference">This lab is informed by Ben Krasnow’s documented stainless-steel MOPA diffraction-grating work. We will build an original, calibration-first workflow around the same physical principles rather than integrate that project directly. <a href="https://github.com/benkrasnow/MOPA_Laser_Diffraction_Gratings" target="_blank" rel="noopener noreferrer">Review the reference project ↗</a></p>
   <script>
     const themeSwitch = document.getElementById('theme_switch');
+    const historySessionKey = 'mopa-history-session';
+    let historySession = sessionStorage.getItem(historySessionKey);
+    if (!historySession) {
+      historySession = crypto.randomUUID();
+      sessionStorage.setItem(historySessionKey, historySession);
+    }
+    document.querySelectorAll('.material-history-session').forEach(field => { field.value = historySession; });
+    const rememberedMaterialKey = `mopa-material-library:${historySession}`;
     // Keep repeat-use Holographic Lab settings for this browser session. File
     // inputs are deliberately excluded because browsers do not permit a file
     // selection to be restored programmatically.
@@ -263,11 +279,31 @@
     const savedCalibrationLibraryRow = document.getElementById('saved_calibration_library_row');
     const savedCalibrationLibrary = document.getElementById('saved_calibration_library');
     const calibrationMaterialSettings = document.getElementById('calibration_material_settings');
+    const calibrationRememberedMaterial = document.getElementById('calibration_remembered_material_library');
+    const savedArtworkLibraryRow = document.getElementById('saved_artwork_library_row');
+    const savedArtworkLibrary = document.getElementById('saved_artwork_library');
+    const artworkMaterialSettings = document.getElementById('artwork_material_settings');
+    const artworkRememberedMaterial = document.getElementById('artwork_remembered_material_library');
     const calibrationMaterial = document.getElementById('calibration_material');
     const calibrationSettingDescription = document.getElementById('calibration_setting_description');
     const calibrationMaterialSuggestions = document.getElementById('calibration_material_suggestions');
     const calibrationSettingSuggestions = document.getElementById('calibration_setting_suggestions');
     const savedCalibrationLibraryKey = 'calibration_form:saved_material_library_id';
+    const savedArtworkLibraryKey = 'artwork_form:saved_material_library_id';
+    const rememberedMaterialFilename = () => sessionStorage.getItem(rememberedMaterialKey) || '';
+    const refreshRememberedMaterial = () => {
+      const filename = rememberedMaterialFilename();
+      [calibrationRememberedMaterial, artworkRememberedMaterial].forEach(note => {
+        note.hidden = !filename;
+        note.textContent = filename ? `Remembered for this browser session: ${filename}` : '';
+      });
+    };
+    const rememberUploadedMaterial = input => {
+      if (!input.files.length) return;
+      sessionStorage.setItem(rememberedMaterialKey, input.files[0].name);
+      refreshRememberedMaterial();
+    };
+    refreshRememberedMaterial();
     const rasterizerPalette = [
       ['black','#000000'],['blue','#0000FF'],['red','#FF0000'],['green','#00E000'],['yellow','#D0D000'],['orange','#FF8000'],['cyan','#00E0E0'],['magenta','#FF00FF'],['light-gray','#B4B4B4'],['dark-blue','#0000A0'],['dark-red','#A00000'],['dark-green','#00A000'],['dark-yellow','#A0A000'],['dark-orange','#C08000'],['light-blue','#00A0FF'],['dark-magenta','#A000A0'],['medium-gray','#808080'],['slate-blue','#7D87B9'],['rose','#BB7784'],['periwinkle-blue','#4A6FE3'],['raspberry','#D33F6A'],['sage-green','#8CD78C'],['peach','#F0B98D'],['light-pink','#F6C4E1'],['orchid-pink','#FA9ED4'],['deep-purple','#500A78'],['rust-brown','#B45A00'],['teal','#004754'],['bright-mint-green','#86FA88'],['light-gold','#FFDB66']
     ];
@@ -329,6 +365,7 @@
         const libraries = data?.libraries || [];
         if (!libraries.length) return;
         savedCalibrationLibraryRow.hidden = false;
+        savedArtworkLibraryRow.hidden = false;
         libraries.forEach(library => {
           const option = document.createElement('option');
           option.value = library.library_id;
@@ -337,10 +374,22 @@
             : library.name;
           savedCalibrationLibrary.appendChild(option);
         });
+        libraries.forEach(library => {
+          const option = document.createElement('option');
+          option.value = library.library_id;
+          option.textContent = library.material_name
+            ? `${library.name} · ${library.material_name}`
+            : library.name;
+          savedArtworkLibrary.appendChild(option);
+        });
         const rememberedLibraryId = rememberedHolographicSettings[savedCalibrationLibraryKey];
         if (rememberedLibraryId && [...savedCalibrationLibrary.options].some(option => option.value === rememberedLibraryId)) {
           savedCalibrationLibrary.value = rememberedLibraryId;
           loadSavedCalibrationLibraryEntries(rememberedLibraryId);
+        }
+        const rememberedArtworkLibraryId = rememberedHolographicSettings[savedArtworkLibraryKey];
+        if (rememberedArtworkLibraryId && [...savedArtworkLibrary.options].some(option => option.value === rememberedArtworkLibraryId)) {
+          savedArtworkLibrary.value = rememberedArtworkLibraryId;
         }
       })
       .catch(() => {});
@@ -352,6 +401,16 @@
       if (calibrationMaterialSettings.files.length) {
         savedCalibrationLibrary.value = '';
         loadSavedCalibrationLibraryEntries('');
+        rememberUploadedMaterial(calibrationMaterialSettings);
+      }
+    });
+    savedArtworkLibrary.addEventListener('change', () => {
+      if (savedArtworkLibrary.value) artworkMaterialSettings.value = '';
+    });
+    artworkMaterialSettings.addEventListener('change', () => {
+      if (artworkMaterialSettings.files.length) {
+        savedArtworkLibrary.value = '';
+        rememberUploadedMaterial(artworkMaterialSettings);
       }
     });
     calibrationMaterial.addEventListener('input', refreshCalibrationDescriptionSuggestions);
@@ -379,8 +438,8 @@
       const form = event.currentTarget;
       const results = document.getElementById('calibration_results');
       const button = form.querySelector('button[type="submit"]');
-      if (!savedCalibrationLibrary.value && !calibrationMaterialSettings.files.length) {
-        results.textContent = 'Choose a saved Material Vault library or upload a one-off Material Library file.';
+      if (!savedCalibrationLibrary.value && !calibrationMaterialSettings.files.length && !rememberedMaterialFilename()) {
+        results.textContent = 'Choose a saved Material Vault library or upload a LightBurn Material Library file.';
         return;
       }
       button.disabled = true;
@@ -657,6 +716,10 @@
       const form = event.currentTarget;
       const results = document.getElementById('artwork_results');
       const button = form.querySelector('button[type="submit"]');
+      if (!savedArtworkLibrary.value && !artworkMaterialSettings.files.length && !rememberedMaterialFilename()) {
+        results.textContent = 'Choose a saved Material Vault library or upload a LightBurn Material Library file.';
+        return;
+      }
       button.disabled = true;
       results.textContent = 'Quantizing artwork and building calibrated grating layers...';
       try {

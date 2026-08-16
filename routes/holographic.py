@@ -23,7 +23,9 @@ from services import (
     get_s3_artifact,
     get_user_material_library,
     redis_client,
+    save_user_material_library,
     upload_task_artifact,
+    valid_history_session,
 )
 
 from . import routes
@@ -46,6 +48,64 @@ LIGHTBURN_LAYER_ID_BY_HEX = {
     "#D33F6A": 20, "#8CD78C": 21, "#F0B98D": 22, "#F6C4E1": 23, "#FA9ED4": 24,
     "#500A78": 25, "#B45A00": 26, "#004754": 27, "#86FA88": 28, "#FFDB66": 29,
 }
+
+
+def _resolve_material_library(task_id, uploaded_library, saved_library_id, history_session,
+                              material_name=""):
+    """Use the Rasterizer's shared guest cache and account Material Vault."""
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    user_id = request.headers.get("x-amzn-oidc-identity", "").strip()
+    history_session = (valid_history_session(history_session)
+                       or valid_history_session(request.cookies.get("mopa_history_session")))
+    cache_key = f"material-library:{history_session}" if history_session else None
+
+    if uploaded_library and uploaded_library.filename:
+        filename = secure_filename(uploaded_library.filename) or "material-library.clb"
+        library_path = os.path.join(upload_folder, f"{task_id}_material_library_{filename}")
+        uploaded_library.save(library_path)
+        artifact_key = upload_task_artifact(
+            task_id, library_path, category="inputs", user_id=user_id or None
+        )
+        if cache_key:
+            redis_client.set(
+                cache_key,
+                json.dumps({"path": library_path, "filename": filename, "key": artifact_key}),
+                ex=HISTORY_TTL_SECONDS,
+            )
+        if user_id:
+            save_user_material_library(
+                user_id, library_path, material_name, source_filename=filename
+            )
+        return library_path
+
+    if saved_library_id:
+        if not user_id:
+            raise PermissionError("Sign in to use a saved Material Library.")
+        saved_library = get_user_material_library(user_id, saved_library_id)
+        if not saved_library:
+            raise FileNotFoundError("That saved Material Library is no longer available.")
+        filename = secure_filename(
+            saved_library.get("original_name") or saved_library.get("name") or "library.clb"
+        )
+        library_path = os.path.join(upload_folder, f"{task_id}_saved_material_{filename}")
+        download_user_material_library(saved_library, library_path)
+        return library_path
+
+    if cache_key:
+        try:
+            cached = json.loads(redis_client.get(cache_key) or "{}")
+        except (TypeError, json.JSONDecodeError):
+            cached = {}
+        library_path = cached.get("path")
+        artifact_key = cached.get("key")
+        if artifact_key and not os.path.isfile(library_path or ""):
+            filename = secure_filename(cached.get("filename") or "library.clb")
+            library_path = os.path.join(upload_folder, f"{task_id}_cached_material_{filename}")
+            download_task_artifact(artifact_key, library_path)
+        if library_path and os.path.isfile(library_path):
+            return library_path
+
+    raise ValueError("Choose a LightBurn Material Library file")
 
 
 def _lightburn_module():
@@ -623,7 +683,7 @@ def _write_holographic_svg(path, width, height, recipes_by_name, pixel_mm, black
     ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
 
 
-def _build_holographic_exports(upload_folder, art_file, profile_file, material_file, max_dimension, pixel_mm,
+def _build_holographic_exports(upload_folder, art_file, profile_file, material_path, max_dimension, pixel_mm,
                                preserve_black_outlines=False):
     profile = _load_recipe_profile(profile_file)
     try:
@@ -636,8 +696,6 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_f
         raise ValueError("Artwork image has no usable pixels.")
 
     task_id = str(uuid.uuid4())
-    material_path = os.path.join(upload_folder, f"{task_id}_holographic_{secure_filename(material_file.filename)}")
-    material_file.save(material_path)
     lightburn = _lightburn_module()
     grid = profile["grid"]
     base_setting = _calibration_base_layer(_exact_setting(
@@ -773,8 +831,8 @@ def calibration_grid():
     material = str(request.form.get("material", "")).strip()
     description = str(request.form.get("setting_description", "")).strip()
     laser_source = str(request.form.get("laser_source", "")).strip()
-    if not material or not description or (not saved_library_id and (not library or not library.filename)):
-        return jsonify({"status": "error", "message": "Choose a saved Material Library or upload one, then provide its material name and setting Description."}), 400
+    if not material or not description:
+        return jsonify({"status": "error", "message": "Provide the material name and setting Description."}), 400
     try:
         columns = max(2, min(6, int(request.form.get("columns", 4))))
         rows = max(2, min(6, int(request.form.get("rows", 4))))
@@ -792,23 +850,19 @@ def calibration_grid():
 
     task_id = str(uuid.uuid4())
     upload_folder = current_app.config["UPLOAD_FOLDER"]
-    if saved_library_id:
-        user_id = request.headers.get("x-amzn-oidc-identity", "").strip()
-        if not user_id:
-            return jsonify({"status": "error", "message": "Sign in to use a saved Material Library, or upload a one-off library file."}), 401
-        try:
-            saved_library = get_user_material_library(user_id, saved_library_id)
-            if not saved_library:
-                return jsonify({"status": "error", "message": "That saved Material Library is unavailable or belongs to another account."}), 404
-            saved_name = secure_filename(saved_library.get("original_name") or saved_library.get("name") or "material-library.clb")
-            library_path = os.path.join(upload_folder, f"{task_id}_calibration_saved_{saved_name}")
-            download_user_material_library(saved_library, library_path)
-        except RuntimeError as error:
-            current_app.logger.exception("Could not retrieve saved holographic calibration library")
-            return jsonify({"status": "error", "message": str(error)}), 503
-    else:
-        library_path = os.path.join(upload_folder, f"{task_id}_calibration_{secure_filename(library.filename)}")
-        library.save(library_path)
+    try:
+        library_path = _resolve_material_library(
+            task_id, library, saved_library_id, request.form.get("history_session"), material
+        )
+    except PermissionError as error:
+        return jsonify({"status": "error", "message": str(error)}), 401
+    except FileNotFoundError as error:
+        return jsonify({"status": "error", "message": str(error)}), 404
+    except RuntimeError as error:
+        current_app.logger.exception("Could not resolve holographic calibration library")
+        return jsonify({"status": "error", "message": str(error)}), 503
+    except ValueError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
     try:
         lightburn = _lightburn_module()
         matched_setting = _exact_setting(lightburn, library_path, material, description)
@@ -1157,19 +1211,31 @@ def build_holographic_artwork():
     artwork = request.files.get("artwork")
     profile_file = request.files.get("recipe_profile")
     material_file = request.files.get("material_settings")
-    if not all((artwork, artwork.filename, profile_file, profile_file.filename, material_file, material_file.filename)):
-        return jsonify({"status": "error", "message": "Provide artwork, a saved recipe profile, and the matching Material Library file."}), 400
+    saved_library_id = str(request.form.get("saved_material_library_id", "")).strip()
+    if not all((artwork, artwork.filename, profile_file, profile_file.filename)):
+        return jsonify({"status": "error", "message": "Provide artwork and a saved recipe profile."}), 400
     try:
         max_dimension = max(8, min(1600, int(request.form.get("max_dimension", 96))))
         pixel_mm = max(.05, min(5, float(request.form.get("pixel_mm", .5))))
     except ValueError:
         return jsonify({"status": "error", "message": "Processing resolution and pixel size must be numbers."}), 400
     try:
+        library_path = _resolve_material_library(
+            str(uuid.uuid4()), material_file, saved_library_id,
+            request.form.get("history_session"), request.form.get("material", "")
+        )
         preserve_black_outlines = request.form.get("preserve_black_outlines") in {"on", "true", "1"}
         svg_name, lbrn_name, metadata_name, width, height, rectangle_count = _build_holographic_exports(
-            current_app.config["UPLOAD_FOLDER"], artwork, profile_file, material_file, max_dimension, pixel_mm,
+            current_app.config["UPLOAD_FOLDER"], artwork, profile_file, library_path, max_dimension, pixel_mm,
             preserve_black_outlines=preserve_black_outlines,
         )
+    except PermissionError as error:
+        return jsonify({"status": "error", "message": str(error)}), 401
+    except FileNotFoundError as error:
+        return jsonify({"status": "error", "message": str(error)}), 404
+    except RuntimeError as error:
+        current_app.logger.exception("Could not resolve holographic artwork library")
+        return jsonify({"status": "error", "message": str(error)}), 503
     except (OSError, ValueError, ET.ParseError, KeyError, TypeError) as error:
         current_app.logger.exception("Holographic artwork export failed")
         return jsonify({"status": "error", "message": f"Could not build holographic artwork: {error}"}), 400
