@@ -1,6 +1,7 @@
 """Public, crawlable product documentation and practical user guides."""
 
 from flask import Response, current_app, render_template, request
+from lib.abstract_filters import manifest as abstract_filter_manifest
 
 from . import routes
 
@@ -13,6 +14,17 @@ def _page(title, description, intro, sections, related=()):
 
 
 DOCS = {
+    "preset-controls": _page(
+        "Understanding Rasterizer Preset Controls",
+        "A practical reference for artwork size, physical pixel size, palette, Material Library, presets, and abstract-filter controls.",
+        "Think of the Rasterizer as a workshop with three stations: image resolution chooses how much raw detail enters, the palette sorts that detail into bins, and the preset determines how each bin is shaped before LightBurn receives it.",
+        [
+            ("Processing width and height", ["These dimensions are like the pixel dimensions of a digital camera: more pixels can record more detail, but they also create more material for the geometry pipeline to inspect. Leaving one dimension automatic preserves the source aspect ratio while the specified dimension sets the scale of processing."]),
+            ("Physical pixel size", ["This is comparable to graph-paper square size. A processed cell represents that many millimeters in the export. Smaller squares can describe finer detail; larger squares make a coarser, often simpler physical result."]),
+            ("Palette swatches", ["The palette works like sorting mixed hardware into labeled drawers. Every source pixel is directed toward an enabled color drawer, and that drawer needs a matching Material Library setting for a useful LightBurn layer."]),
+            ("Preset", ["A preset is like choosing a tool head before working the material. Cartoon, Color Photo, and Black and White Photo organize the source differently; abstract filters reshape the resulting geometry intentionally."]),
+            ("Material and Material Library", ["The material name selects the relevant shelf, while setting descriptions identify the recipes placed on exported layers. These settings are production data, not merely visual labels, and must be reviewed in LightBurn."]),
+        ], ["image-presets", "pixel-size", "color-layers", "abstract-filter-reference"]),
     "raster-to-vector": _page(
         "Raster Images to LightBurn Vector Projects",
         "How MOPA Laser Rasterizer converts bitmap artwork into color-separated SVG and LightBurn vector geometry.",
@@ -31,7 +43,7 @@ DOCS = {
             ("Color Photo", ["Designed for photographs where several palette colors are needed to retain visual structure. Results depend strongly on palette choice and processing resolution."]),
             ("Black and White Photo", ["Reduces the image to dark and light marks using a dithered photographic treatment. It is useful when a single engraving layer must suggest tonal detail."]),
             ("Abstract styles", ["Abstract presets deliberately transform geometry. They are creative effects, not faithful photo conversions, and each exposes controls specific to its structure."]),
-        ], ["cartoon-preset", "color-photo-preset", "black-and-white-photo", "abstract-filters"]),
+        ], ["preset-controls", "cartoon-preset", "color-photo-preset", "black-and-white-photo", "abstract-filters"]),
     "cartoon-preset": _page(
         "Cartoon Raster-to-Vector Preset",
         "Use the Cartoon preset to convert logos, illustrations, and flat-color artwork into clean LightBurn color regions.",
@@ -78,7 +90,7 @@ DOCS = {
         "Color Separation and LightBurn Layers",
         "Understand how image colors become LightBurn palette layers and why unmatched colors may not export.",
         "The app uses the LightBurn palette as a stable bridge between processed image color and project-layer settings.",
-        [("Selected swatches", ["Enabled swatches define the available target colors. Pixels are assigned to suitable colors during processing, then same-color geometry is grouped for export."]), ("Layer settings", ["A layer needs matching Material Library data to be useful. If a chosen color has no matching setting, the pipeline may omit that color rather than fabricate unsafe laser parameters."]), ("Color is not a guarantee", ["Palette color identifies a layer and intended recipe; it does not guarantee the physical color produced by a laser-marking process."])],
+        [("Selected swatches", ["Enabled swatches define the available target colors. Pixels are assigned to suitable colors during processing, then same-color geometry is grouped for export."]), ("Layer settings", ["A layer needs matching Material Library data to be useful. If a chosen color has no matching setting, the pipeline may omit that color rather than fabricate unsafe laser parameters."]), ("Color is not a guarantee", ["Palette color identifies a layer and intended recipe; it does not guarantee the physical color produced by a laser-marking process.", "For a clearer operator workflow, name each Material Library setting after the swatch closest to the color it is intended to produce. For example, a setting that produces a red mark should use one of the recognized names associated with a red-hue swatch. The default swatches are already named for this convention, making it easier to remember which recipe belongs to each layer when reviewing the project in LightBurn.", "The names may also be aligned in the opposite direction when an established Material Library already uses familiar terminology: rename the editable Rasterizer swatches to match those setting descriptions. Whichever direction you choose, keep the swatch name and Material Library Description consistent so the mapping is both machine-readable and easy for the operator to recognize."])],
         ["material-libraries", "color-photo-preset", "lightburn-export"]),
     "pixel-size": _page(
         "Choosing Physical Pixel Size for Laser Vectorization",
@@ -184,6 +196,65 @@ FILTER_PAGES = {
     "deep-fryer": ("Deep Fryer", "pushes geometry toward an aggressive high-contrast synthetic treatment"),
     "shattered": ("Shattered", "fragments regions into a broken angular composition"),
 }
+CONTROL_GUIDES = {
+    "min_island_area": ("Minimum island area", "Removes isolated regions smaller than the selected processed-area threshold.", "Like using a sieve that lets tiny crumbs fall through while keeping larger pieces."),
+    "simplification_factor": ("Simplification", "Reduces small boundary bends and vector points while retaining the larger silhouette.", "Like tracing a coastline with a broader pencil that skips the smallest coves."),
+    "smoothing_radius": ("Smoothing radius", "Rounds small corners and calms jagged region boundaries.", "Like sanding a cut edge with progressively more rounding pressure."),
+    "transparent": ("Transparent light areas", "Leaves the light half of the black-and-white result unengraved instead of exporting light geometry.", "Like printing black ink on clear film and treating the unprinted film as empty space."),
+    "amplitude_x": ("Horizontal amplitude", "Sets side-to-side displacement.", "The reach of a flag waving left and right."),
+    "amplitude_y": ("Vertical amplitude", "Sets up-and-down displacement.", "The height of waves on water."),
+    "frequency_x": ("Horizontal frequency", "Sets how quickly the vertical wave repeats across the artwork.", "Fitting more waves along the same rope."),
+    "frequency_y": ("Vertical frequency", "Sets how quickly the horizontal wave repeats down the artwork.", "Moving contour lines closer together."),
+    "phase": ("Phase", "Slides a repeating effect through its cycle.", "Sliding striped wallpaper without changing stripe width."),
+    "cell_size": ("Cell size", "Sets the scale of cells or facets.", "Choosing paving stones instead of mosaic pieces."),
+    "jitter": ("Jitter", "Moves regular cell seeds by a controlled random amount.", "Nudging trees away from their points on a planting grid."),
+    "gap": ("Gap", "Opens space between cells, tiles, or facets.", "Widening grout between floor tiles."),
+    "seed": ("Seed", "Selects a repeatable random arrangement.", "Recording a shuffle number so the same deck order can be recreated."),
+    "shear_x": ("Horizontal shear", "Slants horizontal position with height.", "Pushing the top of a stack of cards sideways."),
+    "shear_y": ("Vertical shear", "Slants vertical position with width.", "Pushing one side of a soft frame upward."),
+    "scale_x": ("Horizontal scale", "Stretches or compresses width.", "Changing only a photograph's width."),
+    "scale_y": ("Vertical scale", "Stretches or compresses height.", "Changing only a photograph's height."),
+    "twist": ("Twist", "Sets rotation amount and direction around the center.", "Stirring paint clockwise or counterclockwise."),
+    "falloff": ("Falloff", "Distributes twist strength by distance from the center.", "Choosing whether a whirlpool turns near the drain or across the basin."),
+    "center_x": ("Center X", "Moves the effect origin left or right.", "Moving a compass point horizontally."),
+    "center_y": ("Center Y", "Moves the effect origin up or down.", "Moving a compass point vertically."),
+    "tile_size": ("Tile size", "Sets mosaic block size.", "Choosing bathroom mosaic tiles or large floor tiles."),
+    "stagger": ("Stagger", "Offsets alternating rows by part of a tile.", "Changing graph paper into a brick-wall bond."),
+    "amplitude": ("Amplitude", "Sets ripple displacement strength and direction.", "Changing how strongly a stone disturbs water."),
+    "frequency": ("Frequency", "Sets how closely ripple cycles repeat.", "Changing a topographic map's contour interval."),
+    "dark_threshold": ("Dark threshold", "Chooses how dark a pixel must be to count as ink.", "Adjusting a photocopier until faint pencil marks appear or disappear."),
+    "contrast": ("Contrast", "Separates dark ink from nearby tones.", "Increasing scanner contrast to distinguish a signature from paper texture."),
+    "blur": ("Blur", "Suppresses small noise before tracing.", "Viewing grain through lightly frosted glass so specks blend together."),
+    "gap_closure": ("Gap closure", "Reconnects nearby breaks in dark strokes.", "Bridging hairline cracks before tracing a road."),
+    "line_simplification": ("Line simplification", "Reduces small bends and path points.", "Redrawing a shaky line with fewer smooth turns."),
+    "min_branch_length": ("Minimum branch length", "Removes short centerline offshoots.", "Pruning twigs while keeping a tree's main limbs."),
+    "stroke_width": ("Stroke width", "Sets the closed ribbon width around each centerline.", "Changing from a technical pen to a broad marker."),
+    "slice_height": ("Slice height", "Sets horizontal glitch-band thickness.", "Cutting a poster into thin or thick ribbons."),
+    "fragment_width": ("Fragment width", "Sets typical glitch-chunk length.", "Cutting those ribbons into short or long pieces."),
+    "shift_amount": ("Shift amount", "Sets sideways fragment travel.", "Misaligning one row in a screen-print pass."),
+    "echo_count": ("Echo count", "Sets the number of repeated displaced copies.", "Adding repeats with an audio delay effect."),
+    "echo_spacing": ("Echo spacing", "Sets distance between repeated copies.", "Changing gaps in a photographic motion trail."),
+    "density": ("Density", "Sets how much eligible geometry participates.", "Choosing what percentage of a building's windows are lit."),
+    "fibonacci_stride": ("Fibonacci stride", "Changes the step through a Fibonacci displacement rhythm.", "Taking every second or fifth beat from a drum pattern."),
+    "vertical_jitter": ("Vertical jitter", "Adds repeatable vertical wobble.", "A television picture with unstable horizontal hold."),
+    "block_size": ("Block size", "Sets compression-like chunk scale.", "Choosing pixel size in a deliberately low-resolution image."),
+    "band_height": ("Band height", "Sets damaged scan-band height.", "Dividing a page with a marker instead of a fine pen."),
+    "compression_gap": ("Compression gap", "Opens seams between blocks.", "Exposing missing mortar between damaged bricks."),
+    "smear_amount": ("Smear amount", "Drags selected bands sideways.", "Wiping wet ink with a cloth."),
+    "degradation": ("Degradation", "Raises the share of damaged or omitted chunks.", "Repeatedly photocopying an image until pieces fail."),
+    "min_shard_size": ("Minimum shard size", "Sets the smallest generated fragment.", "Rejecting splinters smaller than a sieve opening."),
+    "max_shard_size": ("Maximum shard size", "Sets the largest generated fragment.", "Limiting pieces with a sorting screen."),
+    "minimum_gap": ("Minimum gap", "Sets the narrowest crack between shards.", "Choosing the thinnest grout line in a broken-tile mosaic."),
+    "gap_variation": ("Gap variation", "Makes crack widths less uniform.", "Natural glass cracks opening by different amounts."),
+    "horizontal_spread": ("Horizontal spread", "Moves shards sideways.", "Debris spreading outward after impact."),
+    "fall_distance": ("Fall distance", "Moves shards downward.", "Broken pieces dropping under gravity."),
+    "gravity_bias": ("Gravity bias", "Controls how strongly movement favors downward fall.", "Turning up gravity in a physics simulation."),
+    "rotation": ("Rotation", "Sets shard tumbling.", "Loose cards spinning as they fall."),
+    "break_origin_x": ("Break origin X", "Moves the impact point left or right.", "Moving a hammer strike across glass."),
+    "break_origin_y": ("Break origin Y", "Moves the impact point up or down.", "Moving that strike higher or lower."),
+}
+
+filter_manifest = abstract_filter_manifest()
 for slug, (name, behavior) in FILTER_PAGES.items():
     DOCS[f"{slug}-filter"] = _page(
         f"{name} Abstract Vector Filter",
@@ -192,10 +263,47 @@ for slug, (name, behavior) in FILTER_PAGES.items():
         [("Best use", ["Start with a recognizable subject or strong color silhouette. The effect is intentionally interpretive, so test a small processing size before committing to a detailed export."]), ("Controls", ["The preset panel exposes only the parameters supported by this filter. Larger or denser values can increase processing time and object count depending on the source geometry."]), ("Output", ["The transformed regions remain assigned to their applicable color layers and Material Library settings. Inspect the final SVG and LBRN2 project before engraving."])],
         ["abstract-filters", "abstract-filter-reference", "reduce-lightburn-object-count"],
     )
+    module_slug = slug.replace("-", "_")
+    filter_data = filter_manifest.get(module_slug, {})
+    defaults = filter_data.get("defaults", {})
+    DOCS[f"{slug}-filter"]["controls"] = [
+        {
+            "name": control["name"], "label": CONTROL_GUIDES[control["name"]][0],
+            "effect": CONTROL_GUIDES[control["name"]][1], "analogy": CONTROL_GUIDES[control["name"]][2],
+            "default": defaults.get(control["name"]), "minimum": control["min"],
+            "maximum": control["max"], "step": control["step"],
+        }
+        for control in filter_data.get("controls", [])
+    ]
+
+STANDARD_PRESET_CONTROLS = {
+    "cartoon-preset": [
+        ("min_island_area", 0, 0, 100, 1), ("simplification_factor", 0, 0, 5, .05),
+        ("smoothing_radius", .001, 0, 10, .001),
+    ],
+    "color-photo-preset": [
+        ("min_island_area", 8, 0, 100, 1), ("simplification_factor", .35, 0, 5, .05),
+        ("smoothing_radius", .5, 0, 10, .05),
+    ],
+    "black-and-white-photo": [
+        ("min_island_area", 2, 0, 100, 1), ("simplification_factor", .1, 0, 5, .05),
+        ("smoothing_radius", .1, 0, 10, .05), ("transparent", False, False, True, 1),
+    ],
+}
+for page_slug, controls in STANDARD_PRESET_CONTROLS.items():
+    DOCS[page_slug]["controls"] = [
+        {
+            "name": name, "label": CONTROL_GUIDES[name][0], "effect": CONTROL_GUIDES[name][1],
+            "analogy": CONTROL_GUIDES[name][2], "default": default,
+            "minimum": minimum, "maximum": maximum, "step": step,
+            "kind": "toggle" if isinstance(default, bool) else "number",
+        }
+        for name, default, minimum, maximum, step in controls
+    ]
 
 
 DOC_GROUPS = [
-    ("Rasterizer", ["raster-to-vector", "image-presets", "cartoon-preset", "color-photo-preset", "black-and-white-photo", "pixel-size", "color-layers"]),
+    ("Rasterizer", ["preset-controls", "raster-to-vector", "image-presets", "cartoon-preset", "color-photo-preset", "black-and-white-photo", "pixel-size", "color-layers"]),
     ("Abstract filters", ["abstract-filters", "abstract-filter-reference"] + [f"{slug}-filter" for slug in FILTER_PAGES]),
     ("LightBurn and materials", ["works-with-lightburn", "material-vault", "material-libraries", "lightburn-export", "reduce-lightburn-object-count", "mopa-laser-workflow"]),
     ("Holographic Etching Lab", ["holographic-etching", "holographic-calibration", "analyze-calibration-photo", "holographic-recipes", "holographic-artwork", "diffraction-gratings", "choose-cut-mode"]),
