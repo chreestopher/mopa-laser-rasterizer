@@ -223,7 +223,7 @@ def _calibration_base_layer(setting):
     """
     sublayers = getattr(setting, "subLayers", None) or []
     if not sublayers:
-    return setting
+        return setting
 
 
     selected = copy(sublayers[0])
