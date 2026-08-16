@@ -283,6 +283,7 @@ def run_holographic_artwork_job(payload, upload_folder):
     update_user_job(task_id, "completed", output_keys=output_keys)
     redis_client.set(f"holographic-artwork-result:{task_id}", json.dumps(result), ex=HISTORY_TTL_SECONDS)
     redis_client.set(f"task:{task_id}:status", "completed", ex=HISTORY_TTL_SECONDS)
+    redis_client.expire(f"task:{task_id}:access", HISTORY_TTL_SECONDS)
     progress(f"Holographic Artwork complete: {rectangle_count}/{rectangle_count} vector rectangles ready.")
     redis_client.expire(log_key, HISTORY_TTL_SECONDS)
 

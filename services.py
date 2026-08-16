@@ -4,6 +4,7 @@ import json
 import base64
 import glob
 import hashlib
+import hmac
 import multiprocessing
 import os
 import re
@@ -568,6 +569,89 @@ def valid_history_session(value):
     return value if HISTORY_SESSION_RE.fullmatch(value) else None
 
 
+def claim_history_session(history_session, browser_session):
+    """Claim a client history ID for one signed Flask browser session."""
+    browser_session = valid_history_session(browser_session)
+    if not browser_session:
+        raise ValueError("A valid browser session is required for job history.")
+    candidate = valid_history_session(history_session) or str(uuid.uuid4())
+    for _attempt in range(2):
+        access_key = f"history:{candidate}:access"
+        if redis_client.set(access_key, browser_session, ex=HISTORY_TTL_SECONDS, nx=True):
+            return candidate
+        existing = valid_history_session(redis_client.get(access_key))
+        if existing and hmac.compare_digest(existing, browser_session):
+            redis_client.expire(access_key, HISTORY_TTL_SECONDS)
+            return candidate
+        candidate = str(uuid.uuid4())
+    raise RuntimeError("Could not create a private job-history session.")
+
+
+def history_access_allowed(history_session, browser_session):
+    history_session = valid_history_session(history_session)
+    browser_session = valid_history_session(browser_session)
+    if not history_session or not browser_session:
+        return False
+    expected = valid_history_session(redis_client.get(f"history:{history_session}:access"))
+    return bool(expected) and hmac.compare_digest(expected, browser_session)
+
+
+def bind_job_access(task_id, user_id=None, browser_session=None):
+    """Bind a job to either its signed-in account or its guest browser session."""
+    task_id = valid_history_session(task_id)
+    if not task_id:
+        raise ValueError("A valid task ID is required for job ownership.")
+    user_id = str(user_id or "").strip()
+    if user_id:
+        binding = {"kind": "account", "value": user_id}
+    else:
+        browser_session = valid_history_session(browser_session)
+        if not browser_session:
+            raise ValueError("A valid guest browser session is required for job ownership.")
+        binding = {"kind": "guest", "value": browser_session}
+    redis_client.set(
+        f"task:{task_id}:access",
+        json.dumps(binding, separators=(",", ":")),
+        ex=HISTORY_TTL_SECONDS,
+    )
+
+
+def _job_access_binding(task_id):
+    try:
+        binding = json.loads(redis_client.get(f"task:{task_id}:access") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return None
+    kind, value = binding.get("kind"), str(binding.get("value") or "").strip()
+    if kind == "account" and value:
+        return kind, value
+    if kind == "guest" and valid_history_session(value):
+        return kind, value
+    return None
+
+
+def job_access_allowed(task_id, user_id=None, browser_session=None):
+    """Return whether the supplied account or guest session owns a job."""
+    task_id = valid_history_session(task_id)
+    if not task_id:
+        return False
+    user_id = str(user_id or "").strip()
+    browser_session = valid_history_session(browser_session)
+
+    # Durable account ownership is authoritative even if the Redis binding has
+    # expired or disagrees. An account job must never fall back to guest access.
+    owner_id = get_job_owner(task_id)
+    if owner_id:
+        return bool(user_id) and hmac.compare_digest(str(owner_id), user_id)
+
+    binding = _job_access_binding(task_id)
+    if not binding:
+        return False
+    kind, expected_identity = binding
+    if kind == "account":
+        return bool(user_id) and hmac.compare_digest(expected_identity, user_id)
+    return bool(browser_session) and hmac.compare_digest(expected_identity, browser_session)
+
+
 def claim_daily_job(user_id):
     """Atomically claim one authenticated user's daily job allowance."""
     now = datetime.now(timezone.utc)
@@ -952,6 +1036,10 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
             update_user_job(task_id, "failed", error_message=str(error))
         except RuntimeError as status_error:
             print(f"[Thread-{task_id}] Could not save durable failure state: {status_error}", flush=True)
+    finally:
+        redis_client.expire(f"task:{task_id}:status", HISTORY_TTL_SECONDS)
+        redis_client.expire(f"task:{task_id}:log", HISTORY_TTL_SECONDS)
+        redis_client.expire(f"task:{task_id}:access", HISTORY_TTL_SECONDS)
 
 
 def enqueue_raster_job(task_id, data, image_key, material_key, output_name,
@@ -1011,3 +1099,4 @@ def cleanup_redis_inflight(task_id):
         redis_client.expire(download_key, HISTORY_TTL_SECONDS)
     redis_client.expire(f"task:{task_id}:status", HISTORY_TTL_SECONDS)
     redis_client.expire(f"task:{task_id}:log", HISTORY_TTL_SECONDS)
+    redis_client.expire(f"task:{task_id}:access", HISTORY_TTL_SECONDS)

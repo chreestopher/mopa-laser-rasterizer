@@ -20,6 +20,7 @@ from services import (
     LIGHTBURN_PALETTE_NAMES,
     RASTER_JOB_QUEUE,
     add_history_entry,
+    bind_job_access,
     download_task_artifact,
     download_user_holographic_recipe,
     download_user_material_library,
@@ -36,6 +37,7 @@ from services import (
 )
 
 from . import routes
+from ._job_access import browser_job_session, private_history_session, request_can_access_job
 
 
 SWEEP_SETTINGS = {
@@ -1391,7 +1393,13 @@ def build_holographic_artwork():
     saved_recipe_id = str(request.form.get("saved_holographic_recipe_id", "")).strip()
     material_file = request.files.get("material_settings")
     saved_library_id = str(request.form.get("saved_material_library_id", "")).strip()
-    artwork_task_id = valid_history_session(request.form.get("artwork_task_id")) or str(uuid.uuid4())
+    # Task IDs and access identities are server-controlled. Client-generated
+    # IDs are useful UI hints but must not be allowed to claim another job.
+    artwork_task_id = str(uuid.uuid4())
+    history_session = private_history_session(
+        valid_history_session(request.cookies.get("mopa_history_session"))
+        or valid_history_session(request.form.get("history_session"))
+    )
     def fail(message, status_code):
         payload = {"status": "error", "message": str(message)}
         return jsonify(payload), status_code
@@ -1404,11 +1412,11 @@ def build_holographic_artwork():
         return fail("Processing resolution and pixel size must be numbers.", 400)
     try:
         recipe_path = _resolve_holographic_recipe(
-            artwork_task_id, profile_file, saved_recipe_id, request.form.get("history_session")
+            artwork_task_id, profile_file, saved_recipe_id, history_session
         )
         library_path = _resolve_material_library(
             artwork_task_id, material_file, saved_library_id,
-            request.form.get("history_session"), request.form.get("material", "")
+            history_session, request.form.get("material", "")
         )
         preserve_black_outlines = request.form.get("preserve_black_outlines") in {"on", "true", "1"}
         cut_mode = str(request.form.get("cut_mode", "setting")).strip().lower()
@@ -1425,9 +1433,6 @@ def build_holographic_artwork():
             raise RuntimeError("Queued Holographic Artwork jobs require durable artifact storage.")
         with open(recipe_path, encoding="utf-8") as recipe_stream:
             recipe_summary = json.load(recipe_stream)
-        history_session = (valid_history_session(request.form.get("history_session"))
-                           or valid_history_session(request.cookies.get("mopa_history_session"))
-                           or str(uuid.uuid4()))
         display_material = (recipe_summary.get("grid") or {}).get("material") or os.path.basename(library_path)
         run_parameters = {
             "job_type": "holographic_artwork",
@@ -1457,10 +1462,13 @@ def build_holographic_artwork():
             history_session, artwork_task_id, artwork_name, "holographic_artwork", "none",
             display_material, run_parameters,
         )
-        redis_client.lpush(RASTER_JOB_QUEUE, json.dumps(payload, separators=(",", ":")))
+        bind_job_access(
+            artwork_task_id, user_id=user_id, browser_session=browser_job_session(),
+        )
         redis_client.set(f"task:{artwork_task_id}:status", "pending", ex=HISTORY_TTL_SECONDS)
         redis_client.rpush(f"task:{artwork_task_id}:log", "Holographic Artwork job queued for a dedicated worker.")
         redis_client.expire(f"task:{artwork_task_id}:log", HISTORY_TTL_SECONDS)
+        redis_client.lpush(RASTER_JOB_QUEUE, json.dumps(payload, separators=(",", ":")))
     except PermissionError as error:
         return fail(error, 401)
     except FileNotFoundError as error:
@@ -1484,6 +1492,12 @@ def holographic_artwork_status(task_id):
     task_id = valid_history_session(task_id)
     if not task_id:
         return jsonify({"status": "error", "message": "Unknown artwork task."}), 404
+    try:
+        allowed = request_can_access_job(task_id)
+    except RuntimeError:
+        return jsonify({"status": "error", "message": "Could not verify job ownership."}), 503
+    if not allowed:
+        return jsonify({"status": "error", "message": "You do not have access to this job."}), 403
     status = redis_client.get(f"task:{task_id}:status")
     if not status:
         return jsonify({"status": "error", "message": "Artwork task status was not found."}), 404
@@ -1535,6 +1549,18 @@ def preview_calibration_file(filename):
 def download_calibration_file(filename):
     if not (filename.startswith("holographic_calibration_") or filename.startswith("holographic_profile_") or filename.startswith("holographic_art_")):
         return jsonify({"status": "error", "message": "Unknown calibration file."}), 404
+    if filename.startswith("holographic_art_"):
+        task_id = valid_history_session(
+            filename.removeprefix("holographic_art_").split(".", 1)[0]
+        )
+        if not task_id:
+            return jsonify({"status": "error", "message": "Unknown artwork file."}), 404
+        try:
+            allowed = request_can_access_job(task_id)
+        except RuntimeError:
+            return jsonify({"status": "error", "message": "Could not verify job ownership."}), 503
+        if not allowed:
+            return jsonify({"status": "error", "message": "You do not have access to this job."}), 403
     try:
         return _download_holographic_artifact(current_app.config["UPLOAD_FOLDER"], filename)
     except (OSError, RuntimeError):

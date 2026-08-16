@@ -12,10 +12,17 @@ from PIL import Image, UnidentifiedImageError
 from werkzeug.utils import secure_filename
 
 from . import routes
+from ._job_access import (
+    browser_job_session,
+    private_history_session,
+    request_can_access_history,
+    request_can_access_job,
+)
 from services import (
     ABSTRACT_FILTER_NAMES,
     HISTORY_TTL_SECONDS,
     add_history_entry,
+    bind_job_access,
     claim_daily_job,
     cleanup_redis_inflight,
     get_history_entries,
@@ -31,7 +38,6 @@ from services import (
     get_job_record,
     get_user_material_library,
     get_s3_artifact,
-    get_job_owner,
     redis_client,
     record_user_job,
     record_setting_usage,
@@ -62,8 +68,10 @@ def start_task():
     user_data = request.form.to_dict()
     user_data["new_width"] = str(normalize_dimension(user_data.get("new_width")))
     user_data["new_height"] = str(normalize_dimension(user_data.get("new_height")))
-    history_session = (valid_history_session(user_data.get("history_session"))
-        or valid_history_session(request.cookies.get("mopa_history_session")) or str(uuid.uuid4()))
+    history_session = private_history_session(
+        valid_history_session(request.cookies.get("mopa_history_session"))
+        or valid_history_session(user_data.get("history_session"))
+    )
     image_file = request.files["image"]
     material_settings = request.files.get("material_settings")
     usage_library = None
@@ -178,6 +186,9 @@ def start_task():
     # Register the status before recording history.  Otherwise the history
     # reader can see a brand-new entry before its worker starts and mistake it
     # for an expired task.
+    bind_job_access(
+        task_id, user_id=user_id or None, browser_session=browser_job_session(),
+    )
     redis_client.set(f"task:{task_id}:status", "pending", ex=HISTORY_TTL_SECONDS)
     submitted_preset = str(user_data.get("image_preset", "cartoon")).strip().lower()
     submitted_filter = (
@@ -268,6 +279,8 @@ def file_history(session_id):
     session_id = valid_history_session(session_id)
     if not session_id:
         return jsonify({"files": []}), 400
+    if not request_can_access_history(session_id):
+        return jsonify({"status": "error", "message": "You do not have access to this job history."}), 403
     return jsonify({"files": get_history_entries(session_id)})
 
 
@@ -275,7 +288,10 @@ def file_history(session_id):
 def job_history():
     """Open the shared console in history mode for account or guest runs."""
     history_session = valid_history_session(request.cookies.get("mopa_history_session", "")) or ""
-    history_files = get_history_entries(history_session) if history_session else []
+    history_files = (
+        get_history_entries(history_session)
+        if history_session and request_can_access_history(history_session) else []
+    )
     active_task_id = valid_history_session(request.args.get("task_id", "")) or ""
     if active_task_id:
         access_error = _job_access_error(active_task_id, browser_navigation=True)
@@ -361,15 +377,15 @@ def _output_file(task_id, extension=None):
 
 
 def _job_access_error(task_id, browser_navigation=False):
-    """Keep account-owned jobs private while leaving legacy guest jobs usable."""
+    """Keep account and guest jobs private to their owning identity."""
     try:
-        owner_id = get_job_owner(task_id)
+        allowed = request_can_access_job(task_id)
     except RuntimeError:
         return jsonify({"status": "error", "message": "Could not verify job ownership."}), 503
-    if owner_id and request.headers.get("x-amzn-oidc-identity", "").strip() != owner_id:
+    if not allowed:
         if browser_navigation:
             return render_template("access_denied.html"), 403
-        return jsonify({"status": "error", "message": "This job belongs to a different account."}), 403
+        return jsonify({"status": "error", "message": "You do not have access to this job."}), 403
     return None
 
 
@@ -506,4 +522,7 @@ def view_image(task_id):
 
 @routes.route("/success/<task_id>")
 def success_page(task_id):
+    access_error = _job_access_error(task_id, browser_navigation=True)
+    if access_error:
+        return access_error
     return render_template("success.html", task_id=task_id)
