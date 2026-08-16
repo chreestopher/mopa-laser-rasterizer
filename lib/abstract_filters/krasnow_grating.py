@@ -5,12 +5,12 @@ artwork. This module's optional ``remap_layers`` capability then
 rebuilds those finished color regions as open parallel-line patches and
 assigns each patch across the available non-black LightBurn layers.
 
-The layer colors are identifiers, not promises about the engraved color.  The
-operator must attach monotonically ordered, tested grating recipes to the
-selected layers. True Black contains only geometry classified from the source
-raster; this preset does not synthesize a Black canvas or punch into Black.
-Every non-black output layer receives an independent copy of the selected
-material's Holographic laser recipe while retaining its own layer identity.
+The layer colors are identifiers, not promises about the engraved color. True
+Black contains only geometry classified from the source raster; this preset
+does not synthesize a Black canvas or punch into Black. The selected material's
+Holographic recipe is treated as a calibrated 1-micron anchor. Every non-black
+output layer receives an independent copy whose speed is scaled to create its
+target microscopic pitch while retaining the anchor's other laser values.
 """
 
 import colorsys
@@ -28,6 +28,9 @@ PRESERVE_SOURCE_BLACK = True
 OUTPUT_PATH_MODE = "Cut"
 SETTING_NAME = "holographic"
 REPLICATE_SETTING_TO_OUTPUT_LAYERS = True
+REFERENCE_PITCH_UM = 1.0
+PITCH_MIN_UM = .55
+PITCH_MAX_UM = 1.55
 
 DEFAULTS = {
     "gradient_top": 165,
@@ -59,8 +62,26 @@ def apply(geometry, settings):
     return geometry
 
 
+def _pitch_for_level(level, level_count):
+    """Spread available carriers over Ben's approximate 0.55..1.55 um range."""
+    if level_count <= 1:
+        return REFERENCE_PITCH_UM
+    fraction = min(1.0, max(0.0, level / (level_count - 1)))
+    return PITCH_MIN_UM + fraction * (PITCH_MAX_UM - PITCH_MIN_UM)
+
+
+def _speed_for_pitch(reference_speed, target_pitch_um):
+    """Scale speed linearly while frequency remains fixed at the anchor value."""
+    reference_speed = number(reference_speed, 0)
+    if reference_speed <= 0:
+        raise ValueError(
+            "The Holographic Material Library setting must have a positive speed."
+        )
+    return reference_speed * target_pitch_um / REFERENCE_PITCH_UM
+
+
 def configure_output_layers(lightburn_project, target_colors, settings=None):
-    """Clone the Holographic recipe onto every non-black grating carrier."""
+    """Clone the 1 um anchor recipe and scale speed for each target pitch."""
     settings = settings or {}
     setting_layer_id = settings.get("_setting_layer_id")
     project_layers = list(getattr(lightburn_project, "_layers", []))
@@ -82,15 +103,28 @@ def configure_output_layers(lightburn_project, target_colors, settings=None):
     # concrete pass when present and convert every clone to LightBurn Line mode.
     sublayers = getattr(source_layer, "subLayers", None) or []
     setting_template = sublayers[0] if sublayers else source_layer
+    reference_frequency = number(getattr(setting_template, "frequency", 0), 0)
+    if reference_frequency <= 0:
+        raise ValueError(
+            "The Holographic Material Library setting must have a positive frequency."
+        )
+
     output_layers = {}
-    for color_hex, metadata in target_colors.items():
-        if str(color_hex).upper() == "#000000":
-            continue
+    grating_swatches = _grating_swatches(target_colors)
+    for level, color_hex in enumerate(grating_swatches):
+        metadata = target_colors[color_hex]
+        target_pitch_um = _pitch_for_level(level, len(grating_swatches))
         clone = deepcopy(setting_template)
         clone.index = metadata[1]
         clone.name = metadata[2]
         clone.type = OUTPUT_PATH_MODE
         clone.subLayers = []
+        clone.speed = round(
+            _speed_for_pitch(
+                getattr(setting_template, "speed", 0), target_pitch_um
+            ),
+            6,
+        )
         clone.materialName = getattr(source_layer, "materialName", "")
         clone.entryDesc = getattr(source_layer, "entryDesc", SETTING_NAME)
         output_layers[clone.index] = clone
