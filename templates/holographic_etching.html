@@ -329,7 +329,11 @@
         ...savedDescriptions,
       ].filter(description => !query || description.toLocaleLowerCase().includes(query))
         .map(description => [description.toLocaleLowerCase(), description])).values()]
-        .sort((left, right) => left.localeCompare(right, undefined, {sensitivity:'base'}));
+        .sort((left, right) => {
+          if (left.toLocaleLowerCase() === 'holographic-etching') return -1;
+          if (right.toLocaleLowerCase() === 'holographic-etching') return 1;
+          return left.localeCompare(right, undefined, {sensitivity:'base'});
+        });
       calibrationSettingSuggestions.replaceChildren(...descriptions.map(description => {
         const option = document.createElement('button');
         option.type = 'button';
@@ -341,7 +345,9 @@
           const chip = document.createElement('span');
           chip.className = 'calibration-description-swatch';
           chip.style.background = swatch[1];
-          chip.title = `Rasterizer palette: ${swatch[0]}`;
+          chip.title = swatch[0] === 'holographic-etching'
+            ? 'Holographic Etching Lab default'
+            : `Rasterizer palette: ${swatch[0]}`;
           option.appendChild(chip);
         }
         option.append(description);
@@ -350,6 +356,13 @@
       calibrationSettingSuggestions.hidden = !descriptions.length;
       calibrationSettingDescription.setAttribute('aria-expanded', String(Boolean(descriptions.length)));
     };
+    const ensureHolographicDescription = () => {
+      if (calibrationSettingDescription.value.trim()) return;
+      calibrationSettingDescription.value = 'holographic-etching';
+      rememberedHolographicSettings['calibration_form:setting_description'] = 'holographic-etching';
+      rememberHolographicSettings();
+    };
+    ensureHolographicDescription();
     const loadSavedCalibrationLibraryEntries = libraryId => {
       if (!libraryId) {
         savedCalibrationEntries = [];
@@ -423,7 +436,10 @@
       }
     });
     calibrationMaterial.addEventListener('input', refreshCalibrationDescriptionSuggestions);
-    calibrationSettingDescription.addEventListener('focus', refreshCalibrationDescriptionSuggestions);
+    calibrationSettingDescription.addEventListener('focus', () => {
+      ensureHolographicDescription();
+      refreshCalibrationDescriptionSuggestions();
+    });
     calibrationSettingDescription.addEventListener('input', refreshCalibrationDescriptionSuggestions);
     calibrationSettingDescription.addEventListener('blur', () => setTimeout(() => {
       calibrationSettingSuggestions.hidden = true;
