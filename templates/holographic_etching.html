@@ -780,7 +780,10 @@
         body.set('recipes', JSON.stringify(recipes));
         body.set('history_session', historySession);
         const response = await fetch('/holographic-etching/save-recipes', {method:'POST', body});
-        const data = await response.json();
+        const responseText = await response.text();
+        let data;
+        try { data = JSON.parse(responseText); }
+        catch { throw new Error(`Recipe save failed (HTTP ${response.status}); the server returned an HTML error page.`); }
         if (!response.ok) throw new Error(data.message || 'Recipe palette could not be saved.');
         const savedRecipeFilename = decodeURIComponent(String(data.profile_url || '').split('/').pop() || 'holographic-recipe.json');
         sessionStorage.setItem(rememberedRecipeKey, savedRecipeFilename);
@@ -813,9 +816,27 @@
       button.disabled = true;
       results.textContent = 'Quantizing artwork and building calibrated grating layers...';
       try {
-        const response = await fetch('/holographic-etching/build-artwork', {method:'POST', body:new FormData(form)});
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.message || 'Holographic artwork could not be built.');
+        const artworkTaskId = crypto.randomUUID();
+        const body = new FormData(form);
+        body.set('artwork_task_id', artworkTaskId);
+        const response = await fetch('/holographic-etching/build-artwork', {method:'POST', body});
+        const responseText = await response.text();
+        let data;
+        try { data = JSON.parse(responseText); }
+        catch {
+          results.textContent = 'The request connection ended while the pod was still processing. Waiting for the finished export...';
+          for (let attempt = 0; attempt < 600; attempt += 1) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            const statusResponse = await fetch(`/holographic-etching/artwork-status/${encodeURIComponent(artworkTaskId)}`, {credentials:'same-origin'});
+            if (!statusResponse.ok) continue;
+            const status = await statusResponse.json();
+            if (status.status === 'processing') continue;
+            data = status;
+            break;
+          }
+          if (!data) throw new Error('The artwork export did not report completion before the recovery window ended.');
+        }
+        if (data.status !== 'completed') throw new Error(data.message || 'Holographic artwork could not be built.');
         results.innerHTML = `Artwork built at ${data.source_width} × ${data.source_height} processed pixels, merged into ${data.rectangle_count.toLocaleString()} vector rectangles.${downloadButtonList([
           {url:data.svg_url, label:'Download SVG'},
           {url:data.lightburn_url, label:'Download LightBurn Project'},

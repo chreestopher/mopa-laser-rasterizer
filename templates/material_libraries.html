@@ -91,7 +91,10 @@
       if (!input.files.length) { holographicRecipeNotice.textContent = 'Choose an Etching Recipe JSON file first.'; return; }
       const body = new FormData(); body.append('recipe', input.files[0]);
       const response = await fetch('/account/holographic-recipes', {method:'POST', credentials:'same-origin', body});
-      const data = await response.json();
+      const responseText = await response.text();
+      let data;
+      try { data = JSON.parse(responseText); }
+      catch { data = {message:`Recipe import failed (HTTP ${response.status}); the server returned an HTML error page.`}; }
       holographicRecipeNotice.textContent = response.ok ? 'Holographic Recipe saved.' : (data.message || 'Could not save recipe.');
       if (response.ok) { input.value = ''; await loadHolographicRecipes(); }
     });

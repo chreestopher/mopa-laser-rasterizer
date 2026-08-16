@@ -735,7 +735,7 @@ def _write_holographic_svg(path, width, height, recipes_by_name, pixel_mm, black
 
 
 def _build_holographic_exports(upload_folder, art_file, profile_file, material_path, max_dimension, pixel_mm,
-                               preserve_black_outlines=False):
+                               preserve_black_outlines=False, task_id=None):
     profile = _load_recipe_profile(profile_file)
     try:
         image = Image.open(art_file.stream).convert("RGB")
@@ -746,7 +746,7 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
     if not pixels.size:
         raise ValueError("Artwork image has no usable pixels.")
 
-    task_id = str(uuid.uuid4())
+    task_id = valid_history_session(task_id) or str(uuid.uuid4())
     lightburn = _lightburn_module()
     grid = profile["grid"]
     base_setting = _calibration_base_layer(_exact_setting(
@@ -1258,12 +1258,16 @@ def save_holographic_recipes():
         )
     user_id = request.headers.get("x-amzn-oidc-identity", "").strip()
     if user_id:
-        save_user_holographic_recipe(
-            user_id, profile_path, profile.get("profile_name"),
-            metadata={"profile_name": profile.get("profile_name", ""), "recipe_count": len(recipes),
-                      "material": profile.get("grid", {}).get("material", "")},
-            source_filename=os.path.basename(profile_path),
-        )
+        try:
+            save_user_holographic_recipe(
+                user_id, profile_path, profile.get("profile_name"),
+                metadata={"profile_name": profile.get("profile_name", ""), "recipe_count": len(recipes),
+                          "material": profile.get("grid", {}).get("material", "")},
+                source_filename=os.path.basename(profile_path),
+            )
+        except RuntimeError as error:
+            current_app.logger.exception("Could not save generated Holographic Recipe to the account")
+            return jsonify({"status": "error", "message": str(error)}), 503
     current_app.logger.info("Saved %s holographic recipes for profile %s.", len(recipes), profile_id)
     return jsonify({
         "status": "saved",
@@ -1281,13 +1285,20 @@ def build_holographic_artwork():
     saved_recipe_id = str(request.form.get("saved_holographic_recipe_id", "")).strip()
     material_file = request.files.get("material_settings")
     saved_library_id = str(request.form.get("saved_material_library_id", "")).strip()
+    artwork_task_id = valid_history_session(request.form.get("artwork_task_id")) or str(uuid.uuid4())
+    status_key = f"holographic-artwork-status:{artwork_task_id}"
+    redis_client.set(status_key, json.dumps({"status": "processing"}), ex=HISTORY_TTL_SECONDS)
+    def fail(message, status_code):
+        payload = {"status": "error", "message": str(message)}
+        redis_client.set(status_key, json.dumps(payload), ex=HISTORY_TTL_SECONDS)
+        return jsonify(payload), status_code
     if not artwork or not artwork.filename:
-        return jsonify({"status": "error", "message": "Provide an artwork image."}), 400
+        return fail("Provide an artwork image.", 400)
     try:
         max_dimension = max(8, min(1600, int(request.form.get("max_dimension", 96))))
         pixel_mm = max(.05, min(5, float(request.form.get("pixel_mm", .5))))
     except ValueError:
-        return jsonify({"status": "error", "message": "Processing resolution and pixel size must be numbers."}), 400
+        return fail("Processing resolution and pixel size must be numbers.", 400)
     try:
         recipe_path = _resolve_holographic_recipe(
             str(uuid.uuid4()), profile_file, saved_recipe_id, request.form.get("history_session")
@@ -1300,24 +1311,40 @@ def build_holographic_artwork():
         with open(recipe_path, encoding="utf-8") as recipe_file:
             svg_name, lbrn_name, metadata_name, width, height, rectangle_count = _build_holographic_exports(
                 current_app.config["UPLOAD_FOLDER"], artwork, recipe_file, library_path, max_dimension, pixel_mm,
-                preserve_black_outlines=preserve_black_outlines,
+                preserve_black_outlines=preserve_black_outlines, task_id=artwork_task_id,
             )
     except PermissionError as error:
-        return jsonify({"status": "error", "message": str(error)}), 401
+        return fail(error, 401)
     except FileNotFoundError as error:
-        return jsonify({"status": "error", "message": str(error)}), 404
+        return fail(error, 404)
     except RuntimeError as error:
         current_app.logger.exception("Could not resolve holographic artwork library")
-        return jsonify({"status": "error", "message": str(error)}), 503
+        return fail(error, 503)
     except (OSError, ValueError, ET.ParseError, KeyError, TypeError) as error:
         current_app.logger.exception("Holographic artwork export failed")
-        return jsonify({"status": "error", "message": f"Could not build holographic artwork: {error}"}), 400
-    return jsonify({
+        return fail(f"Could not build holographic artwork: {error}", 400)
+    result = {
         "status": "completed", "source_width": width, "source_height": height, "rectangle_count": rectangle_count,
         "svg_url": f"/holographic-etching/download/{svg_name}",
         "lightburn_url": f"/holographic-etching/download/{lbrn_name}",
         "metadata_url": f"/holographic-etching/download/{metadata_name}",
-    })
+    }
+    redis_client.set(status_key, json.dumps(result), ex=HISTORY_TTL_SECONDS)
+    return jsonify(result)
+
+
+@routes.route("/holographic-etching/artwork-status/<task_id>")
+def holographic_artwork_status(task_id):
+    task_id = valid_history_session(task_id)
+    if not task_id:
+        return jsonify({"status": "error", "message": "Unknown artwork task."}), 404
+    try:
+        status = json.loads(redis_client.get(f"holographic-artwork-status:{task_id}") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        status = {}
+    if not status:
+        return jsonify({"status": "error", "message": "Artwork task status was not found."}), 404
+    return jsonify(status)
 
 
 @routes.route("/holographic-etching/profile-photo/<profile_id>")
