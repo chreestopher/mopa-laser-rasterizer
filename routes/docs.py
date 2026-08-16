@@ -34,6 +34,18 @@ DOCS = {
             ("What to prepare", ["Use a readable JPG or PNG, choose a physical pixel size, and select only colors backed by settings you intend to engrave. A cleaner source image usually produces fewer vector objects and a smaller LightBurn project."]),
             ("What the export preserves", ["The output preserves the processed color regions rather than the original bitmap pixels. It is intended to be editable and layer-addressable in LightBurn; it is not a lossless reconstruction of the source photograph."]),
         ], ["image-presets", "color-layers", "lightburn-export", "pixel-size"]),
+    "raster-vs-vector": _page(
+        "Raster Graphics, Vector Graphics, and Laser Artwork",
+        "Why MOPA Laser Rasterizer is also a vectorizer, how pixels differ from paths, and what each representation contributes to a LightBurn workflow.",
+        "The name Rasterizer describes where the workflow begins: with raster artwork made from pixels. The result, however, is largely vector geometry. In that sense the application is also a specialized vectorizer—one that uses palette colors, presets, and Material Library settings to decide how pixels should become closed shapes and LightBurn layers.",
+        [
+            ("What is a raster graphic?", ["A raster image is a rectangular grid of pixels. JPG, PNG, photographs, screenshots, and digital paintings are common raster sources. Each pixel records a color at one location, much like one square on a sheet of colored graph paper.", "Raster artwork is excellent for photographs, texture, soft shading, and direct image editing. Its main limitation is resolution: enlarging it eventually reveals pixels, and converting millions of individual color decisions into editable laser shapes can require substantial processing."]),
+            ("What is a vector graphic?", ["A vector graphic describes geometry with points, lines, curves, and closed shapes rather than a fixed pixel grid. SVG and much of the editable geometry inside a LightBurn project are vector representations.", "Vectors can be resized without revealing source pixels, are convenient for editing outlines and regions, and can carry clear layer assignments. Their challenge is complexity: a detailed photograph converted too literally may become thousands of shapes or control points, creating a file that is mathematically scalable but still slow to edit or process."]),
+            ("Why laser workflows use both", ["Raster engraving can scan an image line by line and is a natural fit for photographs or continuous tone. Vector operations follow paths or fill defined shapes and are a natural fit for outlines, logos, cut boundaries, and layer-specific settings.", "Neither representation is universally better. Raster data is compact and expressive for pixel-based tone; vector data is explicit and editable for geometry. The appropriate choice depends on the desired mark, machine process, material, and how much control the operator needs over individual regions."]),
+            ("What this application converts", ["The Rasterizer reads source pixels, resizes them, and maps them to enabled palette colors. It then joins neighboring same-color cells into closed regions, cleans or transforms those regions according to the preset, removes unwanted overlap, and writes vector SVG and LBRN2 output.", "This is not general-purpose automatic tracing. The conversion is specifically organized around color-separated laser artwork and matching LightBurn Material Library settings."]),
+            ("Benefits for laser preparation", ["The vector result gives each processed color an identifiable layer, permits region-level inspection in LightBurn, and avoids requiring the operator to trace and sort every color manually. Closed geometry also supports fill-oriented workflows and controlled punch-through between color regions."]),
+            ("Challenges and tradeoffs", ["More source pixels can preserve detail but increase classification and geometry work. More colors create more boundaries and layers. Strong simplification can make the project easier to handle but remove detail; insufficient simplification can preserve noise and create excessive objects.", "A vector file is not automatically a better laser job. Always inspect scale, object count, closed paths, layer order, fill behavior, and laser settings in LightBurn, then test the intended process on the actual material."]),
+        ], ["raster-to-vector", "pixel-size", "reduce-lightburn-object-count", "lightburn-export", "works-with-lightburn"]),
     "image-presets": _page(
         "Choosing an Image Processing Preset",
         "Compare Cartoon, Color Photo, Black and White Photo, and abstract vector presets before exporting to LightBurn.",
@@ -182,6 +194,32 @@ DOCS = {
         ["job-history", "color-layers", "reduce-lightburn-object-count", "analyze-calibration-photo"]),
 }
 
+DOCS["raster-to-vector"]["diagram"] = {
+    "src": "/static/docs/raster-pipeline.svg",
+    "alt": "Artwork passes through resizing and palette mapping, vector-region construction, Material Library layer assignment, and SVG and LightBurn export.",
+    "caption": "The Rasterizer prepares geometry and layer settings, then hands the project to LightBurn.",
+}
+DOCS["raster-vs-vector"]["diagram"] = {
+    "src": "/static/docs/raster-vs-vector.svg",
+    "alt": "A raster circle made from colored grid cells is compared with a vector circle described by a mathematical path and anchor points.",
+    "caption": "Raster graphics store colored cells; vector graphics store geometric instructions. The Rasterizer translates selected pixel regions into editable vector shapes.",
+}
+DOCS["color-layers"]["diagram"] = {
+    "src": "/static/docs/color-setting-map.svg",
+    "alt": "Editable Rasterizer swatch names map to matching Material Library descriptions and recognizable LightBurn color layers.",
+    "caption": "Consistent swatch and setting names make mappings easier for the application and operator to recognize.",
+}
+DOCS["holographic-etching"]["diagram"] = {
+    "src": "/static/docs/holographic-calibration-loop.svg",
+    "alt": "The holographic workflow generates and engraves a test grid, photographs and analyzes it, saves trusted recipes, and maps artwork to those recipes.",
+    "caption": "Holographic Artwork is built from a measurement loop rather than an assumed universal color table.",
+}
+DOCS["works-with-lightburn"]["diagram"] = {
+    "src": "/static/docs/lightburn-companion.svg",
+    "alt": "MOPA Laser Rasterizer prepares image geometry, layers, and settings before LightBurn is used for inspection, layout, device configuration, framing, and laser operation.",
+    "caption": "The application is a preparation assistant for LightBurn, not a replacement or laser controller.",
+}
+
 
 FILTER_PAGES = {
     "wave": ("Wave Flow", "warps regions into flowing directional bands"),
@@ -303,7 +341,7 @@ for page_slug, controls in STANDARD_PRESET_CONTROLS.items():
 
 
 DOC_GROUPS = [
-    ("Rasterizer", ["preset-controls", "raster-to-vector", "image-presets", "cartoon-preset", "color-photo-preset", "black-and-white-photo", "pixel-size", "color-layers"]),
+    ("Rasterizer", ["preset-controls", "raster-to-vector", "raster-vs-vector", "image-presets", "cartoon-preset", "color-photo-preset", "black-and-white-photo", "pixel-size", "color-layers"]),
     ("Abstract filters", ["abstract-filters", "abstract-filter-reference"] + [f"{slug}-filter" for slug in FILTER_PAGES]),
     ("LightBurn and materials", ["works-with-lightburn", "material-vault", "material-libraries", "lightburn-export", "reduce-lightburn-object-count", "mopa-laser-workflow"]),
     ("Holographic Etching Lab", ["holographic-etching", "holographic-calibration", "analyze-calibration-photo", "holographic-recipes", "holographic-artwork", "diffraction-gratings", "choose-cut-mode"]),
