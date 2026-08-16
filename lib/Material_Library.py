@@ -87,18 +87,24 @@ def main(argv=None):
     if required_setting:
         setting_layer_id = filter_setting_layers[required_setting.casefold()]
         filter_parameters["_setting_layer_id"] = setting_layer_id
-        layer_color = getattr(filter_module, "LAYER_COLOR", "#FEFEFE").upper()
-        layer_name = getattr(filter_module, "LAYER_NAME", required_setting)
-        target_colors[layer_color] = (0, setting_layer_id, layer_name)
-        vector_processing.NON_IMAGE_SWATCHES.add(layer_color)
-        for layer in getattr(lb, "_layers", []):
-            if getattr(layer, "index", None) == setting_layer_id:
-                layer.name = layer_name
-                break
+        if not bool(
+            getattr(filter_module, "REPLICATE_SETTING_TO_OUTPUT_LAYERS", False)
+        ):
+            layer_color = getattr(filter_module, "LAYER_COLOR", "#FEFEFE").upper()
+            layer_name = getattr(filter_module, "LAYER_NAME", required_setting)
+            target_colors[layer_color] = (0, setting_layer_id, layer_name)
+            vector_processing.NON_IMAGE_SWATCHES.add(layer_color)
+            for layer in getattr(lb, "_layers", []):
+                if getattr(layer, "index", None) == setting_layer_id:
+                    layer.name = layer_name
+                    break
 
     configure_output_layers = getattr(filter_module, "configure_output_layers", None)
     if callable(configure_output_layers):
-        configure_output_layers(lb, target_colors)
+        try:
+            configure_output_layers(lb, target_colors, filter_parameters)
+        except ValueError as error:
+            raise SystemExit(str(error))
 
     vector_settings = dict(preset)
     for name in ("min_island_area", "simplification_factor", "smoothing_radius"):

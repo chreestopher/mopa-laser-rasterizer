@@ -9,9 +9,12 @@ The layer colors are identifiers, not promises about the engraved color.  The
 operator must attach monotonically ordered, tested grating recipes to the
 selected layers. True Black contains only geometry classified from the source
 raster; this preset does not synthesize a Black canvas or punch into Black.
+Every non-black output layer receives an independent copy of the selected
+material's Holographic laser recipe while retaining its own layer identity.
 """
 
 import colorsys
+from copy import deepcopy
 import math
 
 from shapely.geometry import LineString, box
@@ -23,6 +26,8 @@ from .common import number
 USES_SOURCE_LUMINANCE = True
 PRESERVE_SOURCE_BLACK = True
 OUTPUT_PATH_MODE = "Cut"
+SETTING_NAME = "holographic"
+REPLICATE_SETTING_TO_OUTPUT_LAYERS = True
 
 DEFAULTS = {
     "gradient_top": 165,
@@ -54,17 +59,59 @@ def apply(geometry, settings):
     return geometry
 
 
-def configure_output_layers(lightburn_project, target_colors):
-    """Force the available non-black grating carriers to LightBurn Line mode."""
-    output_layer_ids = {
-        metadata[1]
-        for color_hex, metadata in target_colors.items()
-        if str(color_hex).upper() != "#000000"
-    }
-    for layer in getattr(lightburn_project, "_layers", []):
-        if getattr(layer, "index", None) in output_layer_ids:
-            layer.type = OUTPUT_PATH_MODE
-            layer.subLayers = []
+def configure_output_layers(lightburn_project, target_colors, settings=None):
+    """Clone the Holographic recipe onto every non-black grating carrier."""
+    settings = settings or {}
+    setting_layer_id = settings.get("_setting_layer_id")
+    project_layers = list(getattr(lightburn_project, "_layers", []))
+    source_layer = next(
+        (
+            layer for layer in project_layers
+            if getattr(layer, "index", None) == setting_layer_id
+        ),
+        None,
+    )
+    if source_layer is None:
+        raise ValueError(
+            "Krasnow Color Grating requires a Material Library setting "
+            "matching 'holographic'."
+        )
+
+    # Offset Fill entries store their concrete laser values in child passes.
+    # The generated geometry is already a set of open paths, so copy the first
+    # concrete pass when present and convert every clone to LightBurn Line mode.
+    sublayers = getattr(source_layer, "subLayers", None) or []
+    setting_template = sublayers[0] if sublayers else source_layer
+    output_layers = {}
+    for color_hex, metadata in target_colors.items():
+        if str(color_hex).upper() == "#000000":
+            continue
+        clone = deepcopy(setting_template)
+        clone.index = metadata[1]
+        clone.name = metadata[2]
+        clone.type = OUTPUT_PATH_MODE
+        clone.subLayers = []
+        clone.materialName = getattr(source_layer, "materialName", "")
+        clone.entryDesc = getattr(source_layer, "entryDesc", SETTING_NAME)
+        output_layers[clone.index] = clone
+
+    replaced_layers = []
+    replaced_ids = set()
+    for layer in project_layers:
+        layer_id = getattr(layer, "index", None)
+        if layer_id == setting_layer_id and layer_id not in output_layers:
+            continue
+        if layer_id in output_layers:
+            if layer_id not in replaced_ids:
+                replaced_layers.append(output_layers[layer_id])
+                replaced_ids.add(layer_id)
+            continue
+        replaced_layers.append(layer)
+
+    for layer_id in sorted(output_layers):
+        if layer_id not in replaced_ids:
+            replaced_layers.append(output_layers[layer_id])
+    lightburn_project._layers = replaced_layers
 
 
 def _hex_hsv(color_hex):
