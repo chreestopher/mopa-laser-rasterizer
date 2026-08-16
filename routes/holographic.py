@@ -287,11 +287,16 @@ def _rgb_to_lab(rgb):
     return [float(lab[0]) * 100 / 255, float(lab[1]) - 128, float(lab[2]) - 128]
 
 
-def _svg_grid(path, columns, rows, cell_mm, intervals, angles, top_label_mm, right_label_mm):
+def _svg_grid(path, columns, rows, cell_mm, intervals, angles, top_label_mm, right_label_mm,
+              calibration_id):
     grid_width, grid_height = columns * cell_mm, rows * cell_mm
     width, height = grid_width + right_label_mm, grid_height + top_label_mm
     root = ET.Element("svg", xmlns="http://www.w3.org/2000/svg", width=f"{width}mm",
                       height=f"{height}mm", viewBox=f"0 0 {width} {height}")
+    ET.SubElement(
+        root, "text", x=".35", y="1.25", fill="#000",
+        **{"font-size": ".9", "font-family": "monospace"},
+    ).text = calibration_id
     # High-contrast registration marks make the photographed grid far easier
     # to align than a thin cell border alone.  They sit in the outer corners,
     # away from the center sampling zones.
@@ -959,7 +964,10 @@ def calibration_grid():
     stem = f"holographic_calibration_{task_id}"
     svg_name, lbrn_name = f"{stem}.svg", f"{stem}.lbrn2"
     try:
-        _svg_grid(os.path.join(upload_folder, svg_name), columns, rows, cell_mm, intervals, angles, top_label_mm, right_label_mm)
+        _svg_grid(
+            os.path.join(upload_folder, svg_name), columns, rows, cell_mm,
+            intervals, angles, top_label_mm, right_label_mm, task_id,
+        )
         project = lightburn.Lightburn()
         label_setting, label_layer_index = _label_setting(lightburn, library_path, material, base_setting)
         if label_layer_index is None:
@@ -992,9 +1000,12 @@ def calibration_grid():
         label_setting.name = f"Calibration labels ({getattr(label_setting, 'entryDesc', 'dark setting')})"
         label_setting.subLayers = []
         project.add_layer(label_setting)
+        project.add(lightburn.Text(
+            .9, task_id, x=left_grid_margin_mm + .35, y=.5,
+        ).layer(label_layer_index))
         for column, interval in enumerate(column_intervals):
             project.add(lightburn.Text(min(.9, top_label_mm * .45), f"I {interval:.3f}",
-                                       x=left_grid_margin_mm + column * cell_mm + .35, y=.5).layer(label_layer_index))
+                                       x=left_grid_margin_mm + column * cell_mm + .35, y=3.0).layer(label_layer_index))
         for row, angle in enumerate(row_angles):
             project.add(lightburn.Text(min(.9, right_label_mm * .45), f"A {angle:g}°",
                                        x=left_grid_margin_mm + columns * cell_mm + .25, y=top_label_mm + row * cell_mm + cell_mm * .42).layer(label_layer_index))
@@ -1022,7 +1033,8 @@ def calibration_grid():
         project.write(os.path.join(upload_folder, lbrn_name))
         with open(os.path.join(upload_folder, f"{stem}.json"), "w", encoding="utf-8") as metadata_file:
             json.dump({
-                "kind": "holographic_calibration_grid", "material": material,
+                "kind": "holographic_calibration_grid", "calibration_grid_id": task_id,
+                "material": material,
                 "setting_description": description, "laser_source": laser_source,
                 "lens_field_of_view_mm": lens_field_mm, "columns": columns, "rows": rows,
                 "cell_size_mm": cell_mm, "interval_range_mm": [interval_low, interval_high],
