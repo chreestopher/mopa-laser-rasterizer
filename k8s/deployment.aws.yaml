@@ -16,6 +16,11 @@ spec:
       labels:
         app: mopa-laser-rasterizer
     spec:
+      # hostPath is local to a Kubernetes node. Label exactly the EC2 node that
+      # contains /home/ubuntu/mopa-laser-rasterizer so every replica mounts the
+      # same checked-out repository rather than a node-local copy.
+      nodeSelector:
+        mopa-laser-rasterizer-host: "true"
       # --- NEW: This blocks the Flask container until Redis is fully running ---
       initContainers:
       - name: wait-for-redis
@@ -31,6 +36,33 @@ spec:
           value: "redis-service"
         - name: REDIS_PORT
           value: "6379"
+        - name: AWS_REGION
+          value: "us-east-2"
+        - name: S3_BUCKET_NAME
+          value: "mopa-laser-rasterizer-artifacts-401716294893"
+        - name: DYNAMODB_TABLE_NAME
+          value: "mopa-laser-rasterizer-users"
+        - name: UPLOAD_FOLDER
+          value: "/tmp/uploads"
+        - name: DAILY_JOB_LIMIT
+          value: "3"
+        - name: RASTER_JOB_QUEUE_ENABLED
+          value: "true"
+        - name: SESSION_COOKIE_SECURE
+          value: "true"
+        - name: APP_SESSION_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: mopa-rasterizer-session
+              key: secret
+        # Fill COGNITO_CLIENT_ID with the non-secret app-client ID created for
+        # the ALB.  It is used only to build Cognito's hosted-UI logout URL.
+        - name: COGNITO_DOMAIN
+          value: "mopa-laser-rasterizer-401716294893.auth.us-east-2.amazoncognito.com"
+        - name: COGNITO_CLIENT_ID
+          value: "69gif0iuklqcn0lldtn4sdtvat"
+        - name: PUBLIC_APP_URL
+          value: "https://mopa-laser-rasterizer.com"
         ports:
         - name: http
           containerPort: 8000
@@ -43,25 +75,16 @@ spec:
             memory: "4096Mi"
             cpu: "500m"
         volumeMounts:
-        - name: static
-          mountPath: /app/static
-          readOnly: true
-        - name: templates
-          mountPath: /app/templates
-          readOnly: true
-        - name: uploads
-          mountPath: /app/uploads
+        - name: application-source
+          mountPath: /app
           readOnly: false
+        - name: job-scratch
+          mountPath: /tmp/uploads
       volumes:
-      - name: static
+      # This is a bind mount of the EC2 host checkout, not a copy into the pod.
+      - name: application-source
         hostPath:
-          path: /home/ubuntu/mopa-laser-rasterizer/static
+          path: /home/ubuntu/mopa-laser-rasterizer
           type: Directory
-      - name: templates
-        hostPath:
-          path: /home/ubuntu/mopa-laser-rasterizer/templates
-          type: Directory
-      - name: uploads
-        hostPath:
-          path: /home/ubuntu/mopa-laser-rasterizer/uploads
-          type: DirectoryOrCreate
+      - name: job-scratch
+        emptyDir: {}

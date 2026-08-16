@@ -1,0 +1,1268 @@
+{% from "_machine_chrome.html" import machine_chrome %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MOPA-LASER-RASTERIZER</title>
+
+<style>
+  /* Keep padding and borders inside the mobile viewport, matching the
+     Holographic Etching Lab's layout model. */
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background-color: #f8fafc;
+    color: #1e293b;
+    max-width: 500px;
+    margin: 40px auto;
+    padding: 24px;
+    background: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+  h1 {
+    font-size: 1.5rem;
+    margin-bottom: 20px;
+  }
+  h2 {
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin-top: 0;
+    margin-bottom: 8px;
+  }
+  h3 {
+    font-size: 0.9rem;
+    font-weight: 400;
+    color: #64748b;
+    margin-top: 0;
+    margin-bottom: 20px;
+  }
+  
+  /* Color Palette Grid Styles */
+  .palette-section {
+    margin-bottom: 32px;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 24px;
+  }
+  .color-grid {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 16px 10px;
+    margin-top: 14px;
+  }
+  .color-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    min-width: 0;
+  }
+  .color-name {
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: #64748b;
+    line-height: 1.2;
+    margin-bottom: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    width: 100%;
+    max-width: 100%;
+    text-overflow: ellipsis;
+  }
+  .color-name[contenteditable="true"] { cursor:text; border-bottom:1px dashed currentColor; outline:none; }
+  .color-name[contenteditable="true"]:focus { border-bottom-style:solid; }
+  .color-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #1e293b;
+    line-height: 1.2;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+  }
+  .color-square {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 4px;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.15);
+    transition: transform 0.1s ease, border-color 0.1s ease;
+    cursor: pointer; /* Changed to pointer to show it is clickable */
+    box-sizing: border-box;
+  }
+  .color-square:hover {
+    transform: scale(1.08);
+  }
+/* Active visual state when checked - Greys out the square */
+  .color-square.selected {
+    box-shadow: inset 0 0 0 999px rgba(128, 128, 128, 0.65), inset 0 0 0 1px rgba(0,0,0,0.2);
+    opacity: 0.5;
+    transform: scale(0.95); /* Slightly shrinks to show it is tucked away */
+  }
+  @keyframes holographic-swatch-shift { to { background-position:200% center; } }
+  .color-card[data-holographic-setting] .color-square {
+    background:linear-gradient(100deg,#ff3b30,#ffcc00,#5ce65c,#25d9e8,#3f7cff,#a855f7,#ff4eb8,#ff3b30) !important;
+    background-size:200% 100% !important;
+    animation:holographic-swatch-shift 5s linear infinite;
+  }
+  @media (prefers-reduced-motion:reduce) {
+    .color-card[data-holographic-setting] .color-square { animation:none; background-position:50% center; }
+  }
+
+
+  .color-hex {
+    font-size: 0.6rem;
+    color: #94a3b8;
+    margin-top: 4px;
+    font-family: monospace;
+  }
+
+  /* Form Styles */
+  form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  div.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  label {
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+  input[type="file"] {
+    color: #ffffff;
+    background-color: #2563eb;    
+    padding: 8px 12px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    outline: none;    
+  }
+  input,  select {
+    padding: 8px 12px;
+    font-size: 0.875rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    outline: none;
+    background-color: #fff;
+  }
+  input:focus, select:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  }
+  button {
+    padding: 10px 16px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #ffffff;
+    background-color: #2563eb;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-top: 8px;
+  }
+  button:hover {
+    background-color: #1d4ed8;
+  }
+  .abstract-panel {
+    margin-top: 12px;
+    padding: 14px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #f8fafc;
+  }
+  .filter-description {
+    margin: 8px 0 14px;
+    color: #64748b;
+    font-size: 0.78rem;
+    line-height: 1.4;
+  }
+  .holographic-normal-readout { display:grid; gap:7px; }
+  .holographic-normal-summary { margin:0; }
+  .holographic-normal-swatches { display:flex; flex-wrap:wrap; gap:10px 8px; }
+  .holographic-normal-chip { display:flex; flex:0 0 46px; flex-direction:column; align-items:center; gap:3px; padding:0; border:0; background:transparent; color:#64748b; font-size:.6rem; line-height:1.2; text-align:center; }
+  .holographic-normal-chip-color { width:30px; height:30px; border:0; border-radius:4px; box-shadow:inset 0 0 0 1px rgba(0,0,0,.15); flex:0 0 30px; }
+  .holographic-normal-chip-name { max-width:46px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  body.light-machine .holographic-normal-chip { color:#343530; }
+  .filter-controls {
+    display: grid;
+    gap: 12px;
+  }
+  .filter-control label {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 5px;
+  }
+  .filter-control .value-input {
+    color: #2563eb;
+    font-family: monospace;
+    font-weight: 700;
+    width: 78px;
+    padding: 4px 6px;
+    text-align: right;
+  }
+  .filter-control input[type="range"] {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 0;
+  }
+  .checkbox-label {
+    align-items: center;
+    padding: 8px 0;
+  }
+  .checkbox-label input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    accent-color: #2563eb;
+  }
+  .filter-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .filter-actions button {
+    flex: 1;
+    margin-top: 2px;
+    padding: 7px 10px;
+    background: #475569;
+  }
+  {
+    padding: 10px 16px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #ffffff;
+    background-color: #2563eb;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-top: 8px;
+  }
+  
+  .download-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+  }
+
+  .download-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px;
+      margin-bottom: 8px;
+      background: #fff;
+      border: 1px solid #dcdcdc;
+      border-radius: 4px;
+  }
+
+  .download-link {
+      color: #0066cc;
+      text-decoration: none;
+      font-weight: bold;
+  }
+
+  .download-link:hover {
+      text-decoration: underline;
+  }
+
+  .status-tag {
+      font-size: 12px;
+      padding: 3px 8px;
+      border-radius: 3px;
+      background: #e0e0e0;
+  }
+  :root { --cream:#d9d2af; --phosphor:#83f06a; --control-top:#66766d; --control-base:#34443e; --control-edge:#9ba89f; --control-shadow:#18221e; }
+  html { min-height:100%; background:#11130f; }
+  body {
+    max-width:1040px; margin:28px auto; padding:38px; color:var(--cream);
+    background:repeating-linear-gradient(90deg,rgba(255,255,255,.014) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 5%,#505443,#363a30 42%,#24271f 100%);
+    border:3px solid #777864; border-radius:30px;
+    box-shadow:inset 0 0 0 5px #1b1e18,inset 0 0 60px #10120e,0 0 0 1px #9a9a7e,0 20px 50px #000;
+  }
+  .page-header { width:100%; display:flex; flex-direction:column; margin:0 0 14px; }
+  h1 { width:100%; margin:0; color:var(--cream); font:500 clamp(25px,4.2vw,42px) Impact,"Arial Narrow",sans-serif; text-align:center; text-shadow:0 3px #111; }
+  .facade-title { width:100%; display:flex; align-items:center; justify-content:space-between; white-space:nowrap; }
+  .home-title { display:block; color:inherit; text-decoration:none; cursor:pointer; }
+  .home-title:focus-visible { outline:2px solid var(--phosphor); outline-offset:5px; border-radius:4px; }
+  h1::after { content:none; }
+  .console-status-line { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); align-items:center; width:100%; margin-top:7px; padding:0 22px; }
+  .console-subtitle { grid-column:2; justify-self:center; color:#bbb38e; font:700 clamp(8px,1.7vw,12px) "Courier New",monospace; letter-spacing:clamp(.04em,.7vw,.16em); white-space:nowrap; text-align:center; }
+  .status-lamps { grid-column:1; justify-self:center; display:flex; align-items:center; gap:12px; color:#bdb58f; font:700 9px "Courier New",monospace; letter-spacing:.11em; text-transform:uppercase; }
+  .status-lamp { display:inline-flex; align-items:center; gap:5px; }
+  .status-lamp::before { content:""; width:10px; height:10px; border:2px solid #1a1b16; border-radius:50%; background:var(--lamp-color); box-shadow:0 0 5px var(--lamp-color),inset 0 1px 2px rgba(255,255,255,.5); animation:lamp-flicker var(--lamp-flicker,1s) linear infinite; }
+  .mopa-lamp { --lamp-color:#fff; }
+  .mopa-lamp::before { background:conic-gradient(#f44,#fb4,#fff34e,#55e45a,#4cecff,#8b58e8,#f44); box-shadow:0 0 6px #fff,0 0 10px #e75dde; animation:lamp-rainbow-spin .9s linear infinite; }
+  .laser-lamp { --lamp-color:#ef4338; }
+  .power-lamp { --lamp-color:#f0ad32; --lamp-flicker:.97s; }
+  .raster-lamp { --lamp-color:#42c9e8; --lamp-flicker:1.31s; }
+  .vector-lamp { --lamp-color:#dc5dd0; --lamp-flicker:.67s; }
+  @keyframes lamp-flicker { 0%,100% { opacity:1; filter:brightness(1); } 14% { opacity:.45; } 26% { opacity:.9; } 49% { opacity:.35; } 60% { opacity:1; } 78% { opacity:.6; } }
+  @keyframes lamp-rainbow-spin { to { transform:rotate(360deg); } }
+  h2 { color:#e2dcc0; font-family:"Arial Narrow",sans-serif; }
+  h3,.filter-description { color:#aaa98e; }
+  .holographic-lab-link { margin:.6em 0 1.1em; color:#bdb58f; font:700 12px "Courier New",monospace; letter-spacing:.03em; }
+  .holographic-lab-link a { color:var(--phosphor); text-decoration:none; text-transform:uppercase; }
+  .holographic-lab-link a:hover { color:#fff1cd; text-shadow:0 0 6px rgba(131,240,106,.7); }
+  .collapsible-info { margin:.9em 0; color:#aaa98e; }
+  .collapsible-info summary { cursor:pointer; color:#aaa98e; font-size:1.17em; font-weight:700; }
+  .collapsible-info summary:hover { color:#d7d0aa; }
+  .collapsible-info:not([open]):hover > :not(summary) { display:block; }
+  .collapsible-copy { margin:.65em 0 0; }
+  .getting-started-list { margin:0 0 1em; padding:0; color:#aaa98e; list-style:none; }
+  .getting-started-list li { position:relative; margin:.55em 0; padding-left:1.8em; }
+  .getting-started-list li::before { position:absolute; left:0; top:-.08em; width:1.25em; color:var(--phosphor); font-size:1.15em; font-weight:700; text-align:center; text-shadow:0 0 5px rgba(131,240,106,.55); }
+  .getting-started-list .step-files::before { content:"🖼"; }
+  .getting-started-list .step-material::before { content:"⚙"; }
+  .getting-started-list .step-colors::before { content:"🎨"; }
+  .getting-started-list .step-mapping::before { content:"🔗"; }
+  .getting-started-list .step-library::before { content:"📚"; }
+  .getting-started-list .step-style::before { content:"✨"; }
+  .getting-started-list .step-pixel-size::before { content:"📏"; }
+  .getting-started-list .step-dimensions::before { content:"📐"; }
+  .getting-started-list .step-maximum::before { content:"▲"; color:#f0ad32; text-shadow:0 0 5px rgba(240,173,50,.6); }
+  .how-it-works-list { margin:.65em 0 0; padding:0; color:#aaa98e; list-style:none; }
+  .how-it-works-list li { position:relative; margin:.55em 0; padding-left:1.8em; }
+  .how-it-works-list li::before { position:absolute; left:0; top:-.08em; width:1.25em; color:var(--phosphor); font-size:1.15em; font-weight:700; text-align:center; text-shadow:0 0 5px rgba(131,240,106,.55); }
+  .how-it-works-list .works-pixels::before { content:"🖼"; }
+  .how-it-works-list .works-vectors::before { content:"🧩"; }
+  .how-it-works-list .works-settings::before { content:"⚙"; }
+  .how-it-works-list .works-punch::before { content:"✂"; }
+  .how-it-works-intro { margin:.8em 0 1.35em; color:#d7d0aa; font-style:italic; }
+  .how-it-works-transition { margin:0; color:var(--phosphor); font:700 .9em "Courier New",monospace; letter-spacing:.06em; text-transform:uppercase; }
+  .rasterizer-checklist { margin:1em 0; padding:0; color:#aaa98e; list-style:none; }
+  .rasterizer-checklist li { position:relative; margin:.55em 0; padding-left:1.8em; }
+  .rasterizer-checklist li::before { position:absolute; left:0; top:-.08em; width:1.25em; color:var(--phosphor); font-size:1.15em; font-weight:700; text-align:center; text-shadow:0 0 5px rgba(131,240,106,.55); }
+  .rasterizer-checklist .benefit-time::before { content:"⏱"; }
+  .rasterizer-checklist .benefit-create::before { content:"⚡"; }
+  .rasterizer-checklist .benefit-style::before { content:"🎨"; }
+  .rasterizer-checklist .benefit-settings::before { content:"🧭"; }
+  form { padding:24px; border:2px solid #73745f; border-radius:20px; background:rgba(17,20,15,.42); box-shadow:inset 0 0 0 4px #292d24,inset 0 0 25px rgba(0,0,0,.65),0 6px 0 #161813; }
+  .abstract-panel { background:#20251d; border:2px solid #686a57; border-radius:16px; box-shadow:inset 0 0 18px #0d100c; }
+  label,.color-label { color:#ddd7b8; letter-spacing:.035em; }
+  .color-name { color:#bdb99c; } .color-hex { color:#7f9b70; }
+  input,select { color:var(--phosphor); background:#11170f; border:2px solid #5e6853; box-shadow:inset 0 2px 7px #000; font-family:"Courier New",monospace; }
+  input:focus,select:focus { border-color:#91a477; box-shadow:0 0 0 2px rgba(131,240,106,.18),inset 0 2px 7px #000; }
+  input[type="file"] { color:#eee5c3; background:#343a2e; border-color:#777b65; }
+  input[type="file"] {
+    padding: 5px;
+    cursor: pointer;
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  input[type="file"]::file-selector-button,
+  input[type="file"]::-webkit-file-upload-button {
+    margin-right: 12px;
+    padding: 9px 14px;
+    border: 2px solid var(--control-edge);
+    border-radius: 7px;
+    color: #fff1cd;
+    background: linear-gradient(var(--control-top),var(--control-base));
+    box-shadow: inset 0 1px rgba(255,255,255,.3),0 3px 0 var(--control-shadow);
+    font: 700 12px system-ui,sans-serif;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    cursor: pointer;
+  }
+  input[type="file"]::file-selector-button:hover,
+  input[type="file"]::-webkit-file-upload-button:hover {
+    background: linear-gradient(#7e9388,#426052);
+  }
+  input[type="file"]::file-selector-button:active,
+  input[type="file"]::-webkit-file-upload-button:active {
+    transform: translateY(2px);
+    box-shadow: inset 0 1px rgba(255,255,255,.2),0 1px 0 var(--control-shadow);
+  }
+  .remembered-input-note { margin-top:7px; padding:7px 9px; border:1px solid #5e6853; border-radius:5px; color:#bdb58f; background:#11170f; box-shadow:inset 0 2px 6px #000; font:700 11px "Courier New",monospace; letter-spacing:.03em; }
+  .upload-error { margin:0 0 14px; padding:10px 12px; border:1px solid #d96452; border-radius:8px; color:#ffd5ca; background:#351510; box-shadow:inset 0 2px 6px #170503; font:700 12px "Courier New",monospace; line-height:1.45; }
+  .upload-error-modal { position:fixed; z-index:9999; inset:0; display:grid; place-items:center; padding:22px; background:rgba(0,0,0,.65); }
+  .upload-error-modal[hidden] { display:none; }
+  .upload-error-dialog { width:min(460px,100%); padding:22px; border:2px solid #e17850; border-radius:20px; color:#fff1cd; background:#26150e; box-shadow:0 12px 40px #000,inset 0 0 0 4px #4a2a1b; font:700 14px "Courier New",monospace; line-height:1.55; text-align:center; }
+  .upload-error-dialog h2 { margin:0 0 10px; color:#ffaf74; font-size:1.05rem; letter-spacing:.08em; }
+  .upload-error-actions { display:flex; flex-wrap:wrap; justify-content:center; gap:11px; margin-top:17px; }
+  .upload-error-dialog button { margin:0; }
+  .upload-error-login { display:inline-flex; align-items:center; justify-content:center; padding:10px 16px; border:2px solid #75b45a; border-radius:6px; color:#f1ffdc; background:linear-gradient(#5d9849,#386d2c); box-shadow:inset 0 1px rgba(255,255,255,.25),0 4px 0 #1d3917; font:700 12px "Courier New",monospace; letter-spacing:.06em; text-decoration:none; text-transform:uppercase; }
+  .upload-error-login:hover { background:linear-gradient(#70ad58,#467e37); }
+  input[type="range"] { accent-color:var(--phosphor); box-shadow:none; }
+  button { border:2px solid var(--control-edge); color:#edf4e9; background:linear-gradient(var(--control-top),var(--control-base)); box-shadow:inset 0 1px rgba(255,255,255,.3),0 4px 0 var(--control-shadow); text-transform:uppercase; letter-spacing:.06em; }
+  button:hover { background:linear-gradient(#7e9388,#426052); }
+  .filter-actions button { background:linear-gradient(#666957,#464a3d); border-color:#888a72; box-shadow:0 3px 0 #25271f; }
+  .color-square { border-radius:8px; border:2px solid #777864; box-shadow:inset 0 0 0 2px rgba(0,0,0,.35),0 3px 0 #171913; }
+  form > div, form > div > div, .form-group { min-width:0; max-width:100%; }
+  @media (max-width:700px) {
+    body { width:auto; max-width:none; margin:0; padding:20px; border-radius:0; overflow-x:hidden; }
+    h1 { font-size:clamp(18px,6vw,25px); }
+    .console-status-line { grid-template-columns:1fr; gap:7px; padding:0; }
+    .console-subtitle { grid-column:1; grid-row:1; }
+    .status-lamps { grid-column:1; grid-row:2; justify-self:center; gap:9px; }
+    form { width:100%; max-width:100%; padding:15px; overflow:hidden; }
+    input,select { max-width:100%; }
+    input[type="file"] {
+      box-sizing:border-box;
+      width:100%;
+      min-width:0;
+      max-width:100%;
+      font-size:12px;
+    }
+    .color-grid { grid-template-columns:repeat(5, minmax(0, 1fr)); gap:14px 8px; }
+  }
+  @media (max-width:390px) {
+    .color-grid { grid-template-columns:repeat(4, minmax(0, 1fr)); }
+  }
+  @media (min-width:701px) {
+    .color-grid { grid-template-columns:repeat(12, minmax(0, 1fr)); gap:12px 8px; }
+  }
+  .theme-toggle { display:flex; justify-content:flex-end; margin-bottom:12px; }
+  .login-link,.auth-console { display:flex; align-items:center; gap:8px; margin-right:auto; color:#f2a25d; font:700 10px "Courier New",monospace; letter-spacing:.09em; text-decoration:none; text-transform:uppercase; }
+  .login-link[hidden],.auth-console[hidden] { display:none; }
+  .auth-machine-switch { position:relative; width:30px; height:30px; border:2px solid #151713; border-radius:6px; background:radial-gradient(circle at 5px 5px,#2a2c28 0 1px,transparent 1.5px),radial-gradient(circle at 25px 5px,#2a2c28 0 1px,transparent 1.5px),radial-gradient(circle at 5px 25px,#2a2c28 0 1px,transparent 1.5px),radial-gradient(circle at 25px 25px,#2a2c28 0 1px,transparent 1.5px),linear-gradient(135deg,#4c5048,#d0cec0 48%,#5b5d54); box-shadow:inset 0 0 0 2px #929488,0 2px 3px #000; }
+  .auth-machine-switch::before { content:""; position:absolute; left:8px; bottom:7px; width:10px; height:10px; border:2px solid #20221d; border-radius:50%; background:radial-gradient(circle at 35% 30%,#f4f0db,#7d8178 48%,#373a34); box-shadow:0 0 0 1px #cbc8b4; }
+  .auth-machine-switch::after { content:""; position:absolute; left:11px; bottom:12px; width:7px; height:21px; border:1px solid #151713; border-radius:3px 3px 1px 1px; background:linear-gradient(90deg,#42463f,#f4f1d9 50%,#4d514a); box-shadow:0 0 0 1px #c9c6b0,1px 2px 2px rgba(0,0,0,.65); transform-origin:50% calc(100% + 5px); transform:rotate(53deg); transition:transform .2s ease,box-shadow .2s ease; }
+  .auth-machine-switch.is-on::after { transform:rotate(0); box-shadow:0 0 0 1px #c9c6b0,0 0 9px #80e85c,1px 2px 2px rgba(0,0,0,.65); }
+  .auth-console.authorized { color:#bff39a; }
+  .auth-console a:not(.auth-machine-switch) { color:inherit; text-decoration:none; border-bottom:1px dotted currentColor; }
+  .theme-toggle label { display:flex; align-items:center; gap:9px; font:700 11px "Courier New",monospace; letter-spacing:.1em; text-transform:uppercase; }
+  .theme-toggle input { position:absolute; opacity:0; }
+  .toggle-track { position:relative; width:54px; height:26px; border:2px solid #777864; border-radius:14px; background:#171b15; box-shadow:inset 0 3px 6px #000; cursor:pointer; }
+  .toggle-track::after { content:""; position:absolute; top:3px; left:4px; width:16px; height:16px; border-radius:50%; background:#d3652e; box-shadow:0 0 7px #ed863d,0 2px 2px #000; transition:transform .2s; }
+  .theme-toggle input:checked + .toggle-track::after { transform:translateX(26px); background:#dad8ce; box-shadow:0 0 5px #fff,0 2px 2px #555; }
+  body.light-machine { color:#171815; background:repeating-linear-gradient(90deg,rgba(0,0,0,.025) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 5%,#f0f0e9,#c8c9c3 48%,#9fa19c 100%); border-color:#7c7e7a; box-shadow:inset 0 0 0 5px #a6a8a3,inset 0 0 45px #777,0 0 0 1px #eee,0 20px 50px #000; }
+  body.light-machine h1,body.light-machine h2,body.light-machine label,body.light-machine .color-label { color:#151613; text-shadow:0 1px 0 #fff,0 -1px 0 #777; }
+  body.light-machine .console-subtitle,body.light-machine h3,body.light-machine .filter-description,body.light-machine .color-name,body.light-machine .getting-started-list,body.light-machine .how-it-works-list,body.light-machine .rasterizer-checklist,body.light-machine .collapsible-info,body.light-machine .collapsible-info summary,body.light-machine .remembered-input-note,body.light-machine .holographic-lab-link { color:#343530; }
+  body.light-machine .holographic-lab-link a { color:#1d5c2c; text-decoration:underline; text-decoration-thickness:2px; text-underline-offset:3px; text-shadow:none; }
+  body.light-machine .holographic-lab-link a:hover { color:#0d3b18; text-shadow:0 1px #fff; }
+  .machine-nav { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin:0 0 18px; padding:6px; border:1px solid #6d725d; border-radius:10px; background:linear-gradient(#252b24,#151914); box-shadow:inset 0 0 0 2px #0d100c,0 3px 0 #0a0c09; }
+  .machine-nav a { display:flex; align-items:center; justify-content:center; min-height:32px; padding:6px 8px; border:1px solid #596451; border-radius:5px; color:#d9d2af; background:linear-gradient(#465149,#29352f); font:700 clamp(8px,1.5vw,11px) "Courier New",monospace; letter-spacing:.04em; text-align:center; text-decoration:none; text-transform:uppercase; }
+  .machine-nav a:hover,.machine-nav a:focus-visible { color:#f5f1d7; border-color:#a8c99b; background:linear-gradient(#657b6c,#3c5447); outline:0; }
+  .machine-nav a[aria-current="page"] { color:#eaf7df; border-color:#93bf82; background:linear-gradient(#527448,#2d542d); box-shadow:inset 0 0 8px rgba(141,240,108,.28); }
+  body.light-machine .machine-nav { border-color:#777974; background:linear-gradient(#dcddd7,#bcbeb8); box-shadow:inset 0 0 0 2px #f1f1eb,0 3px 0 #858782; }
+  body.light-machine .machine-nav a { color:#20251f; border-color:#7b857d; background:linear-gradient(#e6e8e2,#b2bab3); text-shadow:0 1px #fff; }
+  body.light-machine .machine-nav a:hover,body.light-machine .machine-nav a:focus-visible { color:#102b16; background:linear-gradient(#d5e5cd,#a8c89c); }
+  body.light-machine .machine-nav a[aria-current="page"] { color:#102b16; border-color:#527d50; background:linear-gradient(#b8d2aa,#8eaf82); box-shadow:inset 0 0 8px rgba(40,109,36,.18); }
+  @media (max-width:520px) { .machine-nav { grid-template-columns:1fr; } }
+  body.light-machine .remembered-input-note { border-color:#777974; background:#dedfd9; box-shadow:inset 0 1px 5px #999; }
+  body.light-machine .upload-error { color:#781e11; background:#f8d8d1; border-color:#b84736; box-shadow:inset 0 1px 4px #d6a39a; }
+  body.light-machine .upload-error-dialog { color:#352016; background:#f0e8d9; border-color:#a95030; box-shadow:0 12px 40px #333,inset 0 0 0 4px #d0c2aa; }
+  body.light-machine .upload-error-dialog h2 { color:#873419; }
+  body.light-machine .upload-error-login { color:#173113; border-color:#5e9850; background:linear-gradient(#c4e2ad,#86b873); box-shadow:inset 0 1px #efffe4,0 4px 0 #4e7841; }
+  body.light-machine .auth-console { color:#8a321d; }
+  body.light-machine .auth-console.authorized { color:#2a6b22; }
+  body.light-machine .how-it-works-intro { color:#343530; }
+  @media (prefers-reduced-motion:reduce) { .status-lamp::before { animation:none; } }
+  body.light-machine form { background:rgba(220,221,216,.5); border-color:#777974; box-shadow:inset 0 0 0 4px #b1b3ae,inset 0 0 20px #888,0 6px 0 #686a66; }
+  body.light-machine .abstract-panel { background:#b9bbb5; border-color:#777974; box-shadow:inset 0 0 15px #8c8e89; }
+  body.light-machine input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),body.light-machine select,body.light-machine textarea { color:#171815; border-color:#777974; background:#dedfd9; box-shadow:inset 0 1px 5px #999; }
+  body.light-machine input[type="file"]::file-selector-button,body.light-machine input[type="file"]::-webkit-file-upload-button { color:#171815; border-color:#69756e; background:linear-gradient(#e1e4df,#aeb6af); box-shadow:inset 0 1px rgba(255,255,255,.8),0 3px 0 #737a74; }
+  body.light-machine button { color:#171815; background:linear-gradient(#e1e4df,#aeb6af); border-color:#69756e; box-shadow:inset 0 1px rgba(255,255,255,.8),0 3px 0 #737a74; text-shadow:0 1px #fff; }
+  body.light-machine .filter-actions button { color:#171815; background:linear-gradient(#dedfd9,#aeb0aa); border-color:#777974; text-shadow:0 1px #fff; }
+  @media (min-width:900px) and (hover:hover) {
+    body { width:125vw; max-width:none; margin:0; zoom:.8; }
+  }
+</style>
+<link rel="stylesheet" href="/static/machine_chrome.css">
+</head>
+<body>
+<div id="upload_error_modal" class="upload-error-modal" role="alertdialog" aria-modal="true" aria-labelledby="upload_error_title" hidden>
+  <div class="upload-error-dialog">
+    <h2 id="upload_error_title">PROCESSING CONSOLE NOTICE</h2>
+    <div id="upload_error_modal_message"></div>
+    <div class="upload-error-actions">
+      <a class="upload-error-login" href="/login">Sign in or sign up</a>
+      <button type="button" id="upload_error_close">Back to the controls</button>
+    </div>
+  </div>
+</div>
+  <div class="theme-toggle">
+    <a id="login_link" class="login-link" href="/login"><span class="auth-machine-switch" aria-hidden="true"></span><span>Operator access, sign in</span></a>
+    <div id="auth_console" class="auth-console authorized" hidden><a class="auth-machine-switch is-on" href="/logout" aria-label="Sign out"></a><span>Operator authorized</span></div>
+    <label><span>Dark</span><input id="theme_switch" type="checkbox"><span class="toggle-track"></span><span>Light</span></label>
+  </div>
+  {# <div class="page-header">
+    <h1><a class="home-title" href="/" aria-label="Return to MOPA Laser Rasterizer home"><span class="facade-title" aria-hidden="true"><span>M</span><span>O</span><span>P</span><span>A</span><span>-</span><span>L</span><span>A</span><span>S</span><span>E</span><span>R</span><span>-</span><span>R</span><span>A</span><span>S</span><span>T</span><span>E</span><span>R</span><span>I</span><span>Z</span><span>E</span><span>R</span></span></a></h1>
+    <div class="console-status-line">
+      <div class="status-lamps" role="status" aria-label="MOPA laser processing system indicators">
+        <span class="status-lamp mopa-lamp">MOPA</span>
+        <span class="status-lamp laser-lamp">Laser</span>
+        <span class="status-lamp raster-lamp">Raster</span>
+        <span class="status-lamp vector-lamp">Vector</span>
+        <span class="status-lamp power-lamp">Power</span>
+      </div>
+      <span class="console-subtitle">VECTOR PROCESSING CONSOLE · SERIES 79</span>
+    </div>
+  </div>
+  <nav class="machine-nav" aria-label="Primary navigation"><a href="/" aria-current="page">Rasterizer</a><a href="/holographic-etching">Holographic Lab</a><a href="/material-libraries">Material Vault</a></nav> #}
+  {{ machine_chrome('rasterizer', 'VECTOR PROCESSING CONSOLE · SERIES 79') }}
+  <h2>Turn any image into a laser-ready color engraving project!</h2>
+  <h2>Without building every color layer by hand!</h2>
+  <details class="collapsible-info">
+    <summary>Getting Started</summary>
+    <ul class="getting-started-list">
+      <li class="step-files">Bring your own artwork and LightBurn Material Library file.</li>
+      <li class="step-material">Choose or type the exact material name from that library.</li>
+      <li class="step-colors">Choose your engraving colors. Click a swatch to exclude it from the artwork, click it again to bring it back.</li>
+      <li class="step-mapping">Link a swatch to its laser setting. Click and edit its color name so it exactly matches the <strong>Description</strong> field of the LightBurn Material Library setting you want to use.</li>
+      <li class="step-library">Planning plenty of color engraving? For the smoothest workflow, rename your Material Library setting descriptions to match the Rasterizer’s palette color names.</li>
+      <li class="step-style">Choose an image preset.</li>
+      <li class="step-pixel-size">Set Square MM Size to choose the physical size of individual pixels processed.</li>
+      <li class="step-dimensions">Enter either the processing width or processing height in pixels. That value multiplied by the processing pixel size determines the finished physical dimension; the other dimension is calculated automatically to preserve your artwork’s aspect ratio.</li>
+      <li class="step-maximum"><strong>Important:</strong> for maximum Rasterizer detail, set the image’s largest processing dimension to <strong>1600</strong> pixels and set Square MM Size to its minimum, <strong>0.0625 mm</strong>. That gives you the smallest processing pixels and the largest available pixel count, fully maxing out the Rasterizer’s resolution capability. It also asks more of the machine and takes longer, so this is your official signal to make a coffee, drink it, and let the Rasterizer do its thing.</li>
+    </ul>
+  </details>
+  <details class="collapsible-info">
+    <summary>How does it work?</summary>
+    <p class="how-it-works-intro">Honestly, no one knows for sure. We found the Rasterizer in an abandoned missile silo and were initially afraid to turn it on. Luckily, it appears to prefer turning images into laser-ready color projects.</p>
+    <p class="how-it-works-transition">Okay, seriously, here’s what it does:</p>
+    <ul class="how-it-works-list">
+      <li class="works-pixels">The Rasterizer reads your artwork pixel by pixel and reduces it to the engraving colors you selected.</li>
+      <li class="works-vectors">It joins matching color regions into clean, closed vector shapes that are ready for the laser.</li>
+      <li class="works-settings">It creates each LightBurn layer using the matching setting from your Material Library.</li>
+      <li class="works-punch">But wait, there’s more: it creates precise punch-through geometry for every color, so layers clear their own space with no overlapping engraves, stray open paths, or messy boundaries.</li>
+    </ul>
+  </details>
+  <ul class="rasterizer-checklist">
+    <li class="benefit-time">Spend less time tracing, sorting layers, and setting up jobs.</li>
+    <li class="benefit-create">Spend more time making beautiful markings on metals.</li>
+    <li class="benefit-style">Choose a photo preset for a polished starting point, or an abstract style when you want to turn the signal all the way up.</li>
+    <li class="benefit-settings">You focus on finding those knockout color settings, and the Rasterizer handles everything else.</li>
+  </ul>
+     
+  <!-- Form Section -->
+  <form action="/upload" method="post" enctype="multipart/form-data"> 
+    <input type="hidden" id="history_session" name="history_session">
+    <div id="upload_error" class="upload-error" role="alert" hidden></div>
+    <div class="form-group"></div>
+    <div>
+      <div><label for="image">1. Bring your own artwork:</label></div>
+      <div><input type="file" id="image" name="image" accept="image/*" required></div>
+    </div>
+    <div>
+      <div><label for="material_settings">2. Choose your LightBurn Material Library:</label></div>
+      <div><input type="file" id="material_settings" name="material_settings" accept=".clb,.lbmat,.lbrn" aria-describedby="remembered_material_library"></div>
+      <div id="remembered_material_library" class="remembered-input-note" hidden></div>
+      <div id="saved_material_library_row" hidden><label for="saved_material_library">Or use one of your saved Material Libraries:</label><select id="saved_material_library" name="saved_material_library_id"><option value="">Choose an account library…</option></select></div>
+    </div>    
+    <div>
+      <div><label for="material">3. Choose material to engrave (exact Material Library name):</label></div>
+      <div><input id="material" name="material" list="material_suggestions" value="stainless - steel" required><datalist id="material_suggestions"><option value="stainless - steel">Stainless Steel</option><option value="titanium">Titanium</option></datalist></div>
+    </div>
+    <div>
+      <div><label for="pixel_square_mm">4. Set processing dimensions, pixel scale (mm per raster pixel):</label> </div>
+      <div><input type="number" id="pixel_square_mm" name="pixel_square_mm" value="1" min="0.0625" step="0.0625" required></div>
+    </div>
+    <div>
+      <div><label for="new_width">Processing width (pixels; use 0 to calculate from height):</label> </div>
+      <div><input type="number" id="new_width" name="new_width" value="0" min="0" max="1600"> </div>
+    </div>
+    <div>
+      <div><label for="new_height">Processing height (pixels; use 0 to calculate from width):</label> </div>
+      <div><input type="number" id="new_height" name="new_height" value="0" min="0" max="1600"> </div>
+    </div>
+    <div>
+
+    <div class="form-group">
+      <!-- <label for="colorList">Selected Colors:</label> -->
+      <input type="text" id="colorList" name="colors" placeholder="All colors included by default..." readonly hidden="True">
+      <input type="hidden" id="color_name_overrides" name="color_name_overrides" value="{}">
+    </div>
+    <div>
+    <div>      
+      <!-- Lightburn Color Palette Grid Section -->
+      <div class="palette-section">
+        <label style="font-size: 0.9rem; font-weight: 600;">5. Tune your engraving color palette</label>
+        <h3>All available colors are included to start. Click a swatch to exclude it from the artwork. For settings, either keep the default color names and use those same names in your Material Library, or click a color name to retitle it to your library’s exact Entry Description or cut-setting name. Presto: the matching Material Library setting is copied onto that color’s LightBurn layer. Nearby colors are reassigned to the closest remaining engraving color, so you can experiment with confidence.</h3>
+        <div class="color-grid">
+          <div class="color-card"><span class="color-name">black</span><div class="color-square" style="background-color: #000000;"></div><span class="color-hex">#000000</span></div>
+          <div class="color-card"><span class="color-name">blue</span><div class="color-square" style="background-color: #0000FF;"></div><span class="color-hex">#0000FF</span></div>
+          <div class="color-card"><span class="color-name">red</span><div class="color-square" style="background-color: #FF0000;"></div><span class="color-hex">#FF0000</span></div>
+          <div class="color-card"><span class="color-name">green</span><div class="color-square" style="background-color: #00E000;"></div><span class="color-hex">#00E000</span></div>
+          <div class="color-card"><span class="color-name">yellow</span><div class="color-square" style="background-color: #D0D000;"></div><span class="color-hex">#D0D000</span></div>
+          <div class="color-card"><span class="color-name">orange</span><div class="color-square" style="background-color: #FF8000;"></div><span class="color-hex">#FF8000</span></div>
+          <div class="color-card"><span class="color-name">cyan</span><div class="color-square" style="background-color: #00E0E0;"></div><span class="color-hex">#00E0E0</span></div>
+          <div class="color-card"><span class="color-name">magenta</span><div class="color-square" style="background-color: #FF00FF;"></div><span class="color-hex">#FF00FF</span></div>
+          <div class="color-card"><span class="color-name">light-gray</span><div class="color-square" style="background-color: #B4B4B4;"></div><span class="color-hex">#B4B4B4</span></div>
+          <div class="color-card"><span class="color-name">dark-blue</span><div class="color-square" style="background-color: #0000A0;"></div><span class="color-hex">#0000A0</span></div>
+          <div class="color-card"><span class="color-name">dark-red</span><div class="color-square" style="background-color: #A00000;"></div><span class="color-hex">#A00000</span></div>
+          <div class="color-card"><span class="color-name">dark-green</span><div class="color-square" style="background-color: #00A000;"></div><span class="color-hex">#00A000</span></div>
+          <div class="color-card"><span class="color-name">dark-yellow</span><div class="color-square" style="background-color: #A0A000;"></div><span class="color-hex">#A0A000</span></div>
+          <div class="color-card"><span class="color-name">dark-orange</span><div class="color-square" style="background-color: #C08000;"></div><span class="color-hex">#C08000</span></div>
+          <div class="color-card"><span class="color-name">light-blue</span><div class="color-square" style="background-color: #00A0FF;"></div><span class="color-hex">#00A0FF</span></div>
+          <div class="color-card"><span class="color-name">dark-magenta</span><div class="color-square" style="background-color: #A000A0;"></div><span class="color-hex">#A000A0</span></div>
+          <div class="color-card"><span class="color-name">medium-gray</span><div class="color-square" style="background-color: #808080;"></div><span class="color-hex">#808080</span></div>
+          <div class="color-card"><span class="color-name">slate-blue</span><div class="color-square" style="background-color: #7D87B9;"></div><span class="color-hex">#7D87B9</span></div>
+          <div class="color-card"><span class="color-name">rose</span><div class="color-square" style="background-color: #BB7784;"></div><span class="color-hex">#BB7784</span></div>
+          <div class="color-card"><span class="color-name">periwinkle-blue</span><div class="color-square" style="background-color: #4A6FE3;"></div><span class="color-hex">#4A6FE3</span></div>
+          <div class="color-card"><span class="color-name">raspberry</span><div class="color-square" style="background-color: #D33F6A;"></div><span class="color-hex">#D33F6A</span></div>
+          <div class="color-card"><span class="color-name">sage-green</span><div class="color-square" style="background-color: #8CD78C;"></div><span class="color-hex">#8CD78C</span></div>
+          <div class="color-card"><span class="color-name">peach</span><div class="color-square" style="background-color: #F0B98D;"></div><span class="color-hex">#F0B98D</span></div>
+          <div class="color-card"><span class="color-name">light-pink</span><div class="color-square" style="background-color: #F6C4E1;"></div><span class="color-hex">#F6C4E1</span></div>
+          <div class="color-card"><span class="color-name">orchid-pink</span><div class="color-square" style="background-color: #FA9ED4;"></div><span class="color-hex">#FA9ED4</span></div>
+          <div class="color-card"><span class="color-name">deep-purple</span><div class="color-square" style="background-color: #500A78;"></div><span class="color-hex">#500A78</span></div>
+          <div class="color-card"><span class="color-name">rust-brown</span><div class="color-square" style="background-color: #B45A00;"></div><span class="color-hex">#B45A00</span></div>
+          <div class="color-card"><span class="color-name">teal</span><div class="color-square" style="background-color: #004754;"></div><span class="color-hex">#004754</span></div>
+          <div class="color-card"><span class="color-name">bright-mint-green</span><div class="color-square" style="background-color: #86FA88;"></div><span class="color-hex">#86FA88</span></div>
+          <div class="color-card"><span class="color-name">light-gold</span><div class="color-square" style="background-color: #FFDB66;"></div><span class="color-hex">#FFDB66</span></div>
+        </div>
+      </div>  
+    </div>
+    </div>    
+
+  <div>
+    <div>
+      <label for="image_preset">6. Choose your image style</label>
+      <select id="image_preset" name="image_preset">
+        <option value="cartoon" selected>Cartoon</option>
+        <option value="color_photograph">Color Photo</option>
+        <option value="bw_dither_photograph">Black and White Photo</option>
+        <optgroup label="Abstract Presets">
+          <option value="abstract_wave">Wave Flow</option>
+          <option value="abstract_voronoi">Voronoi</option>
+          <option value="abstract_shear">Shear</option>
+          <option value="abstract_spiral">Spiral Vortex</option>
+          <option value="abstract_mosaic">Staggered Mosaic</option>
+          <option value="abstract_crystal">Crystal Tessellation</option>
+          <option value="abstract_ripple">Topographic Ripple</option>
+          <option value="abstract_centerline">Centerline Drawing</option>
+          <option value="abstract_glitch">Digital Glitch</option>
+          <option value="abstract_deep_fryer">Deep Fryer</option>
+          <option value="abstract_shattered">Shattered</option>
+          <option value="abstract_none">Abstract: None</option>
+        </optgroup>
+      </select>
+      <div class="abstract-panel">
+        <p id="filter_description" class="filter-description"></p>
+        <div id="filter_controls" class="filter-controls"></div>
+        <div class="filter-actions">
+          <button type="button" id="reset_filter">Reset settings</button>
+          <button type="button" id="randomize_filter">Randomize</button>
+        </div>
+      </div>
+      <input type="hidden" id="abstract_filter_parameters" name="abstract_filter_parameters" value="{}">
+    </div>    
+  </div>    
+  <button type="submit">Build My MOPA Color Project</button>
+</form>
+
+  <script>    
+    const STANDARD_PRESETS = {
+      cartoon: {
+        description: 'Best for logos, illustrations, and bold graphic art. Min Island Area removes tiny specks, Simplification trims unnecessary edge wiggles, and Smoothing Radius rounds corners; leave them low for maximum crispness or raise them for a cleaner, bolder result.',
+        controls: [['min_island_area', 0, 0, 100, 1], ['simplification_factor', 0, 0, 5, .05], ['smoothing_radius', .001, 0, 10, .001]]
+      },
+      color_photograph: {
+        description: 'The photo-to-metal starting point: it reduces your image to the engraving colors you chose, then cleans it for vector work. Min Island Area removes little noise islands, Simplification reduces fussy outlines, and Smoothing Radius softens jagged photo detail into calmer shapes.',
+        controls: [['min_island_area', 8, 0, 100, 1], ['simplification_factor', .35, 0, 5, .05], ['smoothing_radius', .5, 0, 10, .05]]
+      },
+      bw_dither_photograph: {
+        description: 'Turns a photograph into a two-color black-and-light-gray engraving. Min Island Area removes isolated dots, Simplification tidies the outlines, and Smoothing Radius softens rough edges. Enable Transparent to leave the light areas blank and laser only the dark detail.',
+        controls: [['min_island_area', 2, 0, 100, 1], ['simplification_factor', .1, 0, 5, .05], ['smoothing_radius', .1, 0, 10, .05]],
+        toggles: [['transparent', false]]
+      }
+    };
+    const FILTERS = {
+      wave: {
+        description: 'Makes the whole image flow like liquid metal, bending every color boundary together in synchronized waves. Amplitude X and Y set how far the wave pushes sideways and vertically, Frequency X and Y set how tightly the waves repeat, and Phase slides the whole wave pattern along its cycle.',
+        controls: [['amplitude_x', 4, -30, 30, .5], ['amplitude_y', 4, -30, 30, .5],
+          ['frequency_x', .1, .01, 1, .01], ['frequency_y', .1, .01, 1, .01], ['phase', 0, 0, 6.283, .05]]
+      },
+      voronoi: {
+        description: 'Rebuilds the artwork as an organic field of irregular cells. Cell Size sets the scale of the cells, Jitter makes their spacing more or less irregular, Gap opens space between them, and Seed gives you a different, repeatable cell layout whenever you change it.',
+        controls: [['cell_size', 15, 3, 100, 1], ['jitter', .45, 0, .95, .01],
+          ['gap', .8, 0, 12, .1], ['seed', 1, 0, 999999, 1]]
+      },
+      shear: {
+        description: 'Pulls the image into a directional, slanted, speed-streak look. Shear X and Y tilt it sideways or vertically, while Scale X and Y stretch or compress its width and height. Small moves add a stylish lean; bigger moves create a full analog-glitch pull.',
+        controls: [['shear_x', .5, -2, 2, .05], ['shear_y', 0, -2, 2, .05],
+          ['scale_x', 1, .25, 3, .05], ['scale_y', .8, .25, 3, .05]]
+      },
+      spiral: {
+        description: 'Draws the entire design into a movable vortex. Twist controls how many turns it makes, Falloff controls whether the spin reaches gently or grabs the whole image, and Center X and Y move the eye of the storm left/right and up/down.',
+        controls: [['twist', 2.25, -8, 8, .1], ['falloff', 1, .1, 5, .1],
+          ['center_x', .5, 0, 1, .01], ['center_y', .5, 0, 1, .01]]
+      },
+      mosaic: {
+        description: 'Turns color regions into clean rectangular tiles. Tile Size makes the blocks bigger or smaller, Gap adds breathing room between them, and Stagger offsets alternating rows from neat grid to brick-wall rhythm.',
+        controls: [['tile_size', 12, 2, 100, 1], ['gap', 1, 0, 20, .1], ['stagger', .5, 0, 1, .05]]
+      },
+      crystal: {
+        description: 'Converts the image into faceted triangular metal art, like cut crystal or low-poly sculpture. Cell Size controls how large each facet is, and Gap creates more or less separation between the triangular planes.',
+        controls: [['cell_size', 18, 3, 120, 1], ['gap', .7, 0, 20, .1]]
+      },
+      ripple: {
+        description: 'Sends concentric rings outward like topographic contours or water ripples. Amplitude sets the push of each ring, Frequency sets how closely the rings sit together, Phase rolls the pattern forward, and Center X and Y move the ripple source left/right and up/down.',
+        controls: [['amplitude', 3, -30, 30, .5], ['frequency', .18, .01, 1, .01],
+          ['phase', 0, 0, 6.283, .05], ['center_x', .5, 0, 1, .01], ['center_y', .5, 0, 1, .01]]
+      },
+      centerline: {
+        description: 'Turns the dark ink, shadows, and outlines already hiding in your image into centered black line art, then wraps each centerline in a tiny closed ribbon so there are no open paths. It ignores bright color boundaries, so a red edge does not become a line unless it is dark enough to read like ink. Dark Threshold decides how dark a pixel must be, Contrast separates ink from nearby tones, Blur quiets grain, Gap Closure reconnects tiny breaks, Line Simplification smooths the routes, Min Branch Length removes little fuzzy offshoots, and Stroke Width sets how wide each closed line ribbon becomes.',
+        controls: [['dark_threshold', 145, 20, 245, 1], ['contrast', 1.15, .3, 3, .05],
+          ['blur', 1, 0, 5, .25], ['gap_closure', 1, 0, 3, 1],
+          ['line_simplification', .35, 0, 3, .05], ['min_branch_length', 8, 0, 80, 1],
+          ['stroke_width', .35, .05, 4, .05]]
+      },
+      glitch: {
+        description: 'Slices the image into coordinated digital stutters, echoes, and Fibonacci-inspired shifts. Slice Height controls band thickness, Fragment Width controls chunk length, Shift Amount controls the jump, Echo Count and Spacing control repeated copies, Density chooses how much participates, Fibonacci Stride changes the rhythm, Vertical Jitter adds wobble, and Seed rolls a new repeatable glitch.',
+        controls: [['slice_height', 18, 3, 100, 1], ['fragment_width', 70, 8, 240, 1],
+          ['shift_amount', 28, 0, 180, 1], ['echo_count', 2, 0, 5, 1],
+          ['echo_spacing', 9, 0, 80, 1], ['density', .55, 0, 1, .05],
+          ['fibonacci_stride', 2, 1, 8, 1], ['vertical_jitter', 3, 0, 60, 1],
+          ['seed', 1, 0, 999999, 1]]
+      },
+      deep_fryer: {
+        description: 'Recreates the gloriously over-processed energy of a deep-fried meme with compression blocks, damaged scan bands, smears, and copy-of-a-copy echoes. Block Size sets the chunk scale, Band Height sets the scanline strips, Compression Gap opens block seams, Smear Amount drags bands sideways, Echo Count and Spacing add repeated ghosts, Degradation increases broken or missing chunks, and Seed tunes a new repeatable batch of digital damage.',
+        controls: [['block_size', 24, 4, 120, 1], ['band_height', 34, 4, 180, 1],
+          ['compression_gap', .7, 0, 8, .1], ['smear_amount', 18, 0, 120, 1],
+          ['echo_count', 2, 0, 5, 1], ['echo_spacing', 5, 0, 40, 1],
+          ['degradation', .35, 0, 1, .05], ['seed', 1, 0, 999999, 1]]
+      },
+      shattered: {
+        description: 'Breaks the artwork into glass-like shards that spread, tumble, and fall from a chosen impact point. Min and Max Shard Size set the smallest and largest pieces, Density sets how many appear, Minimum Gap and Gap Variation open the cracks, Horizontal Spread and Fall Distance move pieces out and down, Gravity Bias makes the fall heavier, Rotation spins them, Break Origin X/Y places the impact, and Seed rolls a new repeatable break.',
+        controls: [['min_shard_size', 8, 2, 80, 1], ['max_shard_size', 32, 4, 160, 1],
+          ['density', .6, .1, 1, .05], ['minimum_gap', .7, 0, 10, .1],
+          ['gap_variation', 2.2, 0, 15, .1], ['horizontal_spread', 12, 0, 100, 1],
+          ['fall_distance', 20, 0, 160, 1], ['gravity_bias', 1.4, .2, 4, .1],
+          ['rotation', 22, 0, 180, 1], ['break_origin_x', .5, 0, 1, .01],
+          ['break_origin_y', .35, 0, 1, .01], ['seed', 1, 0, 999999, 1]]
+      },
+      /* Retired Abstract Holographic preset.
+      holographic: {
+        description: 'Applies one continuous, calibration-free holographic grating to the light/background swatches. The Holographic palette swatch supplies the Material Library operation type and laser values—its interval, angle, power, speed, frequency, and pulse width are used unchanged. Fill Mode defaults to From Setting, matching the Holographic Etching Lab; choose Fill, Offset Fill, or Line to override that behavior explicitly. Rename the Holographic swatch to match your library. Enable Invert Threshold to apply the grating to swatches at or below the Light Threshold instead. Keep Black preserves dark source-image geometry on the normal Black material setting, like the Holographic Etching Lab.',
+        controls: [['light_threshold', 150, 0, 255, 1]],
+        selects: [['fill_mode', 'from_setting', [['fill', 'Fill'], ['offset_fill', 'Offset Fill'], ['from_setting', 'From Setting'], ['line', 'Line']]]],
+        toggles: [['invert_threshold', false], ['keep_black', false]]
+      }, */
+      none: { description: 'Keeps the clean abstract-vector workflow without adding a geometric effect. Choose this when you want the source image to do the talking.', controls: [] }
+    };
+
+    const friendlyName = name => name.split('_').map(word =>
+      word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+
+    function selectedPreset() {
+      const value = document.getElementById('image_preset').value;
+      return value.startsWith('abstract_') ? FILTERS[value.slice('abstract_'.length)] : STANDARD_PRESETS[value];
+    }
+
+    function updateFilterParameters() {
+      const values = {};
+      document.querySelectorAll('#filter_controls [data-parameter]').forEach(input => {
+        values[input.dataset.parameter] = input.type === 'checkbox'
+          ? input.checked
+          : (input.type === 'text' || input.tagName === 'SELECT' ? input.value : Number(input.value));
+        const valueInput = input.closest('.filter-control').querySelector('.value-input');
+        if (valueInput && input.type === 'range') valueInput.value = input.value;
+      });
+      document.getElementById('abstract_filter_parameters').value = JSON.stringify(values);
+    }
+
+    /* Retired Abstract Holographic readout.
+    function updateHolographicSwatchReadout(values = {}) {
+      let readout = document.getElementById('holographic_swatch_readout');
+      if (document.getElementById('image_preset').value !== 'abstract_holographic') {
+        if (readout) readout.remove();
+        return;
+      }
+      if (!readout) {
+        readout = document.createElement('div');
+        readout.id = 'holographic_swatch_readout';
+        readout.className = 'filter-description holographic-normal-readout';
+        document.getElementById('filter_controls').after(readout);
+      }
+      const threshold = Number(values.light_threshold ?? 150);
+      const inverted = Boolean(values.invert_threshold);
+      const normalSwatches = Array.from(document.querySelectorAll('.color-card'))
+        .filter(card => !card.hasAttribute('data-holographic-setting'))
+        .filter(card => {
+          const hex = card.querySelector('.color-hex').textContent.trim();
+          if (hex.toUpperCase() === '#000000' || card.querySelector('.color-square').classList.contains('selected')) return false;
+          const rgb = [1, 3, 5].map(index => Number.parseInt(hex.slice(index, index + 2), 16));
+          const brightness = .2126 * rgb[0] + .7152 * rgb[1] + .0722 * rgb[2];
+          const holographic = inverted ? brightness <= threshold : brightness >= threshold;
+          return !holographic;
+        })
+        .map(card => ({
+          name: card.querySelector('.color-name').textContent.trim(),
+          hex: card.querySelector('.color-hex').textContent.trim()
+        }));
+      const direction = inverted ? 'at or below' : 'above';
+      readout.replaceChildren();
+      const summary = document.createElement('div');
+      summary.className = 'holographic-normal-summary';
+      summary.textContent = `Normal Material Library settings (${normalSwatches.length}) · ` +
+        `Holographic applies to enabled swatches ${direction} ${threshold}; Black remains on its Black setting.`;
+      readout.appendChild(summary);
+      const swatchGroup = document.createElement('div');
+      swatchGroup.className = 'holographic-normal-swatches';
+      if (!normalSwatches.length) {
+        const empty = document.createElement('span');
+        empty.textContent = 'All enabled swatches are holographic.';
+        swatchGroup.appendChild(empty);
+      } else {
+        normalSwatches.forEach(({name, hex}) => {
+          const chip = document.createElement('span');
+          chip.className = 'holographic-normal-chip';
+          chip.title = `${name} · ${hex}`;
+          const color = document.createElement('span');
+          color.className = 'holographic-normal-chip-color';
+          color.style.backgroundColor = hex;
+          const label = document.createElement('span');
+          label.className = 'holographic-normal-chip-name';
+          label.textContent = name;
+          chip.append(color, label);
+          swatchGroup.appendChild(chip);
+        });
+      }
+      readout.appendChild(swatchGroup);
+    }
+
+    */
+    function updateTumblerReadout(values) {
+      let readout = document.getElementById('tumbler_readout');
+      if (document.getElementById('image_preset').value !== 'abstract_tumbler') {
+        if (readout) readout.remove();
+        return;
+      }
+      if (!readout) {
+        readout = document.createElement('p');
+        readout.id = 'tumbler_readout';
+        readout.className = 'filter-description';
+        document.getElementById('filter_controls').after(readout);
+      }
+      const angle = values.wrap_angle / 360;
+      const circumference = d => Math.PI * d;
+      const span = d => circumference(d) * angle;
+      readout.textContent = `Circumference, top: ${circumference(values.top_diameter_mm).toFixed(1)} mm, ` +
+        `middle: ${circumference(values.middle_diameter_mm).toFixed(1)} mm, bottom: ${circumference(values.bottom_diameter_mm).toFixed(1)} mm. ` +
+        `Artwork width across the selected ${values.wrap_angle}° wrap: ${span(values.top_diameter_mm).toFixed(1)} / ` +
+        `${span(values.middle_diameter_mm).toFixed(1)} / ${span(values.bottom_diameter_mm).toFixed(1)} mm.`;
+    }
+
+    function renderFilterControls() {
+      const filter = selectedPreset();
+      const controls = document.getElementById('filter_controls');
+      document.getElementById('filter_description').textContent = filter.description;
+      controls.replaceChildren();
+      (filter.toggles || []).forEach(([name, value]) => {
+        const row = document.createElement('div');
+        row.className = 'filter-control';
+        row.innerHTML = `<label class="checkbox-label"><input id="filter_${name}_enabled" name="filter_${name}_enabled" type="checkbox" data-parameter="${name}" ${value ? 'checked' : ''}>` +
+          `<span>${friendlyName(name)}</span></label>`;
+        row.querySelector('input').addEventListener('change', updateFilterParameters);
+        controls.appendChild(row);
+      });
+      (filter.selects || []).forEach(([name, value, options]) => {
+        const row = document.createElement('div');
+        row.className = 'filter-control';
+        const select = document.createElement('select');
+        select.id = `filter_${name}`;
+        select.name = `filter_${name}`;
+        select.dataset.parameter = name;
+        options.forEach(([optionValue, label]) => {
+          const option = document.createElement('option');
+          option.value = optionValue;
+          option.textContent = label;
+          option.selected = optionValue === value;
+          select.appendChild(option);
+        });
+        const label = document.createElement('label');
+        label.htmlFor = select.id;
+        label.textContent = friendlyName(name);
+        row.append(label, select);
+        select.addEventListener('change', updateFilterParameters);
+        controls.appendChild(row);
+      });
+      filter.controls.forEach(([name, value, min, max, step]) => {
+        const row = document.createElement('div');
+        row.className = 'filter-control';
+        row.innerHTML = `<label><span>${friendlyName(name)}</span>` +
+          `<input class="value-input" id="filter_${name}_value" name="filter_${name}_value" type="number" value="${value}" min="${min}" max="${max}" step="${step}" aria-label="${friendlyName(name)} value"></label>` +
+          `<input id="filter_${name}_range" name="filter_${name}_range" type="range" data-parameter="${name}" value="${value}" min="${min}" max="${max}" step="${step}">`;
+        const slider = row.querySelector('input[type="range"]');
+        const valueInput = row.querySelector('.value-input');
+        slider.addEventListener('input', updateFilterParameters);
+        valueInput.addEventListener('input', () => {
+          // Do not clamp partial typing (for example the first "1" in
+          // "115") to the slider minimum. Synchronize only complete values
+          // that already fall inside the slider's range.
+          if (valueInput.value === '') return;
+          const value = Number(valueInput.value);
+          const min = Number(slider.min);
+          const max = Number(slider.max);
+          if (Number.isFinite(value) && value >= min && value <= max) {
+            slider.value = value;
+            updateFilterParameters();
+          }
+        });
+
+        const commitTypedValue = () => {
+          let value = Number(valueInput.value);
+          const min = Number(slider.min);
+          const max = Number(slider.max);
+          if (!Number.isFinite(value)) value = Number(slider.value);
+          value = Math.min(max, Math.max(min, value));
+          slider.value = value;
+          valueInput.value = slider.value;
+          updateFilterParameters();
+        };
+
+        valueInput.addEventListener('change', commitTypedValue);
+        valueInput.addEventListener('focus', event => event.target.select());
+        valueInput.addEventListener('keydown', event => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            commitTypedValue();
+            valueInput.blur();
+          }
+        });
+        controls.appendChild(row);
+      });
+      document.getElementById('randomize_filter').style.display = filter.controls.length ? 'block' : 'none';
+      document.getElementById('reset_filter').style.display = filter.controls.length ? 'block' : 'none';
+      updateFilterParameters();
+    }
+
+    document.getElementById('image_preset').addEventListener('change', renderFilterControls);
+    document.getElementById('reset_filter').addEventListener('click', renderFilterControls);
+    document.getElementById('randomize_filter').addEventListener('click', () => {
+      document.querySelectorAll('#filter_controls input[type="range"]').forEach(input => {
+        const min = Number(input.min), max = Number(input.max), step = Number(input.step);
+        const steps = Math.floor((max - min) / step);
+        input.value = min + Math.floor(Math.random() * (steps + 1)) * step;
+      });
+      updateFilterParameters();
+    });
+
+    const newWidthInput = document.getElementById('new_width');
+    const newHeightInput = document.getElementById('new_height');
+    const uploadForm = document.querySelector('form[action="/upload"]');
+    let mostRecentlySetDimension = null;
+
+    function setOtherDimensionToZero(changedInput, otherInput) {
+      const dimension = Number(changedInput.value);
+      if (Number.isFinite(dimension) && dimension > 0) {
+        otherInput.value = '0';
+        mostRecentlySetDimension = changedInput;
+      }
+    }
+
+    newWidthInput.addEventListener('input', () => setOtherDimensionToZero(newWidthInput, newHeightInput));
+    newHeightInput.addEventListener('input', () => setOtherDimensionToZero(newHeightInput, newWidthInput));
+    uploadForm.addEventListener('submit', () => {
+      if (Number(newWidthInput.value) > 0 && Number(newHeightInput.value) > 0) {
+        const changedInput = mostRecentlySetDimension || newWidthInput;
+        setOtherDimensionToZero(
+          changedInput,
+          changedInput === newWidthInput ? newHeightInput : newWidthInput
+        );
+      }
+    });
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const themeSwitch = document.getElementById('theme_switch');
+      const loginLink = document.getElementById('login_link');
+      const authConsole = document.getElementById('auth_console');
+      const savedTheme = localStorage.getItem('mopa-machine-theme') || 'dark';
+      themeSwitch.checked = savedTheme === 'light';
+      document.body.classList.toggle('light-machine', themeSwitch.checked);
+      themeSwitch.addEventListener('change', () => {
+        document.body.classList.toggle('light-machine', themeSwitch.checked);
+        localStorage.setItem('mopa-machine-theme', themeSwitch.checked ? 'light' : 'dark');
+      });
+      let accountSaveTimer = null;
+      let signedInAccount = false;
+      let accountPreferencesTouched = false;
+      const preferenceSnapshot = () => ({
+        material: materialInput.value.trim(),
+        pixel_square_mm: document.getElementById('pixel_square_mm').value,
+        new_width: newWidthInput.value,
+        new_height: newHeightInput.value,
+        image_preset: document.getElementById('image_preset').value,
+        selected_color_hexes: Array.from(selectedColorHexes),
+        color_name_overrides: JSON.parse(colorNameOverrides.value || '{}'),
+        abstract_filter_parameters: JSON.parse(document.getElementById('abstract_filter_parameters').value || '{}'),
+      });
+      const saveAccountPreferences = () => {
+        if (!signedInAccount) return;
+        clearTimeout(accountSaveTimer);
+        accountSaveTimer = setTimeout(() => {
+          fetch('/account/preferences', {
+            method: 'PUT', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(preferenceSnapshot()),
+          }).catch(() => {});
+        }, 500);
+      };
+      const applyAccountPreferences = preferences => {
+        if (!preferences || typeof preferences !== 'object') return;
+        materialInput.value = preferences.material || materialInput.value;
+        document.getElementById('pixel_square_mm').value = preferences.pixel_square_mm ?? document.getElementById('pixel_square_mm').value;
+        newWidthInput.value = preferences.new_width ?? newWidthInput.value;
+        newHeightInput.value = preferences.new_height ?? newHeightInput.value;
+        if (preferences.image_preset) document.getElementById('image_preset').value = preferences.image_preset;
+        paletteCards.forEach(card => {
+          const hex = card.querySelector('.color-hex').textContent.trim().toUpperCase();
+          const name = preferences.color_name_overrides?.[hex];
+          if (name) card.querySelector('.color-name').textContent = name;
+        });
+        if (Array.isArray(preferences.selected_color_hexes)) {
+          selectedColorHexes.clear();
+          preferences.selected_color_hexes.forEach(hex => selectedColorHexes.add(hex));
+          paletteCards.forEach(card => {
+            const hex = card.querySelector('.color-hex').textContent.trim().toUpperCase();
+            card.querySelector('.color-square').classList.toggle('selected', !selectedColorHexes.has(hex));
+          });
+        }
+        renderFilterControls();
+        Object.entries(preferences.abstract_filter_parameters || {}).forEach(([name, value]) => {
+          const control = document.querySelector(`#filter_controls [data-parameter="${CSS.escape(name)}"]`);
+          if (!control) return;
+          if (control.type === 'checkbox') control.checked = Boolean(value);
+          else control.value = value;
+        });
+        updateFilterParameters();
+        updatePaletteFields();
+      };
+      fetch('/auth-status', { credentials: 'same-origin' })
+        .then(response => response.ok ? response.json() : { signed_in: false })
+        .then(({ signed_in }) => {
+          signedInAccount = Boolean(signed_in);
+          loginLink.hidden = Boolean(signed_in);
+          authConsole.hidden = !signed_in;
+          if (signedInAccount && !new URLSearchParams(window.location.search).get('settings')) {
+            fetch('/account/preferences', { credentials: 'same-origin' })
+              .then(response => response.ok ? response.json() : null)
+              .then(data => {
+                // Never let a delayed DynamoDB read overwrite a palette click
+                // or form edit the operator made after this page opened.
+                if (!accountPreferencesTouched) applyAccountPreferences(data?.preferences);
+              })
+              .catch(() => {});
+          }
+          if (signedInAccount) loadSavedMaterialLibraries();
+        })
+        .catch(() => {});
+      const sessionFromLink = new URLSearchParams(window.location.search).get('history_session');
+      const savedHistorySession = sessionStorage.getItem('mopa-history-session');
+      const newSession = crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`;
+      const historySession = sessionFromLink || savedHistorySession || newSession;
+      document.getElementById('history_session').value = historySession;
+      sessionStorage.setItem('mopa-history-session', historySession);
+      const materialInput = document.getElementById('material');
+      const materialLibraryInput = document.getElementById('material_settings');
+      const savedMaterialLibraryRow = document.getElementById('saved_material_library_row');
+      const savedMaterialLibraryInput = document.getElementById('saved_material_library');
+      const uploadErrorModal = document.getElementById('upload_error_modal');
+      const uploadErrorModalMessage = document.getElementById('upload_error_modal_message');
+      const uploadErrorClose = document.getElementById('upload_error_close');
+      const showUploadError = message => {
+        uploadErrorModalMessage.textContent = message;
+        uploadErrorModal.hidden = false;
+        uploadErrorClose.focus();
+      };
+      uploadErrorClose.addEventListener('click', () => {
+        uploadErrorModal.hidden = true;
+      });
+      const rememberedMaterialNote = document.getElementById('remembered_material_library');
+      const loadSavedMaterialLibraries = () => fetch('/account/material-libraries', { credentials: 'same-origin' })
+        .then(response => response.ok ? response.json() : null)
+        .then(data => {
+          const libraries = data?.libraries || [];
+          if (!libraries.length) return;
+          savedMaterialLibraryRow.hidden = false;
+          libraries.forEach(library => {
+            const option = document.createElement('option');
+            option.value = library.library_id;
+            option.textContent = library.material_name
+              ? `${library.name} · ${library.material_name}`
+              : library.name;
+            savedMaterialLibraryInput.appendChild(option);
+          });
+        })
+        .catch(() => {});
+      const materialNameKey = `mopa-material-name:${historySession}`;
+      const materialLibraryKey = `mopa-material-library:${historySession}`;
+      const rememberedMaterialName = sessionStorage.getItem(materialNameKey);
+      const rememberedLibraryName = sessionStorage.getItem(materialLibraryKey);
+      if (rememberedMaterialName) materialInput.value = rememberedMaterialName;
+      if (rememberedLibraryName) {
+        rememberedMaterialNote.hidden = false;
+        rememberedMaterialNote.textContent = `Current Material Library: ${rememberedLibraryName}. Choose a new file above to replace it.`;
+      }
+      materialInput.addEventListener('input', () => {
+        sessionStorage.setItem(materialNameKey, materialInput.value.trim());
+        saveAccountPreferences();
+      });
+      materialLibraryInput.addEventListener('change', () => {
+        if (!materialLibraryInput.files.length) return;
+        savedMaterialLibraryInput.value = '';
+        const filename = materialLibraryInput.files[0].name;
+        sessionStorage.setItem(materialLibraryKey, filename);
+        rememberedMaterialNote.hidden = false;
+        rememberedMaterialNote.textContent = `Current Material Library: ${filename}. This file will replace the remembered library.`;
+      });
+      savedMaterialLibraryInput.addEventListener('change', () => {
+        if (!savedMaterialLibraryInput.value) return;
+        materialLibraryInput.value = '';
+        rememberedMaterialNote.hidden = false;
+        rememberedMaterialNote.textContent = `Using saved Material Library: ${savedMaterialLibraryInput.selectedOptions[0].textContent}.`;
+      });
+      const encodedSettings = new URLSearchParams(window.location.search).get('settings');
+      if (encodedSettings) {
+        try {
+          const paddedSettings = encodedSettings.replace(/-/g, '+').replace(/_/g, '/') +
+            '='.repeat((4 - encodedSettings.length % 4) % 4);
+          const bytes = Uint8Array.from(atob(paddedSettings), character => character.charCodeAt(0));
+          const settings = JSON.parse(new TextDecoder().decode(bytes));
+          materialInput.value = settings.material || materialInput.value;
+          document.getElementById('pixel_square_mm').value = settings.pixel_square_mm || '1';
+          newWidthInput.value = settings.new_width ?? '0';
+          newHeightInput.value = settings.new_height ?? '0';
+          document.getElementById('image_preset').value = settings.image_preset || 'cartoon';
+          sessionStorage.setItem(materialNameKey, materialInput.value.trim());
+          paletteCards.forEach(card => {
+            const hex = card.querySelector('.color-hex').textContent.trim().toUpperCase();
+            const savedName = settings.color_name_overrides?.[hex];
+            if (savedName) card.querySelector('.color-name').textContent = savedName;
+          });
+          selectedColorHexes.clear();
+          const selectedHexes = settings.selected_color_hexes || [];
+          paletteCards.forEach(card => {
+            const hex = card.querySelector('.color-hex').textContent.trim().toUpperCase();
+            const selected = selectedHexes.includes(hex);
+            if (selected) selectedColorHexes.add(hex);
+            card.querySelector('.color-square').classList.toggle('selected', !selected);
+          });
+          renderFilterControls();
+          Object.entries(settings.abstract_filter_parameters || {}).forEach(([name, value]) => {
+            const control = document.querySelector(`#filter_controls [data-parameter="${CSS.escape(name)}"]`);
+            if (!control) return;
+            if (control.type === 'checkbox') control.checked = Boolean(value);
+            else control.value = value;
+          });
+          updateFilterParameters();
+          updatePaletteFields();
+        } catch (error) {
+          console.warn('Unable to load settings from this URL:', error);
+        }
+      } else {
+        renderFilterControls();
+      }
+      uploadForm.addEventListener('submit', async event => {
+        event.preventDefault();
+        const artworkFile = document.getElementById('image').files[0];
+        const materialFile = materialLibraryInput.files[0];
+        const uploadError = document.getElementById('upload_error');
+        uploadError.hidden = true;
+        uploadError.textContent = '';
+        const artworkLooksLikeImage = artworkFile && (
+          artworkFile.type.startsWith('image/') || /\.(avif|bmp|gif|jpe?g|png|tiff?|webp)$/i.test(artworkFile.name)
+        );
+        const materialLooksValid = materialFile || savedMaterialLibraryInput.value || rememberedLibraryName;
+        document.getElementById('image').setCustomValidity(
+          artworkLooksLikeImage ? '' : 'Choose an image file for your artwork, not a LightBurn Material Library.'
+        );
+        materialLibraryInput.setCustomValidity(
+          materialLooksValid ? '' : 'Choose a LightBurn Material Library file before starting the job.'
+        );
+        if (!artworkLooksLikeImage || !materialLooksValid) {
+          (!artworkLooksLikeImage ? document.getElementById('image') : materialLibraryInput).reportValidity();
+          return;
+        }
+
+        try {
+          const response = await fetch(uploadForm.action, {
+            method: 'POST',
+            body: new FormData(uploadForm),
+            credentials: 'same-origin',
+          });
+          const contentType = response.headers.get('content-type') || '';
+          if (!response.ok || contentType.includes('application/json')) {
+            const data = contentType.includes('application/json')
+              ? await response.json()
+              : { message: `Could not start this job (HTTP ${response.status}).` };
+            uploadError.textContent = data.message || 'Could not start this job.';
+            uploadError.hidden = false;
+            showUploadError(uploadError.textContent);
+            return;
+          }
+          const page = await response.text();
+          document.open();
+          document.write(page);
+          document.close();
+        } catch (error) {
+          uploadError.textContent = 'Unable to contact the Rasterizer. Check your connection and try again.';
+          uploadError.hidden = false;
+          showUploadError(uploadError.textContent);
+        }
+      });
+      const noteAccountPreferenceChange = () => {
+        accountPreferencesTouched = true;
+        saveAccountPreferences();
+      };
+      uploadForm.addEventListener('input', noteAccountPreferenceChange);
+      uploadForm.addEventListener('change', noteAccountPreferenceChange);
+    });
+
+    const squares = document.querySelectorAll('.color-square');
+    const colorInput = document.getElementById('colorList');
+    const colorNameOverrides = document.getElementById('color_name_overrides');
+    const paletteCards = Array.from(document.querySelectorAll('.color-card'));
+    const paletteGrid = document.querySelector('.color-grid');
+    const selectedColorHexes = new Set(paletteCards
+      .filter(card => !card.hasAttribute('data-default-excluded'))
+      .map(card => card.querySelector('.color-hex').textContent.trim().toUpperCase()));
+
+    function updatePaletteFields() {
+      const overrides = {};
+      const selectedNames = [];
+      paletteCards.forEach(card => {
+        const hex = card.querySelector('.color-hex').textContent.trim().toUpperCase();
+        const name = card.querySelector('.color-name').textContent.trim();
+        overrides[hex] = name;
+        if (selectedColorHexes.has(hex)) selectedNames.push(name);
+      });
+      colorInput.value = selectedNames.join(', ');
+      colorNameOverrides.value = JSON.stringify(overrides);
+      colorNameOverrides.dispatchEvent(new Event('change', { bubbles: true }));
+      updateHolographicSwatchReadout(JSON.parse(document.getElementById('abstract_filter_parameters').value || '{}'));
+    }
+
+    paletteCards.forEach(card => {
+      const name = card.querySelector('.color-name');
+      name.contentEditable = 'true';
+      name.spellcheck = false;
+      name.title = 'Click to edit the matching Material Library layer name';
+      name.addEventListener('keydown', event => {
+        if (event.key === 'Enter') { event.preventDefault(); name.blur(); }
+      });
+      name.addEventListener('blur', () => {
+        name.textContent = name.textContent.trim() || card.querySelector('.color-hex').textContent.trim();
+        updatePaletteFields();
+      });
+      name.addEventListener('input', updatePaletteFields);
+    });
+
+    squares.forEach(square => {
+      square.addEventListener('click', () => {
+        const card = square.closest('.color-card');
+        const hex = card.querySelector('.color-hex').textContent.trim().toUpperCase();
+        if (selectedColorHexes.has(hex)) {
+          selectedColorHexes.delete(hex);
+          square.classList.add('selected');
+        } else {
+          selectedColorHexes.add(hex);
+          square.classList.remove('selected');
+        }
+        updatePaletteFields();
+      });
+    });
+    updatePaletteFields();
+  </script>

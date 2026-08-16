@@ -1,0 +1,1541 @@
+"""Experimental structural-color calibration-grid exports."""
+
+import importlib.util
+import json
+import math
+import os
+import sys
+import uuid
+from copy import copy
+from xml.etree import ElementTree as ET
+
+import cv2
+import numpy as np
+from flask import Response, current_app, jsonify, make_response, request, send_from_directory, stream_with_context
+from PIL import Image, UnidentifiedImageError
+from werkzeug.utils import secure_filename
+
+from services import (
+    HISTORY_TTL_SECONDS,
+    LIGHTBURN_PALETTE_NAMES,
+    RASTER_JOB_QUEUE,
+    add_history_entry,
+    download_task_artifact,
+    download_user_holographic_recipe,
+    download_user_material_library,
+    get_s3_artifact,
+    get_user_material_library,
+    get_user_holographic_recipe,
+    redis_client,
+    raster_queue_position,
+    record_user_job,
+    save_user_material_library,
+    save_user_holographic_recipe,
+    upload_task_artifact,
+    valid_history_session,
+)
+
+from . import routes
+
+
+SWEEP_SETTINGS = {
+    "none": None,
+    "power": "maxPower",
+    "speed": "speed",
+    "frequency": "frequency",
+    "pulse_width": "QPulseWidth",
+    "passes": "numPasses",
+}
+CUT_MODE_TYPES = {"setting": None, "line": "Cut", "fill": "Scan", "offset-fill": "Offset"}
+
+LIGHTBURN_LAYER_ID_BY_HEX = {
+    "#B4B4B4": 8, "#000000": 0, "#0000FF": 1, "#FF0000": 2, "#00E000": 3,
+    "#D0D000": 4, "#FF8000": 5, "#00E0E0": 6, "#FF00FF": 7, "#0000A0": 9,
+    "#A00000": 10, "#00A000": 11, "#A0A000": 12, "#C08000": 13, "#00A0FF": 14,
+    "#A000A0": 15, "#808080": 16, "#7D87B9": 17, "#BB7784": 18, "#4A6FE3": 19,
+    "#D33F6A": 20, "#8CD78C": 21, "#F0B98D": 22, "#F6C4E1": 23, "#FA9ED4": 24,
+    "#500A78": 25, "#B45A00": 26, "#004754": 27, "#86FA88": 28, "#FFDB66": 29,
+}
+
+
+def _resolve_material_library(task_id, uploaded_library, saved_library_id, history_session,
+                              material_name=""):
+    """Use the Rasterizer's shared guest cache and account Material Vault."""
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    user_id = request.headers.get("x-amzn-oidc-identity", "").strip()
+    history_session = (valid_history_session(history_session)
+                       or valid_history_session(request.cookies.get("mopa_history_session")))
+    cache_key = f"material-library:{history_session}" if history_session else None
+
+    if uploaded_library and uploaded_library.filename:
+        filename = secure_filename(uploaded_library.filename) or "material-library.clb"
+        library_path = os.path.join(upload_folder, f"{task_id}_material_library_{filename}")
+        uploaded_library.save(library_path)
+        artifact_key = upload_task_artifact(
+            task_id, library_path, category="inputs", user_id=user_id or None
+        )
+        if cache_key:
+            redis_client.set(
+                cache_key,
+                json.dumps({"path": library_path, "filename": filename, "key": artifact_key}),
+                ex=HISTORY_TTL_SECONDS,
+            )
+        if user_id:
+            save_user_material_library(
+                user_id, library_path, material_name, source_filename=filename
+            )
+        return library_path
+
+    if saved_library_id:
+        if not user_id:
+            raise PermissionError("Sign in to use a saved Material Library.")
+        saved_library = get_user_material_library(user_id, saved_library_id)
+        if not saved_library:
+            raise FileNotFoundError("That saved Material Library is no longer available.")
+        filename = secure_filename(
+            saved_library.get("original_name") or saved_library.get("name") or "library.clb"
+        )
+        library_path = os.path.join(upload_folder, f"{task_id}_saved_material_{filename}")
+        download_user_material_library(saved_library, library_path)
+        return library_path
+
+    if cache_key:
+        try:
+            cached = json.loads(redis_client.get(cache_key) or "{}")
+        except (TypeError, json.JSONDecodeError):
+            cached = {}
+        library_path = cached.get("path")
+        artifact_key = cached.get("key")
+        if artifact_key and not os.path.isfile(library_path or ""):
+            filename = secure_filename(cached.get("filename") or "library.clb")
+            library_path = os.path.join(upload_folder, f"{task_id}_cached_material_{filename}")
+            download_task_artifact(artifact_key, library_path)
+        if library_path and os.path.isfile(library_path):
+            return library_path
+
+    raise ValueError("Choose a LightBurn Material Library file")
+
+
+def _resolve_holographic_recipe(task_id, uploaded_recipe, saved_recipe_id, history_session):
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    user_id = request.headers.get("x-amzn-oidc-identity", "").strip()
+    history_session = (valid_history_session(history_session)
+                       or valid_history_session(request.cookies.get("mopa_history_session")))
+    cache_key = f"holographic-recipe:{history_session}" if history_session else None
+    if uploaded_recipe and uploaded_recipe.filename:
+        filename = secure_filename(uploaded_recipe.filename) or "holographic-recipe.json"
+        path = os.path.join(upload_folder, f"{task_id}_holographic_recipe_{filename}")
+        uploaded_recipe.save(path)
+        with open(path, encoding="utf-8") as recipe_file:
+            profile = _load_recipe_profile(recipe_file)
+        artifact_key = upload_task_artifact(task_id, path, category="inputs", user_id=user_id or None)
+        if cache_key:
+            redis_client.set(cache_key, json.dumps({"path": path, "filename": filename, "key": artifact_key}), ex=HISTORY_TTL_SECONDS)
+        if user_id:
+            save_user_holographic_recipe(
+                user_id, path, profile.get("profile_name"),
+                metadata={"profile_name": profile.get("profile_name", ""), "recipe_count": len(profile["recipes"]),
+                          "material": profile.get("grid", {}).get("material", "")},
+                source_filename=filename,
+            )
+        return path
+    if saved_recipe_id:
+        if not user_id:
+            raise PermissionError("Sign in to use a saved Holographic Recipe.")
+        recipe = get_user_holographic_recipe(user_id, saved_recipe_id)
+        if not recipe:
+            raise FileNotFoundError("That saved Holographic Recipe is no longer available.")
+        filename = secure_filename(recipe.get("original_name") or "holographic-recipe.json")
+        path = os.path.join(upload_folder, f"{task_id}_saved_holographic_recipe_{filename}")
+        download_user_holographic_recipe(recipe, path)
+        return path
+    if cache_key:
+        try:
+            cached = json.loads(redis_client.get(cache_key) or "{}")
+        except (TypeError, json.JSONDecodeError):
+            cached = {}
+        path = cached.get("path")
+        if cached.get("key") and not os.path.isfile(path or ""):
+            path = os.path.join(upload_folder, f"{task_id}_cached_holographic_recipe_{secure_filename(cached.get('filename') or 'recipe.json')}")
+            download_task_artifact(cached["key"], path)
+        if path and os.path.isfile(path):
+            return path
+    raise ValueError("Choose a Holographic Etching Recipe JSON file")
+
+
+def _lightburn_module():
+    path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "lib", "lightburn.py")
+    spec = importlib.util.spec_from_file_location("holographic_lightburn", path)
+    module = importlib.util.module_from_spec(spec)
+    # The LightBurn writer defines dataclasses, which require their module to
+    # be registered before execution.
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _exact_setting(lightburn, library_path, material_name, description):
+    material_key = material_name.strip().casefold()
+    description_key = description.strip().casefold()
+    settings = lightburn.Lightburn().parse_material_library(library_path)
+    for setting in settings:
+        if (str(getattr(setting, "materialName", "") or "").strip().casefold() == material_key
+                and str(getattr(setting, "entryDesc", "") or "").strip().casefold() == description_key):
+            return setting
+    raise ValueError(
+        "No Material Library setting matched that material name and Description field."
+    )
+
+
+def _label_setting(lightburn, library_path, material_name, fallback):
+    """Find the Material Library entry whose Rasterizer swatch is nearest black."""
+    material_key = material_name.strip().casefold()
+    candidates = [
+        setting for setting in lightburn.Lightburn().parse_material_library(library_path)
+        if str(getattr(setting, "materialName", "") or "").strip().casefold() == material_key
+    ]
+    if not candidates:
+        return fallback, None
+
+    palette_hex_by_name = {
+        str(name).strip().casefold(): color_hex
+        for color_hex, name in LIGHTBURN_PALETTE_NAMES.items()
+    }
+
+    def black_distance(setting):
+        description = str(getattr(setting, "entryDesc", "") or "").strip().casefold()
+        color_hex = palette_hex_by_name.get(description)
+        if not color_hex:
+            return None
+        red, green, blue = (int(color_hex[offset:offset + 2], 16) for offset in (1, 3, 5))
+        return red * red + green * green + blue * blue
+
+    ranked = [(black_distance(setting), setting) for setting in candidates]
+    ranked = [(distance, setting) for distance, setting in ranked if distance is not None]
+    if not ranked:
+        return fallback, None
+    _, best = min(ranked, key=lambda candidate: candidate[0])
+    selected_hex = palette_hex_by_name[str(getattr(best, "entryDesc", "") or "").strip().casefold()]
+    return _calibration_base_layer(best), LIGHTBURN_LAYER_ID_BY_HEX[selected_hex]
+
+
+def _calibration_base_layer(setting):
+    """Use one concrete scan layer from a multi-sublayer library entry.
+
+    LightBurn stores Offset Fill settings as child cut settings.  A diffraction
+    grid needs one unambiguous starting layer, so select the first child in the
+    order the Material Library defines it.
+    """
+    sublayers = getattr(setting, "subLayers", None) or []
+    if not sublayers:
+        return setting
+
+
+    selected = copy(sublayers[0])
+    # Keep the selected library entry identifiable in the exported project and
+    # metadata, while deliberately leaving the remaining Offset Fill children
+    # out of the calibration export.
+    selected.materialName = getattr(setting, "materialName", "")
+    selected.entryDesc = getattr(setting, "entryDesc", "")
+    selected.subLayers = []
+    return selected
+
+
+def _numeric_setting(setting, name, default=0.0):
+    """Read one LightBurn setting without letting malformed libraries break a grid."""
+    try:
+        return float(getattr(setting, name, default))
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _grating_signature(setting, fill_interval_mm, scan_angle_degrees, override=None):
+    """Describe the laser motion that produces one calibrated grating cell.
+
+    LightBurn Material Libraries store MOPA frequency in Hz and scan speed in
+    mm/s. The resulting pulse pitch in µm is therefore
+    ``speed_mm_s / frequency_hz * 1000``: 300 mm/s / 300,000 Hz = 1 µm.
+    The macro fill interval is deliberately separate; it controls neighbouring
+    scan-line spacing and heat overlap.
+    """
+    override = override or {}
+    speed_mm_s = _numeric_setting(setting, "speed")
+    frequency_hz = _numeric_setting(setting, "frequency")
+    property_name = SWEEP_SETTINGS.get(override.get("parameter"))
+    if property_name == "speed":
+        speed_mm_s = float(override["value"])
+    elif property_name == "frequency":
+        frequency_hz = float(override["value"])
+    pulse_pitch_um = speed_mm_s / frequency_hz * 1000 if speed_mm_s > 0 and frequency_hz > 0 else None
+    return {
+        "scan_speed_mm_s": speed_mm_s,
+        "pulse_frequency_hz": frequency_hz,
+        "pulse_pitch_um": pulse_pitch_um,
+        "pulse_width_ns": _numeric_setting(setting, "QPulseWidth"),
+        "minimum_power_percent": _numeric_setting(setting, "minPower"),
+        "maximum_power_percent": _numeric_setting(setting, "maxPower"),
+        "passes": _numeric_setting(setting, "numPasses", 1),
+        "fill_interval_mm": float(fill_interval_mm),
+        "scan_direction_degrees": float(scan_angle_degrees) % 180,
+        # The visible grating direction is normal to the scan travel direction.
+        "grating_axis_degrees": (float(scan_angle_degrees) + 90) % 180,
+    }
+
+
+def _rgb_to_lab(rgb):
+    """Return CIE-like Lab coordinates from an sRGB triplet for recipe matching."""
+    sample = np.uint8([[[int(channel) for channel in rgb]]])
+    lab = cv2.cvtColor(sample, cv2.COLOR_RGB2LAB)[0, 0]
+    return [float(lab[0]) * 100 / 255, float(lab[1]) - 128, float(lab[2]) - 128]
+
+
+def _svg_grid(path, columns, rows, cell_mm, intervals, angles, top_label_mm, right_label_mm,
+              calibration_id):
+    grid_width, grid_height = columns * cell_mm, rows * cell_mm
+    width, height = grid_width + right_label_mm, grid_height + top_label_mm
+    root = ET.Element("svg", xmlns="http://www.w3.org/2000/svg", width=f"{width}mm",
+                      height=f"{height}mm", viewBox=f"0 0 {width} {height}")
+    ET.SubElement(
+        root, "text", x=".35", y="1.25", fill="#000",
+        **{"font-size": ".9", "font-family": "monospace"},
+    ).text = calibration_id
+    # High-contrast registration marks make the photographed grid far easier
+    # to align than a thin cell border alone.  They sit in the outer corners,
+    # away from the center sampling zones.
+    mark_size = min(1.2, cell_mm * .12)
+    for mark_x, mark_y in ((.2, top_label_mm + .2), (grid_width - mark_size - .2, top_label_mm + .2),
+                            (.2, height - mark_size - .2), (grid_width - mark_size - .2, height - mark_size - .2)):
+        ET.SubElement(root, "rect", x=str(mark_x), y=str(mark_y), width=str(mark_size), height=str(mark_size), fill="#000")
+    for column in range(columns):
+        interval = intervals[column]
+        ET.SubElement(root, "text", x=str(column * cell_mm + .35), y=str(top_label_mm * .68), fill="#000",
+                      **{"font-size": str(min(.9, top_label_mm * .45)), "font-family": "monospace"}).text = f"I {interval:.3f}"
+    for row in range(rows):
+        angle = angles[row * columns]
+        ET.SubElement(root, "text", x=str(grid_width + .25), y=str(top_label_mm + row * cell_mm + cell_mm * .55), fill="#000",
+                      **{"font-size": str(min(.9, right_label_mm * .45)), "font-family": "monospace"}).text = f"A {angle:g}°"
+    for index, (interval, angle) in enumerate(zip(intervals, angles)):
+        column, row = index % columns, index // columns
+        x, y = column * cell_mm, top_label_mm + row * cell_mm
+        group = ET.SubElement(root, "g", id=f"cell_{index:02d}")
+        ET.SubElement(group, "rect", x=str(x), y=str(y), width=str(cell_mm), height=str(cell_mm),
+                      fill="none", stroke="#000", **{"stroke-width": ".1"})
+        # Do not use an SVG clipPath here. LightBurn may ignore clip paths on
+        # import, which would turn every line into an oversize canvas-spanning
+        # stroke. Calculate the two real intersections with this cell instead.
+        radians = math.radians(angle)
+        dx, dy = math.cos(radians), math.sin(radians)
+        normal_x, normal_y = -dy, dx
+        half_width, half_height = cell_mm / 2, cell_mm / 2
+        max_offset = math.hypot(half_width, half_height)
+        offset = -max_offset
+        while offset <= max_offset + 1e-9:
+            endpoints = []
+            if abs(dx) > 1e-9:
+                for edge_x in (-half_width, half_width):
+                    line_t = (edge_x - normal_x * offset) / dx
+                    edge_y = normal_y * offset + dy * line_t
+                    if -half_height - 1e-9 <= edge_y <= half_height + 1e-9:
+                        endpoints.append((edge_x, edge_y))
+            if abs(dy) > 1e-9:
+                for edge_y in (-half_height, half_height):
+                    line_t = (edge_y - normal_y * offset) / dy
+                    edge_x = normal_x * offset + dx * line_t
+                    if -half_width - 1e-9 <= edge_x <= half_width + 1e-9:
+                        endpoints.append((edge_x, edge_y))
+            unique_endpoints = []
+            for endpoint in endpoints:
+                if not any(math.isclose(endpoint[0], existing[0], abs_tol=1e-8) and
+                           math.isclose(endpoint[1], existing[1], abs_tol=1e-8)
+                           for existing in unique_endpoints):
+                    unique_endpoints.append(endpoint)
+            if len(unique_endpoints) == 2:
+                first, second = unique_endpoints
+                ET.SubElement(
+                    group, "line",
+                    x1=str(x + half_width + first[0]), y1=str(y + half_height + first[1]),
+                    x2=str(x + half_width + second[0]), y2=str(y + half_height + second[1]),
+                    stroke="#000", **{"stroke-width": ".01"},
+                )
+            offset += interval
+    ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
+
+
+def _calibration_metadata_path(upload_folder, calibration_id):
+    """Return the known metadata path for a calibration grid identifier."""
+    if not calibration_id or any(character not in "0123456789abcdef-" for character in calibration_id.lower()):
+        raise ValueError("Choose a calibration grid created by this lab.")
+    return os.path.join(upload_folder, f"holographic_calibration_{calibration_id}.json")
+
+
+def _profile_metadata_path(upload_folder, profile_id):
+    if not profile_id or any(character not in "0123456789abcdef-" for character in profile_id.lower()):
+        raise ValueError("Choose a calibration profile created by this lab.")
+    return os.path.join(upload_folder, f"holographic_profile_{profile_id}.json")
+
+
+def _holographic_artifact_cache_key(filename):
+    return f"holographic-artifact:{os.path.basename(filename)}"
+
+
+def _store_holographic_artifact(task_id, local_path):
+    """Persist a lab artifact so a later request may land on any web pod."""
+    key = upload_task_artifact(task_id, local_path, category="outputs")
+    if key:
+        redis_client.set(_holographic_artifact_cache_key(os.path.basename(local_path)), key, ex=HISTORY_TTL_SECONDS)
+    return key
+
+
+def _ensure_holographic_artifact(upload_folder, filename):
+    """Return a local copy, restoring it from durable artifact storage if needed."""
+    filename = os.path.basename(filename)
+    path = os.path.join(upload_folder, filename)
+    if os.path.exists(path):
+        return path
+    key = redis_client.get(_holographic_artifact_cache_key(filename))
+    if not key:
+        raise FileNotFoundError(f"Holographic lab artifact '{filename}' was not found.")
+    download_task_artifact(key, path)
+    return path
+
+
+def _download_holographic_artifact(upload_folder, filename):
+    """Stream a durable artifact, with a local-only fallback for development."""
+    filename = os.path.basename(filename)
+    key = redis_client.get(_holographic_artifact_cache_key(filename))
+    if key:
+        artifact = get_s3_artifact(key)
+        response = Response(
+            stream_with_context(artifact["Body"].iter_chunks(chunk_size=1024 * 1024)),
+            mimetype="image/svg+xml" if filename.endswith(".svg") else artifact.get("ContentType") or "application/octet-stream",
+        )
+        response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+    return send_from_directory(upload_folder, filename, as_attachment=True,
+                               mimetype="image/svg+xml" if filename.endswith(".svg") else None)
+
+
+def _order_corners(points):
+    """Order four points as top-left, top-right, bottom-right, bottom-left."""
+    points = np.asarray(points, dtype=np.float32).reshape(4, 2)
+    sums = points.sum(axis=1)
+    differences = np.diff(points, axis=1).reshape(-1)
+    return np.array([
+        points[np.argmin(sums)], points[np.argmin(differences)],
+        points[np.argmax(sums)], points[np.argmax(differences)],
+    ], dtype=np.float32)
+
+
+def _rectify_grid(photo):
+    """Find the largest rectangular candidate and return a bird's-eye grid view.
+
+    This is a deliberately conservative first pass.  When a clear border cannot
+    be found, the original image is retained and marked for manual crop support
+    rather than pretending an unreliable perspective correction succeeded.
+    """
+    height, width = photo.shape[:2]
+    working = cv2.resize(photo, (1200, max(1, round(height * 1200 / width)))) if width > 1200 else photo.copy()
+    scale_x, scale_y = width / working.shape[1], height / working.shape[0]
+    gray = cv2.cvtColor(working, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(cv2.GaussianBlur(gray, (5, 5), 0), 45, 140)
+    edges = cv2.dilate(edges, np.ones((3, 3), np.uint8), iterations=1)
+    candidates = []
+    for contour in cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[0]:
+        area = cv2.contourArea(contour)
+        if area < working.shape[0] * working.shape[1] * .06:
+            continue
+        polygon = cv2.approxPolyDP(contour, .025 * cv2.arcLength(contour, True), True)
+        if len(polygon) == 4 and cv2.isContourConvex(polygon):
+            candidates.append((area, polygon.reshape(4, 2)))
+    if not candidates:
+        return photo, "not_found", None
+
+    _, corners = max(candidates, key=lambda candidate: candidate[0])
+    corners = _order_corners(corners * np.array([scale_x, scale_y], dtype=np.float32))
+    top = np.linalg.norm(corners[1] - corners[0])
+    bottom = np.linalg.norm(corners[2] - corners[3])
+    left = np.linalg.norm(corners[3] - corners[0])
+    right = np.linalg.norm(corners[2] - corners[1])
+    target_width, target_height = max(300, round(max(top, bottom))), max(300, round(max(left, right)))
+    destination = np.array([[0, 0], [target_width - 1, 0], [target_width - 1, target_height - 1], [0, target_height - 1]], dtype=np.float32)
+    return cv2.warpPerspective(photo, cv2.getPerspectiveTransform(corners, destination), (target_width, target_height)), "rectified", corners.tolist()
+
+
+def _rectify_grid_from_corners(photo, corners):
+    corners = _order_corners(corners)
+    top = np.linalg.norm(corners[1] - corners[0])
+    bottom = np.linalg.norm(corners[2] - corners[3])
+    left = np.linalg.norm(corners[3] - corners[0])
+    right = np.linalg.norm(corners[2] - corners[1])
+    target_width, target_height = max(300, round(max(top, bottom))), max(300, round(max(left, right)))
+    destination = np.array([[0, 0], [target_width - 1, 0], [target_width - 1, target_height - 1], [0, target_height - 1]], dtype=np.float32)
+    return cv2.warpPerspective(photo, cv2.getPerspectiveTransform(corners, destination), (target_width, target_height)), corners.tolist()
+
+
+def _rotate_image(image, degrees):
+    """Rotate without clipping the calibration sheet's corners."""
+    if not degrees:
+        return image
+    height, width = image.shape[:2]
+    matrix = cv2.getRotationMatrix2D((width / 2, height / 2), degrees, 1)
+    cosine, sine = abs(matrix[0, 0]), abs(matrix[0, 1])
+    rotated_width = round(height * sine + width * cosine)
+    rotated_height = round(height * cosine + width * sine)
+    matrix[0, 2] += rotated_width / 2 - width / 2
+    matrix[1, 2] += rotated_height / 2 - height / 2
+    return cv2.warpAffine(image, matrix, (rotated_width, rotated_height), borderMode=cv2.BORDER_REPLICATE)
+
+
+def _crop_and_resize_image(image, crop, max_edge):
+    """Apply user-selected percentage crop margins and optional analysis size."""
+    height, width = image.shape[:2]
+    left = round(width * crop["left"] / 100)
+    right = round(width * (100 - crop["right"]) / 100)
+    top = round(height * crop["top"] / 100)
+    bottom = round(height * (100 - crop["bottom"]) / 100)
+    cropped = image[top:bottom, left:right]
+    if cropped.size == 0:
+        raise ValueError("Crop margins leave no image area to analyze.")
+    height, width = cropped.shape[:2]
+    if max_edge and max(height, width) > max_edge:
+        scale = max_edge / max(height, width)
+        cropped = cv2.resize(cropped, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_AREA)
+    return cropped
+
+
+def _measure_grid_photo(photo_path, grid, rotation_degrees=0, crop=None, max_edge=0, manual_corners=None, manual_sample_points=None, reference_correction=None):
+    photo = cv2.imread(photo_path, cv2.IMREAD_COLOR)
+    if photo is None:
+        raise ValueError("The saved grid photo could not be opened for analysis.")
+    crop = crop or {"left": 0, "top": 0, "right": 0, "bottom": 0}
+    if manual_corners:
+        rectified, corners = _rectify_grid_from_corners(photo, manual_corners)
+        correction = "manual_corners"
+    else:
+        photo = _crop_and_resize_image(photo, crop, max_edge)
+        photo = _rotate_image(photo, rotation_degrees)
+    # Once the operator supplies a crop, it is an intentional declaration of
+    # the grid bounds.  Do not let automatic contour detection replace that
+    # choice with a nearby photo edge or reflection.
+        if any(crop.values()):
+            rectified, correction, corners = photo, "manual_crop", None
+        else:
+            rectified, correction, corners = _rectify_grid(photo)
+    rows, columns = int(grid["rows"]), int(grid["columns"])
+    height, width = rectified.shape[:2]
+    intervals, angles = grid["intervals_mm"], grid["angles_degrees"]
+    recipe_signatures = grid.get("grating_recipe_signatures") or []
+    top_label_mm = float(grid.get("top_label_band_mm", 0) or 0)
+    right_label_mm = float(grid.get("right_label_band_mm", 0) or 0)
+    left_margin_mm = float(grid.get("left_grid_margin_mm", 0) or 0)
+    grid_width_mm = columns * float(grid["cell_size_mm"])
+    grid_height_mm = rows * float(grid["cell_size_mm"])
+    total_width_mm = left_margin_mm + grid_width_mm + right_label_mm
+    grid_left = round(width * left_margin_mm / total_width_mm) if left_margin_mm else 0
+    grid_right = round(width * (left_margin_mm + grid_width_mm) / total_width_mm) if right_label_mm or left_margin_mm else width
+    grid_top = round(height * top_label_mm / (grid_height_mm + top_label_mm)) if top_label_mm else 0
+    cells = []
+    manual_sample_points = manual_sample_points or {}
+    preview = rectified.copy()
+    for index in range(rows * columns):
+        row, column = divmod(index, columns)
+        x0, x1 = (grid_left + round(column * (grid_right - grid_left) / columns),
+                  grid_left + round((column + 1) * (grid_right - grid_left) / columns))
+        y0, y1 = (grid_top + round(row * (height - grid_top) / rows),
+                  grid_top + round((row + 1) * (height - grid_top) / rows))
+        # Avoid the engraved border and label, which are not representative of
+        # the cell's structural color.
+        point = manual_sample_points.get(str(index + 1))
+        if point:
+            center_x, center_y = round(float(point[0]) * width), round(float(point[1]) * height)
+            radius_x, radius_y = max(2, round((x1 - x0) * .14)), max(2, round((y1 - y0) * .14))
+            sample = rectified[max(y0, center_y - radius_y):min(y1, center_y + radius_y), max(x0, center_x - radius_x):min(x1, center_x + radius_x)]
+        else:
+            pad_x, pad_y = max(1, round((x1 - x0) * .22)), max(1, round((y1 - y0) * .25))
+            sample = rectified[y0 + pad_y:y1 - pad_y, x0 + pad_x:x1 - pad_x]
+        if sample.size == 0:
+            raise ValueError("The detected grid is too small to sample reliably.")
+        median_bgr = np.median(sample.reshape(-1, 3), axis=0).astype(np.uint8)
+        median_rgb = [int(median_bgr[2]), int(median_bgr[1]), int(median_bgr[0])]
+        if reference_correction:
+            median_rgb = [int(np.clip(channel * scale, 0, 255)) for channel, scale in zip(median_rgb, reference_correction)]
+        observed_lab = _rgb_to_lab(median_rgb)
+        sample_hsv = cv2.cvtColor(sample, cv2.COLOR_BGR2HSV)
+        median_hsv = cv2.cvtColor(np.uint8([[median_bgr]]), cv2.COLOR_BGR2HSV)[0, 0]
+        saturation = float(np.median(sample_hsv[:, :, 1])) / 255
+        brightness = float(np.median(sample_hsv[:, :, 2])) / 255
+        uniformity = max(0., 1 - float(np.mean(np.std(sample.reshape(-1, 3), axis=0))) / 85)
+        confidence = round(100 * (.35 * saturation + .30 * brightness + .35 * uniformity))
+        quality_flags = []
+        if saturation < .12:
+            quality_flags.append("low color saturation")
+        if brightness < .16:
+            quality_flags.append("very dark")
+        if uniformity < .55:
+            quality_flags.append("uneven sample")
+        cells.append({
+            "index": index + 1, "row": row + 1, "column": column + 1,
+            "interval_mm": intervals[index], "angle_degrees": angles[index],
+            "observed_rgb": median_rgb,
+            "observed_lab": observed_lab,
+            "observed_hex": "#{:02X}{:02X}{:02X}".format(*median_rgb),
+            "observed_hsv_opencv": [int(value) for value in median_hsv],
+            "confidence": confidence,
+            "quality_flags": quality_flags,
+            "manual_sample_point": point,
+            "laser_setting_override": (
+                {"parameter": grid["sweep"]["parameter"], "value": grid["sweep"]["values"][index]}
+                if grid.get("sweep", {}).get("parameter") else None
+            ),
+            "grating_signature": recipe_signatures[index] if index < len(recipe_signatures) else {},
+        })
+        cv2.rectangle(preview, (x0, y0), (x1, y1), (40, 240, 135), 2)
+        cv2.putText(preview, str(index + 1), (x0 + 8, y0 + 25), cv2.FONT_HERSHEY_SIMPLEX, .75, (40, 240, 135), 2, cv2.LINE_AA)
+    return cells, preview, correction, corners
+
+
+def _load_recipe_profile(profile_file):
+    try:
+        profile = json.load(profile_file)
+    except json.JSONDecodeError as error:
+        raise ValueError(f"Recipe profile is not valid JSON: {error}") from error
+    recipes = profile.get("recipes")
+    grid = profile.get("grid", {})
+    if profile.get("kind") != "holographic_calibration_profile" or not isinstance(recipes, list) or not recipes:
+        raise ValueError("Upload a saved Holographic Etching recipe profile with at least one kept recipe.")
+    if not grid.get("material") or not grid.get("setting_description"):
+        raise ValueError("The recipe profile does not contain its original Material Library setting reference.")
+    for recipe in recipes:
+        if not isinstance(recipe.get("observed_rgb"), list) or len(recipe["observed_rgb"]) != 3:
+            raise ValueError("A recipe profile contains an invalid observed color.")
+    return profile
+
+
+def _nearest_recipe(pixel, recipes):
+    """Choose the calibrated structural-color recipe closest in Lab space."""
+    target_lab = _rgb_to_lab(pixel)
+    return min(
+        recipes,
+        key=lambda recipe: sum(
+            (channel - reference) ** 2
+            for channel, reference in zip(target_lab, recipe.get("observed_lab") or _rgb_to_lab(recipe["observed_rgb"]))
+        ),
+    )
+
+
+def _merge_recipe_pixels(layer_map, recipe_count, progress=None):
+    """Greedily combine same-recipe pixels into non-overlapping closed rectangles."""
+    progress = progress or (lambda _message: None)
+    height, width = layer_map.shape
+    visited = np.zeros((height, width), dtype=bool)
+    rectangles = {index: [] for index in range(recipe_count)}
+    for y in range(height):
+        for x in range(width):
+            if visited[y, x]:
+                continue
+            recipe_index = layer_map[y, x]
+            rectangle_width = 1
+            while x + rectangle_width < width and not visited[y, x + rectangle_width] and layer_map[y, x + rectangle_width] == recipe_index:
+                rectangle_width += 1
+            rectangle_height = 1
+            while y + rectangle_height < height:
+                next_row = layer_map[y + rectangle_height, x:x + rectangle_width]
+                if visited[y + rectangle_height, x:x + rectangle_width].any() or not np.all(next_row == recipe_index):
+                    break
+                rectangle_height += 1
+            visited[y:y + rectangle_height, x:x + rectangle_width] = True
+            rectangles[int(recipe_index)].append((x, y, rectangle_width, rectangle_height))
+    merged = {}
+    for index, items in rectangles.items():
+        progress(
+            f"[Step 4/8] [Color layer {index + 1}/{recipe_count}] START: "
+            f"coalescing {len(items)} initial rectangles."
+        )
+        merged[index] = _coalesce_adjacent_rectangles(items)
+        progress(
+            f"[Step 4/8] [Color layer {index + 1}/{recipe_count}] DONE: "
+            f"coalesced {len(items)} initial rectangles into {len(merged[index])} output rectangles."
+        )
+    return merged
+
+
+def _coalesce_adjacent_rectangles(rectangles):
+    """Join touching rectangles only when their union remains one rectangle.
+
+    This preserves every pixel exactly, avoids overlap, and keeps the export
+    strictly closed-rectangle geometry. Irregular silhouettes remain multiple
+    rectangles instead of being approximated by an open or overfilled path.
+    """
+    def merge_rows(items):
+        result = []
+        for x, y, width, height in sorted(items, key=lambda item: (item[1], item[3], item[0])):
+            if result:
+                previous_x, previous_y, previous_width, previous_height = result[-1]
+                if y == previous_y and height == previous_height and x == previous_x + previous_width:
+                    result[-1] = (previous_x, previous_y, previous_width + width, previous_height)
+                    continue
+            result.append((x, y, width, height))
+        return result
+
+    def merge_columns(items):
+        result = []
+        for x, y, width, height in sorted(items, key=lambda item: (item[0], item[2], item[1])):
+            if result:
+                previous_x, previous_y, previous_width, previous_height = result[-1]
+                if x == previous_x and width == previous_width and y == previous_y + previous_height:
+                    result[-1] = (previous_x, previous_y, previous_width, previous_height + height)
+                    continue
+            result.append((x, y, width, height))
+        return result
+
+    merged = list(rectangles)
+    while True:
+        previous_count = len(merged)
+        merged = merge_columns(merge_rows(merged))
+        if len(merged) == previous_count:
+            return merged
+
+
+def _merge_mask_pixels(mask):
+    """Merge a boolean mask into the largest exact, non-overlapping closed rectangles."""
+    height, width = mask.shape
+    visited = np.zeros((height, width), dtype=bool)
+    rectangles = []
+    for y in range(height):
+        for x in range(width):
+            if not mask[y, x] or visited[y, x]:
+                continue
+            rectangle_width = 1
+            while x + rectangle_width < width and mask[y, x + rectangle_width] and not visited[y, x + rectangle_width]:
+                rectangle_width += 1
+            rectangle_height = 1
+            while y + rectangle_height < height:
+                next_row = mask[y + rectangle_height, x:x + rectangle_width]
+                if visited[y + rectangle_height, x:x + rectangle_width].any() or not np.all(next_row):
+                    break
+                rectangle_height += 1
+            visited[y:y + rectangle_height, x:x + rectangle_width] = True
+            rectangles.append((x, y, rectangle_width, rectangle_height))
+    return _coalesce_adjacent_rectangles(rectangles)
+
+
+def _bw_photo_black_geometry_mask(image):
+    """Select the darker exact color from the BW Photo preset's two-color pass."""
+    quantized = image.quantize(colors=2, method=0).convert("RGB")
+    quantized_pixels = np.asarray(quantized)
+    palette_colors = {tuple(pixel) for pixel in quantized_pixels.reshape(-1, 3)}
+    if not palette_colors:
+        return np.zeros(quantized_pixels.shape[:2], dtype=bool), None
+
+    luminance = lambda rgb: .2126 * rgb[0] + .7152 * rgb[1] + .0722 * rgb[2]
+    darkest_color = min(palette_colors, key=luminance)
+    # This is intentionally the same principle as BW Photo's transparent
+    # mode: it removes the lighter quantized color and keeps the remaining
+    # dark geometry. A single bright-color image therefore creates no black
+    # overlay, while a single dark-color image remains black geometry.
+    if len(palette_colors) == 1 and luminance(darkest_color) >= 128:
+        return np.zeros(quantized_pixels.shape[:2], dtype=bool), darkest_color
+    return np.all(quantized_pixels == darkest_color, axis=2), darkest_color
+
+
+def _write_holographic_svg(path, width, height, recipes_by_name, pixel_mm, black_rectangles=None):
+    """Write only filled SVG rectangles, never open-path artwork geometry."""
+    root = ET.Element("svg", xmlns="http://www.w3.org/2000/svg", width=f"{width * pixel_mm}mm",
+                      height=f"{height * pixel_mm}mm", viewBox=f"0 0 {width * pixel_mm} {height * pixel_mm}")
+    for name, coordinates in recipes_by_name.items():
+        recipe = coordinates["recipe"]
+        group = ET.SubElement(root, "g", id=f"recipe_{recipe['index']}", fill=recipe["observed_hex"])
+        for x, y, rectangle_width, rectangle_height in coordinates["rectangles"]:
+            ET.SubElement(group, "rect", x=str(x * pixel_mm), y=str(y * pixel_mm),
+                          width=str(rectangle_width * pixel_mm), height=str(rectangle_height * pixel_mm))
+    if black_rectangles:
+        black_group = ET.SubElement(root, "g", id="preserved_black_outlines", fill="#000000")
+        for x, y, rectangle_width, rectangle_height in black_rectangles:
+            ET.SubElement(black_group, "rect", x=str(x * pixel_mm), y=str(y * pixel_mm),
+                          width=str(rectangle_width * pixel_mm), height=str(rectangle_height * pixel_mm))
+    ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
+
+
+def _build_holographic_exports(upload_folder, art_file, profile_file, material_path, max_dimension, pixel_mm,
+                               preserve_black_outlines=False, task_id=None, cut_mode="setting",
+                               progress=None):
+    progress = progress or (lambda _message: None)
+    progress("[Step 1/8] START: loading Holographic Recipe and artwork image.")
+    profile = _load_recipe_profile(profile_file)
+    try:
+        image = Image.open(art_file.stream).convert("RGB")
+    except (UnidentifiedImageError, OSError) as error:
+        raise ValueError("Upload a readable artwork image, such as JPG or PNG.") from error
+    image.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+    pixels = np.asarray(image)
+    if not pixels.size:
+        raise ValueError("Artwork image has no usable pixels.")
+    source_pixel_count = int(pixels.shape[0] * pixels.shape[1])
+    progress(
+        f"[Step 1/8] DONE: loaded {pixels.shape[1]} x {pixels.shape[0]} artwork; "
+        f"{source_pixel_count}/{source_pixel_count} pixels and {len(profile['recipes'])} recipes ready."
+    )
+
+    task_id = valid_history_session(task_id) or str(uuid.uuid4())
+    progress("[Step 2/8] START: resolving Material Library setting and building recipe layers.")
+    lightburn = _lightburn_module()
+    grid = profile["grid"]
+    base_setting = _calibration_base_layer(_exact_setting(
+        lightburn, material_path, grid["material"], grid["setting_description"]
+    ))
+    if cut_mode not in CUT_MODE_TYPES:
+        raise ValueError("Unknown Holographic Artwork cut mode.")
+    recipes_by_name = {}
+    project = lightburn.Lightburn()
+    # Reserve LightBurn's true black palette layer for the optional outline
+    # overlay. Recipe-map indexes stay zero-based for compact array handling.
+    recipe_layer_offset = 1 if preserve_black_outlines else 0
+    for map_index, recipe in enumerate(profile["recipes"]):
+        layer_index = map_index + recipe_layer_offset
+        setting = copy(base_setting)
+        if CUT_MODE_TYPES[cut_mode]:
+            setting.type = CUT_MODE_TYPES[cut_mode]
+        setting.index = layer_index
+        setting.name = recipe["name"]
+        setting.interval = float(recipe["interval_mm"])
+        setting.angle = float(recipe["angle_degrees"])
+        override = recipe.get("laser_setting_override") or {}
+        if override.get("parameter") in SWEEP_SETTINGS and SWEEP_SETTINGS[override["parameter"]]:
+            value = override.get("value")
+            if override["parameter"] in {"frequency", "passes"}:
+                value = round(float(value))
+            setattr(setting, SWEEP_SETTINGS[override["parameter"]], value)
+        setting.subLayers = []
+        project.add_layer(setting)
+        recipes_by_name[recipe["name"]] = {
+            "recipe": recipe, "map_index": map_index, "layer_index": layer_index, "rectangles": []
+        }
+    progress(
+        f"[Step 2/8] DONE: configured {len(recipes_by_name)}/{len(profile['recipes'])} "
+        f"holographic recipe layers; cut mode {cut_mode}."
+    )
+
+    progress(
+        f"[Step 3/8] START: assigning {source_pixel_count}/{source_pixel_count} pixels "
+        "to their nearest measured holographic colors."
+    )
+    layer_map = np.empty(pixels.shape[:2], dtype=np.int16)
+    row_log_interval = max(1, pixels.shape[0] // 10)
+    for y, row in enumerate(pixels):
+        for x, pixel in enumerate(row):
+            recipe = _nearest_recipe(pixel, profile["recipes"])
+            layer_map[y, x] = recipes_by_name[recipe["name"]]["map_index"]
+        rows_done = y + 1
+        if rows_done == pixels.shape[0] or rows_done % row_log_interval == 0:
+            pixels_done = min(source_pixel_count, rows_done * pixels.shape[1])
+            progress(
+                f"[Step 3/8] Color assignment: {rows_done}/{pixels.shape[0]} rows; "
+                f"{pixels_done}/{source_pixel_count} pixels processed."
+            )
+    progress(f"[Step 3/8] DONE: assigned {source_pixel_count}/{source_pixel_count} pixels.")
+    progress(
+        f"[Step 4/8] START: coalescing {source_pixel_count}/{source_pixel_count} classified pixels "
+        f"across {len(profile['recipes'])} color layers."
+    )
+    rectangles_by_layer = _merge_recipe_pixels(layer_map, len(profile["recipes"]), progress=progress)
+    coalesced_count = sum(len(items) for items in rectangles_by_layer.values())
+    progress(f"[Step 4/8] DONE: coalesced pixels into {coalesced_count} rectangles.")
+    progress(f"[Step 5/8] START: writing {coalesced_count}/{coalesced_count} colored rectangles to LightBurn geometry.")
+    written_count = 0
+    for layer_number, bucket in enumerate(recipes_by_name.values(), 1):
+        bucket["rectangles"] = rectangles_by_layer[bucket["map_index"]]
+        recipe = bucket["recipe"]
+        progress(
+            f"[Step 5/8] [Color layer {layer_number}/{len(recipes_by_name)} / "
+            f"Layer {bucket['layer_index']} {recipe['name']}] START: writing "
+            f"{len(bucket['rectangles'])} coalesced rectangles; angle "
+            f"{float(recipe['angle_degrees']):g} degrees."
+        )
+        for x, y, rectangle_width, rectangle_height in bucket["rectangles"]:
+            # LightBurn stores a rectangle's transform at its center, while
+            # ``x`` and ``y`` above are the top-left pixel coordinates.  Put
+            # each rectangle at its actual center so the combined artwork is
+            # bounded exactly by [0, width * pixel_mm] × [0, height * pixel_mm]
+            # instead of spilling half a rectangle above and left of origin.
+            rectangle_width_mm = rectangle_width * pixel_mm
+            rectangle_height_mm = rectangle_height * pixel_mm
+            project.add(lightburn.Square(
+                rectangle_width_mm,
+                rectangle_height_mm,
+                x=(x * pixel_mm) + (rectangle_width_mm / 2),
+                y=(y * pixel_mm) + (rectangle_height_mm / 2),
+            ).layer(bucket["layer_index"]))
+        written_count += len(bucket["rectangles"])
+        progress(
+            f"[Step 5/8] [Color layer {layer_number}/{len(recipes_by_name)} / "
+            f"Layer {bucket['layer_index']} {recipe['name']}] DONE: wrote "
+            f"{written_count}/{coalesced_count} coalesced rectangles processed; "
+            f"angle {float(recipe['angle_degrees']):g} degrees."
+        )
+    progress(f"[Step 5/8] DONE: wrote {coalesced_count}/{coalesced_count} colored rectangles.")
+
+    black_rectangles = []
+    black_setting_name = None
+    black_source_color = None
+    if preserve_black_outlines:
+        progress("[Step 6/8] START: generating preserved black-outline geometry.")
+        black_setting, black_layer_index = _label_setting(
+            lightburn, material_path, grid["material"], base_setting
+        )
+        if black_layer_index != 0:
+            raise ValueError(
+                "Preserve black outlines requires a Material Library setting whose Description matches the Rasterizer black swatch."
+            )
+        # Match the BW Photo preset: quantize the source to two exact colors,
+        # discard its lighter color, and retain only the dark geometry.
+        black_mask, black_source_color = _bw_photo_black_geometry_mask(image)
+        black_rectangles = _merge_mask_pixels(black_mask)
+        if black_rectangles:
+            black_setting = copy(black_setting)
+            black_setting.index = 0
+            black_setting.name = "Preserved black outlines"
+            black_setting.subLayers = []
+            project.add_layer(black_setting)
+            for x, y, rectangle_width, rectangle_height in black_rectangles:
+                rectangle_width_mm = rectangle_width * pixel_mm
+                rectangle_height_mm = rectangle_height * pixel_mm
+                project.add(lightburn.Square(
+                    rectangle_width_mm,
+                    rectangle_height_mm,
+                    x=(x * pixel_mm) + (rectangle_width_mm / 2),
+                    y=(y * pixel_mm) + (rectangle_height_mm / 2),
+                ).layer(0))
+            black_setting_name = str(getattr(black_setting, "entryDesc", "black") or "black")
+        progress(f"[Step 6/8] DONE: wrote {len(black_rectangles)} preserved black rectangles.")
+    else:
+        progress("[Step 6/8] SKIPPED: preserved black outlines are disabled.")
+
+    stem = f"holographic_art_{task_id}"
+    svg_name, lbrn_name = f"{stem}.svg", f"{stem}.lbrn2"
+    total_rectangles = coalesced_count + len(black_rectangles)
+    progress(f"[Step 7/8] START: serializing {total_rectangles}/{total_rectangles} vector rectangles to SVG and LightBurn.")
+    _write_holographic_svg(
+        os.path.join(upload_folder, svg_name), pixels.shape[1], pixels.shape[0], recipes_by_name, pixel_mm,
+        black_rectangles=black_rectangles,
+    )
+    project.write(os.path.join(upload_folder, lbrn_name))
+    metadata_name = f"{stem}.json"
+    with open(os.path.join(upload_folder, metadata_name), "w", encoding="utf-8") as metadata_file:
+        json.dump({
+            "kind": "holographic_art_export", "recipe_profile_name": profile.get("profile_name"),
+            "source_pixels": {"width": int(pixels.shape[1]), "height": int(pixels.shape[0])},
+            "pixel_size_mm": pixel_mm, "physical_size_mm": [pixels.shape[1] * pixel_mm, pixels.shape[0] * pixel_mm],
+            "bounds_mm": {"left": 0, "top": 0, "right": pixels.shape[1] * pixel_mm,
+                          "bottom": pixels.shape[0] * pixel_mm},
+            "geometry": {"shape_type": "closed_rectangles", "open_paths": False},
+            "cut_mode": {
+                "selection": cut_mode,
+                "material_setting_type": str(getattr(base_setting, "type", "") or ""),
+                "exported_type": CUT_MODE_TYPES[cut_mode] or str(getattr(base_setting, "type", "") or ""),
+            },
+            "preserved_black_outlines": {
+                "enabled": preserve_black_outlines,
+                "selection": "bw_photo_two_color_dark_geometry",
+                "source_quantized_dark_rgb": [int(channel) for channel in black_source_color] if black_source_color else None,
+                "rectangle_count": len(black_rectangles),
+                "material_setting": black_setting_name,
+            },
+            "vector_rectangles": sum(len(bucket["rectangles"]) for bucket in recipes_by_name.values()) + len(black_rectangles),
+            "source_pixel_count": int(pixels.shape[0] * pixels.shape[1]),
+            "color_mapping": {
+                "method": "nearest_measured_recipe_cie_lab",
+                "note": "Each artwork pixel is assigned to the perceptually nearest measured diffraction recipe.",
+            },
+            "recipes": [{
+                "name": recipe["name"], "interval_mm": recipe["interval_mm"],
+                "angle_degrees": recipe["angle_degrees"],
+                "observed_rgb": recipe["observed_rgb"],
+                "observed_lab": recipe.get("observed_lab") or _rgb_to_lab(recipe["observed_rgb"]),
+                "grating_signature": recipe.get("grating_signature", {}),
+            } for recipe in profile["recipes"]],
+        }, metadata_file, indent=2)
+    progress(f"[Step 7/8] DONE: serialized {total_rectangles}/{total_rectangles} vector rectangles and metadata.")
+    progress("[Step 8/8] START: storing 3/3 Holographic Artwork output artifacts.")
+    for filename in (svg_name, lbrn_name, metadata_name):
+        _store_holographic_artifact(task_id, os.path.join(upload_folder, filename))
+    progress("[Step 8/8] DONE: stored 3/3 Holographic Artwork output artifacts.")
+    return svg_name, lbrn_name, metadata_name, pixels.shape[1], pixels.shape[0], sum(
+        len(bucket["rectangles"]) for bucket in recipes_by_name.values()
+    ) + len(black_rectangles)
+
+
+@routes.route("/holographic-etching/calibration-grid", methods=["POST"])
+def calibration_grid():
+    library = request.files.get("material_settings")
+    saved_library_id = str(request.form.get("saved_material_library_id", "")).strip()
+    material = str(request.form.get("material", "")).strip()
+    description = str(request.form.get("setting_description", "")).strip()
+    laser_source = str(request.form.get("laser_source", "")).strip()
+    if not material or not description:
+        return jsonify({"status": "error", "message": "Provide the material name and setting Description."}), 400
+    try:
+        columns = max(2, min(6, int(request.form.get("columns", 4))))
+        rows = max(2, min(6, int(request.form.get("rows", 4))))
+        cell_mm = max(4, min(30, float(request.form.get("cell_mm", 12))))
+        interval_low = max(.01, min(.5, float(request.form.get("interval_low", .045))))
+        interval_high = max(interval_low, min(.5, float(request.form.get("interval_high", .07))))
+        lens_field_mm = max(1, min(1000, float(request.form.get("lens_field_mm", 110))))
+        sweep_key = str(request.form.get("sweep_parameter", "none"))
+        if sweep_key not in SWEEP_SETTINGS:
+            raise ValueError("Unknown laser-setting sweep.")
+        cut_mode = str(request.form.get("cut_mode", "setting")).strip().lower()
+        if cut_mode not in CUT_MODE_TYPES:
+            raise ValueError("Unknown calibration cut mode.")
+        sweep_low = float(request.form.get("sweep_low", 0))
+        sweep_high = float(request.form.get("sweep_high", sweep_low))
+    except ValueError:
+        return jsonify({"status": "error", "message": "Calibration grid dimensions and intervals must be numbers."}), 400
+
+    task_id = str(uuid.uuid4())
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    try:
+        library_path = _resolve_material_library(
+            task_id, library, saved_library_id, request.form.get("history_session"), material
+        )
+    except PermissionError as error:
+        return jsonify({"status": "error", "message": str(error)}), 401
+    except FileNotFoundError as error:
+        return jsonify({"status": "error", "message": str(error)}), 404
+    except RuntimeError as error:
+        current_app.logger.exception("Could not resolve holographic calibration library")
+        return jsonify({"status": "error", "message": str(error)}), 503
+    except ValueError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+    try:
+        lightburn = _lightburn_module()
+        matched_setting = _exact_setting(lightburn, library_path, material, description)
+        base_setting = _calibration_base_layer(matched_setting)
+        if base_setting is not matched_setting:
+            current_app.logger.info(
+                "Holographic calibration: using the first of %s sublayers for '%s'.",
+                len(matched_setting.subLayers),
+                description,
+            )
+    except (OSError, ValueError, ET.ParseError) as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+    count = columns * rows
+    column_intervals = [interval_low + (interval_high - interval_low) * index / max(columns - 1, 1) for index in range(columns)]
+    row_angles = [180 * index / max(rows - 1, 1) for index in range(rows)]
+    intervals = [column_intervals[index % columns] for index in range(count)]
+    angles = [row_angles[index // columns] for index in range(count)]
+    sweep_values = [sweep_low + (sweep_high - sweep_low) * index / max(count - 1, 1) for index in range(count)]
+    # Keep the label baseline fixed while moving the grating matrix far enough
+    # below LightBurn's larger-than-nominal text bounds.
+    previous_top_label_mm = min(3.2, max(2.4, cell_mm * .22))
+    top_label_mm = min(5.0, max(4.0, cell_mm * .34))
+    top_label_mm += 3 * (top_label_mm - previous_top_label_mm)
+    right_label_mm = min(2.2, max(1.4, cell_mm * .16))
+    left_grid_margin_mm = min(2.2, max(1.4, cell_mm * .16))
+    recipe_signatures = []
+    stem = f"holographic_calibration_{task_id}"
+    svg_name, lbrn_name = f"{stem}.svg", f"{stem}.lbrn2"
+    try:
+        _svg_grid(
+            os.path.join(upload_folder, svg_name), columns, rows, cell_mm,
+            intervals, angles, top_label_mm, right_label_mm, task_id,
+        )
+        project = lightburn.Lightburn()
+        label_setting, label_layer_index = _label_setting(lightburn, library_path, material, base_setting)
+        if label_layer_index is None:
+            label_layer_index = count + 1
+        cell_layer_indices = []
+        candidate_layer_index = 0
+        while len(cell_layer_indices) < count:
+            if candidate_layer_index != label_layer_index:
+                cell_layer_indices.append(candidate_layer_index)
+            candidate_layer_index += 1
+        fiducial_size = min(1.2, cell_mm * .12)
+        grid_left, grid_top = left_grid_margin_mm, top_label_mm
+        grid_right, grid_bottom = grid_left + columns * cell_mm, grid_top + rows * cell_mm
+        fiducial_gap_mm = .2
+        # LightBurn renders Rect transforms from their center, while these
+        # grid coordinates describe the visible cell corner. Offset every
+        # registration mark by half a cell to align with that same origin.
+        fiducial_origin_offset_mm = cell_mm / 2
+        for fiducial_x, fiducial_y in ((grid_left - fiducial_size - fiducial_gap_mm, grid_top - fiducial_size - fiducial_gap_mm),
+                                      (grid_right + fiducial_gap_mm, grid_top - fiducial_size - fiducial_gap_mm),
+                                      (grid_left - fiducial_size - fiducial_gap_mm, grid_bottom + fiducial_gap_mm),
+                                      (grid_right + fiducial_gap_mm, grid_bottom + fiducial_gap_mm)):
+            project.add(lightburn.Square(
+                fiducial_size, fiducial_size,
+                x=fiducial_x - fiducial_origin_offset_mm,
+                y=fiducial_y - fiducial_origin_offset_mm,
+            ).layer(label_layer_index))
+        label_setting = copy(label_setting)
+        label_setting.index = label_layer_index
+        label_setting.name = f"Calibration labels ({getattr(label_setting, 'entryDesc', 'dark setting')})"
+        label_setting.subLayers = []
+        project.add_layer(label_setting)
+        project.add(lightburn.Text(
+            .9, task_id, x=left_grid_margin_mm + .35, y=.5,
+        ).layer(label_layer_index))
+        for column, interval in enumerate(column_intervals):
+            project.add(lightburn.Text(min(.9, top_label_mm * .45), f"I {interval:.3f}",
+                                       x=left_grid_margin_mm + column * cell_mm + .35, y=3.0).layer(label_layer_index))
+        for row, angle in enumerate(row_angles):
+            project.add(lightburn.Text(min(.9, right_label_mm * .45), f"A {angle:g}°",
+                                       x=left_grid_margin_mm + columns * cell_mm + .25, y=top_label_mm + row * cell_mm + cell_mm * .42).layer(label_layer_index))
+        for index, (interval, angle) in enumerate(zip(intervals, angles)):
+            setting = copy(base_setting)
+            if CUT_MODE_TYPES[cut_mode]:
+                setting.type = CUT_MODE_TYPES[cut_mode]
+            layer_index = cell_layer_indices[index]
+            setting.index = layer_index
+            setting.name = f"Holo {index + 1:02d} {angle:g}deg {interval:.3f}mm"
+            setting.interval = interval
+            setting.angle = angle
+            if SWEEP_SETTINGS[sweep_key]:
+                value = round(sweep_values[index]) if sweep_key in {"frequency", "passes"} else sweep_values[index]
+                setattr(setting, SWEEP_SETTINGS[sweep_key], value)
+            signature = _grating_signature(
+                setting, interval, angle,
+                {"parameter": sweep_key, "value": value} if SWEEP_SETTINGS[sweep_key] else None,
+            )
+            signature["cell_index"] = index + 1
+            recipe_signatures.append(signature)
+            project.add_layer(setting)
+            cell_x, cell_y = left_grid_margin_mm + (index % columns) * cell_mm, top_label_mm + (index // columns) * cell_mm
+            project.add(lightburn.Square(cell_mm, cell_mm, x=cell_x, y=cell_y).layer(layer_index))
+        project.write(os.path.join(upload_folder, lbrn_name))
+        with open(os.path.join(upload_folder, f"{stem}.json"), "w", encoding="utf-8") as metadata_file:
+            json.dump({
+                "kind": "holographic_calibration_grid", "calibration_grid_id": task_id,
+                "material": material,
+                "setting_description": description, "laser_source": laser_source,
+                "lens_field_of_view_mm": lens_field_mm, "columns": columns, "rows": rows,
+                "cell_size_mm": cell_mm, "interval_range_mm": [interval_low, interval_high],
+                "top_label_band_mm": top_label_mm, "right_label_band_mm": right_label_mm,
+                "left_grid_margin_mm": left_grid_margin_mm,
+                "grid_width_mm": columns * cell_mm, "grid_height_mm": rows * cell_mm,
+                "angles_degrees": angles, "intervals_mm": intervals,
+                "grating_recipe_signatures": recipe_signatures,
+                "cut_mode": {
+                    "selection": cut_mode,
+                    "material_setting_type": str(getattr(base_setting, "type", "") or ""),
+                    "exported_type": CUT_MODE_TYPES[cut_mode] or str(getattr(base_setting, "type", "") or ""),
+                },
+                "sweep": {
+                    "parameter": sweep_key if SWEEP_SETTINGS[sweep_key] else None,
+                    "lightburn_property": SWEEP_SETTINGS[sweep_key],
+                    "values": sweep_values if SWEEP_SETTINGS[sweep_key] else [],
+                },
+            }, metadata_file, indent=2)
+        for filename in (svg_name, lbrn_name, f"{stem}.json"):
+            _store_holographic_artifact(task_id, os.path.join(upload_folder, filename))
+    except Exception as error:
+        current_app.logger.exception("Holographic calibration-grid export failed")
+        return jsonify({
+            "status": "error",
+            "message": f"Could not build the calibration grid: {error}",
+        }), 500
+    return jsonify({"status": "completed", "calibration_id": task_id,
+                    "svg_url": f"/holographic-etching/download/{svg_name}",
+                    "lightburn_url": f"/holographic-etching/download/{lbrn_name}",
+                    "label_setting": str(getattr(label_setting, "entryDesc", ""))})
+
+
+@routes.route("/holographic-etching/calibration-profile", methods=["POST"])
+def save_calibration_profile():
+    """Store the captured grid photograph and its measurement context.
+
+    Image analysis is intentionally not performed here yet.  Saving the exact
+    source grid, photograph, and viewing conditions gives the later analyzer a
+    stable, self-contained calibration record to work from.
+    """
+    photo = request.files.get("grid_photo")
+    calibration_id = str(request.form.get("calibration_id", "")).strip()
+    profile_name = str(request.form.get("profile_name", "")).strip()
+    if not photo or not photo.filename or not calibration_id or not profile_name:
+        return jsonify({"status": "error", "message": "Provide a grid photo, calibration grid ID, and profile name."}), 400
+
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    try:
+        grid_metadata_path = _ensure_holographic_artifact(
+            upload_folder, os.path.basename(_calibration_metadata_path(upload_folder, calibration_id))
+        )
+        with open(grid_metadata_path, encoding="utf-8") as metadata_file:
+            grid_metadata = json.load(metadata_file)
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        return jsonify({"status": "error", "message": f"Calibration grid could not be found: {error}"}), 404
+
+    try:
+        photo_image = Image.open(photo.stream)
+        photo_image.verify()
+        photo.stream.seek(0)
+    except (UnidentifiedImageError, OSError):
+        return jsonify({"status": "error", "message": "Upload a readable image of the finished grid, such as a JPG or PNG."}), 400
+
+    profile_id = str(uuid.uuid4())
+    extension = os.path.splitext(secure_filename(photo.filename))[1].lower() or ".image"
+    photo_name = f"holographic_profile_{profile_id}_grid{extension}"
+    profile_name_on_disk = f"holographic_profile_{profile_id}.json"
+    photo.save(os.path.join(upload_folder, photo_name))
+    profile = {
+        "kind": "holographic_calibration_profile",
+        "status": "awaiting_analysis",
+        "profile_id": profile_id,
+        "profile_name": profile_name,
+        "grid_photo": photo_name,
+        "grid_calibration_id": calibration_id,
+        "grid": grid_metadata,
+        "capture": {
+            "phone_or_camera": str(request.form.get("camera", "")).strip(),
+            "camera_distance_mm": str(request.form.get("distance_mm", "")).strip(),
+            "viewing_angle_degrees": str(request.form.get("viewing_angle", "")).strip(),
+            "lighting": str(request.form.get("lighting", "")).strip(),
+            "notes": str(request.form.get("capture_notes", "")).strip(),
+        },
+        "analysis": {
+            "state": "pending",
+            "message": "Ready for grid-photo measurement.",
+            "cells": [],
+        },
+    }
+    with open(os.path.join(upload_folder, profile_name_on_disk), "w", encoding="utf-8") as profile_file:
+        json.dump(profile, profile_file, indent=2)
+    for filename in (photo_name, profile_name_on_disk):
+        _store_holographic_artifact(profile_id, os.path.join(upload_folder, filename))
+    current_app.logger.info("Saved holographic calibration profile %s from grid %s.", profile_id, calibration_id)
+    return jsonify({
+        "status": "saved",
+        "profile_id": profile_id,
+        "profile_url": f"/holographic-etching/download/{profile_name_on_disk}",
+        "message": "Calibration photo and conditions saved. It is ready for measurement.",
+    })
+
+
+@routes.route("/holographic-etching/analyze-calibration", methods=["POST"])
+def analyze_calibration_profile():
+    """Measure visible cell colors from a saved calibration-grid photograph."""
+    profile_id = str(request.form.get("profile_id", "")).strip()
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    try:
+        rotation_degrees = max(-180, min(180, float(request.form.get("rotation_degrees", 0))))
+        crop = {
+            edge: max(0, min(45, float(request.form.get(f"crop_{edge}", 0))))
+            for edge in ("left", "top", "right", "bottom")
+        }
+        if crop["left"] + crop["right"] >= 90 or crop["top"] + crop["bottom"] >= 90:
+            raise ValueError("Opposing crop margins must leave visible image area.")
+        max_edge = max(0, min(6000, int(request.form.get("max_edge", 1800))))
+        manual_corners_raw = str(request.form.get("manual_corners", "")).strip()
+        manual_samples_raw = str(request.form.get("manual_sample_points", "")).strip()
+        reference_values = [str(request.form.get(f"reference_{channel}", "")).strip() for channel in ("r", "g", "b")]
+        manual_corners = None
+        if manual_corners_raw:
+            normalized_corners = json.loads(manual_corners_raw)
+            if (not isinstance(normalized_corners, list) or len(normalized_corners) != 4
+                    or any(not isinstance(corner, list) or len(corner) != 2 for corner in normalized_corners)):
+                raise ValueError("Four grid corners are required.")
+            manual_corners = normalized_corners
+        manual_sample_points = json.loads(manual_samples_raw) if manual_samples_raw else {}
+        if not isinstance(manual_sample_points, dict):
+            raise ValueError("Manual sample points must be a cell map.")
+        reference_correction = None
+        if any(reference_values):
+            if not all(reference_values):
+                raise ValueError("Enter all three neutral-reference RGB values, or leave them all blank.")
+            observed_reference = [float(value) for value in reference_values]
+            if any(value <= 0 for value in observed_reference):
+                raise ValueError("Neutral-reference RGB values must be above zero.")
+            reference_correction = [220 / value for value in observed_reference]
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return jsonify({"status": "error", "message": "Rotation, crop margins, and analysis size must be valid numbers."}), 400
+    try:
+        profile_path = _ensure_holographic_artifact(
+            upload_folder, os.path.basename(_profile_metadata_path(upload_folder, profile_id))
+        )
+        with open(profile_path, encoding="utf-8") as profile_file:
+            profile = json.load(profile_file)
+        _ensure_holographic_artifact(upload_folder, profile["grid_photo"])
+        if manual_corners is not None:
+            source = cv2.imread(os.path.join(upload_folder, profile["grid_photo"]), cv2.IMREAD_COLOR)
+            if source is None:
+                raise ValueError("The saved grid photo could not be opened for analysis.")
+            height, width = source.shape[:2]
+            manual_corners = [
+                [max(0, min(width - 1, float(corner[0]) * width)), max(0, min(height - 1, float(corner[1]) * height))]
+                for corner in manual_corners
+            ]
+        cells, preview, correction, corners = _measure_grid_photo(
+            os.path.join(upload_folder, profile["grid_photo"]), profile["grid"], rotation_degrees, crop, max_edge, manual_corners, manual_sample_points, reference_correction
+        )
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
+        current_app.logger.exception("Holographic calibration analysis failed")
+        return jsonify({"status": "error", "message": f"Calibration analysis could not run: {error}"}), 400
+
+    preview_name = f"holographic_profile_{profile_id}_analysis.jpg"
+    if not cv2.imwrite(os.path.join(upload_folder, preview_name), preview):
+        return jsonify({"status": "error", "message": "Could not save the analyzed grid preview."}), 500
+    profile["status"] = "measured"
+    profile["analysis"] = {
+        "state": "measured",
+        "message": "Cell colors were sampled from the photograph. Confirm the numbered preview before using these values for recipe mapping.",
+        "perspective_correction": correction,
+        "source_rotation_degrees": rotation_degrees,
+        "source_crop_percent": crop,
+        "analysis_max_edge_px": max_edge,
+        "manual_grid_corners": corners if correction == "manual_corners" else None,
+        "manual_sample_points": manual_sample_points,
+        "neutral_reference_correction": reference_correction,
+        "detected_grid_corners": corners,
+        "preview": preview_name,
+        "cells": cells,
+    }
+    with open(profile_path, "w", encoding="utf-8") as profile_file:
+        json.dump(profile, profile_file, indent=2)
+    _store_holographic_artifact(profile_id, os.path.join(upload_folder, preview_name))
+    _store_holographic_artifact(profile_id, profile_path)
+    current_app.logger.info("Measured %s holographic calibration cells for profile %s.", len(cells), profile_id)
+    return jsonify({
+        "status": "measured",
+        "profile_id": profile_id,
+        "profile_url": f"/holographic-etching/download/{os.path.basename(profile_path)}",
+        "preview_url": f"/holographic-etching/preview/{preview_name}",
+        "correction": correction,
+        "rotation_degrees": rotation_degrees,
+        "crop": crop,
+        "cells": cells,
+        "message": "Grid sampled. Review the numbered preview, then keep this profile as the measured recipe source.",
+    })
+
+
+@routes.route("/holographic-etching/save-recipes", methods=["POST"])
+def save_holographic_recipes():
+    """Persist the operator's chosen calibration cells as a reusable palette."""
+    profile_id = str(request.form.get("profile_id", "")).strip()
+    try:
+        selected = json.loads(str(request.form.get("recipes", "[]")))
+        if not isinstance(selected, list) or not selected:
+            raise ValueError("Keep at least one measured swatch.")
+    except (ValueError, TypeError, json.JSONDecodeError) as error:
+        return jsonify({"status": "error", "message": f"Recipe selections are invalid: {error}"}), 400
+
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    try:
+        profile_path = _ensure_holographic_artifact(
+            upload_folder, os.path.basename(_profile_metadata_path(upload_folder, profile_id))
+        )
+        with open(profile_path, encoding="utf-8") as profile_file:
+            profile = json.load(profile_file)
+        cells = {int(cell["index"]): cell for cell in profile["analysis"]["cells"]}
+        recipes = []
+        used_names = set()
+        for item in selected:
+            index = int(item["index"])
+            if index not in cells:
+                raise ValueError(f"Cell {index} is not part of this profile.")
+            name = str(item.get("name", "")).strip() or f"Holographic {index:02d}"
+            unique_name = name.casefold()
+            if unique_name in used_names:
+                raise ValueError("Recipe names must be unique.")
+            used_names.add(unique_name)
+            recipes.append({"name": name, **cells[index]})
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
+        return jsonify({"status": "error", "message": f"Could not save recipes: {error}"}), 400
+
+    profile["status"] = "recipe_palette_ready"
+    profile["recipes"] = recipes
+    similar_pairs = []
+    for left_index, left in enumerate(recipes):
+        for right in recipes[left_index + 1:]:
+            distance = round(math.sqrt(sum((int(a) - int(b)) ** 2 for a, b in zip(left["observed_rgb"], right["observed_rgb"]))), 1)
+            if distance < 28:
+                similar_pairs.append({"recipes": [left["name"], right["name"]], "rgb_distance": distance})
+    weak_recipes = [recipe["name"] for recipe in recipes if recipe.get("confidence", 100) < 45 or recipe.get("quality_flags")]
+    profile["palette_diagnostics"] = {"similar_pairs": similar_pairs, "weak_recipes": weak_recipes}
+    with open(profile_path, "w", encoding="utf-8") as profile_file:
+        json.dump(profile, profile_file, indent=2)
+    recipe_artifact_key = _store_holographic_artifact(profile_id, profile_path)
+    history_session = (valid_history_session(request.form.get("history_session"))
+                       or valid_history_session(request.cookies.get("mopa_history_session")))
+    if history_session:
+        redis_client.set(
+            f"holographic-recipe:{history_session}",
+            json.dumps({"path": profile_path, "filename": os.path.basename(profile_path),
+                        "key": recipe_artifact_key}),
+            ex=HISTORY_TTL_SECONDS,
+        )
+    user_id = request.headers.get("x-amzn-oidc-identity", "").strip()
+    if user_id:
+        try:
+            save_user_holographic_recipe(
+                user_id, profile_path, profile.get("profile_name"),
+                metadata={"profile_name": profile.get("profile_name", ""), "recipe_count": len(recipes),
+                          "material": profile.get("grid", {}).get("material", "")},
+                source_filename=os.path.basename(profile_path),
+            )
+        except RuntimeError as error:
+            current_app.logger.exception("Could not save generated Holographic Recipe to the account")
+            return jsonify({"status": "error", "message": str(error)}), 503
+    current_app.logger.info("Saved %s holographic recipes for profile %s.", len(recipes), profile_id)
+    return jsonify({
+        "status": "saved",
+        "recipe_count": len(recipes),
+        "profile_url": f"/holographic-etching/download/{os.path.basename(profile_path)}",
+        "palette_diagnostics": profile["palette_diagnostics"],
+        "message": f"Saved {len(recipes)} holographic recipe(s) into this calibration profile.",
+    })
+
+
+@routes.route("/holographic-etching/build-artwork", methods=["POST"])
+def build_holographic_artwork():
+    artwork = request.files.get("artwork")
+    profile_file = request.files.get("recipe_profile")
+    saved_recipe_id = str(request.form.get("saved_holographic_recipe_id", "")).strip()
+    material_file = request.files.get("material_settings")
+    saved_library_id = str(request.form.get("saved_material_library_id", "")).strip()
+    artwork_task_id = valid_history_session(request.form.get("artwork_task_id")) or str(uuid.uuid4())
+    def fail(message, status_code):
+        payload = {"status": "error", "message": str(message)}
+        return jsonify(payload), status_code
+    if not artwork or not artwork.filename:
+        return fail("Provide an artwork image.", 400)
+    try:
+        max_dimension = max(8, min(1600, int(request.form.get("max_dimension", 96))))
+        pixel_mm = max(.0625, min(5, float(request.form.get("pixel_mm", .5))))
+    except ValueError:
+        return fail("Processing resolution and pixel size must be numbers.", 400)
+    try:
+        recipe_path = _resolve_holographic_recipe(
+            artwork_task_id, profile_file, saved_recipe_id, request.form.get("history_session")
+        )
+        library_path = _resolve_material_library(
+            artwork_task_id, material_file, saved_library_id,
+            request.form.get("history_session"), request.form.get("material", "")
+        )
+        preserve_black_outlines = request.form.get("preserve_black_outlines") in {"on", "true", "1"}
+        cut_mode = str(request.form.get("cut_mode", "setting")).strip().lower()
+        if cut_mode not in CUT_MODE_TYPES:
+            raise ValueError("Choose a valid cut mode.")
+        artwork_name = secure_filename(artwork.filename) or "artwork.png"
+        artwork_path = os.path.join(current_app.config["UPLOAD_FOLDER"], f"{artwork_task_id}_{artwork_name}")
+        artwork.save(artwork_path)
+        user_id = request.headers.get("x-amzn-oidc-identity", "").strip() or None
+        artwork_key = upload_task_artifact(artwork_task_id, artwork_path, category="inputs", user_id=user_id)
+        recipe_key = upload_task_artifact(artwork_task_id, recipe_path, category="inputs", user_id=user_id)
+        material_key = upload_task_artifact(artwork_task_id, library_path, category="inputs", user_id=user_id)
+        if not all((artwork_key, recipe_key, material_key)):
+            raise RuntimeError("Queued Holographic Artwork jobs require durable artifact storage.")
+        with open(recipe_path, encoding="utf-8") as recipe_stream:
+            recipe_summary = json.load(recipe_stream)
+        history_session = (valid_history_session(request.form.get("history_session"))
+                           or valid_history_session(request.cookies.get("mopa_history_session"))
+                           or str(uuid.uuid4()))
+        display_material = (recipe_summary.get("grid") or {}).get("material") or os.path.basename(library_path)
+        run_parameters = {
+            "job_type": "holographic_artwork",
+            "recipe_name": recipe_summary.get("profile_name") or os.path.basename(recipe_path),
+            "material_library": os.path.basename(library_path),
+            "processing_width_px": max_dimension,
+            "processing_height_px": max_dimension,
+            "pixel_size_mm": pixel_mm,
+            "cut_mode": cut_mode,
+            "preserve_black_outlines": preserve_black_outlines,
+        }
+        payload = {
+            "job_type": "holographic_artwork", "task_id": artwork_task_id,
+            "artwork_key": artwork_key, "recipe_key": recipe_key, "material_key": material_key,
+            "artwork_name": artwork_name, "recipe_name": os.path.basename(recipe_path),
+            "material_name": os.path.basename(library_path), "max_dimension": max_dimension,
+            "pixel_mm": pixel_mm, "preserve_black_outlines": preserve_black_outlines,
+            "cut_mode": cut_mode, "user_id": user_id,
+        }
+        if user_id:
+            record_user_job(
+                user_id, artwork_task_id, artwork_name, "holographic_artwork", "none",
+                display_material, run_parameters,
+                input_keys=[artwork_key, recipe_key, material_key],
+            )
+        add_history_entry(
+            history_session, artwork_task_id, artwork_name, "holographic_artwork", "none",
+            display_material, run_parameters,
+        )
+        redis_client.lpush(RASTER_JOB_QUEUE, json.dumps(payload, separators=(",", ":")))
+        redis_client.set(f"task:{artwork_task_id}:status", "pending", ex=HISTORY_TTL_SECONDS)
+        redis_client.rpush(f"task:{artwork_task_id}:log", "Holographic Artwork job queued for a dedicated worker.")
+        redis_client.expire(f"task:{artwork_task_id}:log", HISTORY_TTL_SECONDS)
+    except PermissionError as error:
+        return fail(error, 401)
+    except FileNotFoundError as error:
+        return fail(error, 404)
+    except RuntimeError as error:
+        current_app.logger.exception("Could not resolve holographic artwork library")
+        return fail(error, 503)
+    except (OSError, ValueError, ET.ParseError, KeyError, TypeError) as error:
+        current_app.logger.exception("Holographic artwork export failed")
+        return fail(f"Could not build holographic artwork: {error}", 400)
+    response = make_response(jsonify({"status": "pending", "task_id": artwork_task_id}), 202)
+    response.set_cookie(
+        "mopa_history_session", history_session, max_age=HISTORY_TTL_SECONDS,
+        secure=request.is_secure, httponly=True, samesite="Lax",
+    )
+    return response
+
+
+@routes.route("/holographic-etching/artwork-status/<task_id>")
+def holographic_artwork_status(task_id):
+    task_id = valid_history_session(task_id)
+    if not task_id:
+        return jsonify({"status": "error", "message": "Unknown artwork task."}), 404
+    status = redis_client.get(f"task:{task_id}:status")
+    if not status:
+        return jsonify({"status": "error", "message": "Artwork task status was not found."}), 404
+    try:
+        after = max(0, int(request.args.get("after", 0)))
+    except (TypeError, ValueError):
+        after = 0
+    log_key = f"task:{task_id}:log"
+    log_count = redis_client.llen(log_key)
+    logs = redis_client.lrange(log_key, after, -1) if log_count > after else []
+    try:
+        result = json.loads(redis_client.get(f"holographic-artwork-result:{task_id}") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        result = {}
+    if status == "completed" and not result.get("lightburn_url"):
+        status = "processing"
+    queue = raster_queue_position(task_id) if status == "pending" else None
+    return jsonify({"status": status, "logs": logs, "log_count": log_count, "queue": queue, **result})
+
+
+@routes.route("/holographic-etching/profile-photo/<profile_id>")
+def calibration_profile_photo(profile_id):
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    try:
+        profile_path = _ensure_holographic_artifact(
+            upload_folder, os.path.basename(_profile_metadata_path(upload_folder, profile_id))
+        )
+        with open(profile_path, encoding="utf-8") as profile_file:
+            profile = json.load(profile_file)
+        photo_name = os.path.basename(profile["grid_photo"])
+        _ensure_holographic_artifact(upload_folder, photo_name)
+    except (OSError, RuntimeError, ValueError, KeyError, json.JSONDecodeError):
+        return jsonify({"status": "error", "message": "Calibration profile photo was not found."}), 404
+    return send_from_directory(upload_folder, photo_name)
+
+
+@routes.route("/holographic-etching/preview/<filename>")
+def preview_calibration_file(filename):
+    if not filename.startswith("holographic_profile_"):
+        return jsonify({"status": "error", "message": "Unknown calibration preview."}), 404
+    try:
+        _ensure_holographic_artifact(current_app.config["UPLOAD_FOLDER"], filename)
+    except (OSError, RuntimeError):
+        return jsonify({"status": "error", "message": "Calibration preview was not found."}), 404
+    return send_from_directory(current_app.config["UPLOAD_FOLDER"], filename)
+
+
+@routes.route("/holographic-etching/download/<filename>")
+def download_calibration_file(filename):
+    if not (filename.startswith("holographic_calibration_") or filename.startswith("holographic_profile_") or filename.startswith("holographic_art_")):
+        return jsonify({"status": "error", "message": "Unknown calibration file."}), 404
+    try:
+        return _download_holographic_artifact(current_app.config["UPLOAD_FOLDER"], filename)
+    except (OSError, RuntimeError):
+        return jsonify({"status": "error", "message": "Calibration file was not found."}), 404

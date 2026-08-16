@@ -41,6 +41,17 @@ For local k3s development, use the helper script:
 ./load-k3s-image.sh mopa-laser-rasterizer local
 ```
 
+To deploy from WSL with the current checkout bind-mounted into `/app`:
+
+```bash
+sh ./deploy-local.sh
+```
+
+The script resolves the repository's WSL path at runtime, writes the ignored
+`k8s/deployment.local.yaml`, applies it, and restarts the deployment. After
+the image has been loaded once, edit files in the checkout and rerun this
+command; a source-only change does not need an image rebuild.
+
 ### Local environment sync
 
 The repo root contains the authoritative `.env.local` file for local path configuration.
@@ -63,6 +74,33 @@ Example:
 ```powershell
 .\deploy-k8s.ps1 -ImageName mopa-laser-rasterizer -ImageTag local -KubeConfigPath /etc/rancher/k3s/k3s.yaml
 ```
+
+### AWS host-mounted source workflow
+
+The AWS deployment bind-mounts the repository checkout on its selected EC2
+node at `/app`. Source files are therefore read directly from the host; they
+are not copied into a pod volume. Before applying the deployment, label the
+one node that contains `/home/ubuntu/mopa-laser-rasterizer`:
+
+```bash
+kubectl label node <node-name> mopa-laser-rasterizer-host=true
+```
+
+Set `HOST_APP_PATH` in `.env.local` to the absolute path of that checkout (or
+use the provided default in `.env.example`). After pulling code on that EC2
+host, restart the deployment—no image build is needed for source-only changes:
+
+```bash
+cd /home/ubuntu/mopa-laser-rasterizer
+git pull
+kubectl rollout restart deployment/mopa-laser-rasterizer -n default
+kubectl rollout status deployment/mopa-laser-rasterizer -n default
+```
+
+`hostPath` is node-local storage. Do not add the label to more than one node
+unless each node has the same repository path and checkout. The image remains
+the source of Python and OS dependencies, so rebuild it when dependencies or
+the Dockerfile change.
 
 Then apply from WSL:
 ```bash

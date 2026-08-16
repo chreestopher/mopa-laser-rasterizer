@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mopa-laser-raster-worker
+  namespace: default
+  labels:
+    app: mopa-laser-raster-worker
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 7500
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: mopa-laser-raster-worker
+  template:
+    metadata:
+      labels:
+        app: mopa-laser-raster-worker
+    spec:
+      terminationGracePeriodSeconds: 7200
+      nodeSelector:
+        mopa-laser-rasterizer-host: "true"
+      initContainers:
+      - name: wait-for-redis
+        image: alpine:latest
+        command: ["sh", "-c", "until nc -zvw1 redis-service 6379; do echo waiting for redis; sleep 2; done;"]
+      containers:
+      - name: raster-worker
+        image: mopa-laser-rasterizer:com
+        imagePullPolicy: IfNotPresent
+        command: ["python", "-u", "worker.py"]
+        env:
+        - name: REDIS_HOST
+          value: "redis-service"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: AWS_REGION
+          value: "us-east-2"
+        - name: S3_BUCKET_NAME
+          value: "mopa-laser-rasterizer-artifacts-401716294893"
+        - name: DYNAMODB_TABLE_NAME
+          value: "mopa-laser-rasterizer-users"
+        - name: UPLOAD_FOLDER
+          value: "/tmp/uploads"
+        - name: RASTER_JOB_LEASE_SECONDS
+          value: "90"
+        - name: RASTER_JOB_HEARTBEAT_SECONDS
+          value: "20"
+        - name: RASTER_JOB_RECOVERY_INTERVAL_SECONDS
+          value: "15"
+        - name: RASTER_JOB_RECOVERY_LOCK_SECONDS
+          value: "10"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "4096Mi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: application-source
+          mountPath: /app
+          readOnly: false
+        - name: job-scratch
+          mountPath: /tmp/uploads
+      volumes:
+      - name: application-source
+        hostPath:
+          path: /home/ubuntu/mopa-laser-rasterizer
+          type: Directory
+      - name: job-scratch
+        emptyDir: {}

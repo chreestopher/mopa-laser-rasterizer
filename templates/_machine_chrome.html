@@ -1,0 +1,20 @@
+{% macro machine_chrome(current_page, subtitle, artwork_indicators=true, status_id='') -%}
+<header class="machine-brand-header">
+  <h1 class="machine-brand-title"><a class="machine-brand-home" href="/" aria-label="Return to MOPA Laser Rasterizer home"><span class="machine-brand-letters" aria-hidden="true"><span>M</span><span>O</span><span>P</span><span>A</span><span>-</span><span>L</span><span>A</span><span>S</span><span>E</span><span>R</span><span>-</span><span>R</span><span>A</span><span>S</span><span>T</span><span>E</span><span>R</span><span>I</span><span>Z</span><span>E</span><span>R</span></span></a></h1>
+  <div class="machine-status-line">
+    <div{% if status_id %} id="{{ status_id }}"{% endif %} class="machine-status-lamps" role="status" aria-label="MOPA laser system indicators">
+      <span class="machine-status-lamp machine-lamp-mopa">MOPA</span>
+      <span class="machine-status-lamp machine-lamp-laser">Laser</span>
+      {% if artwork_indicators %}<span class="machine-status-lamp machine-lamp-raster">Raster</span><span class="machine-status-lamp machine-lamp-vector">Vector</span>{% endif %}
+      <span class="machine-status-lamp machine-lamp-power">Power</span>
+    </div>
+    <span class="machine-console-subtitle">{{ subtitle }}</span>
+  </div>
+</header>
+<nav class="machine-nav" aria-label="Primary navigation">
+  <span class="machine-nav-item"><a href="/"{% if current_page == 'rasterizer' %} aria-current="page"{% endif %}>Rasterizer</a><span class="machine-nav-tooltip" role="tooltip">Turn artwork into a laser-ready color engraving project.</span></span>
+  <span class="machine-nav-item"><a href="/holographic-etching"{% if current_page == 'holographic' %} aria-current="page"{% endif %}>Holographic Lab</a><span class="machine-nav-tooltip" role="tooltip">Experimental diffraction-color work.</span></span>
+  <span class="machine-nav-item"><a href="/material-libraries"{% if current_page == 'materials' %} aria-current="page"{% endif %}>Material Vault</a><span class="machine-nav-tooltip" role="tooltip">Manage your saved Material Libraries and inspect their settings.</span></span>
+  <span class="machine-nav-item"><a href="/job-history"{% if current_page == 'history' %} aria-current="page"{% endif %}>Job History</a><span class="machine-nav-tooltip" role="tooltip">Review completed runs, downloads, and retained processing logs.</span></span>
+</nav>
+{%- endmacro %}
