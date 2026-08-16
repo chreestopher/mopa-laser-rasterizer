@@ -3,7 +3,7 @@
 The ordinary raster pipeline still prepares, color-separates, and cleans the
 artwork. This module's optional ``remap_layers`` capability then
 rebuilds those finished color regions as open parallel-line patches and
-assigns each patch across the available non-black LightBurn layers.
+assigns each patch across the available non-black Lightburn layers.
 
 The layer colors are identifiers, not promises about the engraved color. True
 Black contains only geometry classified from the source raster; this preset
@@ -107,7 +107,7 @@ def configure_output_layers(lightburn_project, target_colors, settings=None):
 
     # Offset Fill entries store their concrete laser values in child passes.
     # The generated geometry is already a set of open paths, so copy the first
-    # concrete pass when present and convert every clone to LightBurn Line mode.
+    # concrete pass when present and convert every clone to Lightburn Line mode.
     sublayers = getattr(source_layer, "subLayers", None) or []
     setting_template = sublayers[0] if sublayers else source_layer
     reference_frequency = number(getattr(setting_template, "frequency", 0), 0)
@@ -196,7 +196,7 @@ def _level_at_y(color_hex, y, min_y, max_y, settings, level_count):
 
 
 def _grating_swatches(target_colors):
-    """Return available carriers in their native LightBurn layer order."""
+    """Return available carriers in their native Lightburn layer order."""
     return [
         color_hex
         for color_hex, metadata in sorted(

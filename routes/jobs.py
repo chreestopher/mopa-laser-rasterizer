@@ -73,7 +73,7 @@ def start_task():
     except (UnidentifiedImageError, OSError):
         return jsonify({
             "status": "error",
-            "message": "The artwork file must be an image. It looks like a LightBurn Material Library may have been selected instead.",
+            "message": "The artwork file must be an image. It looks like a Lightburn Material Library may have been selected instead.",
         }), 400
     finally:
         image_file.stream.seek(0)
@@ -143,7 +143,7 @@ def start_task():
             except RuntimeError as error:
                 return jsonify({"status": "error", "message": str(error)}), 503
         if not material_settings_path or not os.path.isfile(material_settings_path):
-            return jsonify({"status": "error", "message": "Choose a LightBurn Material Library file"}), 400
+            return jsonify({"status": "error", "message": "Choose a Lightburn Material Library file"}), 400
     try:
         submitted_preset = str(user_data.get("image_preset", "cartoon")).strip().lower()
         material_name = str(user_data.get("material", "stainless - steel")).strip().lower()
@@ -474,7 +474,7 @@ def download_lbrn2(task_id):
         )
     filename = _output_file(task_id, ".lbrn2")
     if not filename:
-        return jsonify({"status": "error", "message": "LightBurn file (.lbrn2) not found on disk"}), 404
+        return jsonify({"status": "error", "message": "Lightburn file (.lbrn2) not found on disk"}), 404
     cleanup_redis_inflight(task_id)
     return send_from_directory(
         current_app.config["UPLOAD_FOLDER"], filename, as_attachment=True,

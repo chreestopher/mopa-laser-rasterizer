@@ -72,7 +72,7 @@ def _dynamodb_values(value):
         return value
     if isinstance(value, float):
         return Decimal(str(value))
-    # LightBurn and NumPy occasionally expose numeric scalar subclasses. They
+    # Lightburn and NumPy occasionally expose numeric scalar subclasses. They
     # look like ordinary values in Python but boto3 will not serialize them.
     if isinstance(value, Integral):
         return int(value)
@@ -96,7 +96,7 @@ def _json_values(value):
 
 
 def _setting_values(setting):
-    """Keep the actual LightBurn controls, including Offset Fill sublayers."""
+    """Keep the actual Lightburn controls, including Offset Fill sublayers."""
     hidden = {"materialName", "entryDesc", "entryThickness", "entryNoThickTitle", "subLayers"}
     values = {}
     for key, value in vars(setting).items():
@@ -270,7 +270,7 @@ def get_user_material_library(user_id, library_id):
 
 def save_user_material_library(user_id, local_file_path, material_name="", summary=None,
                                display_name=None, source_filename=None):
-    """Store an uploaded LightBurn library once under its Cognito owner."""
+    """Store an uploaded Lightburn library once under its Cognito owner."""
     table = account_table()
     if not table or not S3_BUCKET_NAME:
         raise RuntimeError("Account Material Library storage is not configured.")

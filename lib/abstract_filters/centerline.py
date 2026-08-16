@@ -69,7 +69,7 @@ def process_boxes(boxes, settings, skeletonizer):
     if centerlines.is_empty:
         return centerlines
 
-    # Laser fill workflows and the LightBurn punch-through pipeline expect
+    # Laser fill workflows and the Lightburn punch-through pipeline expect
     # closed shapes.  Buffer each central stroke into a narrow, round-capped
     # ribbon, keeping it visually centered without exporting open paths or
     # forcing the laser to retrace every line back to its start.

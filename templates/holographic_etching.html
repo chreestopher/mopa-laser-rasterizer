@@ -153,7 +153,7 @@
   <form id="calibration_form" class="calibration-form" enctype="multipart/form-data">
     <input class="material-history-session" type="hidden" name="history_session">
     <h3><span class="sequence-tag">01</span> Calibration Grid Console</h3>
-    <p class="form-note">This first grid sweeps line angle and fill interval while copying one selected LightBurn setting onto each cell. Keep the laser, material finish, and lens setup stable while you test it.</p>
+    <p class="form-note">This first grid sweeps line angle and fill interval while copying one selected Lightburn setting onto each cell. Keep the laser, material finish, and lens setup stable while you test it.</p>
     <label id="saved_calibration_library_row" class="full-width" hidden>Existing Material Vault library
       <select id="saved_calibration_library" name="saved_material_library_id">
         <option value="">Choose a saved Material Library…</option>
@@ -220,7 +220,7 @@
   <form id="artwork_form" class="calibration-form" enctype="multipart/form-data">
     <input class="material-history-session" type="hidden" name="history_session">
     <h3><span class="sequence-tag">04</span> Holographic Artwork Console</h3>
-    <p class="form-note">Bring your artwork, the recipe profile you saved above, and the same LightBurn Material Library used for calibration. Each processed image pixel becomes a tiny square on its closest calibrated recipe layer, using that recipe’s measured Fill interval and angle.</p>
+    <p class="form-note">Bring your artwork, the recipe profile you saved above, and the same Lightburn Material Library used for calibration. Each processed image pixel becomes a tiny square on its closest calibrated recipe layer, using that recipe’s measured Fill interval and angle.</p>
     <label class="full-width">Artwork image<input name="artwork" type="file" accept="image/*" required></label>
     <label id="saved_holographic_recipe_row" class="full-width" hidden>Saved Holographic Recipe
       <select id="saved_holographic_recipe" name="saved_holographic_recipe_id"><option value="">Choose an account recipe…</option></select>
@@ -233,12 +233,12 @@
     <input id="artwork_material_settings" name="material_settings" type="file" hidden disabled>
     <div id="artwork_remembered_material_library" class="remembered-input-note full-width" hidden></div>
     <p class="form-note">Material Libraries are managed in the <a href="/material-libraries">Material Vault</a>, not uploaded from this console.</p>
-    <label>Maximum processing dimension, pixels<input name="max_dimension" type="number" value="96" min="8" max="1600" step="1"><span class="form-note">Start at 64–96. The 1600-pixel limit is for serious experiments, and detailed artwork can still create a very large LightBurn file.</span></label>
+    <label>Maximum processing dimension, pixels<input name="max_dimension" type="number" value="96" min="8" max="1600" step="1"><span class="form-note">Start at 64–96. The 1600-pixel limit is for serious experiments, and detailed artwork can still create a very large Lightburn file.</span></label>
     <label>Physical pixel size, mm<input name="pixel_mm" type="number" value=".5" min=".0625" max="5" step=".0625"><span class="form-note">This sets each grating patch’s width and height.</span></label>
     <label>Cut mode<select name="cut_mode"><option value="setting" selected>Setting</option><option value="line">Line</option><option value="fill">Fill</option><option value="offset-fill">Offset Fill</option></select><span class="form-note">Setting preserves the operation type from the selected holographic Material Library setting. Other choices override the generated holographic layers.</span></label>
     <label class="outline-toggle"><input name="preserve_black_outlines" type="checkbox">Preserve black outlines<span class="form-note">Uses the BW Photo two-color pass, then places its dark geometry on the Black Material Library layer.</span></label>
     <label>Grating direction mode<select name="direction_mode"><option value="recipe">Use each calibrated recipe angle</option><option value="brightness">Map artwork brightness to angle</option><option value="linear">Sweep left to right</option><option value="radial">Radiate from image center</option><option value="fixed">Use one fixed angle</option></select><span class="form-note">Experimental modes keep measured recipe settings but independently change Offset Fill angle.</span></label>
-    <label>Direction bins<input name="direction_bins" type="number" value="6" min="2" max="12" step="1"><span class="form-note">Fewer bins create smaller, faster LightBurn projects.</span></label>
+    <label>Direction bins<input name="direction_bins" type="number" value="6" min="2" max="12" step="1"><span class="form-note">Fewer bins create smaller, faster Lightburn projects.</span></label>
     <label>Fixed direction, degrees<input name="fixed_direction_degrees" type="number" value="0" min="0" max="180" step="1"><span class="form-note">Used only by Fixed direction mode.</span></label>
     <div class="action-row"><button class="action" type="submit">Build Holographic Artwork</button></div>
     <p id="artwork_results" class="calibration-results" aria-live="polite"></p>
@@ -551,7 +551,7 @@
         const labelSetting = data.label_setting ? ` Label layer: ${data.label_setting}.` : '';
         results.innerHTML = `Calibration grid ready.${downloadButtonList([
           {url:data.svg_url, label:'Download SVG'},
-          {url:data.lightburn_url, label:'Download LightBurn Project'}
+          {url:data.lightburn_url, label:'Download Lightburn Project'}
         ])}${labelSetting} Grid ID loaded into the Finished Grid Capture Console.`;
       } catch (error) {
         results.textContent = error.message;

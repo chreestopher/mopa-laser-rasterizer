@@ -14,7 +14,7 @@
 #   MATERIAL_NAME="stainless - steel"
 #   RASTER_WIDTH=300       # Set one of RASTER_WIDTH/RASTER_HEIGHT to 0.
 #   RASTER_HEIGHT=0
-#   LIMIT_COLORS=""        # Empty means every available LightBurn color.
+#   LIMIT_COLORS=""        # Empty means every available Lightburn color.
 #   CONTINUE_EXISTING=1    # Skip output combinations already present.
 
 set -u
@@ -86,7 +86,7 @@ if [[ -z $material_library ]]; then
 fi
 
 if [[ -z $material_library || ! -f $material_library ]]; then
-  echo "A LightBurn material-library file is required by the full export pipeline." >&2
+  echo "A Lightburn material-library file is required by the full export pipeline." >&2
   echo "Set it once for this command, for example:" >&2
   echo "  MATERIAL_LIBRARY=/mnt/c/path/materials.clb $0 \"$input_file\" \"$output_dir\"" >&2
   exit 2

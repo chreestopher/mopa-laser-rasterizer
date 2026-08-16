@@ -518,7 +518,7 @@ class Lightburn:
                 setting.entryDesc = entry.attrib.get("Desc")
                 setting.entryThickness = entry.attrib.get("Thickness")
                 setting.entryNoThickTitle = entry.attrib.get("NoThickTitle")
-                # LightBurn tool layers are workspace helpers, not laser
+                # Lightburn tool layers are workspace helpers, not laser
                 # material settings.  Exclude them before any caller can
                 # color-match, display, or copy them into a project layer.
                 setting_type = str(getattr(setting, "type", "") or "").strip().casefold()

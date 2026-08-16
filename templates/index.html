@@ -479,7 +479,7 @@
   <h2>Turn any image into a laser-ready color engraving project!</h2>
   <h2>Without building every color layer by hand!</h2>
   <div class="rasterizer-intro">
-    <p>Spend less time tracing artwork, sorting color layers, and assembling LightBurn projects. Choose a photo preset or abstract style, then let the Rasterizer prepare layered vector artwork for final review in LightBurn.</p>
+    <p>Spend less time tracing artwork, sorting color layers, and assembling Lightburn projects. Choose a photo preset or abstract style, then let the Rasterizer prepare layered vector artwork for final review in Lightburn.</p>
     <p><a href="/docs#getting-started">Getting started</a> · <a href="/docs#how-it-works">How the Rasterizer works</a> · <a href="/docs/preset-controls">Understand every control</a></p>
   </div>
      
@@ -493,7 +493,7 @@
       <div><input type="file" id="image" name="image" accept="image/*" required></div>
     </div>
     <div>
-      <div><label for="material_settings">2. Choose your LightBurn Material Library:</label></div>
+      <div><label for="material_settings">2. Choose your Lightburn Material Library:</label></div>
       <div><input type="file" id="material_settings" name="material_settings" accept=".clb,.lbmat,.lbrn" aria-describedby="remembered_material_library"></div>
       <div id="remembered_material_library" class="remembered-input-note" hidden></div>
       <div id="saved_material_library_row" hidden><label for="saved_material_library">Or use one of your saved Material Libraries:</label><select id="saved_material_library" name="saved_material_library_id"><option value="">Choose an account library…</option></select></div>
@@ -526,7 +526,7 @@
       <!-- Lightburn Color Palette Grid Section -->
       <div class="palette-section">
         <label style="font-size: 0.9rem; font-weight: 600;">5. Tune your engraving color palette</label>
-        <h3>All available colors are included to start. Click a swatch to exclude it from the artwork. For settings, either keep the default color names and use those same names in your Material Library, or click a color name to retitle it to your library’s exact Entry Description or cut-setting name. Presto: the matching Material Library setting is copied onto that color’s LightBurn layer. Nearby colors are reassigned to the closest remaining engraving color, so you can experiment with confidence.</h3>
+        <h3>All available colors are included to start. Click a swatch to exclude it from the artwork. For settings, either keep the default color names and use those same names in your Material Library, or click a color name to retitle it to your library’s exact Entry Description or cut-setting name. Presto: the matching Material Library setting is copied onto that color’s Lightburn layer. Nearby colors are reassigned to the closest remaining engraving color, so you can experiment with confidence.</h3>
         <div class="color-grid">
           <div class="color-card"><span class="color-name">black</span><div class="color-square" style="background-color: #000000;"></div><span class="color-hex">#000000</span></div>
           <div class="color-card"><span class="color-name">blue</span><div class="color-square" style="background-color: #0000FF;"></div><span class="color-hex">#0000FF</span></div>
@@ -682,7 +682,7 @@
           ['break_origin_y', .35, 0, 1, .01], ['seed', 1, 0, 999999, 1]]
       },
       krasnow_grating: {
-        description: 'Transforms the normally color-separated non-Black artwork into open parallel-line patches and distributes corrected grating levels across the available non-Black layers in LightBurn order. The Material Library entry matching Holographic is treated as the machine-specific 1.00 µm calibration anchor. Each output layer receives an independent copy that preserves the anchor power, frequency, pulse width, passes, and other values while scaling speed for a target pitch between approximately 0.55 and 1.55 µm. Speed Spread scales each layer\'s deviation around the anchor: 0 gives every layer the anchor speed, 1 uses the normal calculated range, and 2 doubles the variation without moving the 1.00 µm layer. With a 300 mm/s anchor and Speed Spread 1 this yields 165–465 mm/s, following Ben Krasnow\'s fixed-frequency progression. A single output layer uses the unmodified 1.00 µm anchor speed. Clones retain their original color, name, and ID and use Line mode for the generated open paths. Black keeps its source geometry and Black setting, with no synthetic canvas or punch-through.',
+        description: 'Transforms the normally color-separated non-Black artwork into open parallel-line patches and distributes corrected grating levels across the available non-Black layers in Lightburn order. The Material Library entry matching Holographic is treated as the machine-specific 1.00 µm calibration anchor. Each output layer receives an independent copy that preserves the anchor power, frequency, pulse width, passes, and other values while scaling speed for a target pitch between approximately 0.55 and 1.55 µm. Speed Spread scales each layer\'s deviation around the anchor: 0 gives every layer the anchor speed, 1 uses the normal calculated range, and 2 doubles the variation without moving the 1.00 µm layer. With a 300 mm/s anchor and Speed Spread 1 this yields 165–465 mm/s, following Ben Krasnow\'s fixed-frequency progression. A single output layer uses the unmodified 1.00 µm anchor speed. Clones retain their original color, name, and ID and use Line mode for the generated open paths. Black keeps its source geometry and Black setting, with no synthetic canvas or punch-through.',
         controls: [['speed_spread', 1, 0, 2, .001], ['gradient_top', 165, 0, 255, 1], ['gradient_bottom', 90, 0, 255, 1],
           ['gradient_curve', 1, .2, 5, .05], ['hue_rotation', .13, 0, 1, .01],
           ['saturation_cutoff', .2, 0, 1, .01], ['patch_size_mm', .4, .1, 5, .05],
@@ -1125,10 +1125,10 @@
         );
         const materialLooksValid = materialFile || savedMaterialLibraryInput.value || rememberedLibraryName;
         document.getElementById('image').setCustomValidity(
-          artworkLooksLikeImage ? '' : 'Choose an image file for your artwork, not a LightBurn Material Library.'
+          artworkLooksLikeImage ? '' : 'Choose an image file for your artwork, not a Lightburn Material Library.'
         );
         materialLibraryInput.setCustomValidity(
-          materialLooksValid ? '' : 'Choose a LightBurn Material Library file before starting the job.'
+          materialLooksValid ? '' : 'Choose a Lightburn Material Library file before starting the job.'
         );
         if (!artworkLooksLikeImage || !materialLooksValid) {
           (!artworkLooksLikeImage ? document.getElementById('image') : materialLibraryInput).reportValidity();

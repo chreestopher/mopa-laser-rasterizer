@@ -113,7 +113,7 @@ def _resolve_material_library(task_id, uploaded_library, saved_library_id, histo
         if library_path and os.path.isfile(library_path):
             return library_path
 
-    raise ValueError("Choose a LightBurn Material Library file")
+    raise ValueError("Choose a Lightburn Material Library file")
 
 
 def _resolve_holographic_recipe(task_id, uploaded_recipe, saved_recipe_id, history_session):
@@ -167,7 +167,7 @@ def _lightburn_module():
     path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "lib", "lightburn.py")
     spec = importlib.util.spec_from_file_location("holographic_lightburn", path)
     module = importlib.util.module_from_spec(spec)
-    # The LightBurn writer defines dataclasses, which require their module to
+    # The Lightburn writer defines dataclasses, which require their module to
     # be registered before execution.
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
@@ -222,7 +222,7 @@ def _label_setting(lightburn, library_path, material_name, fallback):
 def _calibration_base_layer(setting):
     """Use one concrete scan layer from a multi-sublayer library entry.
 
-    LightBurn stores Offset Fill settings as child cut settings.  A diffraction
+    Lightburn stores Offset Fill settings as child cut settings.  A diffraction
     grid needs one unambiguous starting layer, so select the first child in the
     order the Material Library defines it.
     """
@@ -242,7 +242,7 @@ def _calibration_base_layer(setting):
 
 
 def _numeric_setting(setting, name, default=0.0):
-    """Read one LightBurn setting without letting malformed libraries break a grid."""
+    """Read one Lightburn setting without letting malformed libraries break a grid."""
     try:
         return float(getattr(setting, name, default))
     except (TypeError, ValueError):
@@ -252,7 +252,7 @@ def _numeric_setting(setting, name, default=0.0):
 def _grating_signature(setting, fill_interval_mm, scan_angle_degrees, override=None):
     """Describe the laser motion that produces one calibrated grating cell.
 
-    LightBurn Material Libraries store MOPA frequency in Hz and scan speed in
+    Lightburn Material Libraries store MOPA frequency in Hz and scan speed in
     mm/s. The resulting pulse pitch in µm is therefore
     ``speed_mm_s / frequency_hz * 1000``: 300 mm/s / 300,000 Hz = 1 µm.
     The macro fill interval is deliberately separate; it controls neighbouring
@@ -320,7 +320,7 @@ def _svg_grid(path, columns, rows, cell_mm, intervals, angles, top_label_mm, rig
         group = ET.SubElement(root, "g", id=f"cell_{index:02d}")
         ET.SubElement(group, "rect", x=str(x), y=str(y), width=str(cell_mm), height=str(cell_mm),
                       fill="none", stroke="#000", **{"stroke-width": ".1"})
-        # Do not use an SVG clipPath here. LightBurn may ignore clip paths on
+        # Do not use an SVG clipPath here. Lightburn may ignore clip paths on
         # import, which would turn every line into an oversize canvas-spanning
         # stroke. Calculate the two real intersections with this cell instead.
         radians = math.radians(angle)
@@ -787,7 +787,7 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
         raise ValueError("Unknown Holographic Artwork cut mode.")
     recipes_by_name = {}
     project = lightburn.Lightburn()
-    # Reserve LightBurn's true black palette layer for the optional outline
+    # Reserve Lightburn's true black palette layer for the optional outline
     # overlay. Recipe-map indexes stay zero-based for compact array handling.
     recipe_layer_offset = 1 if preserve_black_outlines else 0
     for map_index, recipe in enumerate(profile["recipes"]):
@@ -840,7 +840,7 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
     rectangles_by_layer = _merge_recipe_pixels(layer_map, len(profile["recipes"]), progress=progress)
     coalesced_count = sum(len(items) for items in rectangles_by_layer.values())
     progress(f"[Step 4/8] DONE: coalesced pixels into {coalesced_count} rectangles.")
-    progress(f"[Step 5/8] START: writing {coalesced_count}/{coalesced_count} colored rectangles to LightBurn geometry.")
+    progress(f"[Step 5/8] START: writing {coalesced_count}/{coalesced_count} colored rectangles to Lightburn geometry.")
     written_count = 0
     for layer_number, bucket in enumerate(recipes_by_name.values(), 1):
         bucket["rectangles"] = rectangles_by_layer[bucket["map_index"]]
@@ -852,7 +852,7 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
             f"{float(recipe['angle_degrees']):g} degrees."
         )
         for x, y, rectangle_width, rectangle_height in bucket["rectangles"]:
-            # LightBurn stores a rectangle's transform at its center, while
+            # Lightburn stores a rectangle's transform at its center, while
             # ``x`` and ``y`` above are the top-left pixel coordinates.  Put
             # each rectangle at its actual center so the combined artwork is
             # bounded exactly by [0, width * pixel_mm] × [0, height * pixel_mm]
@@ -913,7 +913,7 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
     stem = f"holographic_art_{task_id}"
     svg_name, lbrn_name = f"{stem}.svg", f"{stem}.lbrn2"
     total_rectangles = coalesced_count + len(black_rectangles)
-    progress(f"[Step 7/8] START: serializing {total_rectangles}/{total_rectangles} vector rectangles to SVG and LightBurn.")
+    progress(f"[Step 7/8] START: serializing {total_rectangles}/{total_rectangles} vector rectangles to SVG and Lightburn.")
     _write_holographic_svg(
         os.path.join(upload_folder, svg_name), pixels.shape[1], pixels.shape[0], recipes_by_name, pixel_mm,
         black_rectangles=black_rectangles,
@@ -1026,7 +1026,7 @@ def calibration_grid():
     angles = [row_angles[index // columns] for index in range(count)]
     sweep_values = [sweep_low + (sweep_high - sweep_low) * index / max(count - 1, 1) for index in range(count)]
     # Keep the label baseline fixed while moving the grating matrix far enough
-    # below LightBurn's larger-than-nominal text bounds.
+    # below Lightburn's larger-than-nominal text bounds.
     previous_top_label_mm = min(3.2, max(2.4, cell_mm * .22))
     top_label_mm = min(5.0, max(4.0, cell_mm * .34))
     top_label_mm += 3 * (top_label_mm - previous_top_label_mm)
@@ -1054,7 +1054,7 @@ def calibration_grid():
         grid_left, grid_top = left_grid_margin_mm, top_label_mm
         grid_right, grid_bottom = grid_left + columns * cell_mm, grid_top + rows * cell_mm
         fiducial_gap_mm = .2
-        # LightBurn renders Rect transforms from their center, while these
+        # Lightburn renders Rect transforms from their center, while these
         # grid coordinates describe the visible cell corner. Offset every
         # registration mark by half a cell to align with that same origin.
         fiducial_origin_offset_mm = cell_mm / 2
