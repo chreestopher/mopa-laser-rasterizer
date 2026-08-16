@@ -360,12 +360,13 @@ DOC_GROUPS = [
     ("Holographic Etching Lab", ["holographic-etching", "holographic-calibration", "analyze-calibration-photo", "holographic-recipes", "holographic-artwork", "diffraction-gratings", "choose-cut-mode"]),
     ("Jobs and support", ["job-history", "troubleshooting"]),
 ]
+DOC_ORDER = [slug for _group, slugs in DOC_GROUPS for slug in slugs]
 
 
 @routes.route("/docs")
 def docs_index():
     return render_template("docs.html", page=None, pages=DOCS, groups=DOC_GROUPS,
-                           canonical=_canonical("/docs"))
+                           canonical=_canonical("/docs"), previous_page=None, next_page=None)
 
 
 @routes.route("/docs/<slug>")
@@ -373,9 +374,14 @@ def docs_page(slug):
     page = DOCS.get(slug)
     if not page:
         return render_template("docs.html", page=None, pages=DOCS, groups=DOC_GROUPS,
-                               canonical=_canonical("/docs")), 404
+                               canonical=_canonical("/docs"), previous_page=None, next_page=None), 404
+    page_index = DOC_ORDER.index(slug)
+    previous_slug = DOC_ORDER[page_index - 1] if page_index else None
+    next_slug = DOC_ORDER[page_index + 1] if page_index + 1 < len(DOC_ORDER) else None
     return render_template("docs.html", page=page, slug=slug, pages=DOCS, groups=DOC_GROUPS,
-                           canonical=_canonical(f"/docs/{slug}"))
+                           canonical=_canonical(f"/docs/{slug}"),
+                           previous_page=(previous_slug, DOCS[previous_slug]) if previous_slug else None,
+                           next_page=(next_slug, DOCS[next_slug]) if next_slug else None)
 
 
 def _canonical(path):
