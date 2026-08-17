@@ -417,7 +417,7 @@
         note.textContent = selected ? `Selected for this browser session: ${selected.filename}` : '';
       });
     };
-    const updateGuestLibrarySource = (select, uploadRow, fileInput, storageKey) => {
+    const updateGuestLibrarySource = (select, uploadRow, fileInput, storageKey, openFileChooser=false) => {
       const selectedLibrary = guestMaterialLibraries.find(library => library.library_id === select.value);
       const uploadSelected = !selectedLibrary;
       uploadRow.hidden = operatorSignedIn || !uploadSelected;
@@ -428,6 +428,7 @@
         fileInput.value = '';
       }
       refreshRememberedMaterial();
+      if (openFileChooser && uploadSelected && !fileInput.disabled) fileInput.click();
     };
     const fillGuestLibrarySelect = (select, uploadRow, fileInput, storageKey, preferNewest=false) => {
       select.replaceChildren();
@@ -493,11 +494,11 @@
     refreshRememberedMaterial();
     guestCalibrationLibrarySource.addEventListener('change', () => updateGuestLibrarySource(
       guestCalibrationLibrarySource, calibrationMaterialUploadRow,
-      calibrationMaterialSettings, guestCalibrationLibraryKey,
+      calibrationMaterialSettings, guestCalibrationLibraryKey, true,
     ));
     guestArtworkLibrarySource.addEventListener('change', () => updateGuestLibrarySource(
       guestArtworkLibrarySource, artworkMaterialUploadRow,
-      artworkMaterialSettings, guestArtworkLibraryKey,
+      artworkMaterialSettings, guestArtworkLibraryKey, true,
     ));
     const refreshRememberedRecipe = () => {
       const filename = sessionStorage.getItem(rememberedRecipeKey) || '';

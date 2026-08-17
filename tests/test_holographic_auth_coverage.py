@@ -71,6 +71,25 @@ class HolographicAuthenticationCoverageTests(unittest.TestCase):
         self.assertIn("/browser-material-libraries", rasterizer_template)
         self.assertNotIn("guest_material_library_id", vault_template)
 
+    def test_choosing_a_different_guest_library_opens_the_file_chooser(self):
+        template = (
+            ROOT / "templates" / "holographic_etching.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("openFileChooser=false", template)
+        self.assertIn(
+            "if (openFileChooser && uploadSelected && !fileInput.disabled) fileInput.click();",
+            template,
+        )
+        self.assertIn(
+            "calibrationMaterialSettings, guestCalibrationLibraryKey, true,",
+            template,
+        )
+        self.assertIn(
+            "artworkMaterialSettings, guestArtworkLibraryKey, true,",
+            template,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
