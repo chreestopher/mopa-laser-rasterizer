@@ -633,7 +633,7 @@ DOCS.update({
     "all-about-operation-mode": _page(
         "All About Operation Mode",
         "How Line, Fill, Offset Fill, and image-oriented laser modes change beam motion, geometry, and appropriate applications.",
-        "Operation mode decides which parts of the artwork become motion paths. It changes the physical toolpath before power, speed, frequency, or pulse width are considered.",
+        "Operation mode decides which motion path the laser will follow when processing each part of the artwork. It determines how the artwork's geometry becomes laser toolpaths before power, speed, frequency, or pulse width are considered.",
         [
             ("Line", ["Line mode follows vector paths. It is appropriate for outlines, scoring, thin marks, open-path gratings, and cutting when the machine and material permit it. A closed shape is traced around its boundary rather than shaded across its interior."]),
             ("Fill", ["Fill mode scans parallel lines through the interior of closed shapes. Line interval and scan angle determine the scan pattern. It is commonly used for solid marks, broad engravings, and filled vector artwork."]),
