@@ -9,7 +9,7 @@
   <link rel="canonical" href="{{ canonical }}">
   <style>
     :root{--doc-bg:#11130f;--doc-panel:#191d17;--doc-line:#4d5848;--doc-text:#e4e3cf;--doc-muted:#aaa98e;--doc-link:#8ee474}
-    *{box-sizing:border-box}html{min-height:100%;overflow-x:hidden;background:#11130f}body{max-width:1400px;margin:28px auto;padding:38px;color:var(--doc-text);border:3px solid #777864;border-radius:30px;background:repeating-linear-gradient(90deg,rgba(255,255,255,.014) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 5%,#505443,#363a30 42%,#24271f 100%);box-shadow:inset 0 0 0 5px #1b1e18,inset 0 0 60px #10120e,0 0 0 1px #9a9a7e,0 20px 50px #000;font:16px/1.65 system-ui,sans-serif}
+    *{box-sizing:border-box}html{min-height:100%;overflow-x:hidden;background:#11130f}body{max-width:1400px;margin:0;padding:38px;color:var(--doc-text);border:3px solid #777864;border-radius:30px;background:repeating-linear-gradient(90deg,rgba(255,255,255,.014) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 5%,#505443,#363a30 42%,#24271f 100%);box-shadow:inset 0 0 0 5px #1b1e18,inset 0 0 60px #10120e,0 0 0 1px #9a9a7e,0 20px 50px #000;font:16px/1.65 system-ui,sans-serif}
     .docs-shell{display:grid;grid-template-columns:minmax(220px,290px) minmax(0,1fr);gap:34px;margin:26px 0 48px;padding:30px;border:2px solid #747762;border-radius:20px;background:rgba(15,18,14,.82);box-shadow:inset 0 0 0 4px #292d24,inset 0 0 30px #050605,0 8px 0 #090b08}
     .docs-sidebar{align-self:start;position:sticky;top:20px;padding:16px;border:2px solid #596451;border-radius:10px;background:linear-gradient(#242b22,#121611);box-shadow:inset 0 0 0 3px #0c0f0b,inset 0 0 18px #050605}
     .docs-module-label{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:-2px 0 13px;padding:8px 9px;border:1px solid #66705f;border-radius:5px;color:#d9d2af;background:#171b15;font:700 11px "Courier New",monospace;letter-spacing:.1em;text-transform:uppercase}.docs-mode-lamps{display:flex;gap:5px}.docs-mode-lamps i{display:block;width:8px;height:8px;border:1px solid #10130e;border-radius:50%;background:#70cb5c;box-shadow:0 0 7px rgba(112,203,92,.8)}.docs-mode-lamps i:nth-child(2){background:#d6a63a;box-shadow:0 0 7px rgba(214,166,58,.7)}.docs-mode-lamps i:nth-child(3){background:#d86642;box-shadow:0 0 7px rgba(216,102,66,.7)}
@@ -20,7 +20,7 @@
     @media(min-width:900px) and (hover:hover){body{width:125vw;max-width:none;margin:0;zoom:.8}}
     @media(max-width:1100px){.docs-groups{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media(max-width:800px){.docs-shell{display:block;margin:18px 0 38px;padding:20px}.docs-sidebar{position:static;margin-bottom:32px}.docs-content h1{font-size:2.35rem}.docs-topic-nav{grid-template-columns:1fr}.docs-topic-button:last-child{text-align:left}.docs-topic-placeholder{display:none}}
-    @media(max-width:700px){body{width:auto;max-width:none;margin:0;padding:20px;border-radius:0;overflow-x:hidden}.docs-groups{grid-template-columns:minmax(0,1fr)}}
+    @media(max-width:700px){body{width:auto;max-width:none;overflow-x:hidden}.docs-groups{grid-template-columns:minmax(0,1fr)}}
   </style>
 <link rel="stylesheet" href="/static/machine_chrome.css?v=3">
   {% if page %}<script type="application/ld+json">{{ {"@context":"https://schema.org","@type":"TechArticle","headline":page.title,"description":page.description,"url":canonical,"about":"Laser artwork preparation and Lightburn vector workflows"}|tojson }}</script>{% endif %}
