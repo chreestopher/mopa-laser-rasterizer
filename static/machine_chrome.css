@@ -41,7 +41,10 @@
 .machine-nav-item > a:hover,.machine-nav-item > a:focus-visible { color:#f5f1d7; border-color:#a8c99b; background:linear-gradient(#657b6c,#3c5447); outline:0; }
 .machine-nav-item > a[aria-current="page"] { color:#eaf7df; border-color:#93bf82; background:linear-gradient(#527448,#2d542d); box-shadow:inset 0 0 8px rgba(141,240,108,.28); }
 .machine-nav-tooltip { position:absolute; z-index:20; top:calc(100% + 8px); left:50%; width:min(240px,78vw); padding:8px 10px; border:1px solid #8b906f; border-radius:7px; color:#e9e4c8; background:#171b15; box-shadow:0 8px 18px rgba(0,0,0,.55); font:700 10px/1.35 "Courier New",monospace; letter-spacing:.02em; text-align:center; opacity:0; pointer-events:none; transform:translate(-50%,-4px); transition:opacity .15s ease,transform .15s ease; }
+.machine-nav-item:first-child .machine-nav-tooltip { left:0; transform:translateY(-4px); }
+.machine-nav-item:last-child .machine-nav-tooltip { right:0; left:auto; transform:translateY(-4px); }
 .machine-nav-item:hover .machine-nav-tooltip,.machine-nav-item:focus-within .machine-nav-tooltip { opacity:1; transform:translate(-50%,0); }
+.machine-nav-item:first-child:hover .machine-nav-tooltip,.machine-nav-item:first-child:focus-within .machine-nav-tooltip,.machine-nav-item:last-child:hover .machine-nav-tooltip,.machine-nav-item:last-child:focus-within .machine-nav-tooltip { transform:translateY(0); }
 body.light-machine .machine-brand-title { color:#151613; text-shadow:0 1px #fff,0 -1px #777; }
 body.light-machine .machine-console-subtitle,body.light-machine .machine-status-lamps { color:#343530; }
 body.light-machine .machine-theme-toggle,body.light-machine .machine-theme-toggle label { color:#151613; text-shadow:0 1px #fff,0 -1px #777; }
