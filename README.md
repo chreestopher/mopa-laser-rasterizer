@@ -3,7 +3,7 @@
 Simple web form for processing image files to prepare for color engraving on stainless steel
 
 ## To use this app:
-### add your laser settings for each color to a lightburn material settings file 
+### Add your laser settings for each color to a LightBurn material settings file
 Make sure the MaterilName contains "stainless steel"
 
 Make sure the Material Settings Description matches one of the following descriptions:
@@ -50,7 +50,7 @@ mopa-laser-rasterizer/
 │   └── index.html          # Add your HTML files here
 ├── templates/              # Templated HTML files directory
 ├── lib/                    # Core library and utility modules
-│   ├── lightburn.py        # library for interacting with lightburn project and material files
+│   ├── lightburn.py        # library for interacting with LightBurn project and material files
 │   └── Material_Library.py # process sent file with sent material settings file
 └── README.md               # This file
 ```
