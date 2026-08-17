@@ -329,7 +329,7 @@ DOCS = {
             ("Real-world Q-switched example", ["Suppose another operator has a Q-switched fiber source with fixed pulse duration and wants a useful tonal or limited-color palette on the same kind of metal. The coupons, cleaning, focus, lens, labeling, observation, and repeatability requirements are unchanged.", "Because pulse width is not an adjustable axis, the first coarse grid varies frequency by row and speed by column while power, hatch interval, angle, and passes remain fixed at supported values. Promising dark gray, bronze, pale, or colored regions are refined with smaller frequency and speed steps. The operator may then test power against speed or hatch interval around the best candidates, changing only two variables at a time.", "The final library may contain fewer distinct settings than the MOPA library, but every retained entry has earned its place through repetition. The test may also uncover an unexpected vivid or highly useful mark in a narrow parameter region. That surprise is worth keeping precisely because it was measured on the actual source rather than predicted from its category."]),
             ("Move the discovered palette into Rasterizer", ["Keep a separate saved Material Library for each source-and-lens setup, using the Laser Source, Lens Field of View, and notes fields to identify it. Name each qualified setting after the matching Rasterizer palette swatch, or rename the editable swatch to match the setting Description. Enable only the entries that are useful for the current material and artwork.", "Rasterizer then does the job it was built for: it maps image colors to the available tested palette, builds the vector layers, and carries the known recipes into the Lightburn project. Always inspect the exported settings before engraving, especially after changing machines, lenses, materials, focus, or library versions."]),
             ("Safety and experimental limits", ["Stay within the source, controller, lens, and material manufacturer's limits. Use suitable guarding, extraction, fire precautions, and wavelength-appropriate eye protection, and never leave a running laser unattended. Unknown alloys, coatings, plated surfaces, paints, and plastics may emit hazardous fumes or react unpredictably; confirm material safety before testing.", "Color settings are process records, not guarantees. Revalidate them whenever the source, lens, material batch, surface preparation, focus procedure, maintenance state, or viewing arrangement changes materially."]),
-        ], ["what-laser-should-i-buy", "laser-compatibility", "material-libraries", "holographic-calibration"]),
+        ], ["mopa-color-laser-engraving", "what-laser-should-i-buy", "laser-compatibility", "material-libraries", "holographic-calibration"]),
     "job-history": _page(
         "Processing Logs, Queue Position, and Job History",
         "Track Rasterizer and Holographic Artwork jobs, inspect batched processing logs, and download retained outputs.",
@@ -419,7 +419,7 @@ DOCS = {
         "A cautious workflow for moving from image preparation and Lightburn settings to material tests and final laser marking.",
         "The app prepares projects; successful physical results still require machine-specific testing and operator judgment.",
         [("Prepare", ["Use known material, clean artwork, a reviewed Material Library, and processing dimensions appropriate to the final size."]), ("Inspect", ["Open every generated project in Lightburn and verify geometry, bounds, layers, device assignment, and all laser parameters."]), ("Test", ["Run small coupons before valuable work. Observe heat accumulation, warping, smoke, color consistency, and whether the result remains within machine and material limits."]), ("Operate safely", ["Use suitable extraction, guarding, eye protection, supervision, and fire precautions. Follow the laser manufacturer and material supplier guidance."])],
-        ["laser-compatibility", "works-with-lightburn", "material-libraries", "holographic-etching"]),
+        ["mopa-color-laser-engraving", "laser-compatibility", "works-with-lightburn", "material-libraries", "holographic-etching"]),
     "troubleshooting": _page(
         "Rasterizer and Holographic Lab Troubleshooting",
         "Diagnose queued jobs, missing layers, large Lightburn files, unmatched settings, and calibration-photo problems.",
@@ -613,7 +613,31 @@ def _docs_link(before, link_text, link_slug, after=""):
     }
 
 
+def _path_link(before, link_text, path, after=""):
+    return {
+        "before": before,
+        "link_text": link_text,
+        "path": path,
+        "after": after,
+    }
+
+
 DOCS.update({
+    "mopa-color-laser-engraving": _page(
+        "MOPA Color Laser Engraving: How It Works",
+        "Learn how MOPA color laser engraving creates colored marks on stainless steel and other responsive metals, which parameters matter, and how Rasterizer prepares artwork for LightBurn.",
+        "MOPA color laser engraving uses controlled laser parameters to change a metal surface so it reflects or absorbs light differently. The visible result may come from oxide growth, surface texture, interference, diffraction, or a combination of mechanisms rather than colored ink being deposited on the work.",
+        [
+            ("What color laser engraving means", ["Color laser engraving, color marking, and colored engraving are often used for several related processes. On stainless steel, a MOPA fiber laser can produce heat-driven oxide layers and surface structures whose optical behavior creates an apparent color. On titanium and other responsive surfaces, composition and oxide behavior differ, so the same settings do not transfer directly.", "Some marks look like stable pigments from one viewing position; others are iridescent and change with lighting or angle. The physical mechanism and the intended viewing conditions should be understood before a palette is treated as repeatable."]),
+            ("Why MOPA lasers are useful for color", ["A marking-oriented MOPA fiber source commonly exposes adjustable pulse duration in addition to power, speed, and repetition frequency. Pulse duration changes peak intensity and the time available for heat to flow, while frequency and speed change pulse spacing and accumulated exposure.", "That extra control expands the combinations available for oxide growth, annealing, ablation, melting, and texture. It does not provide a universal color selector: the source model, pulse waveform, cutoff frequency, lens, focus, material grade, finish, cleaning, and previous heat all influence the result."]),
+            ("Parameters that shape the result", ["Power affects available output; speed changes exposure per unit distance; frequency changes how often pulses arrive; pulse duration changes temporal energy delivery; line interval and scan angle arrange neighboring tracks; passes repeat the interaction; focus and lens determine spot size and intensity.", "Color development can occur across a broad pulse-duration range. Some colors may respond better to lower power with longer pulses, while others may favor higher power with shorter pulses. Controlled test grids are more reliable than assumptions about one parameter in isolation."]),
+            ("Why settings must be discovered on the actual machine", ["Nominally similar lasers can produce different results because delivered power, pulse shape, beam quality, focus, optics, galvo calibration, material batch, and surface preparation vary. A recipe copied from another machine is a hypothesis, not a guaranteed color.", {"before": "Use the disciplined workflow in ", "link_text": "Color Discovery", "link_slug": "color-discovery", "after": " to search broadly, refine promising regions, repeat candidates, and store only settings that reproduce."}]),
+            ("From a tested palette to colored artwork", ["Once a group of repeatable settings has been saved in a LightBurn Material Library, each recipe can be named for the Rasterizer swatch it should serve. The artwork can then be reduced to that available physical palette instead of an arbitrary screen palette.", _path_link("The free ", "MOPA color laser engraving tool", "/color-laser-engraving-tool", " maps image colors to those tested recipes, builds color-separated vector geometry, and exports SVG and LBRN2 projects for inspection in LightBurn.")]),
+            ("What Rasterizer does not do", ["Rasterizer does not calculate guaranteed physical colors, communicate directly with the laser, or certify imported settings. It prepares geometry, organizes layers, and copies the selected Material Library data into a project.", "The operator must inspect every layer in LightBurn, confirm the device and parameter ranges, engrave a representative test coupon, and reject any result that is unsafe or inconsistent."]),
+            ("A practical workflow", ["Prepare and clean a known material; identify the exact laser source and lens; develop a controlled settings matrix; evaluate cooled samples under consistent light; repeat useful candidates; save them in a machine-specific Material Library; prepare artwork with Rasterizer; inspect the project in LightBurn; then test before engraving the final workpiece.", "Keep records of source model, lens field, focus method, material alloy and finish, power, speed, frequency, pulse duration, line interval, angle, passes, date, and observation conditions. Revalidate after changing any part of that setup."]),
+            ("Safety", ["Color marking can create high temperatures, ejecta, metal fumes, coating decomposition products, fire hazards, and hazardous invisible reflections. Use a suitable enclosure, extraction, material verification, supervision, fire precautions, and wavelength-appropriate controls specified by the manufacturer."]),
+        ], ["color-discovery", "what-does-mopa-mean", "all-about-pulse-width", "all-about-laser-frequency", "material-libraries", "mopa-laser-workflow"],
+    ),
     "laser-engraving-parameters": _page(
         "General Laser Engraving Parameters",
         "A concise guide to the parameters that make up a laser engraving setting, with links to detailed explanations and practical examples.",
@@ -763,7 +787,7 @@ DOCS["power-down-cutoff-frequency"]["diagram"] = {
 DOC_GROUPS = [
     ("Rasterizer", ["preset-controls", "raster-to-vector", "raster-vs-vector", "image-presets", "cartoon-preset", "color-photo-preset", "black-and-white-photo", "pixel-size", "color-layers"]),
     ("Abstract filters", ["abstract-filters", "abstract-filter-reference"] + [f"{slug}-filter" for slug in FILTER_PAGES]),
-    ("Laser technology", ["types-of-lasers-for-engraving", "continuous-wave-vs-pulsed-lasers", "what-does-mopa-mean", "what-does-q-switched-mean", "diode-lasers-explained", "co2-lasers-explained", "uv-lasers-explained", "laser-engraving-parameters", "all-about-operation-mode", "all-about-laser-power", "what-is-laser-ablation", "all-about-engraving-speed", "all-about-laser-frequency", "all-about-pulse-width", "power-down-cutoff-frequency", "all-about-line-interval", "all-about-engraving-passes", "all-about-scan-angle-crosshatch", "laser-compatibility", "what-laser-should-i-buy", "color-discovery"]),
+    ("Laser technology", ["mopa-color-laser-engraving", "types-of-lasers-for-engraving", "continuous-wave-vs-pulsed-lasers", "what-does-mopa-mean", "what-does-q-switched-mean", "diode-lasers-explained", "co2-lasers-explained", "uv-lasers-explained", "laser-engraving-parameters", "all-about-operation-mode", "all-about-laser-power", "what-is-laser-ablation", "all-about-engraving-speed", "all-about-laser-frequency", "all-about-pulse-width", "power-down-cutoff-frequency", "all-about-line-interval", "all-about-engraving-passes", "all-about-scan-angle-crosshatch", "laser-compatibility", "what-laser-should-i-buy", "color-discovery"]),
     ("Lightburn and materials", ["works-with-lightburn", "material-vault", "community-set", "material-libraries", "lightburn-export", "lightburn-large-projects", "reduce-lightburn-object-count", "mopa-laser-workflow"]),
     ("Holographic Etching Lab", ["holographic-etching", "what-is-iridescence", "iridescent-laser-engraving", "iridescent-engraving-challenges", "holographic-lab-workflow", "holographic-calibration", "analyze-calibration-photo", "holographic-recipes", "holographic-artwork", "diffraction-gratings", "choose-cut-mode"]),
     ("Jobs and support", ["membership-benefits", "job-history", "troubleshooting"]),
@@ -799,7 +823,7 @@ def _canonical(path):
 
 @routes.route("/sitemap.xml")
 def sitemap():
-    paths = ["/", "/holographic-etching", "/material-libraries", "/community-set", "/docs"]
+    paths = ["/", "/color-laser-engraving-tool", "/holographic-etching", "/material-libraries", "/community-set", "/docs"]
     paths.extend(f"/docs/{slug}" for slug in DOCS)
     body = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
     body += "\n".join(f"  <url><loc>{_canonical(path)}</loc></url>" for path in paths)

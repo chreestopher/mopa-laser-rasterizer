@@ -24,7 +24,22 @@ def retain_account_expectation():
 @routes.route("/")
 def index():
     return render_template(
-        "index.html", submission_auth_token=issue_submission_auth_token(),
+        "index.html",
+        canonical=f"{_public_url()}/",
+        submission_auth_token=issue_submission_auth_token(),
+    )
+
+
+def _public_url():
+    return (current_app.config.get("PUBLIC_APP_URL") or
+            f"{request.scheme}://{request.host}").rstrip("/")
+
+
+@routes.route("/color-laser-engraving-tool")
+def color_laser_engraving_tool():
+    return render_template(
+        "color_laser_engraving_tool.html",
+        canonical=f"{_public_url()}/color-laser-engraving-tool",
     )
 
 
@@ -46,7 +61,7 @@ def auth_status():
 def logout():
     """Clear ALB's auth session and finish the Cognito hosted-UI sign-out flow."""
     clear_authenticated_browser_expectation()
-    public_url = current_app.config.get("PUBLIC_APP_URL") or f"{request.scheme}://{request.host}"
+    public_url = _public_url()
     cognito_domain = current_app.config.get("COGNITO_DOMAIN")
     client_id = current_app.config.get("COGNITO_CLIENT_ID")
     if cognito_domain and client_id:

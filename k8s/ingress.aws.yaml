@@ -26,9 +26,20 @@ spec:
   ingressClassName: traefik
   tls:
   - hosts:
+    - www.mopa-laser-rasterizer.com
     - mopa-laser-rasterizer.com
     secretName: mopa-laser-rasterizer-tls
   rules:
+  - host: www.mopa-laser-rasterizer.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: mopa-laser-rasterizer
+            port:
+              number: 80
   - host: mopa-laser-rasterizer.com
     http:
       paths:
