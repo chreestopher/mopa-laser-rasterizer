@@ -1,19 +1,25 @@
-"""Public, anonymous Laser Community setting discovery."""
+"""Public, anonymous Comunity Set setting discovery."""
 
-from flask import jsonify, render_template, request
+from flask import jsonify, redirect, render_template, request
 
 from services import LIGHTBURN_PALETTE_NAMES, query_laser_community
 
 from . import routes
 
 
+@routes.route("/community-set")
+def community_set():
+    return render_template("community_set.html", official_colors=LIGHTBURN_PALETTE_NAMES)
+
+
 @routes.route("/laser-community")
-def laser_community():
-    return render_template("laser_community.html", official_colors=LIGHTBURN_PALETTE_NAMES)
+def legacy_laser_community():
+    return redirect("/community-set", code=301)
 
 
 @routes.route("/laser-community/settings")
-def laser_community_settings():
+@routes.route("/community-set/settings")
+def community_set_settings():
     laser = request.args.get("laser", "").strip()
     lens = request.args.get("lens", "").strip()
     material = request.args.get("material", "").strip()

@@ -159,7 +159,7 @@
           if (!equipment) return;
           equipment.querySelector('.library-laser-source')?.parentElement.firstChild.replaceWith('Laser Model / Source');
           equipment.querySelector('.library-lens-field-of-view')?.parentElement.firstChild.replaceWith('Lens');
-          equipment.insertAdjacentHTML('beforeend', `<label class="community-share" title="Contribute this library's material settings, laser description, lens field, and setup notes to the Laser Community so newcomers can discover tested starting points. Your account identity, filename, private file, and personal library name are never included. This is a permanent, one-time opt-in and cannot be undone."><input class="library-laser-community" type="checkbox" ${library.laser_community ? 'checked disabled' : ''}>Laser Community${library.laser_community ? ' · CONTRIBUTED' : ''}</label>`);
+          equipment.insertAdjacentHTML('beforeend', `<label class="community-share" title="Contribute this library's material settings, laser description, lens field, and setup notes to Comunity Set so newcomers can discover tested starting points. Your account identity, filename, private file, and personal library name are never included. This is a permanent, one-time opt-in and cannot be undone."><input class="library-laser-community" type="checkbox" ${library.laser_community ? 'checked disabled' : ''}>Comunity Set${library.laser_community ? ' · CONTRIBUTED' : ''}</label>`);
         });
       } catch (error) { settingsBody.innerHTML = `<p class="notice error">${esc(error.message)}</p>`; }
     };

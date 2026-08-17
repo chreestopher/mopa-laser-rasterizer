@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>LaserCommunity · MOPA Laser Rasterizer</title>
+  <title>Comunity Set · MOPA Laser Rasterizer</title>
   <meta name="description" content="Explore anonymous laser settings contributed by the laser engraving community.">
   <link rel="stylesheet" href="/static/machine_chrome.css">
   <style>
@@ -14,12 +14,12 @@
 <body>
   {{ machine_chrome('community', 'COMMUNITY SETTINGS INDEX · SERIES 79', false, '', 'compact') }}
   <main class="community-panel">
-    <h2>LaserCommunity</h2>
-    <p class="community-intro">Explore material settings permanently and anonymously contributed by laser operators. Filter by any one field or combine Laser Model / Source, Lens, Material, and Color to find settings used with a similar setup. These are experimental starting points—not universal recipes—so inspect every parameter and test safely on scrap material.</p>
+    <h2>Comunity Set</h2>
+    <p class="community-intro">Explore material settings permanently and anonymously contributed by laser operators. Filter by any one field or combine Laser Model / Source, Lens, Material, and Color to find settings used with a similar setup. Material accepts a partial name; the other filters match their normalized values exactly. These are experimental starting points—not universal recipes—so inspect every parameter and test safely on scrap material.</p>
     <form id="community_search" class="community-search">
       <label>Laser Model / Source<input id="laser" name="laser" autocomplete="off" placeholder="Example: JPT M7 60 W"></label>
       <label>Lens<input id="lens" name="lens" autocomplete="off" placeholder="Example: 110 × 110 mm"></label>
-      <label>Material<input id="material" name="material" autocomplete="off" placeholder="Example: stainless steel"></label>
+      <label>Material<input id="material" name="material" autocomplete="off" placeholder="Partial name, e.g. stainless"></label>
       <label>Color<input id="color" name="color" list="official_colors" autocomplete="off" placeholder="Example: Blue"><datalist id="official_colors">{% for color_hex, color_name in official_colors.items() %}<option value="{{ color_name }}">{{ color_hex }}</option>{% endfor %}</datalist></label>
       <button type="submit">Show</button>
     </form>
@@ -62,7 +62,7 @@
       if (![...query.values()].some(value => value.trim())) { status.textContent='Enter at least one filter.'; status.classList.add('error'); return; }
       status.textContent='Reading the community settings index…';
       try {
-        const response=await fetch(`/laser-community/settings?${query}`,{credentials:'same-origin'});
+        const response=await fetch(`/community-set/settings?${query}`,{credentials:'same-origin'});
         const data=await response.json();
         if (!response.ok) throw new Error(data.message || 'Could not load community settings.');
         status.textContent=`${data.count} matching setting${data.count === 1 ? '' : 's'}.`;

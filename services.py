@@ -401,12 +401,24 @@ def delete_user_holographic_recipe(user_id, recipe_id):
     return True
 
 
-def _community_filter_value(value):
-    """Create a stable exact-match value for community lookup partitions."""
+def _community_normalized_value(value):
     normalized = " ".join(str(value or "").strip().casefold().replace("×", "x").split())
     normalized = re.sub(r"\s*x\s*", "x", normalized)
     normalized = re.sub(r"\s*mm\b", "mm", normalized)
-    return quote(normalized, safe="")
+    return normalized
+
+
+def _community_filter_value(value):
+    """Create a stable exact-match value for community lookup partitions."""
+    return quote(_community_normalized_value(value), safe="")
+
+
+def _community_substring_match(value, query):
+    return not query or _community_normalized_value(query) in _community_normalized_value(value)
+
+
+def _community_exact_match(value, query):
+    return not query or _community_normalized_value(value) == _community_normalized_value(query)
 
 
 def _community_filter_partitions(laser_source, lens_field_of_view, materials):
@@ -481,51 +493,40 @@ def _laser_community_row(community, entry):
 
 
 def query_laser_community(laser_source="", lens_field_of_view="", material="", color="", limit=300):
-    """Return anonymous setting rows matching any exact equipment/material combination."""
+    """Return anonymous settings with a substring match for Material."""
     table = account_table()
     if not table:
-        raise RuntimeError("Laser Community storage is not configured.")
-    partition = _community_query_partition(laser_source, lens_field_of_view, material)
-    if not partition and color:
-        partition = f"LASER_COMMUNITY_COLOR_INDEX#color={_community_filter_value(color)}"
-    if not partition:
+        raise RuntimeError("Comunity Set storage is not configured.")
+    if not any((laser_source, lens_field_of_view, material, color)):
         raise ValueError("Enter a laser model/source, lens, material, or color.")
     try:
-        response = table.query(
-            KeyConditionExpression=Key("pk").eq(partition),
-            ScanIndexForward=False,
-            Limit=100,
-        )
         rows = []
-        seen = set()
-        for pointer in response.get("Items", []):
-            if pointer.get("setting_pk") and pointer.get("setting_sk"):
-                setting = table.get_item(Key={"pk": pointer["setting_pk"], "sk": pointer["setting_sk"]}).get("Item") or {}
-                if not setting or _community_filter_value(_official_community_swatch(setting)[1]) != _community_filter_value(color):
+        query_args = {
+            "KeyConditionExpression": Key("pk").eq("LASER_COMMUNITY"),
+            "ScanIndexForward": False,
+        }
+        while True:
+            response = table.query(**query_args)
+            for community in response.get("Items", []):
+                if not _community_exact_match(community.get("laser_source", ""), laser_source):
                     continue
-                rows.append(_laser_community_row(setting, setting))
-                if len(rows) >= limit:
-                    return rows
-                continue
-            canonical_key = {
-                "pk": pointer.get("community_pk", "LASER_COMMUNITY"),
-                "sk": pointer.get("community_sk", ""),
-            }
-            if not canonical_key["sk"] or canonical_key["sk"] in seen:
-                continue
-            seen.add(canonical_key["sk"])
-            community = table.get_item(Key=canonical_key).get("Item") or {}
-            for entry in community.get("summary", {}).get("entries", []):
-                if material and _community_filter_value(entry.get("material")) != _community_filter_value(material):
+                if not _community_exact_match(community.get("lens_field_of_view", ""), lens_field_of_view):
                     continue
-                if color and _community_filter_value(_official_community_swatch(entry)[1]) != _community_filter_value(color):
-                    continue
-                rows.append(_laser_community_row(community, entry))
-                if len(rows) >= limit:
-                    return rows
+                for entry in community.get("summary", {}).get("entries", []):
+                    if not _community_substring_match(entry.get("material", ""), material):
+                        continue
+                    if not _community_exact_match(_official_community_swatch(entry)[1], color):
+                        continue
+                    rows.append(_laser_community_row(community, entry))
+                    if len(rows) >= limit:
+                        return rows
+            last_key = response.get("LastEvaluatedKey")
+            if not last_key:
+                break
+            query_args["ExclusiveStartKey"] = last_key
         return rows
     except ClientError as error:
-        raise RuntimeError("Could not query Laser Community settings.") from error
+        raise RuntimeError("Could not query Comunity Set settings.") from error
 
 
 def _anonymous_community_contributor(user_id):
