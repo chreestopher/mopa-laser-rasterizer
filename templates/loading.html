@@ -48,7 +48,7 @@
 
         box-sizing: border-box;
         margin: 0;
-        padding: 6.25vh 6.25vw;
+        padding: 38px 6.25vw;
     }
     /* Terminal and processed-files list scrollbars */
     .terminal-box::-webkit-scrollbar,
@@ -188,7 +188,7 @@
     }
     .empty-files { color: #94a3b8; padding: 12px 0; }
     @media (max-width: 700px) {
-        body { height: auto; min-height: 100vh; padding: 3vh 3vw; overflow-y: auto; }
+        body { height: auto; min-height: 100vh; overflow-y: auto; }
         .page-header h1 { font-size: clamp(18px, 6vw, 25px); }
         .machine-workspace { flex: 0 0 auto; flex-direction: column; gap: 18px; overflow: visible; }
         .terminal-box { flex: 0 0 auto; min-height: 320px; overflow-y: visible; }
@@ -369,7 +369,7 @@
         body { zoom:.8; width:125vw; height:125vh; padding:38px 6.25vw; }
         body.history-mode { padding-right:38px; padding-left:38px; }
     }
-    @media (max-width:700px) { body { width:100%; margin:0; padding:20px; border-radius:0; overflow-x:hidden; gap:0; } body.history-mode .machine-workspace { margin-right:0; margin-left:0; } }
+    @media (max-width:700px) { body { width:100%; margin:0; overflow-x:hidden; gap:0; } body.history-mode .machine-workspace { margin-right:0; margin-left:0; } }
     </style>
 <link rel="stylesheet" href="/static/machine_chrome.css?v=3">
 </head>
