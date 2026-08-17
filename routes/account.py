@@ -4,6 +4,7 @@ import os
 import tempfile
 import json
 import io
+import math
 from copy import deepcopy
 from xml.etree import ElementTree as ET
 
@@ -359,6 +360,94 @@ def selected_settings_library(user_id, selections, material_name):
                 os.remove(temp_path)
 
 
+def material_coupon_project(library_root, material_name="Material Library Settings",
+                            cell_size_mm=10.0, column_gap_mm=2.0, label_space_mm=6.0):
+    """Build a compact LightBurn test grid from selected library entries."""
+    entries = all_xml_entries(library_root)
+    if not entries:
+        raise ValueError("Select at least one Material Library setting.")
+    if len(entries) > 29:
+        raise ValueError("A labeled LightBurn coupon can contain no more than 29 selected settings.")
+
+    project = ET.Element("LightBurnProject", {
+        "AppVersion": "2.1.04", "FormatVersion": "1", "MaterialHeight": "0",
+        "MirrorX": "False", "MirrorY": "True", "AskForSendName": "True",
+    })
+    columns = min(10, max(1, math.ceil(math.sqrt(len(entries)))))
+    horizontal_pitch = cell_size_mm + column_gap_mm
+    vertical_pitch = cell_size_mm + label_space_mm
+
+    # Layer zero is LightBurn's black layer. Reuse the selected Black recipe
+    # when available; otherwise copy the first selected recipe so labels have
+    # explicit, inspectable parameters rather than invented laser settings.
+    black_entry = next(
+        (entry for _material, entry in entries
+         if str(entry.attrib.get("Desc", "")).strip().casefold() == "black"),
+        entries[0][1],
+    )
+    label_layer = deepcopy(black_entry.find("CutSetting"))
+    label_index = label_layer.find("index")
+    if label_index is None:
+        label_index = ET.Element("index")
+        label_layer.insert(0, label_index)
+    label_index.attrib["Value"] = "0"
+    label_name = label_layer.find("name")
+    if label_name is None:
+        label_name = ET.Element("name")
+        label_layer.insert(1, label_name)
+    label_name.attrib["Value"] = "Coupon labels"
+    project.append(label_layer)
+
+    objects = []
+    title = ET.Element("Shape", {
+        "Type": "Text", "ShapeID": "0", "CutIndex": "0",
+        "Font": "Arial,-1,100,5,50,0,0,0,0,0", "Str": str(material_name)[:120],
+        "H": "3", "LS": "0", "LnS": "0", "Ah": "0", "Av": "1",
+        "Weld": "1", "HasBackupPath": "0",
+    })
+    ET.SubElement(title, "XForm").text = "1 0 0 1 0 3"
+    objects.append(title)
+
+    for layer_index, (_material, entry) in enumerate(entries):
+        cut_setting = entry.find("CutSetting")
+        if cut_setting is None:
+            continue
+        layer = deepcopy(cut_setting)
+        index_element = layer.find("index")
+        if index_element is None:
+            index_element = ET.Element("index")
+            layer.insert(0, index_element)
+        cut_index = layer_index + 1
+        index_element.attrib["Value"] = str(cut_index)
+        name_element = layer.find("name")
+        if name_element is None:
+            name_element = ET.Element("name")
+            layer.insert(1, name_element)
+        name_element.attrib["Value"] = str(entry.attrib.get("Desc") or f"Coupon {layer_index + 1}")[:80]
+        project.append(layer)
+
+        row, column = divmod(layer_index, columns)
+        x = cell_size_mm / 2 + column * horizontal_pitch
+        label_y = 8 + row * vertical_pitch
+        cell_y = label_y + label_space_mm / 2 + cell_size_mm / 2
+        label = ET.Element("Shape", {
+            "Type": "Text", "ShapeID": str(layer_index * 2 + 1), "CutIndex": "0",
+            "Font": "Arial,-1,100,5,50,0,0,0,0,0", "Str": str(entry.attrib.get("Desc") or f"Cell {layer_index + 1}")[:80],
+            "H": "2", "LS": "0", "LnS": "0", "Ah": "1", "Av": "1",
+            "Weld": "1", "HasBackupPath": "0",
+        })
+        ET.SubElement(label, "XForm").text = f"1 0 0 1 {x:g} {label_y:g}"
+        objects.append(label)
+        shape = ET.Element("Shape", {
+            "Type": "Rect", "ShapeID": str(layer_index * 2 + 2), "CutIndex": str(cut_index),
+            "W": f"{cell_size_mm:g}", "H": f"{cell_size_mm:g}", "Cr": "0",
+        })
+        ET.SubElement(shape, "XForm").text = f"1 0 0 1 {x:g} {cell_y:g}"
+        objects.append(shape)
+    project.extend(objects)
+    return project
+
+
 @routes.route("/account/material-libraries/selected-settings", methods=["POST"])
 def selected_material_library_settings():
     """Copy or export selected settings while preserving LightBurn XML intact."""
@@ -409,6 +498,12 @@ def selected_material_library_settings():
                 with open(output_path, "rb") as export_file:
                     return send_file(io.BytesIO(export_file.read()), mimetype="application/xml",
                                      as_attachment=True, download_name=filename)
+            if action == "coupon":
+                coupon_root = material_coupon_project(root, material_name=material_name)
+                coupon_data = ET.tostring(coupon_root, encoding="utf-8", xml_declaration=True)
+                filename = f"{secure_filename(material_name) or 'rasterizer-material'}-coupon.lbrn2"
+                return send_file(io.BytesIO(coupon_data), mimetype="application/xml",
+                                 as_attachment=True, download_name=filename)
             raise ValueError("Choose an action for the selected settings.")
         finally:
             if os.path.exists(output_path):

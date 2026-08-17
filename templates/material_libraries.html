@@ -138,7 +138,9 @@
       const action = document.getElementById('selection_action')?.value || 'export';
       const target = action === 'copy_existing' ? `<label>Destination Rasterizer library<select id="selection_target_library" class="library-name-input">${savedLibraries.map(library => `<option value="${esc(library.library_id)}">${esc(library.name)}</option>`).join('')}</select></label>` : '';
       const newName = action === 'copy_new' ? '<label>New Rasterizer library name<input id="selection_new_library_name" class="library-name-input" placeholder="My Color Settings"></label>' : '';
-      return `<p class="meta">${selectedSettings.size} selected setting${selectedSettings.size === 1 ? '' : 's'} will be written under one exact Material Name.</p><label>Action<select id="selection_action" class="library-name-input"><option value="export"${action === 'export' ? ' selected' : ''}>Export to LightBurn</option><option value="copy_existing"${action === 'copy_existing' ? ' selected' : ''}>Copy to a saved library</option><option value="copy_new"${action === 'copy_new' ? ' selected' : ''}>Copy to a new saved library</option></select></label><label>Material Name<input id="selection_material_name" class="library-name-input" value="colors - stainless steel" placeholder="colors - stainless steel"></label><small>This exact name becomes the Material Name inside the exported or copied LightBurn settings.</small>${target}${newName}<button id="selection_submit" type="button">${action === 'export' ? 'Download LightBurn Library' : 'Copy selected settings'}</button>`;
+      const couponNote = action === 'coupon' ? `<p class="meta">Each checked setting becomes one 10 mm test cell on its own LightBurn layer. Black text above each cell shows its swatch name, and the grid title uses the Material Name below. The selected Black setting is used for text when present; otherwise the first checked setting supplies the black label layer parameters. Maximum: 29 cells.</p>` : '';
+      const submitLabel = action === 'export' ? 'Download LightBurn Library' : (action === 'coupon' ? 'Generate Coupon' : 'Copy selected settings');
+      return `<p class="meta">${selectedSettings.size} checked setting${selectedSettings.size === 1 ? '' : 's'} will be used.</p><label>Action<select id="selection_action" class="library-name-input"><option value="export"${action === 'export' ? ' selected' : ''}>Export to LightBurn</option><option value="coupon"${action === 'coupon' ? ' selected' : ''}>Generate Coupon</option><option value="copy_existing"${action === 'copy_existing' ? ' selected' : ''}>Copy to a saved library</option><option value="copy_new"${action === 'copy_new' ? ' selected' : ''}>Copy to a new saved library</option></select></label><label>Material Name<input id="selection_material_name" class="library-name-input" value="colors - stainless steel" placeholder="colors - stainless steel"></label><small>This name identifies the exported file and becomes the Material Name in exported or copied libraries.</small>${couponNote}${target}${newName}<button id="selection_submit" type="button">${submitLabel}</button>`;
     };
     const openSelectionActions = () => { settingsTitle.textContent = 'SELECTED MATERIAL SETTINGS'; selectionBody.innerHTML = selectionControls(); };
     const selectedActionsButton = document.getElementById('selected_actions');
@@ -383,13 +385,13 @@
       if (action === 'copy_existing') payload.target_library_id = document.getElementById('selection_target_library').value;
       if (action === 'copy_new') payload.new_library_name = document.getElementById('selection_new_library_name').value.trim();
       const response = await fetch('/account/material-libraries/selected-settings', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-      if (action === 'export' && response.ok) {
+      if ((action === 'export' || action === 'coupon') && response.ok) {
         const blob = await response.blob();
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = `${payload.material_name || 'rasterizer-material-settings'}.clb`;
+        link.download = action === 'coupon' ? `${payload.material_name || 'rasterizer-material'}-coupon.lbrn2` : `${payload.material_name || 'rasterizer-material-settings'}.clb`;
         link.click(); URL.revokeObjectURL(link.href);
-        say('LightBurn Material Library downloaded.');
+        say(action === 'coupon' ? 'LightBurn test coupon downloaded.' : 'LightBurn Material Library downloaded.');
       } else {
         const data = await response.json().catch(() => ({}));
         if (!response.ok) return say(data.message || 'Could not process the selected settings.', true);
