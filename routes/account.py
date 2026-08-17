@@ -14,7 +14,6 @@ from lib.lightburn import Lightburn
 
 from services import (
     ABSTRACT_FILTER_NAMES,
-    LIGHTBURN_PALETTE_BY_INDEX,
     LIGHTBURN_PALETTE_NAMES,
     delete_user_material_library,
     delete_user_holographic_recipe,
@@ -288,12 +287,6 @@ def apply_entry_update(root, entry_id, payload, creating=False):
             cut.remove(child)
     defaults = {"index": "0", "name": "", "minPower": "0", "maxPower": "100", "speed": "100"}
     defaults.update(preserved_layer_identity)
-    if creating:
-        matching_hex = next((color_hex for color_hex, official_name in LIGHTBURN_PALETTE_NAMES.items()
-                             if official_name.casefold() == description.casefold()), "")
-        matching_index = next((index for index, color_hex in LIGHTBURN_PALETTE_BY_INDEX.items()
-                               if color_hex == matching_hex), 0)
-        defaults["index"] = str(matching_index)
     defaults.update({str(key): setting_value(value) for key, value in values.items() if str(key) and isinstance(value, (str, int, float, bool))})
     for key, value in defaults.items():
         ET.SubElement(cut, key, {"Value": value})

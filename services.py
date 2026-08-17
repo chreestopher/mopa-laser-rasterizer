@@ -45,14 +45,6 @@ LIGHTBURN_PALETTE_NAMES = {
     "#FA9ED4": "Orchid-Pink", "#500A78": "Deep-Purple", "#B45A00": "Rust-Brown",
     "#004754": "Teal", "#86FA88": "Bright-Mint-Green", "#FFDB66": "Light-Gold",
 }
-LIGHTBURN_PALETTE_BY_INDEX = {
-    0: "#000000", 1: "#0000FF", 2: "#FF0000", 3: "#00E000", 4: "#D0D000",
-    5: "#FF8000", 6: "#00E0E0", 7: "#FF00FF", 8: "#B4B4B4", 9: "#0000A0",
-    10: "#A00000", 11: "#00A000", 12: "#A0A000", 13: "#C08000", 14: "#00A0FF",
-    15: "#A000A0", 16: "#808080", 17: "#7D87B9", 18: "#BB7784", 19: "#4A6FE3",
-    20: "#D33F6A", 21: "#8CD78C", 22: "#F0B98D", 23: "#F6C4E1", 24: "#FA9ED4",
-    25: "#500A78", 26: "#B45A00", 27: "#004754", 28: "#86FA88", 29: "#FFDB66",
-}
 ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
     "crystal", "ripple", "centerline", "glitch", "shattered", "deep_fryer",
@@ -446,12 +438,31 @@ def _community_query_partition(laser_source="", lens_field_of_view="", material=
 
 
 def _official_community_swatch(entry):
-    try:
-        layer_index = int(entry.get("settings", {}).get("index"))
-    except (TypeError, ValueError):
-        layer_index = None
-    color_hex = LIGHTBURN_PALETTE_BY_INDEX.get(layer_index, "")
-    return color_hex, LIGHTBURN_PALETTE_NAMES.get(color_hex, f"Layer {layer_index}" if layer_index is not None else "Unknown")
+    color_hex = str(entry.get("swatch_hex", "") or "").upper()
+    if color_hex in LIGHTBURN_PALETTE_NAMES:
+        return color_hex, LIGHTBURN_PALETTE_NAMES[color_hex]
+    description = str(entry.get("source_description", entry.get("description", "")) or "").strip()
+    color_hex = next((candidate for candidate, official_name in LIGHTBURN_PALETTE_NAMES.items()
+                      if official_name.casefold() == description.casefold()), "")
+    return color_hex, LIGHTBURN_PALETTE_NAMES.get(color_hex, "Unassigned")
+
+
+def _annotate_community_swatches(user_id, summary):
+    """Resolve editable setting descriptions back to account palette hexes."""
+    preferences = get_user_preferences(user_id)
+    overrides = preferences.get("color_name_overrides", {}) if isinstance(preferences, dict) else {}
+    override_lookup = {
+        str(label).strip().casefold(): str(color_hex).upper()
+        for color_hex, label in overrides.items()
+        if str(color_hex).upper() in LIGHTBURN_PALETTE_NAMES and str(label).strip()
+    }
+    official_lookup = {name.casefold(): color_hex for color_hex, name in LIGHTBURN_PALETTE_NAMES.items()}
+    for entry in summary.get("entries", []):
+        description = str(entry.get("description", "") or "").strip()
+        color_hex = override_lookup.get(description.casefold()) or official_lookup.get(description.casefold(), "")
+        entry["swatch_hex"] = color_hex
+        entry["official_color"] = LIGHTBURN_PALETTE_NAMES.get(color_hex, "Unassigned")
+    return summary
 
 
 def _laser_community_row(community, entry):
@@ -525,6 +536,7 @@ def _anonymous_community_contributor(user_id):
 def _write_laser_community_record(table, user_id, library_id, summary, laser_source,
                                   lens_field_of_view, notes):
     """Write the anonymous canonical record and all seven possible filter indexes."""
+    summary = _annotate_community_swatches(user_id, summary)
     canonical_key = {"pk": "LASER_COMMUNITY", "sk": f"MATERIAL#{library_id}"}
     old_item = table.get_item(Key=canonical_key).get("Item") or {}
     updated_at = int(time.time())
