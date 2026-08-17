@@ -83,6 +83,12 @@
     .action.secondary { border-color:#888a72; background:linear-gradient(#666957,#464a3d); box-shadow:0 3px 0 #25271f; }
     .reference { margin-top:24px; padding-top:16px; border-top:1px solid #536347; color:#aaa98e; font-size:.9rem; line-height:1.5; }
     .reference a { color:var(--phosphor); }
+    .holographic-auth-modal { position:fixed; z-index:9999; inset:0; display:grid; place-items:center; padding:22px; background:rgba(0,0,0,.68); }
+    .holographic-auth-modal[hidden] { display:none; }
+    .holographic-auth-dialog { width:min(500px,100%); padding:22px; border:2px solid #e17850; border-radius:20px; color:#fff1cd; background:#26150e; box-shadow:0 12px 40px #000,inset 0 0 0 4px #4a2a1b; font:700 14px/1.55 "Courier New",monospace; text-align:center; }
+    .holographic-auth-dialog h2 { margin:0 0 10px; color:#ffaf74; font-size:1.05rem; letter-spacing:.08em; }
+    .holographic-auth-actions { display:flex; flex-wrap:wrap; justify-content:center; gap:11px; margin-top:17px; }
+    .holographic-auth-actions .action { margin:0; }
     body.light-machine { color:#171815; background:repeating-linear-gradient(90deg,rgba(0,0,0,.025) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 5%,#f0f0e9,#c8c9c3 48%,#9fa19c 100%); border-color:#7c7e7a; box-shadow:inset 0 0 0 5px #a6a8a3,inset 0 0 45px #777,0 0 0 1px #eee,0 20px 50px #000; }
     body.light-machine h1,body.light-machine h2,body.light-machine .stage h3 { color:#151613; text-shadow:0 1px #fff,0 -1px #777; }
     body.light-machine .lead,body.light-machine .stage p,body.light-machine .reference,body.light-machine .status-lamps,body.light-machine .console-subtitle { color:#343530; }
@@ -107,6 +113,8 @@
     body.light-machine .sample-editor p { color:#343530; }
     body.light-machine .recipe-card { border-color:#777974; background:#d8d9d3; }
     body.light-machine .recipe-card small { color:#343530; }
+    body.light-machine .holographic-auth-dialog { color:#352016; background:#f0e8d9; border-color:#a95030; box-shadow:0 12px 40px #333,inset 0 0 0 4px #d0c2aa; }
+    body.light-machine .holographic-auth-dialog h2 { color:#873419; }
     @media (min-width:900px) and (hover:hover) { body { width:125vw; max-width:none; margin:0; zoom:.8; } }
     @media (max-width:700px) { html,body { max-width:100%; overflow-x:hidden; } body { width:100%; margin:0; padding:20px; border-radius:0; } h1 { font-size:clamp(18px,6vw,25px); }.console-status-line { grid-template-columns:1fr; gap:7px; padding:0; }.console-subtitle { grid-row:1; }.status-lamps { grid-row:2; }.workflow,.calibration-form { grid-template-columns:minmax(0,1fr); }.calibration-form input,.calibration-form select,.calibration-form textarea { max-width:100%; font-size:16px; } }
     .process-schematic { margin:0 0 24px; padding:16px; border:2px solid #73745f; border-radius:16px; background:rgba(17,20,15,.5); box-shadow:inset 0 0 0 4px #292d24,inset 0 0 25px rgba(0,0,0,.65),0 6px 0 #161813; } .schematic-title { margin:0 0 14px; color:var(--phosphor); font:700 clamp(10px,1.5vw,13px) "Courier New",monospace; letter-spacing:.12em; text-align:center; } .schematic-flow { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:8px; } .schematic-node { min-height:104px; padding:13px 10px 10px; border:1px solid #7a876e; border-radius:7px; background:linear-gradient(145deg,rgba(78,93,73,.58),rgba(21,27,20,.72)); box-shadow:inset 0 0 0 2px rgba(12,15,11,.7); text-align:center; } .schematic-node span { display:inline-grid; place-items:center; width:23px; height:23px; margin-bottom:6px; border:1px solid #b9d8a9; border-radius:50%; color:#10140f; background:#9bd77f; font:700 11px "Courier New",monospace; } .schematic-node strong,.schematic-node small { display:block; } .schematic-node strong { color:#eee7c8; font:700 12px "Courier New",monospace; text-transform:uppercase; } .schematic-node small { margin-top:6px; color:#aaa98e; font:11px/1.3 "Courier New",monospace; } .schematic-arrow { color:#98c889; font:700 26px "Courier New",monospace; } .schematic-loop { margin-top:13px; padding-top:10px; border-top:1px dashed #6c765e; color:#d6d0aa; font:700 11px/1.45 "Courier New",monospace; text-align:center; } .schematic-loop span { color:#efb94f; font-size:18px; vertical-align:-2px; } .sequence-tag { display:inline-grid; place-items:center; width:25px; height:25px; margin-right:7px; border:1px solid #b9d8a9; border-radius:50%; color:#10140f; background:#9bd77f; font:700 11px "Courier New",monospace; vertical-align:2px; }
@@ -116,6 +124,17 @@
 <link rel="stylesheet" href="/static/machine_chrome.css">
 </head>
 <body>
+  <div id="holographic_auth_modal" class="holographic-auth-modal" role="alertdialog" aria-modal="true" aria-labelledby="holographic_auth_title" hidden>
+    <div class="holographic-auth-dialog">
+      <h2 id="holographic_auth_title">ACCOUNT CONNECTION REQUIRED</h2>
+      <div id="holographic_auth_message"></div>
+      <div class="holographic-auth-actions">
+        <button class="action" type="button" id="holographic_auth_login">Reconnect account</button>
+        <button class="action secondary" type="button" id="holographic_auth_guest">Continue explicitly as guest</button>
+        <button class="action secondary" type="button" id="holographic_auth_close">Return to this step</button>
+      </div>
+    </div>
+  </div>
   {{ machine_chrome('holographic', 'HOLOGRAPHIC ETCHING LAB · SERIES 79') }}
   <section class="process-schematic" aria-labelledby="process_schematic_title">
     <div id="process_schematic_title" class="schematic-title">HOLOGRAPHIC ETCHING, CALIBRATION SIGNAL FLOW</div>
@@ -132,6 +151,8 @@
   </section>
   <form id="calibration_form" class="calibration-form" enctype="multipart/form-data">
     <input class="material-history-session" type="hidden" name="history_session">
+    <input class="submission-auth-token" type="hidden" name="submission_auth_token" value="{{ submission_auth_token }}">
+    <input class="continue-as-guest" type="hidden" name="continue_as_guest" value="0">
     <h3><span class="sequence-tag">01</span> Calibration Grid Console</h3>
     <p class="form-note">This first grid sweeps line angle and fill interval while copying one selected Lightburn setting onto each cell. Keep the laser, material finish, and lens setup stable while you test it.</p>
     <label id="saved_calibration_library_row" class="full-width" hidden>Existing Material Vault library
@@ -160,6 +181,8 @@
     <p id="calibration_results" class="calibration-results" aria-live="polite"></p>
   </form>
   <form id="profile_form" class="calibration-form" enctype="multipart/form-data">
+    <input class="submission-auth-token" type="hidden" name="submission_auth_token" value="{{ submission_auth_token }}">
+    <input class="continue-as-guest" type="hidden" name="continue_as_guest" value="0">
     <h3><span class="sequence-tag">02</span> Finished Grid Capture Console</h3>
     <p class="form-note">After you laser the grid, photograph it and save the conditions that made those colors appear. This creates a reusable profile now, ready for the color-reading engine we will install later.</p>
     <label>Calibration grid ID<input id="profile_calibration_id" name="calibration_id" placeholder="Created automatically when you build a grid" required></label>
@@ -174,6 +197,8 @@
     <p id="profile_results" class="calibration-results" aria-live="polite"></p>
   </form>
   <form id="analysis_form" class="calibration-form">
+    <input class="submission-auth-token" type="hidden" name="submission_auth_token" value="{{ submission_auth_token }}">
+    <input class="continue-as-guest" type="hidden" name="continue_as_guest" value="0">
     <h3><span class="sequence-tag">03</span> Recipe Measurement Console</h3>
     <p class="form-note">This first analysis pass finds the grid, straightens it when it can see a clear border, samples the center of every numbered cell, and saves the observed photo color next to that cell’s interval and angle. Enter any crop value to make your crop the grid boundary, then trim tightly around the swatch. Review the preview before treating it as a recipe map.</p>
     <label>Calibration profile ID<input id="analysis_profile_id" name="profile_id" placeholder="Created automatically when you save a grid photo" required></label>
@@ -199,6 +224,8 @@
   </form>
   <form id="artwork_form" class="calibration-form" enctype="multipart/form-data">
     <input class="material-history-session" type="hidden" name="history_session">
+    <input class="submission-auth-token" type="hidden" name="submission_auth_token" value="{{ submission_auth_token }}">
+    <input class="continue-as-guest" type="hidden" name="continue_as_guest" value="0">
     <h3><span class="sequence-tag">04</span> Holographic Artwork Console</h3>
     <p class="form-note">Bring your artwork, the recipe profile you saved above, and the same Lightburn Material Library used for calibration. Each processed image pixel becomes a tiny square on its closest calibrated recipe layer, using that recipe’s measured Fill interval and angle.</p>
     <label class="full-width">Artwork image<input name="artwork" type="file" accept="image/*" required></label>
@@ -232,6 +259,83 @@
       sessionStorage.setItem(historySessionKey, historySession);
     }
     document.querySelectorAll('.material-history-session').forEach(field => { field.value = historySession; });
+    const holographicAuthToken = document.querySelector('.submission-auth-token').value;
+    const holographicAuthModal = document.getElementById('holographic_auth_modal');
+    const holographicAuthMessage = document.getElementById('holographic_auth_message');
+    const holographicAuthLogin = document.getElementById('holographic_auth_login');
+    const holographicAuthGuest = document.getElementById('holographic_auth_guest');
+    const holographicAuthClose = document.getElementById('holographic_auth_close');
+    let pendingHolographicRetry = null;
+    let holographicAuthenticationPoll = null;
+    const setHolographicGuestIntent = value => {
+      document.querySelectorAll('.continue-as-guest').forEach(field => { field.value = value ? '1' : '0'; });
+    };
+    const stopHolographicAuthenticationPoll = () => {
+      if (holographicAuthenticationPoll) window.clearInterval(holographicAuthenticationPoll);
+      holographicAuthenticationPoll = null;
+    };
+    const showHolographicAuthenticationChoice = (message, retry) => {
+      pendingHolographicRetry = retry;
+      holographicAuthMessage.textContent = message;
+      holographicAuthModal.hidden = false;
+      holographicAuthLogin.focus();
+    };
+    const handleHolographicAuthenticationFailure = (data, retry) => {
+      if (data?.code !== 'reauthentication_required') return false;
+      showHolographicAuthenticationChoice(data.message, retry);
+      return true;
+    };
+    const resumeHolographicAuthentication = async () => {
+      try {
+        const response = await fetch('/auth-status', {credentials:'same-origin', cache:'no-store'});
+        const status = response.ok ? await response.json() : {state:'unknown'};
+        if (status.state !== 'authenticated') return false;
+        stopHolographicAuthenticationPoll();
+        setHolographicGuestIntent(false);
+        const wasSignedIn = operatorSignedIn;
+        operatorSignedIn = true;
+        if (window.machineChrome) window.machineChrome.showAuthStatus(status);
+        if (!wasSignedIn) {
+          loadSavedCalibrationLibraries();
+          loadSavedHolographicRecipes();
+        }
+        holographicAuthModal.hidden = true;
+        const retry = pendingHolographicRetry;
+        pendingHolographicRetry = null;
+        if (retry) retry();
+        return true;
+      } catch (_) {
+        return false;
+      }
+    };
+    holographicAuthLogin.addEventListener('click', () => {
+      setHolographicGuestIntent(false);
+      const loginWindow = window.open('/login?popup=1', 'mopa-account-login', 'popup,width=540,height=720');
+      if (!loginWindow) {
+        holographicAuthMessage.textContent = 'Your browser blocked the sign-in window. Allow popups for this site, then choose Reconnect account again. Your Holographic Lab forms remain unchanged.';
+        return;
+      }
+      stopHolographicAuthenticationPoll();
+      holographicAuthenticationPoll = window.setInterval(resumeHolographicAuthentication, 1000);
+    });
+    holographicAuthGuest.addEventListener('click', () => {
+      stopHolographicAuthenticationPoll();
+      setHolographicGuestIntent(true);
+      operatorSignedIn = false;
+      holographicAuthModal.hidden = true;
+      const retry = pendingHolographicRetry;
+      pendingHolographicRetry = null;
+      if (retry) retry();
+    });
+    holographicAuthClose.addEventListener('click', () => {
+      stopHolographicAuthenticationPoll();
+      pendingHolographicRetry = null;
+      holographicAuthModal.hidden = true;
+    });
+    window.addEventListener('message', event => {
+      if (event.origin !== window.location.origin || event.data?.type !== 'mopa-authentication-complete') return;
+      resumeHolographicAuthentication();
+    });
     const rememberedMaterialKey = `mopa-material-library:${historySession}`;
     const rememberedRecipeKey = `mopa-holographic-recipe:${historySession}`;
     let operatorSignedIn = false;
@@ -516,6 +620,7 @@
         } catch {
           throw new Error(`Calibration grid request failed (HTTP ${response.status}). The server returned an HTML error page; restart the app deployment so the new Holographic Etching route is loaded, then try again.`);
         }
+        if (!response.ok && handleHolographicAuthenticationFailure(data, () => form.requestSubmit())) return;
         if (!response.ok) throw new Error(data.message || 'Calibration grid could not be created.');
         document.getElementById('profile_calibration_id').value = data.calibration_id;
         localStorage.setItem('holographic-calibration-id', data.calibration_id);
@@ -542,6 +647,7 @@
       try {
         const response = await fetch('/holographic-etching/calibration-profile', {method:'POST', body:new FormData(form)});
         const data = await response.json();
+        if (!response.ok && handleHolographicAuthenticationFailure(data, () => form.requestSubmit())) return;
         if (!response.ok) throw new Error(data.message || 'Calibration profile could not be saved.');
         document.getElementById('analysis_profile_id').value = data.profile_id;
         localStorage.setItem('holographic-profile-id', data.profile_id);
@@ -735,6 +841,7 @@
       try {
         const response = await fetch('/holographic-etching/analyze-calibration', {method:'POST', body:new FormData(form)});
         const data = await response.json();
+        if (!response.ok && handleHolographicAuthenticationFailure(data, () => form.requestSubmit())) return;
         if (!response.ok) throw new Error(data.message || 'Calibration analysis could not be completed.');
         const correction = data.correction === 'manual_corners' ? 'Your four aligned corners were used for perspective correction.' : data.correction === 'rectified' ? 'Perspective correction applied.' : data.correction === 'manual_crop' ? 'Your crop was used as the grid boundary.' : 'Grid border was not confidently found, so the rotated photo was sampled.';
         results.innerHTML = `${data.message} Rotation: ${data.rotation_degrees}°. Crop: L${data.crop.left}% T${data.crop.top}% R${data.crop.right}% B${data.crop.bottom}%. ${correction}${downloadButtonList([{url:data.profile_url, label:'Download Measured Profile'}])}<a href="${data.preview_url}" target="_blank" rel="noopener noreferrer"><img class="analysis-preview" src="${data.preview_url}" alt="Numbered calibration-grid analysis preview"></a>`;
@@ -760,11 +867,14 @@
         body.set('profile_id', measuredProfileId);
         body.set('recipes', JSON.stringify(recipes));
         body.set('history_session', historySession);
+        body.set('submission_auth_token', holographicAuthToken);
+        body.set('continue_as_guest', document.querySelector('.continue-as-guest').value);
         const response = await fetch('/holographic-etching/save-recipes', {method:'POST', body});
         const responseText = await response.text();
         let data;
         try { data = JSON.parse(responseText); }
         catch { throw new Error(`Recipe save failed (HTTP ${response.status}); the server returned an HTML error page.`); }
+        if (!response.ok && handleHolographicAuthenticationFailure(data, () => button.click())) return;
         if (!response.ok) throw new Error(data.message || 'Recipe palette could not be saved.');
         const savedRecipeFilename = decodeURIComponent(String(data.profile_url || '').split('/').pop() || 'holographic-recipe.json');
         sessionStorage.setItem(rememberedRecipeKey, savedRecipeFilename);
@@ -807,6 +917,7 @@
         let submitted;
         try { submitted = JSON.parse(responseText); }
         catch { throw new Error(`Could not queue artwork (HTTP ${response.status}); the server returned an HTML error page.`); }
+        if (!response.ok && handleHolographicAuthenticationFailure(submitted, () => form.requestSubmit())) return;
         if (!response.ok) throw new Error(submitted.message || 'Holographic Artwork could not be queued.');
         const queuedTaskId = submitted.task_id || artworkTaskId;
         window.location.assign(`/job-history?task_id=${encodeURIComponent(queuedTaskId)}`);

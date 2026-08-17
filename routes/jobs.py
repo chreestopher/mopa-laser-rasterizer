@@ -17,6 +17,7 @@ from ._job_access import (
     private_history_session,
     request_can_access_history,
     request_can_access_job,
+    validate_submission_auth,
 )
 from services import (
     ABSTRACT_FILTER_NAMES,
@@ -53,10 +54,20 @@ from services import (
 def start_task():
     if request.method == "GET":
         return redirect("/")
+    explicit_guest = str(request.form.get("continue_as_guest", "")).strip() == "1"
+    user_id, auth_error = validate_submission_auth(
+        request.form.get("submission_auth_token", ""),
+        allow_explicit_guest=explicit_guest,
+    )
+    if auth_error:
+        return jsonify({
+            "status": "error",
+            "code": auth_error["code"],
+            "message": auth_error["message"],
+        }), auth_error["status"]
     if "image" not in request.files or not request.files["image"].filename:
         return jsonify({"status": "error", "message": "Choose an artwork file"}), 400
 
-    user_id = request.headers.get("x-amzn-oidc-identity", "").strip()
     anonymous_id = None
     if not user_id:
         anonymous_id = session.get("anonymous_quota_id")

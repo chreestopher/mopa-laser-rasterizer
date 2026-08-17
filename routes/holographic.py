@@ -37,7 +37,12 @@ from services import (
 )
 
 from . import routes
-from ._job_access import browser_job_session, private_history_session, request_can_access_job
+from ._job_access import (
+    browser_job_session,
+    private_history_session,
+    request_can_access_job,
+    validate_submission_auth,
+)
 
 
 SWEEP_SETTINGS = {
@@ -58,6 +63,23 @@ LIGHTBURN_LAYER_ID_BY_HEX = {
     "#D33F6A": 20, "#8CD78C": 21, "#F0B98D": 22, "#F6C4E1": 23, "#FA9ED4": 24,
     "#500A78": 25, "#B45A00": 26, "#004754": 27, "#86FA88": 28, "#FFDB66": 29,
 }
+
+
+def _validated_submission_identity():
+    """Apply the shared account/guest intent contract to Holographic Lab POSTs."""
+    explicit_guest = str(request.form.get("continue_as_guest", "")).strip() == "1"
+    user_id, auth_error = validate_submission_auth(
+        request.form.get("submission_auth_token", ""),
+        allow_explicit_guest=explicit_guest,
+    )
+    if auth_error:
+        response = jsonify({
+            "status": "error",
+            "code": auth_error["code"],
+            "message": auth_error["message"],
+        })
+        return user_id or None, (response, auth_error["status"])
+    return user_id or None, None
 
 
 def _resolve_material_library(task_id, uploaded_library, saved_library_id, history_session,
@@ -968,6 +990,9 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
 
 @routes.route("/holographic-etching/calibration-grid", methods=["POST"])
 def calibration_grid():
+    _user_id, auth_failure = _validated_submission_identity()
+    if auth_failure:
+        return auth_failure
     library = request.files.get("material_settings")
     saved_library_id = str(request.form.get("saved_material_library_id", "")).strip()
     material = str(request.form.get("material", "")).strip()
@@ -1150,6 +1175,9 @@ def save_calibration_profile():
     source grid, photograph, and viewing conditions gives the later analyzer a
     stable, self-contained calibration record to work from.
     """
+    _user_id, auth_failure = _validated_submission_identity()
+    if auth_failure:
+        return auth_failure
     photo = request.files.get("grid_photo")
     calibration_id = str(request.form.get("calibration_id", "")).strip()
     profile_name = str(request.form.get("profile_name", "")).strip()
@@ -1215,6 +1243,9 @@ def save_calibration_profile():
 @routes.route("/holographic-etching/analyze-calibration", methods=["POST"])
 def analyze_calibration_profile():
     """Measure visible cell colors from a saved calibration-grid photograph."""
+    _user_id, auth_failure = _validated_submission_identity()
+    if auth_failure:
+        return auth_failure
     profile_id = str(request.form.get("profile_id", "")).strip()
     upload_folder = current_app.config["UPLOAD_FOLDER"]
     try:
@@ -1311,6 +1342,9 @@ def analyze_calibration_profile():
 @routes.route("/holographic-etching/save-recipes", methods=["POST"])
 def save_holographic_recipes():
     """Persist the operator's chosen calibration cells as a reusable palette."""
+    user_id, auth_failure = _validated_submission_identity()
+    if auth_failure:
+        return auth_failure
     profile_id = str(request.form.get("profile_id", "")).strip()
     try:
         selected = json.loads(str(request.form.get("recipes", "[]")))
@@ -1364,7 +1398,6 @@ def save_holographic_recipes():
                         "key": recipe_artifact_key}),
             ex=HISTORY_TTL_SECONDS,
         )
-    user_id = request.headers.get("x-amzn-oidc-identity", "").strip()
     if user_id:
         try:
             save_user_holographic_recipe(
@@ -1388,6 +1421,9 @@ def save_holographic_recipes():
 
 @routes.route("/holographic-etching/build-artwork", methods=["POST"])
 def build_holographic_artwork():
+    user_id, auth_failure = _validated_submission_identity()
+    if auth_failure:
+        return auth_failure
     artwork = request.files.get("artwork")
     profile_file = request.files.get("recipe_profile")
     saved_recipe_id = str(request.form.get("saved_holographic_recipe_id", "")).strip()
@@ -1425,7 +1461,6 @@ def build_holographic_artwork():
         artwork_name = secure_filename(artwork.filename) or "artwork.png"
         artwork_path = os.path.join(current_app.config["UPLOAD_FOLDER"], f"{artwork_task_id}_{artwork_name}")
         artwork.save(artwork_path)
-        user_id = request.headers.get("x-amzn-oidc-identity", "").strip() or None
         artwork_key = upload_task_artifact(artwork_task_id, artwork_path, category="inputs", user_id=user_id)
         recipe_key = upload_task_artifact(artwork_task_id, recipe_path, category="inputs", user_id=user_id)
         material_key = upload_task_artifact(artwork_task_id, library_path, category="inputs", user_id=user_id)
