@@ -531,7 +531,7 @@ def download_file(task_id):
 
 @routes.route("/download-svg/<task_id>")
 def download_svg(task_id):
-    """Download the exact SVG output for any shared-history job type."""
+    """Download the exact .svg file output for any shared-history job type."""
     access_error = _job_access_error(task_id, browser_navigation=True)
     if access_error:
         return access_error
@@ -543,7 +543,7 @@ def download_svg(task_id):
         + glob.glob(os.path.join(current_app.config["UPLOAD_FOLDER"], f"output_{task_id}_*.svg"))
     )
     if not candidates:
-        return jsonify({"status": "error", "message": "SVG file not found"}), 404
+        return jsonify({"status": "error", "message": ".svg file not found"}), 404
     filename = os.path.basename(candidates[0])
     return send_from_directory(
         current_app.config["UPLOAD_FOLDER"], filename, as_attachment=True,
@@ -573,7 +573,7 @@ def download_lbrn2(task_id):
         )
     filename = _output_file(task_id, ".lbrn2")
     if not filename:
-        return jsonify({"status": "error", "message": "LightBurn file (.lbrn2) not found on disk"}), 404
+        return jsonify({"status": "error", "message": ".lbrn2 file not found on disk"}), 404
     cleanup_redis_inflight(task_id)
     return send_from_directory(
         current_app.config["UPLOAD_FOLDER"], filename, as_attachment=True,

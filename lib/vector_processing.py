@@ -1560,7 +1560,7 @@ def export_processed_layers(
 
         printLogMessage(
             f"[Export layer {export_index}/{total_export_layers}] START: "
-            f"writing {geometry_count}/{geometry_count} objects to SVG."
+            f"writing {geometry_count}/{geometry_count} objects to the .svg file."
         )
         add_geometry_to_svg(
             root,
@@ -1569,7 +1569,7 @@ def export_processed_layers(
         )
         printLogMessage(
             f"[Export layer {export_index}/{total_export_layers}] DONE: "
-            f"wrote {geometry_count}/{geometry_count} objects to SVG."
+            f"wrote {geometry_count}/{geometry_count} objects to the .svg file."
         )
 
         # --------------------------------------------------------------------
@@ -1637,7 +1637,7 @@ def save_vector_output(
 
     lightburn_object_count = len(getattr(lb_project_instance, "objects", []))
     printLogMessage(
-        f"[File serialization 1/2] START: writing SVG with "
+        f"[File serialization 1/2] START: writing the .svg file with "
         f"{len(root)} top-level objects to {output_svg_path}."
     )
     tree = ET.ElementTree(
@@ -1646,7 +1646,7 @@ def save_vector_output(
 
     printLogMessage(
         f"Writing finalized scaled "
-        f"zero-overlap SVG to: "
+        f"zero-overlap .svg file to: "
         f"{output_svg_path}"
     )
 
@@ -1657,7 +1657,7 @@ def save_vector_output(
     )
     printLogMessage(
         f"[File serialization 1/2] DONE: wrote {len(root)}/{len(root)} "
-        "top-level SVG objects."
+        "top-level .svg file objects."
     )
 
     printLogMessage(
@@ -1674,7 +1674,7 @@ def save_vector_output(
     )
 
     printLogMessage(
-        "SVG and LightBurn export complete."
+        ".svg file and .lbrn2 file export complete."
     )
 
 # ============================================================================

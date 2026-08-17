@@ -960,7 +960,7 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
     stem = f"holographic_art_{task_id}"
     svg_name, lbrn_name = f"{stem}.svg", f"{stem}.lbrn2"
     total_rectangles = coalesced_count + len(black_rectangles)
-    progress(f"[Step 7/8] START: serializing {total_rectangles}/{total_rectangles} vector rectangles to SVG and LightBurn.")
+    progress(f"[Step 7/8] START: serializing {total_rectangles}/{total_rectangles} vector rectangles to the .svg file and .lbrn2 file.")
     _write_holographic_svg(
         os.path.join(upload_folder, svg_name), pixels.shape[1], pixels.shape[0], recipes_by_name, pixel_mm,
         black_rectangles=black_rectangles,
