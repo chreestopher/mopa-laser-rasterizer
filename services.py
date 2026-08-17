@@ -15,7 +15,7 @@ import uuid
 from decimal import Decimal
 from numbers import Integral, Real
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import boto3
 import redis
@@ -57,6 +57,9 @@ HISTORY_SESSION_RE = re.compile(r"^[a-f0-9-]{32,36}$")
 HISTORY_TTL_SECONDS = 7 * 24 * 60 * 60
 GUEST_MATERIAL_LIBRARY_LIMIT = 12
 DAILY_JOB_LIMIT = max(1, int(os.environ.get("DAILY_JOB_LIMIT", "3")))
+COMMUNITY_CONTRIBUTOR_SECRET = os.environ.get(
+    "COMMUNITY_CONTRIBUTOR_SECRET", os.environ.get("APP_SESSION_SECRET", "local-development-only-secret")
+).encode("utf-8")
 manager = multiprocessing.Manager()
 tasks = manager.dict()
 
@@ -398,9 +401,98 @@ def delete_user_holographic_recipe(user_id, recipe_id):
     return True
 
 
-def rename_user_material_library(user_id, library_id, display_name, laser_source=None, lens_field_of_view=None, notes=None):
+def _community_filter_value(value):
+    """Create a stable exact-match value for community lookup partitions."""
+    normalized = " ".join(str(value or "").strip().casefold().replace("×", "x").split())
+    normalized = re.sub(r"\s*x\s*", "x", normalized)
+    normalized = re.sub(r"\s*mm\b", "mm", normalized)
+    return quote(normalized, safe="")
+
+
+def _community_filter_partitions(laser_source, lens_field_of_view, materials):
+    dimensions = {
+        "laser": _community_filter_value(laser_source),
+        "lens": _community_filter_value(lens_field_of_view),
+    }
+    partitions = set()
+    for material in materials or [""]:
+        values = {**dimensions, "material": _community_filter_value(material)}
+        populated = [key for key in ("laser", "lens", "material") if values[key]]
+        for mask in range(1, 1 << len(populated)):
+            chosen = [key for index, key in enumerate(populated) if mask & (1 << index)]
+            signature = "#".join(f"{key}={values[key]}" for key in chosen)
+            partitions.add(f"LASER_COMMUNITY_INDEX#{signature}")
+    return sorted(partitions)
+
+
+def _anonymous_community_contributor(user_id):
+    """Return a stable, non-public token used only for distinct-contributor counts."""
+    return hmac.new(COMMUNITY_CONTRIBUTOR_SECRET, user_id.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _write_laser_community_record(table, user_id, library_id, summary, laser_source,
+                                  lens_field_of_view, notes):
+    """Write the anonymous canonical record and all seven possible filter indexes."""
+    canonical_key = {"pk": "LASER_COMMUNITY", "sk": f"MATERIAL#{library_id}"}
+    old_item = table.get_item(Key=canonical_key).get("Item") or {}
+    updated_at = int(time.time())
+    index_sk = f"UPDATED#{time.time_ns():019d}#MATERIAL#{library_id}"
+    partitions = _community_filter_partitions(
+        laser_source, lens_field_of_view, summary.get("material_names", []),
+    )
+    index_keys = [{"pk": partition, "sk": index_sk} for partition in partitions]
+    canonical_item = {
+        **canonical_key,
+        "material_name": ", ".join(summary.get("material_names", []))[:160],
+        "laser_source": laser_source,
+        "lens_field_of_view": lens_field_of_view,
+        "notes": notes,
+        "summary": _dynamodb_values(summary),
+        "index_keys": index_keys,
+        "updated_at": updated_at,
+    }
+    contributor = _anonymous_community_contributor(user_id)
+    with table.batch_writer() as batch:
+        for old_key in old_item.get("index_keys", []):
+            if isinstance(old_key, dict) and old_key.get("pk") and old_key.get("sk"):
+                batch.delete_item(Key={"pk": old_key["pk"], "sk": old_key["sk"]})
+        batch.put_item(Item=canonical_item)
+        for index_key in index_keys:
+            batch.put_item(Item={
+                **index_key,
+                "community_pk": canonical_key["pk"],
+                "community_sk": canonical_key["sk"],
+                "laser_source": laser_source,
+                "lens_field_of_view": lens_field_of_view,
+                "material_names": summary.get("material_names", []),
+                "updated_at": updated_at,
+            })
+        for entry in summary.get("entries", []):
+            entry_id = entry.get("entry_id")
+            if entry_id is None or not isinstance(entry.get("settings"), dict):
+                continue
+            batch.put_item(Item={
+                "pk": "LASER_COMMUNITY_SETTINGS",
+                "sk": f"SETTING#{library_id}#{entry_id}",
+                "community_pk": canonical_key["pk"],
+                "community_sk": canonical_key["sk"],
+                "contributor": contributor,
+                "laser_source": laser_source,
+                "lens_field_of_view": lens_field_of_view,
+                "material": entry.get("material", ""),
+                "description": entry.get("description", ""),
+                "type": entry.get("type", ""),
+                "settings": _dynamodb_values(entry["settings"]),
+                "updated_at": updated_at,
+            })
+
+
+def rename_user_material_library(user_id, library_id, display_name, laser_source=None,
+                                 lens_field_of_view=None, notes=None, laser_community=False,
+                                 community_summary=None):
     table = account_table()
-    if not table or not get_user_material_library(user_id, library_id):
+    library = get_user_material_library(user_id, library_id) if table else None
+    if not table or not library:
         return False
     display_name = str(display_name or "").strip()
     if not display_name or len(display_name) > 160:
@@ -408,21 +500,31 @@ def rename_user_material_library(user_id, library_id, display_name, laser_source
     laser_source = str(laser_source or "").strip()
     lens_field_of_view = str(lens_field_of_view or "").strip()
     notes = str(notes or "").strip()
+    # Community contribution is permanent once accepted for this library.
+    laser_community = library.get("laser_community") is True or laser_community is True
     if len(laser_source) > 160 or len(lens_field_of_view) > 160 or len(notes) > 1000:
         raise ValueError("Laser Source and Lens Field of View must be 160 characters or fewer, and Notes 1000 characters or fewer.")
     try:
         table.update_item(
             Key={"pk": f"USER#{user_id}", "sk": f"MATERIAL#{library_id}"},
-            UpdateExpression="SET #name = :name, laser_source = :laser_source, lens_field_of_view = :lens_field_of_view, notes = :notes, updated_at = :updated_at",
+            UpdateExpression="SET #name = :name, laser_source = :laser_source, lens_field_of_view = :lens_field_of_view, notes = :notes, laser_community = :laser_community, updated_at = :updated_at",
             ExpressionAttributeNames={"#name": "name"},
             ExpressionAttributeValues={
                 ":name": display_name,
                 ":laser_source": laser_source,
                 ":lens_field_of_view": lens_field_of_view,
                 ":notes": notes,
+                ":laser_community": laser_community,
                 ":updated_at": int(time.time()),
             },
         )
+        if laser_community:
+            # Community records contain useful machine context and settings, but
+            # never the owner ID, private object key, filename, or personal name.
+            _write_laser_community_record(
+                table, user_id, library_id, community_summary or library.get("summary", {}), laser_source,
+                lens_field_of_view, notes,
+            )
     except ClientError as error:
         raise RuntimeError("Could not rename the saved Material Library.") from error
     return True
@@ -445,6 +547,11 @@ def update_user_material_library_file(user_id, library_id, local_file_path, summ
                 ":updated_at": int(time.time()),
             },
         )
+        if library.get("laser_community") is True:
+            _write_laser_community_record(
+                table, user_id, library_id, summary, library.get("laser_source", ""),
+                library.get("lens_field_of_view", ""), library.get("notes", ""),
+            )
     except ClientError as error:
         raise RuntimeError("Could not save Material Library changes.") from error
     return True

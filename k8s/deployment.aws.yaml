@@ -55,6 +55,11 @@ spec:
             secretKeyRef:
               name: mopa-rasterizer-session
               key: secret
+        - name: COMMUNITY_CONTRIBUTOR_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: mopa-rasterizer-session
+              key: secret
         # Fill COGNITO_CLIENT_ID with the non-secret app-client ID created for
         # the ALB.  It is used only to build Cognito's hosted-UI logout URL.
         - name: COGNITO_DOMAIN
