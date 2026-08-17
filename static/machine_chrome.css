@@ -85,3 +85,17 @@ body.light-machine .machine-nav-tooltip { border-color:#777974; color:#20251f; b
   html body.light-machine .machine-theme-toggle,html body.light-machine .machine-theme-toggle label { color:#151613; text-shadow:0 1px #fff,0 -1px #777; }
 }
 @media (max-width:520px) { .machine-status-line { grid-template-columns:1fr; gap:8px; padding:0; } .machine-status-lamps { grid-column:1; justify-self:center; flex-wrap:wrap; justify-content:center; gap:7px 10px; } .machine-console-subtitle { grid-column:1; justify-self:center; white-space:normal; line-height:1.35; } .machine-nav { grid-template-columns:1fr !important; } }
+
+/* The shared header owns one theme-switch appearance. Page and control-bay
+   variants may reposition the control, but must not resize or recolor it. */
+.machine-control-bay .machine-theme-toggle,
+html body .machine-control-bay .machine-theme-toggle { color:#d9d2af !important; }
+.machine-control-bay .machine-theme-toggle label,
+html body .machine-control-bay .machine-theme-toggle label { display:flex !important; align-items:center !important; gap:9px !important; margin:0 !important; color:inherit !important; font:700 11px "Courier New",monospace !important; letter-spacing:.1em !important; text-shadow:none !important; text-transform:uppercase !important; cursor:pointer !important; }
+.machine-control-bay .machine-theme-toggle input { position:absolute !important; width:1px !important; height:1px !important; opacity:0 !important; }
+.machine-control-bay .machine-theme-toggle .toggle-track { position:relative !important; display:block !important; flex:0 0 54px !important; width:54px !important; height:26px !important; margin:0 !important; border:2px solid #777864 !important; border-radius:14px !important; background:#171b15 !important; box-shadow:inset 0 3px 6px #000 !important; cursor:pointer !important; }
+.machine-control-bay .machine-theme-toggle .toggle-track::after { content:"" !important; position:absolute !important; top:3px !important; left:4px !important; display:block !important; width:16px !important; height:16px !important; margin:0 !important; border-radius:50% !important; background:#d3652e !important; box-shadow:0 0 7px #ed863d,0 2px 2px #000 !important; transition:transform .2s !important; }
+.machine-control-bay .machine-theme-toggle input:checked + .toggle-track::after { transform:translateX(26px) !important; background:#dad8ce !important; box-shadow:0 0 5px #fff,0 2px 2px #555 !important; }
+.machine-control-bay .machine-theme-toggle input:focus-visible + .toggle-track { outline:2px solid #8ee474 !important; outline-offset:3px !important; }
+html body.light-machine .machine-control-bay .machine-theme-toggle,
+html body.light-machine .machine-control-bay .machine-theme-toggle label { color:#151613 !important; text-shadow:0 1px #fff,0 -1px #777 !important; }
