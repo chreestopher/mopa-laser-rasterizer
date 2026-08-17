@@ -448,14 +448,22 @@
       artworkMaterialSettings.disabled = false;
       savedCalibrationLibraryRow.hidden = !operatorSignedIn;
       savedArtworkLibraryRow.hidden = !operatorSignedIn;
+      savedCalibrationLibrary.disabled = !operatorSignedIn;
+      savedArtworkLibrary.disabled = !operatorSignedIn;
       calibrationVaultNote.hidden = !operatorSignedIn;
       artworkVaultNote.hidden = !operatorSignedIn;
       guestCalibrationLibraryRow.hidden = operatorSignedIn || !guestMaterialLibraries.length;
       guestArtworkLibraryRow.hidden = operatorSignedIn || !guestMaterialLibraries.length;
+      guestCalibrationLibrarySource.disabled = operatorSignedIn || !guestMaterialLibraries.length;
+      guestArtworkLibrarySource.disabled = operatorSignedIn || !guestMaterialLibraries.length;
       if (operatorSignedIn) {
+        guestCalibrationLibrarySource.value = '';
+        guestArtworkLibrarySource.value = '';
         refreshRememberedMaterial();
         return;
       }
+      savedCalibrationLibrary.value = '';
+      savedArtworkLibrary.value = '';
       fillGuestLibrarySelect(
         guestCalibrationLibrarySource, calibrationMaterialSettings, guestCalibrationLibraryKey,
         preferNewest === 'calibration',

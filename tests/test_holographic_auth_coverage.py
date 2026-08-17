@@ -87,6 +87,16 @@ class HolographicAuthenticationCoverageTests(unittest.TestCase):
         self.assertNotIn("guest_calibration_library_upload", template)
         self.assertNotIn("guest_artwork_library_upload", template)
         self.assertIn(".calibration-form [hidden] { display:none !important; }", template)
+        self.assertIn(
+            "guestCalibrationLibraryRow.hidden = operatorSignedIn || !guestMaterialLibraries.length;",
+            template,
+        )
+        self.assertIn(
+            "guestArtworkLibraryRow.hidden = operatorSignedIn || !guestMaterialLibraries.length;",
+            template,
+        )
+        self.assertIn("guestCalibrationLibrarySource.disabled = operatorSignedIn", template)
+        self.assertIn("guestArtworkLibrarySource.disabled = operatorSignedIn", template)
 
 
 if __name__ == "__main__":
