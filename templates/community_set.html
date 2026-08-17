@@ -18,6 +18,8 @@
     {{ machine_chrome('community', 'COMMUNITY SETTINGS INDEX · SERIES 79', false, '', 'compact') }}
     <section class="community-panel">
     <h2>Comunity Set</h2>
+    <p class="community-intro">Comunity Set brings together anonymously contributed laser settings so members can explore what operators with similar machines, lenses, and materials are testing.</p>
+    <aside class="privacy-note"><strong>Sharing is always opt-in</strong>Only settings that members explicitly choose to contribute appear in Comunity Set. If you do not opt in, Rasterizer keeps your Material Libraries and settings private and does not publish them to this collection.</aside>
     {% if member_access %}
     <p class="community-intro">Explore material settings permanently and anonymously contributed by laser operators. Filter by any one field or combine Laser Model / Source, Lens, Material, and Color to find settings used with a similar setup. Material accepts a partial name; the other filters match their normalized values exactly. These are experimental starting points—not universal recipes—so inspect every parameter and test safely on scrap material.</p>
     <form id="community_search" class="community-search">
@@ -30,10 +32,8 @@
     <p id="community_status" class="community-status" role="status"></p>
     <div class="table-shell"><table id="community_table"><tbody><tr><td class="empty-cell">Enter at least one filter, then choose Show.</td></tr></tbody></table></div>
     {% else %}
-    <p class="community-intro">Comunity Set brings together anonymously contributed laser settings so members can explore what operators with similar machines, lenses, and materials are testing.</p>
     <div class="member-gate">
       <h3>Member access required</h3>
-      <aside class="privacy-note"><strong>Sharing is always opt-in</strong>Only settings that members explicitly choose to contribute appear in Comunity Set. If you do not opt in, Rasterizer keeps your Material Libraries and settings private and does not publish them to this collection.</aside>
       <p>{% if auth_state == 'reauth_required' %}Your account session needs to be reconnected before you can open the shared settings collection.{% else %}Sign in or create an account to search the Comunity Set of laser settings. Membership also provides your personal Material Vault, reusable preferences, and account-based job history.{% endif %}</p>
       <a href="/login">{% if auth_state == 'reauth_required' %}Reconnect account{% else %}Sign in or sign up{% endif %}</a>
     </div>
