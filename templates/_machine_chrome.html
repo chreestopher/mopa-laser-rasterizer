@@ -1,4 +1,13 @@
-{% macro machine_chrome(current_page, subtitle, artwork_indicators=true, status_id='') -%}
+{% macro machine_chrome(current_page, subtitle, artwork_indicators=true, status_id='', controls_variant='standard') -%}
+<div class="machine-control-bay machine-control-bay--{{ controls_variant }}">
+  <div class="machine-power-toggle">
+    <a id="login_link" class="login-link" href="/login"><span class="auth-machine-switch" aria-hidden="true"></span><span>Operator access, sign in</span></a>
+    <div id="auth_console" class="auth-console authorized" hidden><a class="auth-machine-switch is-on" href="/logout" aria-label="Sign out"></a><span>Operator authorized</span></div>
+  </div>
+  <div class="theme-toggle machine-theme-toggle">
+    <label aria-label="Use light or dark theme"><span>Dark</span><input id="theme_switch" type="checkbox"><span class="toggle-track"></span><span>Light</span></label>
+  </div>
+</div>
 <header class="machine-brand-header">
   <h1 class="machine-brand-title"><a class="machine-brand-home" href="/" aria-label="Return to MOPA Laser Rasterizer home"><span class="machine-brand-letters" aria-hidden="true"><span>M</span><span>O</span><span>P</span><span>A</span><span>-</span><span>L</span><span>A</span><span>S</span><span>E</span><span>R</span><span>-</span><span>R</span><span>A</span><span>S</span><span>T</span><span>E</span><span>R</span><span>I</span><span>Z</span><span>E</span><span>R</span></span></a></h1>
   <div class="machine-status-line">
@@ -18,4 +27,5 @@
   <span class="machine-nav-item"><a href="/job-history"{% if current_page == 'history' %} aria-current="page"{% endif %}>Job History</a><span class="machine-nav-tooltip" role="tooltip">Review completed runs, downloads, and retained processing logs.</span></span>
   <span class="machine-nav-item"><a href="/docs"{% if current_page == 'docs' %} aria-current="page"{% endif %}>Docs</a><span class="machine-nav-tooltip" role="tooltip">Guides for Rasterizer, Lightburn, materials, and holographic workflows.</span></span>
 </nav>
+<script src="/static/machine_chrome.js"></script>
 {%- endmacro %}
