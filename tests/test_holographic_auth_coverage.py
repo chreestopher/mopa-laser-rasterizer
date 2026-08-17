@@ -71,20 +71,21 @@ class HolographicAuthenticationCoverageTests(unittest.TestCase):
         self.assertIn("/browser-material-libraries", rasterizer_template)
         self.assertNotIn("guest_material_library_id", vault_template)
 
-    def test_guest_upload_buttons_open_the_file_choosers_directly(self):
+    def test_holographic_forms_offer_upload_or_existing_library_to_every_user(self):
         template = (
             ROOT / "templates" / "holographic_etching.html"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('id="guest_calibration_library_upload"', template)
-        self.assertIn('id="guest_artwork_library_upload"', template)
-        self.assertIn("typeof fileInput.showPicker === 'function'", template)
-        self.assertIn("else fileInput.click();", template)
-        self.assertIn("guestCalibrationLibraryUpload.addEventListener('click'", template)
-        self.assertIn("openGuestLibraryFile(calibrationMaterialSettings);", template)
-        self.assertIn("guestArtworkLibraryUpload.addEventListener('click'", template)
-        self.assertIn("openGuestLibraryFile(artworkMaterialSettings);", template)
-        self.assertNotIn("openFileChooser", template)
+        self.assertIn('id="calibration_material_upload_row" class="full-width"', template)
+        self.assertIn('id="artwork_material_upload_row" class="full-width"', template)
+        self.assertNotIn('id="calibration_material_upload_row" class="full-width" hidden', template)
+        self.assertNotIn('id="artwork_material_upload_row" class="full-width" hidden', template)
+        self.assertIn("calibrationMaterialSettings.disabled = false;", template)
+        self.assertIn("artworkMaterialSettings.disabled = false;", template)
+        self.assertIn("!savedCalibrationLibrary.value && !calibrationMaterialSettings.files.length", template)
+        self.assertIn("!savedArtworkLibrary.value && !artworkMaterialSettings.files.length", template)
+        self.assertNotIn("guest_calibration_library_upload", template)
+        self.assertNotIn("guest_artwork_library_upload", template)
 
 
 if __name__ == "__main__":
