@@ -86,6 +86,7 @@ class HolographicAuthenticationCoverageTests(unittest.TestCase):
         self.assertIn("!savedArtworkLibrary.value && !artworkMaterialSettings.files.length", template)
         self.assertNotIn("guest_calibration_library_upload", template)
         self.assertNotIn("guest_artwork_library_upload", template)
+        self.assertIn(".calibration-form [hidden] { display:none !important; }", template)
 
 
 if __name__ == "__main__":
