@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" role="img" aria-labelledby="title desc">
+  <title id="title">JPT YDFLP-E2-60-M7-M-R power-down cutoff frequency by pulse width</title>
+  <desc id="desc">A logarithmic chart of pulse width in nanoseconds versus cutoff frequency in kilohertz. Cutoff frequency falls from 1950 kilohertz at 2 nanoseconds to 30 kilohertz at 500 nanoseconds.</desc>
+  <rect width="1200" height="700" fill="#0e110e"/>
+  <text x="600" y="45" fill="#e4e3cf" font-family="system-ui,sans-serif" font-size="25" font-weight="700" text-anchor="middle">JPT YDFLP-E2-60-M7-M-R · POWER-DOWN CUTOFF</text>
+  <text x="600" y="74" fill="#aaa98e" font-family="ui-monospace,monospace" font-size="15" text-anchor="middle">MANUAL TABLE 4 · LOGARITHMIC AXES · 1 ns CW MODE OMITTED</text>
+
+  <g stroke="#344034" stroke-width="1">
+    <path d="M120 570H1100M120 516H1100M120 444H1100M120 371H1100M120 275H1100M120 203H1100M120 130H1100"/>
+    <path d="M120 130V570M243 130V570M315 130V570M387 130V570M452 130V570M529 130V570M601 130V570M673 130V570M724 130V570M775 130V570M814 130V570M886 130V570M937 130V570M977 130V570M1037 130V570M1100 130V570"/>
+  </g>
+  <g stroke="#9aa38f" stroke-width="2"><path d="M120 115V570H1118"/></g>
+
+  <g fill="#c9cbb8" font-family="ui-monospace,monospace" font-size="14" text-anchor="end">
+    <text x="105" y="575">30</text><text x="105" y="521">50</text><text x="105" y="449">100</text><text x="105" y="376">200</text><text x="105" y="280">500</text><text x="105" y="208">1000</text><text x="105" y="135">2000</text>
+  </g>
+  <g fill="#c9cbb8" font-family="ui-monospace,monospace" font-size="13" text-anchor="end">
+    <text transform="translate(124 595) rotate(-50)">2</text><text transform="translate(247 595) rotate(-50)">4</text><text transform="translate(319 595) rotate(-50)">6</text><text transform="translate(391 595) rotate(-50)">9</text><text transform="translate(456 595) rotate(-50)">13</text><text transform="translate(533 595) rotate(-50)">20</text><text transform="translate(605 595) rotate(-50)">30</text><text transform="translate(677 595) rotate(-50)">45</text><text transform="translate(728 595) rotate(-50)">60</text><text transform="translate(779 595) rotate(-50)">80</text><text transform="translate(818 595) rotate(-50)">100</text><text transform="translate(890 595) rotate(-50)">150</text><text transform="translate(941 595) rotate(-50)">200</text><text transform="translate(981 595) rotate(-50)">250</text><text transform="translate(1041 595) rotate(-50)">350</text><text transform="translate(1104 595) rotate(-50)">500</text>
+  </g>
+
+  <polyline points="120,133 243,171 315,205 387,256 452,296 529,347 601,378 673,401 724,412 775,432 814,439 886,503 937,521 977,525 1037,540 1100,570" fill="none" stroke="#8ee474" stroke-width="5" stroke-linejoin="round"/>
+  <g fill="#0e110e" stroke="#8ee474" stroke-width="4">
+    <circle cx="120" cy="133" r="7"/><circle cx="243" cy="171" r="7"/><circle cx="315" cy="205" r="7"/><circle cx="387" cy="256" r="7"/><circle cx="452" cy="296" r="7"/><circle cx="529" cy="347" r="7"/><circle cx="601" cy="378" r="7"/><circle cx="673" cy="401" r="7"/><circle cx="724" cy="412" r="7"/><circle cx="775" cy="432" r="7"/><circle cx="814" cy="439" r="7"/><circle cx="886" cy="503" r="7"/><circle cx="937" cy="521" r="7"/><circle cx="977" cy="525" r="7"/><circle cx="1037" cy="540" r="7"/><circle cx="1100" cy="570" r="7"/>
+  </g>
+
+  <text x="610" y="665" fill="#e4e3cf" font-family="system-ui,sans-serif" font-size="18" font-weight="700" text-anchor="middle">PULSE WIDTH (ns)</text>
+  <text transform="translate(34 350) rotate(-90)" fill="#e4e3cf" font-family="system-ui,sans-serif" font-size="18" font-weight="700" text-anchor="middle">CUTOFF FREQUENCY (kHz)</text>
+  <text x="610" y="105" fill="#efb94f" font-family="ui-monospace,monospace" font-size="14" text-anchor="middle">Above each plotted cutoff: expected full output power · Below it: output power is reduced</text>
+</svg>
