@@ -229,6 +229,13 @@
     }
     body::before { left: 22px; }
     body::after { right: 22px; }
+    body.history-mode {
+        border:3px solid #777864;
+        border-radius:30px;
+        background:repeating-linear-gradient(90deg,rgba(255,255,255,.014) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 5%,#505443,#363a30 42%,#24271f 100%);
+        box-shadow:inset 0 0 0 5px #1b1e18,inset 0 0 60px #10120e,0 0 0 1px #9a9a7e,0 20px 50px #000;
+    }
+    body.history-mode::before,body.history-mode::after { content:none; display:none; }
     /* Reserve room for the console subtitle before the workspace begins. */
     .page-header {
         flex: 0 0 124px;
@@ -343,6 +350,7 @@
     .download-button:hover, .another-button:hover { background: linear-gradient(#7e9388, #426052); }
     .log-prefix { color: #55794c; }
     body.light-machine { color:#151613; background:repeating-linear-gradient(90deg,rgba(0,0,0,.025) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 15%,#f2f2ec,#c7c8c2 48%,#9ea09b 100%); border-color:#777974; box-shadow:inset 0 0 0 5px #a9aba6,inset 0 0 48px #777,0 0 0 1px #eee; }
+    body.history-mode.light-machine { border-color:#777974; background:repeating-linear-gradient(90deg,rgba(0,0,0,.025) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 5%,#f0f0e9,#c8c9c3 48%,#9fa19c 100%); box-shadow:inset 0 0 0 5px #a6a8a3,inset 0 0 45px #777,0 0 0 1px #eee,0 20px 50px #000; }
     body.light-machine .page-header h1 { color:#171815; text-shadow:0 1px #fff,0 -1px #777; }
     body.light-machine .console-subtitle { color:#292a26; text-shadow:0 1px #fff; }
     body.light-machine .status-lamps { color:#343530; }
@@ -360,7 +368,7 @@
     </style>
 <link rel="stylesheet" href="/static/machine_chrome.css?v=3">
 </head>
-<body>
+<body{% if history_mode %} class="history-mode"{% endif %}>
         {{ machine_chrome('history' if history_mode else '', 'VECTOR PROCESSING CONSOLE · SERIES 79', true, 'status-lamps', 'standard' if history_mode else 'overlay') }}
         <main class="machine-workspace">
         <div class="terminal-box" id="terminal">
