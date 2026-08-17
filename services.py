@@ -515,7 +515,10 @@ def query_laser_community(laser_source="", lens_field_of_view="", material="", c
                 for entry in community.get("summary", {}).get("entries", []):
                     if not _community_substring_match(entry.get("material", ""), material):
                         continue
-                    if not _community_exact_match(_official_community_swatch(entry)[1], color):
+                    _, resolved_color = _official_community_swatch(entry)
+                    if resolved_color == "Unassigned":
+                        continue
+                    if not _community_exact_match(resolved_color, color):
                         continue
                     rows.append(_laser_community_row(community, entry))
                     if len(rows) >= limit:
