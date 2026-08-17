@@ -34,6 +34,28 @@ class HolographicAuthenticationCoverageTests(unittest.TestCase):
         self.assertEqual(4, template.count('name="continue_as_guest"'))
         self.assertIn("body.set('submission_auth_token', holographicAuthToken)", template)
 
+    def test_calibration_profile_downloads_are_guest_only(self):
+        tree = ast.parse((ROOT / "routes" / "holographic.py").read_text(encoding="utf-8"))
+        functions = {
+            node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)
+        }
+        for function_name in (
+            "save_calibration_profile",
+            "analyze_calibration_profile",
+            "save_holographic_recipes",
+        ):
+            guest_urls = [
+                node for node in ast.walk(functions[function_name])
+                if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "_guest_profile_url"
+            ]
+            self.assertTrue(guest_urls, f"{function_name} must suppress member downloads")
+
+        template = (ROOT / "templates" / "holographic_etching.html").read_text(encoding="utf-8")
+        self.assertGreaterEqual(template.count("data.profile_url\n          ? downloadButtonList"), 3)
+        self.assertIn("await loadSavedHolographicRecipes(data.saved_recipe_id || '')", template)
+
 
 if __name__ == "__main__":
     unittest.main()

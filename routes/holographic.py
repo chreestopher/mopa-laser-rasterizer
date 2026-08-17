@@ -82,6 +82,13 @@ def _validated_submission_identity():
     return user_id or None, None
 
 
+def _guest_profile_url(filename, user_id):
+    """Offer portable calibration files only to the guest workflow."""
+    if user_id:
+        return None
+    return f"/holographic-etching/download/{os.path.basename(filename)}"
+
+
 def _resolve_material_library(task_id, uploaded_library, saved_library_id, history_session,
                               material_name=""):
     """Use the Rasterizer's shared guest cache and account Material Vault."""
@@ -1175,7 +1182,7 @@ def save_calibration_profile():
     source grid, photograph, and viewing conditions gives the later analyzer a
     stable, self-contained calibration record to work from.
     """
-    _user_id, auth_failure = _validated_submission_identity()
+    user_id, auth_failure = _validated_submission_identity()
     if auth_failure:
         return auth_failure
     photo = request.files.get("grid_photo")
@@ -1235,7 +1242,7 @@ def save_calibration_profile():
     return jsonify({
         "status": "saved",
         "profile_id": profile_id,
-        "profile_url": f"/holographic-etching/download/{profile_name_on_disk}",
+        "profile_url": _guest_profile_url(profile_name_on_disk, user_id),
         "message": "Calibration photo and conditions saved. It is ready for measurement.",
     })
 
@@ -1243,7 +1250,7 @@ def save_calibration_profile():
 @routes.route("/holographic-etching/analyze-calibration", methods=["POST"])
 def analyze_calibration_profile():
     """Measure visible cell colors from a saved calibration-grid photograph."""
-    _user_id, auth_failure = _validated_submission_identity()
+    user_id, auth_failure = _validated_submission_identity()
     if auth_failure:
         return auth_failure
     profile_id = str(request.form.get("profile_id", "")).strip()
@@ -1329,7 +1336,7 @@ def analyze_calibration_profile():
     return jsonify({
         "status": "measured",
         "profile_id": profile_id,
-        "profile_url": f"/holographic-etching/download/{os.path.basename(profile_path)}",
+        "profile_url": _guest_profile_url(profile_path, user_id),
         "preview_url": f"/holographic-etching/preview/{preview_name}",
         "correction": correction,
         "rotation_degrees": rotation_degrees,
@@ -1398,14 +1405,16 @@ def save_holographic_recipes():
                         "key": recipe_artifact_key}),
             ex=HISTORY_TTL_SECONDS,
         )
+    saved_recipe_id = None
     if user_id:
         try:
-            save_user_holographic_recipe(
+            saved_recipe = save_user_holographic_recipe(
                 user_id, profile_path, profile.get("profile_name"),
                 metadata={"profile_name": profile.get("profile_name", ""), "recipe_count": len(recipes),
                           "material": profile.get("grid", {}).get("material", "")},
                 source_filename=os.path.basename(profile_path),
             )
+            saved_recipe_id = saved_recipe.get("recipe_id")
         except RuntimeError as error:
             current_app.logger.exception("Could not save generated Holographic Recipe to the account")
             return jsonify({"status": "error", "message": str(error)}), 503
@@ -1413,9 +1422,15 @@ def save_holographic_recipes():
     return jsonify({
         "status": "saved",
         "recipe_count": len(recipes),
-        "profile_url": f"/holographic-etching/download/{os.path.basename(profile_path)}",
+        "profile_url": _guest_profile_url(profile_path, user_id),
+        "account_saved": bool(user_id),
+        "saved_recipe_id": saved_recipe_id,
         "palette_diagnostics": profile["palette_diagnostics"],
-        "message": f"Saved {len(recipes)} holographic recipe(s) into this calibration profile.",
+        "message": (
+            f"Saved {len(recipes)} holographic recipe(s) to your Recipe Vault."
+            if user_id else
+            f"Prepared {len(recipes)} holographic recipe(s). Download the recipe file before leaving."
+        ),
     })
 
 

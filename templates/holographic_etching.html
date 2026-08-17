@@ -513,12 +513,13 @@
         }
       })
       .catch(() => {});
-    const loadSavedHolographicRecipes = () => fetch('/account/holographic-recipes', {credentials:'same-origin'})
+    const loadSavedHolographicRecipes = (selectedRecipeId='') => fetch('/account/holographic-recipes', {credentials:'same-origin'})
       .then(response => response.ok ? response.json() : null)
       .then(data => {
         const recipes = data?.recipes || [];
+        savedHolographicRecipe.replaceChildren(new Option('Choose an account recipe…', ''));
+        savedHolographicRecipeRow.hidden = !recipes.length;
         if (!recipes.length) return;
-        savedHolographicRecipeRow.hidden = false;
         recipes.forEach(recipe => {
           const option = document.createElement('option');
           option.value = recipe.recipe_id;
@@ -526,9 +527,10 @@
           option.textContent = count ? `${recipe.name} · ${count} recipes` : recipe.name;
           savedHolographicRecipe.appendChild(option);
         });
-        const rememberedRecipeId = rememberedHolographicSettings['artwork_form:saved_holographic_recipe_id'];
+        const rememberedRecipeId = selectedRecipeId || rememberedHolographicSettings['artwork_form:saved_holographic_recipe_id'];
         if (rememberedRecipeId && [...savedHolographicRecipe.options].some(option => option.value === rememberedRecipeId)) {
           savedHolographicRecipe.value = rememberedRecipeId;
+          savedHolographicRecipe.dispatchEvent(new Event('change', {bubbles:true}));
         }
       }).catch(() => {});
     savedCalibrationLibrary.addEventListener('change', () => {
@@ -651,7 +653,10 @@
         if (!response.ok) throw new Error(data.message || 'Calibration profile could not be saved.');
         document.getElementById('analysis_profile_id').value = data.profile_id;
         localStorage.setItem('holographic-profile-id', data.profile_id);
-        results.innerHTML = `${data.message}${downloadButtonList([{url:data.profile_url, label:'Download Profile Record'}])}`;
+        const profileDownload = data.profile_url
+          ? downloadButtonList([{url:data.profile_url, label:'Download Profile Record'}])
+          : '';
+        results.innerHTML = `${data.message}${profileDownload}`;
       } catch (error) {
         results.textContent = error.message;
       } finally {
@@ -844,7 +849,10 @@
         if (!response.ok && handleHolographicAuthenticationFailure(data, () => form.requestSubmit())) return;
         if (!response.ok) throw new Error(data.message || 'Calibration analysis could not be completed.');
         const correction = data.correction === 'manual_corners' ? 'Your four aligned corners were used for perspective correction.' : data.correction === 'rectified' ? 'Perspective correction applied.' : data.correction === 'manual_crop' ? 'Your crop was used as the grid boundary.' : 'Grid border was not confidently found, so the rotated photo was sampled.';
-        results.innerHTML = `${data.message} Rotation: ${data.rotation_degrees}°. Crop: L${data.crop.left}% T${data.crop.top}% R${data.crop.right}% B${data.crop.bottom}%. ${correction}${downloadButtonList([{url:data.profile_url, label:'Download Measured Profile'}])}<a href="${data.preview_url}" target="_blank" rel="noopener noreferrer"><img class="analysis-preview" src="${data.preview_url}" alt="Numbered calibration-grid analysis preview"></a>`;
+        const profileDownload = data.profile_url
+          ? downloadButtonList([{url:data.profile_url, label:'Download Measured Profile'}])
+          : '';
+        results.innerHTML = `${data.message} Rotation: ${data.rotation_degrees}°. Crop: L${data.crop.left}% T${data.crop.top}% R${data.crop.right}% B${data.crop.bottom}%. ${correction}${profileDownload}<a href="${data.preview_url}" target="_blank" rel="noopener noreferrer"><img class="analysis-preview" src="${data.preview_url}" alt="Numbered calibration-grid analysis preview"></a>`;
         renderRecipeReview(data.profile_id, data.cells);
         loadSampleEditor(data.preview_url, data.cells);
       } catch (error) {
@@ -876,15 +884,24 @@
         catch { throw new Error(`Recipe save failed (HTTP ${response.status}); the server returned an HTML error page.`); }
         if (!response.ok && handleHolographicAuthenticationFailure(data, () => button.click())) return;
         if (!response.ok) throw new Error(data.message || 'Recipe palette could not be saved.');
-        const savedRecipeFilename = decodeURIComponent(String(data.profile_url || '').split('/').pop() || 'holographic-recipe.json');
-        sessionStorage.setItem(rememberedRecipeKey, savedRecipeFilename);
-        refreshRememberedRecipe();
+        if (data.account_saved) {
+          sessionStorage.removeItem(rememberedRecipeKey);
+          refreshRememberedRecipe();
+          await loadSavedHolographicRecipes(data.saved_recipe_id || '');
+        } else if (data.profile_url) {
+          const savedRecipeFilename = decodeURIComponent(String(data.profile_url).split('/').pop() || 'holographic-recipe.json');
+          sessionStorage.setItem(rememberedRecipeKey, savedRecipeFilename);
+          refreshRememberedRecipe();
+        }
         const diagnostics = data.palette_diagnostics;
         const notes = [
           diagnostics.similar_pairs.length ? `Similar colors: ${diagnostics.similar_pairs.map(pair => `${pair.recipes[0]} / ${pair.recipes[1]}`).join(', ')}.` : '',
           diagnostics.weak_recipes.length ? `Review low-confidence recipes: ${diagnostics.weak_recipes.join(', ')}.` : ''
         ].filter(Boolean).join(' ');
-        results.innerHTML = `${data.message} ${notes}${downloadButtonList([{url:data.profile_url, label:'Download Recipe Profile'}])}`;
+        const recipeDownload = data.profile_url
+          ? downloadButtonList([{url:data.profile_url, label:'Download Recipe Profile'}])
+          : '';
+        results.innerHTML = `${data.message} ${notes}${recipeDownload}`;
       } catch (error) {
         results.textContent = error.message;
       } finally {
