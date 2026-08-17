@@ -600,10 +600,128 @@ for page_slug, controls in STANDARD_PRESET_CONTROLS.items():
     ]
 
 
+def _docs_link(before, link_text, link_slug, after=""):
+    return {
+        "before": before,
+        "link_text": link_text,
+        "link_slug": link_slug,
+        "after": after,
+    }
+
+
+DOCS.update({
+    "laser-engraving-parameters": _page(
+        "General Laser Engraving Parameters",
+        "A concise guide to the parameters that make up a laser engraving setting, with links to detailed explanations and practical examples.",
+        "A laser setting is a coordinated recipe, not a collection of independent numbers. Each parameter changes how optical energy is delivered, distributed, and repeated across the material, and the useful range depends on the laser source, lens, material, focus, and desired result.",
+        [
+            ("Operation mode", [_docs_link("Chooses how Lightburn drives the geometry: follow a path, scan a filled region, or use another supported strategy. ", "All About Operation Mode", "all-about-operation-mode", " explains when Line, Fill, Offset Fill, and image-style processing make sense.")]),
+            ("Power", [_docs_link("Controls the commanded output level, usually as a percentage of the source's available power. ", "All About Laser Power", "all-about-laser-power", " covers maximum and minimum power, heat input, and why the same percentage is not equivalent across machines.")]),
+            ("Speed", [_docs_link("Controls how quickly the beam moves across the work. Slower motion generally gives each location more exposure. ", "All About Engraving Speed", "all-about-engraving-speed", " explains energy density, timing, corners, and test strategies.")]),
+            ("Frequency", [_docs_link("Sets the pulse repetition rate on pulsed sources that expose it. Frequency changes pulse spacing and, for a fixed average power, often changes energy per pulse. ", "All About Laser Frequency", "all-about-laser-frequency", " shows how it interacts with speed and pulse width.")]),
+            ("Pulse width", [_docs_link("Sets how long each pulse lasts on sources with adjustable pulse duration, especially MOPA fiber lasers. ", "All About Pulse Width", "all-about-pulse-width", " explains peak power, thermal coupling, and example uses.")]),
+            ("Line interval", [_docs_link("Sets the spacing between adjacent scan lines in a filled engraving. ", "All About Line Interval", "all-about-line-interval", " relates interval to line density, overlap, detail, time, and visible banding.")]),
+            ("Pass count", [_docs_link("Repeats an operation one or more times. Multiple passes can build depth or distribute work, but they also accumulate heat and alignment error. ", "All About Engraving Passes", "all-about-engraving-passes", " covers staged processing and cleanup passes.")]),
+            ("Scan angle and crosshatch", [_docs_link("Controls the direction of fill lines and whether additional directions are engraved. ", "All About Scan Angle and Crosshatch", "all-about-scan-angle-crosshatch", " explains grain, edge quality, heat distribution, and angle-per-pass workflows.")]),
+        ],
+        ["material-libraries", "lightburn-export", "types-of-lasers-for-engraving", "mopa-laser-workflow"],
+    ),
+    "all-about-operation-mode": _page(
+        "All About Operation Mode",
+        "How Line, Fill, Offset Fill, and image-oriented laser modes change beam motion, geometry, and appropriate applications.",
+        "Operation mode decides which parts of the artwork become motion paths. It changes the physical toolpath before power, speed, frequency, or pulse width are considered.",
+        [
+            ("Line", ["Line mode follows vector paths. It is appropriate for outlines, scoring, thin marks, open-path gratings, and cutting when the machine and material permit it. A closed shape is traced around its boundary rather than shaded across its interior."]),
+            ("Fill", ["Fill mode scans parallel lines through the interior of closed shapes. Line interval and scan angle determine the scan pattern. It is commonly used for solid marks, broad engravings, and filled vector artwork."]),
+            ("Offset Fill and related strategies", ["Offset Fill builds inward or outward contours rather than a simple back-and-forth raster. It can suit some shapes and reduce long empty traverses, but narrow features and complex geometry may behave differently from ordinary Fill."]),
+            ("Examples", ["Use Line for a serial-number outline or diffraction grating made from open paths. Use Fill for a solid logo. Use Offset Fill as a test candidate for compact closed shapes where contour-following motion may be useful. Use image processing when the source is a bitmap whose tones or dither pattern should drive the engraving directly."]),
+            ("What it does not decide", ["Operation mode does not make a setting safe or correct by itself. Power, speed, focus, line interval, pulse behavior, air handling, and material response still determine the result."]),
+        ], ["laser-engraving-parameters", "choose-cut-mode", "raster-vs-vector", "diffraction-gratings"]),
+    "all-about-laser-power": _page(
+        "All About Laser Power",
+        "How laser power affects heating, ablation, marking, depth, minimum and maximum power, and interactions with speed and pulse behavior.",
+        "Power is the commanded output level, commonly expressed as a percentage. It is meaningful only in the context of a particular source, calibration, speed, frequency, pulse width, spot size, and material.",
+        [
+            ("Physical effect", ["Increasing delivered power generally raises the rate at which energy reaches the interaction zone. Depending on wavelength and material, that may increase heating, melting, oxidation, vaporization, ablation, or photochemical change."]),
+            ("Maximum and minimum power", ["Maximum power is the upper command used during the operation. Minimum power can matter when motion slows, such as at corners or during variable-speed motion. Controller behavior varies, so confirm how the target machine interprets both values."]),
+            ("Examples", ["For a dark annealed mark on compatible metal, power may be balanced with slower speed and suitable pulse behavior to build heat without deep removal. For crisp surface ablation, sufficient pulse intensity with faster motion may remove a coating while limiting bulk heating. For a deeper mark, power may be combined with slower speed or multiple passes, followed by a lighter cleanup pass."]),
+            ("Common mistakes", ["A power percentage is not a wattage and cannot be copied blindly between a 20 W and 100 W source. Raising power can also reduce quality by widening the heat-affected zone, producing debris, warping thin stock, or exceeding coating and machine limits."]),
+            ("Testing", ["Change one variable at a time in a small matrix and inspect both the desired mark and unwanted effects. Begin conservatively, use the manufacturer's permitted range, and never defeat guarding or fire precautions."]),
+        ], ["laser-engraving-parameters", "all-about-engraving-speed", "all-about-laser-frequency", "all-about-pulse-width"]),
+    "all-about-engraving-speed": _page(
+        "All About Engraving Speed",
+        "How travel speed changes exposure, pulse spacing, heat accumulation, productivity, corners, and engraving results.",
+        "Speed is the commanded beam velocity over the work, typically expressed in millimeters per second. It controls dwell per unit distance and therefore interacts strongly with every energy-related parameter.",
+        [
+            ("Physical effect", ["At otherwise unchanged settings, slower travel places more pulses or more continuous exposure along each millimeter. Faster travel reduces exposure per unit length and increases throughput, provided the motion system and source can maintain the command."]),
+            ("Pulse spacing", ["On a pulsed laser, distance between pulses is approximately speed divided by pulse frequency when units are converted consistently. Changing speed can therefore change both total exposure and the microscopic spacing of individual interactions."]),
+            ("Examples", ["Slow a compatible marking recipe to encourage greater heat accumulation for annealing or color development. Increase speed to reduce scorching on an organic material or to remove a thin coating with less substrate heating. Use a moderate first pass for removal, then a faster cleanup pass to clear residue with less added depth."]),
+            ("Motion limitations", ["Very high requested speed may be limited by galvo field size, acceleration, overscan, controller behavior, or short geometry. Tight corners can receive different exposure from long straight runs if power modulation does not compensate."]),
+            ("Testing", ["Test speed together with power, then refine frequency, pulse width, and interval where the source supports them. Record lens, focus, material preparation, and field position because they affect whether a speed remains transferable."]),
+        ], ["laser-engraving-parameters", "all-about-laser-power", "all-about-laser-frequency", "diffraction-gratings"]),
+    "all-about-laser-frequency": _page(
+        "All About Laser Frequency",
+        "How pulse repetition rate affects pulse spacing, energy per pulse, heat accumulation, texture, and source-dependent engraving behavior.",
+        "Frequency is the number of emitted pulses per second on a pulsed laser. It is commonly shown in kilohertz, but the available range and the relationship to pulse energy depend on the source.",
+        [
+            ("Physical effect", ["At a fixed speed, higher frequency places pulses closer together. At a fixed average power, increasing frequency generally divides available energy among more pulses, although real source behavior, pulse shape, and limits are not perfectly ideal."]),
+            ("Pulse spacing and overlap", ["Pulse spacing along the travel direction is approximately speed divided by frequency. Compare that spacing with the focused spot size to reason about gaps or overlap; the actual interaction diameter depends on optics, focus, beam quality, and material response."]),
+            ("Examples", ["Use a higher repetition rate when a smoother, more continuous-looking surface interaction is useful and the source supports adequate pulse energy. Use a lower rate when stronger individual pulses are needed for removal or texture. Hold frequency fixed while varying speed to create a controlled pulse-pitch test for diffraction experiments."]),
+            ("Source differences", ["Q-switched, MOPA, UV, CO2, and diode systems do not expose or implement frequency identically. Some continuous-wave sources use modulation frequency rather than a true train of independently shaped laser pulses."]),
+            ("Safe comparison", ["Do not copy a frequency outside the manufacturer's range or assume equal kilohertz values produce equal pulses on different sources. Compare settings only with power, speed, pulse width, lens, focus, and material also recorded."]),
+        ], ["laser-engraving-parameters", "continuous-wave-vs-pulsed-lasers", "all-about-engraving-speed", "all-about-pulse-width", "diffraction-gratings"]),
+    "all-about-pulse-width": _page(
+        "All About Pulse Width",
+        "How adjustable pulse duration changes peak power, energy delivery, heating, ablation, color marking, and MOPA laser results.",
+        "Pulse width is the duration of an individual laser pulse, often expressed in nanoseconds for marking lasers. Adjustable pulse width is a defining control on many MOPA fiber sources, but it is not available on every laser.",
+        [
+            ("What changes physically", ["For the same pulse energy, a shorter pulse concentrates that energy into less time and therefore has higher peak power. A longer pulse spreads energy over more time, often allowing more heat to conduct into the surrounding material. Real sources may also change pulse energy or average-power capability across their pulse-width and frequency ranges."]),
+            ("Material interaction", ["Shorter pulses can favor rapid surface removal and a smaller thermal footprint when sufficient peak intensity is reached. Longer pulses can favor melting, oxidation, annealing, or broader thermal coupling. The boundary between effects depends on wavelength, spot size, surface condition, and material."]),
+            ("Examples", ["Test shorter pulses for crisp coating removal or fine ablation where limiting surrounding heat is important. Test longer pulses for heat-driven stainless-steel color development or annealed marks. Combine pulse-width steps with frequency and speed steps when looking for a surface texture that balances removal and smoothness."]),
+            ("Interactions", ["Pulse width cannot be interpreted alone. Frequency affects how often pulses arrive, speed affects their spacing, and commanded power affects available energy. Changing pulse width may also change the source's permitted frequency range or achievable average power."]),
+            ("Testing", ["Use a documented matrix within the source manufacturer's limits. Inspect the work under consistent lighting and magnification, and record whether the result is removal, melting, oxidation, annealing, or only a visual color change."]),
+        ], ["laser-engraving-parameters", "what-does-mopa-mean", "what-does-q-switched-mean", "all-about-laser-frequency", "all-about-laser-power"]),
+    "all-about-line-interval": _page(
+        "All About Line Interval",
+        "How fill-line spacing affects line density, overlap, detail, coverage, engraving time, heat accumulation, and banding.",
+        "Line interval is the center-to-center distance between adjacent scan lines in a filled engraving. Smaller intervals create more lines per millimeter; larger intervals create fewer.",
+        [
+            ("Density and resolution", ["Lines per millimeter is the reciprocal of interval in millimeters. DPI is approximately 25.4 divided by interval. These are commanded path densities, not a guarantee that the optical spot or material can resolve that detail."]),
+            ("Physical overlap", ["When interval is smaller than the effective mark width, adjacent tracks overlap. Moderate overlap can improve coverage; excessive overlap can accumulate heat, deepen removal, blur detail, or waste time. An interval larger than the mark width can leave visible gaps."]),
+            ("Examples", ["Reduce interval to close faint gaps in a solid fill after confirming heat remains controlled. Increase interval for a deliberate hatch texture or faster draft. Match interval to a measured spot or track-width test when seeking efficient, even coverage. Sweep interval in holographic calibration because microscopic groove spacing can determine diffraction behavior."]),
+            ("Direction matters", ["Line interval describes spacing perpendicular to the scan direction. Scan angle changes how those lines meet edges, grain, and previous passes, while crosshatch adds another family of lines and increases total exposure."]),
+            ("Testing", ["Evaluate interval with the intended lens, focus, speed, power, and material. A visually smooth screen preview does not prove that physical tracks overlap correctly."]),
+        ], ["laser-engraving-parameters", "all-about-scan-angle-crosshatch", "holographic-calibration", "diffraction-gratings"]),
+    "all-about-engraving-passes": _page(
+        "All About Engraving Passes",
+        "How repeated laser passes affect depth, heat, debris, registration, cleanup, and staged engraving workflows.",
+        "Pass count repeats an operation over the same geometry. Repetition can build an effect gradually, but a second pass does not necessarily reproduce the first because the surface has already changed.",
+        [
+            ("Why results change", ["The first pass may remove a coating, roughen a surface, create oxide, expose a different substrate, or change absorption. Later passes therefore interact with a new surface and may remove material or accumulate heat at a different rate."]),
+            ("Examples", ["Use several controlled passes instead of one aggressive pass when building depth while clearing debris between passes. Follow a deeper removal pass with a faster, lower-energy cleanup pass. Alternate scan angle between passes to reduce directional texture. Use a single carefully controlled pass when repeated heating would damage a coating or distort thin material."]),
+            ("Heat and timing", ["Back-to-back passes can raise bulk temperature even when each pass seems mild. Cooling delays, air flow, extraction, fixture conductivity, and the order of engraved regions can change the result."]),
+            ("Registration", ["Multiple passes require repeatable positioning. Backlash, loose fixtures, galvo calibration, material movement, focus changes after deep removal, and thermal distortion can soften edges or produce doubled features."]),
+            ("Testing", ["Compare pass count with total processing time and measured depth or appearance. Do not assume that two passes at half power equal one pass at full power; nonlinear material changes make those processes different."]),
+        ], ["laser-engraving-parameters", "all-about-laser-power", "all-about-engraving-speed", "all-about-scan-angle-crosshatch"]),
+    "all-about-scan-angle-crosshatch": _page(
+        "All About Scan Angle and Crosshatch",
+        "How fill direction, crosshatching, and angle-per-pass affect texture, edge quality, grain, heat distribution, and engraving time.",
+        "Scan angle rotates the parallel lines used to fill a shape. Crosshatch adds another scan direction, while angle-per-pass can rotate successive repetitions.",
+        [
+            ("Physical effect", ["Changing direction changes how scan lines meet edges, surface grain, brushed finishes, previous grooves, and the machine's fast and slow axes. It does not change line interval by itself, but it changes the orientation of that spacing on the work."]),
+            ("Crosshatch", ["Crosshatching engraves two or more line directions over the same region. It can even out directional texture and improve coverage, but it also adds exposure and time. Power or pass count may need adjustment to avoid excessive heat."]),
+            ("Examples", ["Align a scan with brushed-metal grain to emphasize the existing direction, or cross it to make the new mark more visible. Rotate a fill to reduce edge scalloping on a particular feature. Use 0 and 90 degree passes for a balanced grid texture, or change angle per pass to distribute repeated engraving more evenly. Use a single controlled angle for diffraction grooves intended to throw light in a chosen direction."]),
+            ("Geometry and machine effects", ["Some angles require more short scan segments or longer overscan travel than others. This can change processing time and expose acceleration, timing, or galvo-calibration differences even when the nominal laser parameters are unchanged."]),
+            ("Testing", ["Test angles on the actual surface finish and observe the result from relevant viewing directions. When enabling crosshatch, treat it as added energy delivery rather than a purely visual option."]),
+        ], ["laser-engraving-parameters", "all-about-line-interval", "all-about-engraving-passes", "diffraction-gratings"]),
+})
+
+
 DOC_GROUPS = [
     ("Rasterizer", ["preset-controls", "raster-to-vector", "raster-vs-vector", "image-presets", "cartoon-preset", "color-photo-preset", "black-and-white-photo", "pixel-size", "color-layers"]),
     ("Abstract filters", ["abstract-filters", "abstract-filter-reference"] + [f"{slug}-filter" for slug in FILTER_PAGES]),
-    ("Lightburn and materials", ["works-with-lightburn", "types-of-lasers-for-engraving", "continuous-wave-vs-pulsed-lasers", "what-does-mopa-mean", "what-does-q-switched-mean", "diode-lasers-explained", "co2-lasers-explained", "uv-lasers-explained", "laser-compatibility", "what-laser-should-i-buy", "color-discovery", "material-vault", "community-set", "material-libraries", "lightburn-export", "lightburn-large-projects", "reduce-lightburn-object-count", "mopa-laser-workflow"]),
+    ("Laser technology", ["types-of-lasers-for-engraving", "continuous-wave-vs-pulsed-lasers", "what-does-mopa-mean", "what-does-q-switched-mean", "diode-lasers-explained", "co2-lasers-explained", "uv-lasers-explained", "laser-engraving-parameters", "all-about-operation-mode", "all-about-laser-power", "all-about-engraving-speed", "all-about-laser-frequency", "all-about-pulse-width", "all-about-line-interval", "all-about-engraving-passes", "all-about-scan-angle-crosshatch", "laser-compatibility", "what-laser-should-i-buy", "color-discovery"]),
+    ("Lightburn and materials", ["works-with-lightburn", "material-vault", "community-set", "material-libraries", "lightburn-export", "lightburn-large-projects", "reduce-lightburn-object-count", "mopa-laser-workflow"]),
     ("Holographic Etching Lab", ["holographic-etching", "what-is-iridescence", "iridescent-laser-engraving", "iridescent-engraving-challenges", "holographic-lab-workflow", "holographic-calibration", "analyze-calibration-photo", "holographic-recipes", "holographic-artwork", "diffraction-gratings", "choose-cut-mode"]),
     ("Jobs and support", ["membership-benefits", "job-history", "troubleshooting"]),
 ]
