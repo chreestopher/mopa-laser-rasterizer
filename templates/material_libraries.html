@@ -411,7 +411,8 @@
         say('New Settings Library created. Open Settings, then Add Setting.'); load();
       } catch (_) { say('Could not create the library. Check the server logs for details.', true); }
     });
-    window.machineChrome.authStatus.then(data => { document.getElementById(data.signed_in ? 'manager' : 'sign_in_panel').hidden = false; if (data.signed_in) { load().then(() => showSettingsWorkspace()).catch(error => say(error.message, true)); loadHolographicRecipes().catch(error => { holographicRecipeNotice.textContent = error.message; }); } }).catch(() => { document.getElementById('sign_in_panel').hidden = false; });
+    const machineChromeAuthStatus = window.machineChrome && window.machineChrome.authStatus;
+    (machineChromeAuthStatus || Promise.resolve({state:'unknown', signed_in:false})).then(data => { document.getElementById(data.signed_in ? 'manager' : 'sign_in_panel').hidden = false; if (data.signed_in) { load().then(() => showSettingsWorkspace()).catch(error => say(error.message, true)); loadHolographicRecipes().catch(error => { holographicRecipeNotice.textContent = error.message; }); } }).catch(() => { document.getElementById('sign_in_panel').hidden = false; });
   </script>
 </body>
 </html>

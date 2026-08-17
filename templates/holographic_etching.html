@@ -485,7 +485,8 @@
       calibrationSettingDescription.setAttribute('aria-expanded', 'false');
       calibrationSettingDescription.focus();
     });
-    window.machineChrome.authStatus
+    const machineChromeAuthStatus = window.machineChrome && window.machineChrome.authStatus;
+    (machineChromeAuthStatus || Promise.resolve({state:'unknown', signed_in:false}))
       .then(({signed_in}) => {
         operatorSignedIn = Boolean(signed_in);
         if (signed_in) {

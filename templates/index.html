@@ -426,7 +426,8 @@
     <h2 id="upload_error_title">PROCESSING CONSOLE NOTICE</h2>
     <div id="upload_error_modal_message"></div>
     <div class="upload-error-actions">
-      <a class="upload-error-login" href="/login">Sign in or sign up</a>
+      <button class="upload-error-login" type="button" id="upload_error_login">Sign in or sign up</button>
+      <button type="button" id="upload_error_guest" hidden>Continue explicitly as guest</button>
       <button type="button" id="upload_error_close">Back to the controls</button>
     </div>
   </div>
@@ -442,6 +443,8 @@
   <!-- Form Section -->
   <form action="/upload" method="post" enctype="multipart/form-data"> 
     <input type="hidden" id="history_session" name="history_session">
+    <input type="hidden" id="submission_auth_token" name="submission_auth_token" value="{{ submission_auth_token }}">
+    <input type="hidden" id="continue_as_guest" name="continue_as_guest" value="0">
     <div id="upload_error" class="upload-error" role="alert" hidden></div>
     <div class="form-group"></div>
     <div>
@@ -932,7 +935,8 @@
         updateFilterParameters();
         updatePaletteFields();
       };
-      window.machineChrome.authStatus
+      const machineChromeAuthStatus = window.machineChrome && window.machineChrome.authStatus;
+      (machineChromeAuthStatus || Promise.resolve({state:'unknown', signed_in:false}))
         .then(({ signed_in }) => {
           signedInAccount = Boolean(signed_in);
           if (signedInAccount && !new URLSearchParams(window.location.search).get('settings')) {
@@ -962,14 +966,65 @@
       const savedMaterialLibraryInput = document.getElementById('saved_material_library');
       const uploadErrorModal = document.getElementById('upload_error_modal');
       const uploadErrorModalMessage = document.getElementById('upload_error_modal_message');
+      const uploadErrorLogin = document.getElementById('upload_error_login');
+      const uploadErrorGuest = document.getElementById('upload_error_guest');
       const uploadErrorClose = document.getElementById('upload_error_close');
-      const showUploadError = message => {
+      const continueAsGuestInput = document.getElementById('continue_as_guest');
+      const showUploadError = (message, {reauthenticationRequired=false} = {}) => {
         uploadErrorModalMessage.textContent = message;
+        uploadErrorLogin.textContent = reauthenticationRequired ? 'Reconnect account' : 'Sign in or sign up';
+        uploadErrorGuest.hidden = !reauthenticationRequired;
         uploadErrorModal.hidden = false;
-        uploadErrorClose.focus();
+        (reauthenticationRequired ? uploadErrorLogin : uploadErrorClose).focus();
       };
       uploadErrorClose.addEventListener('click', () => {
         uploadErrorModal.hidden = true;
+      });
+      let authenticationPoll = null;
+      const stopAuthenticationPoll = () => {
+        if (authenticationPoll) window.clearInterval(authenticationPoll);
+        authenticationPoll = null;
+      };
+      const resumeAfterAuthentication = async () => {
+        try {
+          const response = await fetch('/auth-status', {
+            credentials:'same-origin',
+            cache:'no-store',
+          });
+          const status = response.ok ? await response.json() : {state:'unknown'};
+          if (status.state !== 'authenticated') return false;
+          stopAuthenticationPoll();
+          signedInAccount = true;
+          if (window.machineChrome) window.machineChrome.showAuthStatus(status);
+          loadSavedMaterialLibraries();
+          continueAsGuestInput.value = '0';
+          uploadErrorModal.hidden = true;
+          uploadForm.requestSubmit();
+          return true;
+        } catch (_) {
+          return false;
+        }
+      };
+      const beginAuthentication = () => {
+        continueAsGuestInput.value = '0';
+        const loginWindow = window.open('/login?popup=1', 'mopa-account-login', 'popup,width=540,height=720');
+        if (!loginWindow) {
+          uploadErrorModalMessage.textContent = 'Your browser blocked the sign-in window. Allow popups for this site, then choose Sign in again. Your form remains unchanged.';
+          return;
+        }
+        stopAuthenticationPoll();
+        authenticationPoll = window.setInterval(resumeAfterAuthentication, 1000);
+      };
+      uploadErrorLogin.addEventListener('click', beginAuthentication);
+      uploadErrorGuest.addEventListener('click', () => {
+        stopAuthenticationPoll();
+        continueAsGuestInput.value = '1';
+        uploadErrorModal.hidden = true;
+        uploadForm.requestSubmit();
+      });
+      window.addEventListener('message', event => {
+        if (event.origin !== window.location.origin || event.data?.type !== 'mopa-authentication-complete') return;
+        resumeAfterAuthentication();
       });
       const rememberedMaterialNote = document.getElementById('remembered_material_library');
       const loadSavedMaterialLibraries = () => fetch('/account/material-libraries', { credentials: 'same-origin' })
@@ -1091,7 +1146,9 @@
               : { message: `Could not start this job (HTTP ${response.status}).` };
             uploadError.textContent = data.message || 'Could not start this job.';
             uploadError.hidden = false;
-            showUploadError(uploadError.textContent);
+            showUploadError(uploadError.textContent, {
+              reauthenticationRequired: data.code === 'reauthentication_required',
+            });
             return;
           }
           const page = await response.text();
