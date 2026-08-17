@@ -1,0 +1,75 @@
+{% from '_machine_chrome.html' import machine_chrome %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>LaserCommunity · MOPA Laser Rasterizer</title>
+  <meta name="description" content="Explore anonymous laser settings contributed by the laser engraving community.">
+  <link rel="stylesheet" href="/static/machine_chrome.css">
+  <style>
+    *{box-sizing:border-box}body{max-width:1500px;margin:28px auto;padding:38px;color:#e8e4c9;background:radial-gradient(circle at 50% 5%,#505443,#24271f 72%);font:15px/1.55 system-ui,sans-serif}.community-panel{padding:20px;border:2px solid #686a57;border-radius:15px;background:#171b17;box-shadow:inset 0 0 24px #090b08,0 6px 0 #11130f}.community-intro{max-width:78ch;color:#c9c8b2}.community-search{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr)) auto;align-items:end;gap:12px;margin:24px 0}.community-search label{display:grid;gap:6px;color:#d8d2b5;font:700 12px "Courier New",monospace;text-transform:uppercase}.community-search input{min-height:42px;padding:9px;border:2px solid #5e6853;border-radius:5px;color:#caffb7;background:#10150f;box-shadow:inset 0 2px 7px #000;font:700 13px "Courier New",monospace}.community-search button{min-height:42px;padding:8px 18px;border:1px solid #71816c;border-radius:5px;color:#edf4e9;background:linear-gradient(#50634e,#2e402e);box-shadow:0 3px 0 #10170f;font:700 12px "Courier New",monospace;text-transform:uppercase;cursor:pointer}.community-status{min-height:24px;color:#b8c9ad}.community-status.error{color:#ff9a86}.table-shell{max-width:100%;overflow:auto;border:1px solid #596451;border-radius:8px;background:#10140f}table{width:100%;border-collapse:collapse;font:12px/1.35 "Courier New",monospace;white-space:nowrap}th,td{padding:8px 9px;border-right:1px solid #30382e;border-bottom:1px solid #30382e;text-align:left;vertical-align:top}th{position:sticky;top:0;z-index:1;color:#f2c66d;background:#252c23;text-transform:uppercase}tr:hover td{background:#263424}.color-cell{display:flex;align-items:center;gap:8px}.color-swatch{display:inline-block;flex:0 0 17px;width:17px;height:17px;border:1px solid #ddd8bd;border-radius:3px;background:#131713}.notes-cell{max-width:320px;white-space:normal}.empty-cell{padding:28px;text-align:center;color:#aeb5a5}body.light-machine{color:#171815;background:#d1d2cb}body.light-machine .community-panel,body.light-machine .table-shell{background:#d8d9d3;border-color:#777974;box-shadow:inset 0 0 15px #999}body.light-machine .community-intro,body.light-machine .community-status{color:#343530}body.light-machine .community-search label{color:#343530}body.light-machine .community-search input{color:#171815;background:#dedfd9;border-color:#777974}body.light-machine th{color:#552f0d;background:#c2c4bd}body.light-machine td{border-color:#a0a29c}body.light-machine tr:hover td{background:#c5d8bc}@media(max-width:900px){body{margin:0;padding:20px}.community-search{grid-template-columns:1fr}.community-search button{width:100%}}
+  </style>
+</head>
+<body>
+  {{ machine_chrome('community', 'COMMUNITY SETTINGS INDEX · SERIES 79', false, '', 'compact') }}
+  <main class="community-panel">
+    <h2>LaserCommunity</h2>
+    <p class="community-intro">Explore material settings permanently and anonymously contributed by laser operators. Filter by any one field or combine Laser Model / Source, Lens, Material, and Color to find settings used with a similar setup. These are experimental starting points—not universal recipes—so inspect every parameter and test safely on scrap material.</p>
+    <form id="community_search" class="community-search">
+      <label>Laser Model / Source<input id="laser" name="laser" autocomplete="off" placeholder="Example: JPT M7 60 W"></label>
+      <label>Lens<input id="lens" name="lens" autocomplete="off" placeholder="Example: 110 × 110 mm"></label>
+      <label>Material<input id="material" name="material" autocomplete="off" placeholder="Example: stainless steel"></label>
+      <label>Color<input id="color" name="color" list="official_colors" autocomplete="off" placeholder="Example: Blue"><datalist id="official_colors">{% for color_hex, color_name in official_colors.items() %}<option value="{{ color_name }}">{{ color_hex }}</option>{% endfor %}</datalist></label>
+      <button type="submit">Show</button>
+    </form>
+    <p id="community_status" class="community-status" role="status"></p>
+    <div class="table-shell"><table id="community_table"><tbody><tr><td class="empty-cell">Enter at least one filter, then choose Show.</td></tr></tbody></table></div>
+  </main>
+  <script>
+    const form = document.getElementById('community_search');
+    const status = document.getElementById('community_status');
+    const table = document.getElementById('community_table');
+    const preferredParameters = ['speed','minPower','maxPower','frequency','QPulseWidth','interval','angle','numPasses'];
+    const labelFor = value => String(value).replace(/([a-z0-9])([A-Z])/g,'$1 $2').replaceAll('_',' ');
+    const valueFor = value => value == null || value === '' ? '—' : typeof value === 'object' ? JSON.stringify(value) : String(value);
+    const render = rows => {
+      const parameterSet = new Set(rows.flatMap(row => Object.keys(row.settings || {})));
+      const parameters = [...preferredParameters.filter(key => parameterSet.delete(key)), ...[...parameterSet].sort((a,b) => a.localeCompare(b))];
+      const headers = ['Laser Model / Source','Lens','Material','Color','Operation',...parameters.map(labelFor),'Notes'];
+      const thead = document.createElement('thead');
+      const headerRow = document.createElement('tr');
+      headers.forEach(label => { const th=document.createElement('th'); th.textContent=label; headerRow.append(th); });
+      thead.append(headerRow);
+      const tbody = document.createElement('tbody');
+      rows.forEach(row => {
+        const tr = document.createElement('tr');
+        [row.laser_source,row.lens,row.material].forEach(value => { const td=document.createElement('td'); td.textContent=valueFor(value); tr.append(td); });
+        const color = document.createElement('td'); color.className='color-cell';
+        const swatch = document.createElement('span'); swatch.className='color-swatch';
+        if (/^#[0-9a-f]{6}$/i.test(row.swatch || '')) swatch.style.backgroundColor=row.swatch;
+        const colorName=document.createElement('span'); colorName.textContent=valueFor(row.color); color.append(swatch,colorName); tr.append(color);
+        const operation=document.createElement('td'); operation.textContent=valueFor(row.operation); tr.append(operation);
+        parameters.forEach(key => { const td=document.createElement('td'); td.textContent=valueFor(row.settings?.[key]); tr.append(td); });
+        const notes=document.createElement('td'); notes.className='notes-cell'; notes.textContent=valueFor(row.notes); tr.append(notes);
+        tbody.append(tr);
+      });
+      table.replaceChildren(thead,tbody);
+    };
+    form.addEventListener('submit', async event => {
+      event.preventDefault(); status.classList.remove('error');
+      const query = new URLSearchParams(new FormData(form));
+      if (![...query.values()].some(value => value.trim())) { status.textContent='Enter at least one filter.'; status.classList.add('error'); return; }
+      status.textContent='Reading the community settings index…';
+      try {
+        const response=await fetch(`/laser-community/settings?${query}`,{credentials:'same-origin'});
+        const data=await response.json();
+        if (!response.ok) throw new Error(data.message || 'Could not load community settings.');
+        status.textContent=`${data.count} matching setting${data.count === 1 ? '' : 's'}.`;
+        if (data.settings.length) render(data.settings);
+        else table.innerHTML='<tbody><tr><td class="empty-cell">No contributed settings match this combination yet.</td></tr></tbody>';
+      } catch (error) { status.textContent=error.message; status.classList.add('error'); }
+    });
+  </script>
+</body>
+</html>

@@ -45,6 +45,14 @@ LIGHTBURN_PALETTE_NAMES = {
     "#FA9ED4": "Orchid-Pink", "#500A78": "Deep-Purple", "#B45A00": "Rust-Brown",
     "#004754": "Teal", "#86FA88": "Bright-Mint-Green", "#FFDB66": "Light-Gold",
 }
+LIGHTBURN_PALETTE_BY_INDEX = {
+    0: "#000000", 1: "#0000FF", 2: "#FF0000", 3: "#00E000", 4: "#D0D000",
+    5: "#FF8000", 6: "#00E0E0", 7: "#FF00FF", 8: "#B4B4B4", 9: "#0000A0",
+    10: "#A00000", 11: "#00A000", 12: "#A0A000", 13: "#C08000", 14: "#00A0FF",
+    15: "#A000A0", 16: "#808080", 17: "#7D87B9", 18: "#BB7784", 19: "#4A6FE3",
+    20: "#D33F6A", 21: "#8CD78C", 22: "#F0B98D", 23: "#F6C4E1", 24: "#FA9ED4",
+    25: "#500A78", 26: "#B45A00", 27: "#004754", 28: "#86FA88", 29: "#FFDB66",
+}
 ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
     "crystal", "ripple", "centerline", "glitch", "shattered", "deep_fryer",
@@ -425,6 +433,90 @@ def _community_filter_partitions(laser_source, lens_field_of_view, materials):
     return sorted(partitions)
 
 
+def _community_query_partition(laser_source="", lens_field_of_view="", material=""):
+    values = {
+        "laser": _community_filter_value(laser_source),
+        "lens": _community_filter_value(lens_field_of_view),
+        "material": _community_filter_value(material),
+    }
+    signature = "#".join(
+        f"{key}={values[key]}" for key in ("laser", "lens", "material") if values[key]
+    )
+    return f"LASER_COMMUNITY_INDEX#{signature}" if signature else ""
+
+
+def _official_community_swatch(entry):
+    try:
+        layer_index = int(entry.get("settings", {}).get("index"))
+    except (TypeError, ValueError):
+        layer_index = None
+    color_hex = LIGHTBURN_PALETTE_BY_INDEX.get(layer_index, "")
+    return color_hex, LIGHTBURN_PALETTE_NAMES.get(color_hex, f"Layer {layer_index}" if layer_index is not None else "Unknown")
+
+
+def _laser_community_row(community, entry):
+    settings = _json_values(entry.get("settings", {}))
+    swatch, official_color = _official_community_swatch(entry)
+    return {
+        "laser_source": community.get("laser_source", ""),
+        "lens": community.get("lens_field_of_view", ""),
+        "material": entry.get("material", ""),
+        "color": official_color,
+        "swatch": swatch,
+        "operation": entry.get("type", ""),
+        "settings": settings,
+        "notes": community.get("notes", ""),
+    }
+
+
+def query_laser_community(laser_source="", lens_field_of_view="", material="", color="", limit=300):
+    """Return anonymous setting rows matching any exact equipment/material combination."""
+    table = account_table()
+    if not table:
+        raise RuntimeError("Laser Community storage is not configured.")
+    partition = _community_query_partition(laser_source, lens_field_of_view, material)
+    if not partition and color:
+        partition = f"LASER_COMMUNITY_COLOR_INDEX#color={_community_filter_value(color)}"
+    if not partition:
+        raise ValueError("Enter a laser model/source, lens, material, or color.")
+    try:
+        response = table.query(
+            KeyConditionExpression=Key("pk").eq(partition),
+            ScanIndexForward=False,
+            Limit=100,
+        )
+        rows = []
+        seen = set()
+        for pointer in response.get("Items", []):
+            if pointer.get("setting_pk") and pointer.get("setting_sk"):
+                setting = table.get_item(Key={"pk": pointer["setting_pk"], "sk": pointer["setting_sk"]}).get("Item") or {}
+                if not setting or _community_filter_value(_official_community_swatch(setting)[1]) != _community_filter_value(color):
+                    continue
+                rows.append(_laser_community_row(setting, setting))
+                if len(rows) >= limit:
+                    return rows
+                continue
+            canonical_key = {
+                "pk": pointer.get("community_pk", "LASER_COMMUNITY"),
+                "sk": pointer.get("community_sk", ""),
+            }
+            if not canonical_key["sk"] or canonical_key["sk"] in seen:
+                continue
+            seen.add(canonical_key["sk"])
+            community = table.get_item(Key=canonical_key).get("Item") or {}
+            for entry in community.get("summary", {}).get("entries", []):
+                if material and _community_filter_value(entry.get("material")) != _community_filter_value(material):
+                    continue
+                if color and _community_filter_value(_official_community_swatch(entry)[1]) != _community_filter_value(color):
+                    continue
+                rows.append(_laser_community_row(community, entry))
+                if len(rows) >= limit:
+                    return rows
+        return rows
+    except ClientError as error:
+        raise RuntimeError("Could not query Laser Community settings.") from error
+
+
 def _anonymous_community_contributor(user_id):
     """Return a stable, non-public token used only for distinct-contributor counts."""
     return hmac.new(COMMUNITY_CONTRIBUTOR_SECRET, user_id.encode("utf-8"), hashlib.sha256).hexdigest()
@@ -471,20 +563,34 @@ def _write_laser_community_record(table, user_id, library_id, summary, laser_sou
             entry_id = entry.get("entry_id")
             if entry_id is None or not isinstance(entry.get("settings"), dict):
                 continue
-            batch.put_item(Item={
+            setting_key = {
                 "pk": "LASER_COMMUNITY_SETTINGS",
                 "sk": f"SETTING#{library_id}#{entry_id}",
+            }
+            swatch_hex, official_color = _official_community_swatch(entry)
+            batch.put_item(Item={
+                **setting_key,
                 "community_pk": canonical_key["pk"],
                 "community_sk": canonical_key["sk"],
                 "contributor": contributor,
                 "laser_source": laser_source,
                 "lens_field_of_view": lens_field_of_view,
                 "material": entry.get("material", ""),
-                "description": entry.get("description", ""),
+                "description": official_color,
+                "swatch_hex": swatch_hex,
+                "source_description": entry.get("description", ""),
                 "type": entry.get("type", ""),
                 "settings": _dynamodb_values(entry["settings"]),
                 "updated_at": updated_at,
             })
+            color_key = _community_filter_value(official_color)
+            if color_key:
+                batch.put_item(Item={
+                    "pk": f"LASER_COMMUNITY_COLOR_INDEX#color={color_key}",
+                    "sk": f"UPDATED#{time.time_ns():019d}#SETTING#{library_id}#{entry_id}",
+                    "setting_pk": setting_key["pk"],
+                    "setting_sk": setting_key["sk"],
+                })
 
 
 def rename_user_material_library(user_id, library_id, display_name, laser_source=None,
