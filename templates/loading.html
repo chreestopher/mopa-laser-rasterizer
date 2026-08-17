@@ -230,12 +230,15 @@
     body::before { left: 22px; }
     body::after { right: 22px; }
     body.history-mode {
+        padding-right:38px;
+        padding-left:38px;
         border:3px solid #777864;
         border-radius:30px;
         background:repeating-linear-gradient(90deg,rgba(255,255,255,.014) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 5%,#505443,#363a30 42%,#24271f 100%);
         box-shadow:inset 0 0 0 5px #1b1e18,inset 0 0 60px #10120e,0 0 0 1px #9a9a7e,0 20px 50px #000;
     }
     body.history-mode::before,body.history-mode::after { content:none; display:none; }
+    body.history-mode .machine-workspace { margin-right:max(0px,calc(6.25vw - 38px)); margin-left:max(0px,calc(6.25vw - 38px)); }
     /* Reserve room for the console subtitle before the workspace begins. */
     .page-header {
         flex: 0 0 124px;
@@ -363,8 +366,9 @@
     body.light-machine .file-run-parameters { border-color:#8b8d87; }
     @media (min-width:900px) and (hover:hover) {
         body { zoom:.8; width:125vw; height:125vh; padding:38px 6.25vw; }
+        body.history-mode { padding-right:38px; padding-left:38px; }
     }
-    @media (max-width:700px) { body { width:100%; margin:0; padding:20px; border-radius:0; overflow-x:hidden; gap:0; } }
+    @media (max-width:700px) { body { width:100%; margin:0; padding:20px; border-radius:0; overflow-x:hidden; gap:0; } body.history-mode .machine-workspace { margin-right:0; margin-left:0; } }
     </style>
 <link rel="stylesheet" href="/static/machine_chrome.css?v=3">
 </head>
