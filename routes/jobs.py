@@ -26,7 +26,7 @@ from services import (
     bind_job_access,
     claim_daily_job,
     cleanup_redis_inflight,
-    get_history_entries,
+    get_accessible_history_entries,
     long_running_script,
     enqueue_raster_job,
     normalize_dimension,
@@ -251,7 +251,10 @@ def start_task():
         current_app.logger.warning("Could not record Material Library usage for %s: %s", task_id, error)
     add_history_entry(history_session, task_id, base_name, submitted_preset, submitted_filter,
                       material_name, run_parameters)
-    history_files = get_history_entries(history_session)
+    history_files = get_accessible_history_entries(
+        history_session, user_id=user_id or None,
+        browser_session=browser_job_session(),
+    )
     if not any(item.get("task_id") == task_id for item in history_files):
         history_files.insert(0, {"task_id": task_id, "source_name": base_name,
             "image_preset": submitted_preset,
@@ -292,17 +295,34 @@ def file_history(session_id):
         return jsonify({"files": []}), 400
     if not request_can_access_history(session_id):
         return jsonify({"status": "error", "message": "You do not have access to this job history."}), 403
-    return jsonify({"files": get_history_entries(session_id)})
+    try:
+        history_files = get_accessible_history_entries(
+            session_id,
+            user_id=request.headers.get("x-amzn-oidc-identity", "").strip() or None,
+            browser_session=browser_job_session(),
+        )
+    except RuntimeError:
+        current_app.logger.exception("Could not verify ownership for job history %s", session_id)
+        return jsonify({"status": "error", "message": "Could not verify job ownership."}), 503
+    return jsonify({"files": history_files})
 
 
 @routes.route("/job-history")
 def job_history():
     """Open the shared console in history mode for account or guest runs."""
     history_session = valid_history_session(request.cookies.get("mopa_history_session", "")) or ""
-    history_files = (
-        get_history_entries(history_session)
-        if history_session and request_can_access_history(history_session) else []
-    )
+    history_files = []
+    if history_session and request_can_access_history(history_session):
+        try:
+            history_files = get_accessible_history_entries(
+                history_session,
+                user_id=request.headers.get("x-amzn-oidc-identity", "").strip() or None,
+                browser_session=browser_job_session(),
+            )
+        except RuntimeError:
+            current_app.logger.exception(
+                "Could not verify ownership for job history %s", history_session,
+            )
     active_task_id = valid_history_session(request.args.get("task_id", "")) or ""
     if active_task_id:
         access_error = _job_access_error(active_task_id, browser_navigation=True)

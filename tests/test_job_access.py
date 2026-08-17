@@ -72,6 +72,40 @@ class JobAccessTests(unittest.TestCase):
     def test_job_without_an_owner_binding_fails_closed(self):
         self.assertFalse(services.job_access_allowed(TASK_ID, browser_session=BROWSER_A))
 
+    def test_browser_history_excludes_jobs_the_requester_cannot_access(self):
+        visible_job = {"task_id": TASK_ID, "source_name": "mine.png"}
+        hidden_job = {
+            "task_id": "22222222-2222-4222-8222-222222222222",
+            "source_name": "another-account.png",
+        }
+        with (
+            patch.object(
+                services, "get_history_entries", return_value=[visible_job, hidden_job],
+            ),
+            patch.object(
+                services, "job_access_allowed", side_effect=[True, False],
+            ) as access_allowed,
+        ):
+            entries = services.get_accessible_history_entries(
+                HISTORY_ID, user_id="account-a", browser_session=BROWSER_A,
+            )
+
+        self.assertEqual([visible_job], entries)
+        self.assertEqual(2, access_allowed.call_count)
+        access_allowed.assert_any_call(
+            TASK_ID, user_id="account-a", browser_session=BROWSER_A,
+        )
+
+    def test_logged_out_browser_history_hides_account_owned_jobs(self):
+        account_job = {"task_id": TASK_ID, "source_name": "account.png"}
+        with patch.object(services, "get_history_entries", return_value=[account_job]):
+            with patch.object(services, "get_job_owner", return_value="account-a"):
+                entries = services.get_accessible_history_entries(
+                    HISTORY_ID, browser_session=BROWSER_A,
+                )
+
+        self.assertEqual([], entries)
+
     def test_history_id_cannot_be_claimed_by_another_browser(self):
         claimed_a = services.claim_history_session(HISTORY_ID, BROWSER_A)
         claimed_b = services.claim_history_session(HISTORY_ID, BROWSER_B)

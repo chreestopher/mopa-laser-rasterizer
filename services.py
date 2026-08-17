@@ -775,6 +775,16 @@ def get_history_entries(session_id):
     return entries
 
 
+def get_accessible_history_entries(session_id, user_id=None, browser_session=None):
+    """Return only browser-history rows whose jobs the requester still owns."""
+    return [
+        entry for entry in get_history_entries(session_id)
+        if job_access_allowed(
+            entry.get("task_id"), user_id=user_id, browser_session=browser_session,
+        )
+    ]
+
+
 def parse_abstract_filter_parameters(raw_value):
     if not raw_value:
         return {}
