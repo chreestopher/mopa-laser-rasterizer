@@ -383,7 +383,7 @@ class Lightburn:
             self.write_cuts(f)
             self.write_objects(f)
             f.write(file_footer)
-            print(f"Wrote {filename}.  You can load it directly into lightburn.", flush=True)
+            print(f"Wrote {filename}.  You can load it directly into LightBurn.", flush=True)
 
     def write_cuts(self, f):
         for layer in self._layers:
@@ -409,7 +409,7 @@ class Lightburn:
         self.write_object_list(self.top, f)
 
     def parse_material_library(self, filename):
-        """ Parse a lightburn material library file, and return a list of layers"""
+        """Parse a LightBurn Material Library file and return a list of layers."""
         from xml.etree import ElementTree as ET
         tree = ET.parse(filename)
         root = tree.getroot()
@@ -518,7 +518,7 @@ class Lightburn:
                 setting.entryDesc = entry.attrib.get("Desc")
                 setting.entryThickness = entry.attrib.get("Thickness")
                 setting.entryNoThickTitle = entry.attrib.get("NoThickTitle")
-                # Lightburn tool layers are workspace helpers, not laser
+                # LightBurn tool layers are workspace helpers, not laser
                 # material settings.  Exclude them before any caller can
                 # color-match, display, or copy them into a project layer.
                 setting_type = str(getattr(setting, "type", "") or "").strip().casefold()

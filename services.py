@@ -77,7 +77,7 @@ def _dynamodb_values(value):
         return value
     if isinstance(value, float):
         return Decimal(str(value))
-    # Lightburn and NumPy occasionally expose numeric scalar subclasses. They
+    # LightBurn and NumPy occasionally expose numeric scalar subclasses. They
     # look like ordinary values in Python but boto3 will not serialize them.
     if isinstance(value, Integral):
         return int(value)
@@ -101,7 +101,7 @@ def _json_values(value):
 
 
 def _setting_values(setting):
-    """Keep the actual Lightburn controls, including Offset Fill sublayers."""
+    """Keep the actual LightBurn controls, including Offset Fill sublayers."""
     hidden = {"materialName", "entryDesc", "entryThickness", "entryNoThickTitle", "subLayers"}
     values = {}
     for key, value in vars(setting).items():
@@ -131,7 +131,7 @@ def resolve_material_setting_usage(material_settings_path, material_name, select
     chosen.update({names["#000000"].casefold(), names["#B4B4B4"].casefold()})
     requested_material = str(material_name or "").strip().casefold()
     matched = {}
-    for setting in Lightburn().parse_material_library(material_settings_path):
+    for setting in LightBurn().parse_material_library(material_settings_path):
         if str(getattr(setting, "materialName", "") or "").strip().casefold() != requested_material:
             continue
         labels = {
@@ -275,7 +275,7 @@ def get_user_material_library(user_id, library_id):
 
 def save_user_material_library(user_id, local_file_path, material_name="", summary=None,
                                display_name=None, source_filename=None):
-    """Store an uploaded Lightburn library once under its Cognito owner."""
+    """Store an uploaded LightBurn library once under its Cognito owner."""
     table = account_table()
     if not table or not S3_BUCKET_NAME:
         raise RuntimeError("Account Material Library storage is not configured.")

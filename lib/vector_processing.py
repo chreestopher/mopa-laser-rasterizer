@@ -130,7 +130,7 @@ def resize_to_specific_height_or_width( image, width=0, height=0 ):
     return resized_img
 
 found_lb_hex = {}
-# Settings-only palette entries may be loaded as Lightburn layers but must
+# Settings-only palette entries may be loaded as LightBurn layers but must
 # never become a raster-color destination.
 NON_IMAGE_SWATCHES = set()
 
@@ -248,10 +248,10 @@ def parse_material_settings(
     This function:
         1) parses the material settings file
         2) filters the materials based on the limit colors passed in
-        3) filters the lightburn layer TARGET_COLORS:
+        3) filters the LightBurn layer TARGET_COLORS:
             to only include colors that exist in the material setings list
-        4) returns the new lightburn layer TARGET_COLORS for use in pixel generation=
-            this ensures that we only find the closest lightburn layer color that exists in our material settings
+        4) returns the new LightBurn layer TARGET_COLORS for use in pixel generation=
+            this ensures that we only find the closest LightBurn layer color that exists in our material settings
     """
     if material_layer_report is None:
         material_layer_report = {"loaded": [], "skipped": []}
@@ -299,7 +299,7 @@ def parse_material_settings(
         if metadata[2].casefold() in {str(color).strip().casefold() for color in limit_colors}
     }
     for item in matching_settings:
-        # Lightburn stores both an Entry description and a cut-setting name.
+        # LightBurn stores both an Entry description and a cut-setting name.
         # Accept either as the library-side label, then make the editable
         # palette label authoritative for the generated project layer name.
         library_labels = (getattr(item, "entryDesc", ""), getattr(item, "name", ""))
@@ -331,7 +331,7 @@ def parse_material_settings(
             lb.add_layer(item)
             material_layer_report["loaded"].append(item.name)
             printLogMessage(
-                f"Additional filter setting '{item.name}' assigned to Lightburn layer {item.index}."
+                f"Additional filter setting '{item.name}' assigned to LightBurn layer {item.index}."
             )
             continue
         if target is None:
@@ -345,7 +345,7 @@ def parse_material_settings(
             material_layer_report["skipped"].append(skipped_name)
             printLogMessage(
                 f"Material layer '{skipped_name}' skipped: '{existing_name}' already has "
-                f"a setting assigned for Lightburn layer {target_metadata[1]}."
+                f"a setting assigned for LightBurn layer {target_metadata[1]}."
             )
             continue
 
@@ -358,7 +358,7 @@ def parse_material_settings(
         lb.add_layer(item)
         material_layer_report["loaded"].append(item.name)
         printLogMessage(
-            f"Material layer '{item.entryDesc}' assigned to Lightburn layer "
+            f"Material layer '{item.entryDesc}' assigned to LightBurn layer "
             f"{item.index}: {item.name} "
             f"(min/max power {item.minPower}/{item.maxPower}, speed {item.speed}, "
             f"frequency {item.frequency}, pulse width {item.QPulseWidth})"
@@ -374,9 +374,9 @@ def parse_material_settings(
 def init_lightburn(the_colors_limit, color_name_overrides=None):
     """
         This Function:
-            1) initializes lightburn module
+            1) initializes LightBurn module
             2) initiallizes the full list of lighburn layer colors
-            3) filters the lightburn layer colors so it only contains colors in limit_colors list
+            3) filters the LightBurn layer colors so it only contains colors in limit_colors list
             4) returns the initialized objects to be used by other functions
     """
     # Define the module name and its exact absolute file path
@@ -457,7 +457,7 @@ def init_lightburn(the_colors_limit, color_name_overrides=None):
     sys.modules[module_name] = lightburn
     spec.loader.exec_module(lightburn)
 
-    # Create the lightburn object
+    # Create the LightBurn object
     lb = lightburn.Lightburn()
     return filtered_colors, lb, lightburn
 
@@ -530,7 +530,7 @@ def normalize_vector_parameters(
 
 def find_black_layer(target_colors):
     """
-    Dynamically locate the black color and its Lightburn layer ID.
+    Dynamically locate the black color and its LightBurn layer ID.
     """
 
     black_hex = next(
@@ -594,7 +594,7 @@ def prepare_raster_image(
 
         active_swatches = list((target_colors or {}).keys())
         if active_swatches:
-            # Quantize to the actual active Lightburn palette instead of an
+            # Quantize to the actual active LightBurn palette instead of an
             # unrelated adaptive palette. This prevents a later hue snap from
             # collapsing many generic quantization colors into Light-Gray.
             palette = Image.new("P", (1, 1))
@@ -604,7 +604,7 @@ def prepare_raster_image(
             palette.putpalette(palette_values + [0] * (768 - len(palette_values)))
             img = img.quantize(palette=palette, dither=Image.Dither.NONE).convert("RGB")
             printLogMessage(
-                f"Using {len(active_swatches)} active Lightburn swatches as the quantization palette."
+                f"Using {len(active_swatches)} active LightBurn swatches as the quantization palette."
             )
         else:
             img = img.quantize(
@@ -1059,7 +1059,7 @@ def process_color_layers(
         if layer_meta is None:
             # Color snapping can produce a neutral gray even when the chosen
             # Material Library has no matching gray setting. Only geometry
-            # backed by an actual Lightburn layer may be exported; skipping it
+            # backed by an actual LightBurn layer may be exported; skipping it
             # lets the synthetic black canvas occupy that space rather than
             # terminating the entire job with a KeyError.
             printLogMessage(
@@ -1124,7 +1124,7 @@ def process_color_layers(
 # ============================================================================
 
 def build_black_canvas(width, height, abstract_filter, filter_parameters=None):
-    """Build the complete black canvas used for Lightburn nesting."""
+    """Build the complete black canvas used for LightBurn nesting."""
     return apply_abstract_filter(
         box(0, 0, width, height),
         abstract_filter,
@@ -1367,9 +1367,9 @@ def push_geometry_to_lightburn(
     override_layer_id=None
 ):
     """
-    Convert Shapely geometry into Lightburn paths.
+    Convert Shapely geometry into LightBurn paths.
 
-    ``override_layer_id`` writes the same closed paths to another Lightburn
+    ``override_layer_id`` writes the same closed paths to another LightBurn
     layer. The synthetic black canvas uses this to receive colored shapes as
     nested punch-through paths.
     """
@@ -1476,9 +1476,9 @@ def export_processed_layers(
     black_lightburn_geometry=None,
 ):
     """
-    Sort, scale, and export all finalized geometry to SVG and Lightburn.
+    Sort, scale, and export all finalized geometry to SVG and LightBurn.
 
-    SVG uses the gap-only black geometry. Lightburn uses a complete black
+    SVG uses the gap-only black geometry. LightBurn uses a complete black
     canvas with colored paths nested on the black layer so it can punch them
     through during fill processing.
     """
@@ -1526,7 +1526,7 @@ def export_processed_layers(
 
         printLogMessage(
             f"[Export layer {export_index}/{total_export_layers}] START: "
-            f"color {color_hex}, Lightburn layer {layer_id} {layer_color_name}; "
+            f"color {color_hex}, LightBurn layer {layer_id} {layer_color_name}; "
             f"batch objects {geometry_count}/{geometry_count}."
         )
 
@@ -1573,7 +1573,7 @@ def export_processed_layers(
         )
 
         # --------------------------------------------------------------------
-        # Lightburn
+        # LightBurn
         # --------------------------------------------------------------------
 
         if color_hex in target_colors:
@@ -1581,7 +1581,7 @@ def export_processed_layers(
             printLogMessage(
                 f"[Export layer {export_index}/{total_export_layers}] START: "
                 f"writing {geometry_count}/{geometry_count} objects to "
-                f"Lightburn layer {layer_id} {layer_color_name}."
+                f"LightBurn layer {layer_id} {layer_color_name}."
             )
 
             lightburn_geometry = export_geometry
@@ -1605,13 +1605,13 @@ def export_processed_layers(
             printLogMessage(
                 f"[Export layer {export_index}/{total_export_layers}] DONE: "
                 f"wrote {geometry_count}/{geometry_count} objects to "
-                f"Lightburn layer {layer_id} {layer_color_name}."
+                f"LightBurn layer {layer_id} {layer_color_name}."
             )
 
             if punch_through_black and color_hex != black_hex:
                 printLogMessage(
                     f" -> Adding {layer_color_name} geometry to Black "
-                    "Layer for Lightburn punch-through"
+                    "Layer for LightBurn punch-through"
                 )
                 push_geometry_to_lightburn(
                     export_geometry,
@@ -1632,7 +1632,7 @@ def save_vector_output(
     lb_project_instance
 ):
     """
-    Write SVG and Lightburn output files.
+    Write SVG and LightBurn output files.
     """
 
     lightburn_object_count = len(getattr(lb_project_instance, "objects", []))
@@ -1662,7 +1662,7 @@ def save_vector_output(
 
     printLogMessage(
         f"[File serialization 2/2] START: writing "
-        f"{lightburn_object_count}/{lightburn_object_count} Lightburn objects to "
+        f"{lightburn_object_count}/{lightburn_object_count} LightBurn objects to "
         f"{output_svg_path}.lbrn2."
     )
     lb_project_instance.write(
@@ -1670,11 +1670,11 @@ def save_vector_output(
     )
     printLogMessage(
         f"[File serialization 2/2] DONE: wrote "
-        f"{lightburn_object_count}/{lightburn_object_count} Lightburn objects."
+        f"{lightburn_object_count}/{lightburn_object_count} LightBurn objects."
     )
 
     printLogMessage(
-        "SVG and Lightburn export complete."
+        "SVG and LightBurn export complete."
     )
 
 # ============================================================================
@@ -1704,7 +1704,7 @@ def raster_to_puzzle_and_lightburn(
     """
     Parses a raster image, applies a structural vector scale_factor,
     saves a gapless SVG puzzle file, and pushes matching paths into
-    Lightburn.
+    LightBurn.
 
     The black layer is constructed as:
 
@@ -1720,10 +1720,10 @@ def raster_to_puzzle_and_lightburn(
         - variable smoothing
         - abstract filters
         - SVG export
-        - Lightburn export
+        - LightBurn export
     """
 
-    # Quantization uses the real Lightburn layers that survived both palette
+    # Quantization uses the real LightBurn layers that survived both palette
     # filtering and exact Material Library matching. Black-and-white photos
     # are the sole exception and deliberately reduce the source raster to two.
     quantize_colors = 2 if image_preset == "bw_dither_photograph" else len(TARGET_COLORS)
@@ -1783,7 +1783,7 @@ def raster_to_puzzle_and_lightburn(
     )
 
     # The exporter resolves this same native black-layer ID when it emits
-    # Lightburn hole-punch paths.
+    # LightBurn hole-punch paths.
     _ = black_layer_id
 
     # =========================================================================
@@ -1800,7 +1800,7 @@ def raster_to_puzzle_and_lightburn(
         quantize_colors=quantize_colors,
         # BW photo mode intentionally uses Pillow's adaptive two-color
         # reduction so its transparent-light-area option can inspect the two
-        # actual source values. Every other preset uses real Lightburn swatches.
+        # actual source values. Every other preset uses real LightBurn swatches.
         target_colors=(None if image_preset == "bw_dither_photograph" else {
             color_hex: metadata for color_hex, metadata in TARGET_COLORS.items()
             if color_hex.upper() not in NON_IMAGE_SWATCHES
@@ -1875,7 +1875,7 @@ def raster_to_puzzle_and_lightburn(
     if centerline_mode:
         # Quantized filled color regions cannot produce faithful line art.
         # Select dark source-image outlines first, then trace them only on the
-        # user's black Lightburn layer.
+        # user's black LightBurn layer.
         printLogMessage(
             f"[Centerline source extraction 1/2] START: preparing "
             f"{width * height}/{width * height} source pixels."
@@ -1988,7 +1988,7 @@ def raster_to_puzzle_and_lightburn(
     )
 
     # =========================================================================
-    # 8. Export SVG + Lightburn
+    # 8. Export SVG + LightBurn
     # =========================================================================
 
     export_processed_layers(

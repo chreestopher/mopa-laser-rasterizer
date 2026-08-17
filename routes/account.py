@@ -101,7 +101,7 @@ def preferences():
 
 
 def setting_values(setting):
-    """Serialize the meaningful primitive values from one Lightburn setting."""
+    """Serialize the meaningful primitive values from one LightBurn setting."""
     hidden = {"materialName", "entryDesc", "entryThickness", "entryNoThickTitle", "subLayers"}
     values = {}
     for key, value in vars(setting).items():
@@ -115,8 +115,8 @@ def setting_values(setting):
 
 
 def library_entries(path, include_settings=False):
-    """Return a compact, safe-to-display summary of a Lightburn library."""
-    settings = Lightburn().parse_material_library(path)
+    """Return a compact, safe-to-display summary of a LightBurn library."""
+    settings = LightBurn().parse_material_library(path)
     entries, material_names = [], []
     for entry_id, setting in enumerate(settings):
         material_name = str(getattr(setting, "materialName", "") or "").strip()
@@ -140,7 +140,7 @@ def library_entries(path, include_settings=False):
 def uploaded_library_files():
     files = request.files.getlist("libraries")
     if not files:
-        raise ValueError("Choose one or more Lightburn Material Library files.")
+        raise ValueError("Choose one or more LightBurn Material Library files.")
     if len(files) > 10:
         raise ValueError("Upload up to 10 Material Library files at a time.")
     clean = []
@@ -316,7 +316,7 @@ def mutate_library(user_id, library_id, callback):
 
 
 def selected_settings_library(user_id, selections, material_name):
-    """Build a valid Lightburn library containing only account-owned selections."""
+    """Build a valid LightBurn library containing only account-owned selections."""
     if not isinstance(selections, list) or not selections or len(selections) > 500:
         raise ValueError("Select between 1 and 500 Material Library settings.")
     material_name = str(material_name or "").strip()
@@ -361,7 +361,7 @@ def selected_settings_library(user_id, selections, material_name):
 
 @routes.route("/account/material-libraries/selected-settings", methods=["POST"])
 def selected_material_library_settings():
-    """Copy or export selected settings while preserving Lightburn XML intact."""
+    """Copy or export selected settings while preserving LightBurn XML intact."""
     user_id = authenticated_user_id()
     if not user_id:
         return jsonify({"status": "error", "message": "Sign in to manage Material Libraries."}), 401
@@ -432,7 +432,7 @@ def preview_material_libraries():
             file.save(temp_path)
             summary = library_entries(temp_path)
             if not summary["entry_count"]:
-                raise ValueError(f"{filename} contains no Lightburn Material Library entries.")
+                raise ValueError(f"{filename} contains no LightBurn Material Library entries.")
             previews.append({"index": index, "filename": filename, "summary": summary})
         return jsonify({"status": "ok", "libraries": previews})
     except (RuntimeError, OSError, ValueError, ET.ParseError) as error:
