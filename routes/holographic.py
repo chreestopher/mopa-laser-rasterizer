@@ -30,8 +30,10 @@ from services import (
     redis_client,
     raster_queue_position,
     record_user_job,
+    remember_guest_material_library,
     save_user_material_library,
     save_user_holographic_recipe,
+    select_guest_material_library,
     upload_task_artifact,
     valid_history_session,
 )
@@ -90,7 +92,7 @@ def _guest_profile_url(filename, user_id):
 
 
 def _resolve_material_library(task_id, uploaded_library, saved_library_id, history_session,
-                              material_name=""):
+                              material_name="", guest_library_id=""):
     """Use the Rasterizer's shared guest cache and account Material Vault."""
     upload_folder = current_app.config["UPLOAD_FOLDER"]
     user_id = request.headers.get("x-amzn-oidc-identity", "").strip()
@@ -105,16 +107,14 @@ def _resolve_material_library(task_id, uploaded_library, saved_library_id, histo
         artifact_key = upload_task_artifact(
             task_id, library_path, category="inputs", user_id=user_id or None
         )
-        if cache_key:
-            redis_client.set(
-                cache_key,
-                json.dumps({"path": library_path, "filename": filename, "key": artifact_key}),
-                ex=HISTORY_TTL_SECONDS,
-            )
         if user_id:
             save_user_material_library(
                 user_id, library_path, material_name, source_filename=filename
             )
+        elif history_session:
+            remember_guest_material_library(history_session, {
+                "path": library_path, "filename": filename, "key": artifact_key,
+            })
         return library_path
 
     if saved_library_id:
@@ -129,6 +129,22 @@ def _resolve_material_library(task_id, uploaded_library, saved_library_id, histo
         library_path = os.path.join(upload_folder, f"{task_id}_saved_material_{filename}")
         download_user_material_library(saved_library, library_path)
         return library_path
+
+    if guest_library_id:
+        if user_id:
+            raise PermissionError("Choose a Material Vault library for an authenticated workflow.")
+        cached = select_guest_material_library(history_session, guest_library_id)
+        if not cached:
+            raise FileNotFoundError("That browser-session Material Library is no longer available.")
+        library_path = cached.get("path")
+        artifact_key = cached.get("key")
+        if artifact_key and not os.path.isfile(library_path or ""):
+            filename = secure_filename(cached.get("filename") or "library.clb")
+            library_path = os.path.join(upload_folder, f"{task_id}_cached_material_{filename}")
+            download_task_artifact(artifact_key, library_path)
+        if library_path and os.path.isfile(library_path):
+            return library_path
+        raise FileNotFoundError("That browser-session Material Library has expired.")
 
     if cache_key:
         try:
@@ -1002,6 +1018,7 @@ def calibration_grid():
         return auth_failure
     library = request.files.get("material_settings")
     saved_library_id = str(request.form.get("saved_material_library_id", "")).strip()
+    guest_library_id = str(request.form.get("guest_material_library_id", "")).strip()
     material = str(request.form.get("material", "")).strip()
     description = str(request.form.get("setting_description", "")).strip()
     laser_source = str(request.form.get("laser_source", "")).strip()
@@ -1027,9 +1044,14 @@ def calibration_grid():
 
     task_id = str(uuid.uuid4())
     upload_folder = current_app.config["UPLOAD_FOLDER"]
+    history_session = private_history_session(
+        valid_history_session(request.cookies.get("mopa_history_session"))
+        or valid_history_session(request.form.get("history_session"))
+    )
     try:
         library_path = _resolve_material_library(
-            task_id, library, saved_library_id, request.form.get("history_session"), material
+            task_id, library, saved_library_id, history_session, material,
+            guest_library_id=guest_library_id,
         )
     except PermissionError as error:
         return jsonify({"status": "error", "message": str(error)}), 401
@@ -1444,6 +1466,7 @@ def build_holographic_artwork():
     saved_recipe_id = str(request.form.get("saved_holographic_recipe_id", "")).strip()
     material_file = request.files.get("material_settings")
     saved_library_id = str(request.form.get("saved_material_library_id", "")).strip()
+    guest_library_id = str(request.form.get("guest_material_library_id", "")).strip()
     # Task IDs and access identities are server-controlled. Client-generated
     # IDs are useful UI hints but must not be allowed to claim another job.
     artwork_task_id = str(uuid.uuid4())
@@ -1467,7 +1490,8 @@ def build_holographic_artwork():
         )
         library_path = _resolve_material_library(
             artwork_task_id, material_file, saved_library_id,
-            history_session, request.form.get("material", "")
+            history_session, request.form.get("material", ""),
+            guest_library_id=guest_library_id,
         )
         preserve_black_outlines = request.form.get("preserve_black_outlines") in {"on", "true", "1"}
         cut_mode = str(request.form.get("cut_mode", "setting")).strip().lower()

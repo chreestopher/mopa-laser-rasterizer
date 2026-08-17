@@ -56,6 +56,21 @@ class HolographicAuthenticationCoverageTests(unittest.TestCase):
         self.assertGreaterEqual(template.count("data.profile_url\n          ? downloadButtonList"), 3)
         self.assertIn("await loadSavedHolographicRecipes(data.saved_recipe_id || '')", template)
 
+    def test_guest_material_libraries_are_select_only_in_job_forms(self):
+        holographic_template = (
+            ROOT / "templates" / "holographic_etching.html"
+        ).read_text(encoding="utf-8")
+        rasterizer_template = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+        vault_template = (
+            ROOT / "templates" / "material_libraries.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertEqual(2, holographic_template.count('name="guest_material_library_id"'))
+        self.assertEqual(1, rasterizer_template.count('name="guest_material_library_id"'))
+        self.assertIn("/browser-material-libraries", holographic_template)
+        self.assertIn("/browser-material-libraries", rasterizer_template)
+        self.assertNotIn("guest_material_library_id", vault_template)
+
 
 if __name__ == "__main__":
     unittest.main()

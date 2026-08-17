@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest.mock import patch
 
@@ -130,6 +131,33 @@ class JobAccessTests(unittest.TestCase):
 
         self.assertEqual(first_id, first_browser.get("/browser-session").get_data(as_text=True))
         self.assertNotEqual(first_id, second_browser.get("/browser-session").get_data(as_text=True))
+
+    def test_guest_browser_can_retain_and_select_multiple_material_libraries(self):
+        first = services.remember_guest_material_library(HISTORY_ID, {
+            "filename": "polished-steel.clb",
+            "path": "C:/work/polished-steel.clb",
+            "key": "guest/jobs/one/inputs/polished-steel.clb",
+            "created_at": 10,
+        })
+        second = services.remember_guest_material_library(HISTORY_ID, {
+            "filename": "brushed-steel.clb",
+            "path": "C:/work/brushed-steel.clb",
+            "key": "guest/jobs/two/inputs/brushed-steel.clb",
+            "created_at": 20,
+        })
+
+        listed = services.list_guest_material_libraries(HISTORY_ID)
+        self.assertEqual(
+            [second["library_id"], first["library_id"]],
+            [library["library_id"] for library in listed],
+        )
+        self.assertNotIn("path", listed[0])
+        self.assertNotIn("key", listed[0])
+
+        selected = services.select_guest_material_library(HISTORY_ID, first["library_id"])
+        self.assertEqual("polished-steel.clb", selected["filename"])
+        current = json.loads(self.redis.get(f"material-library:{HISTORY_ID}"))
+        self.assertEqual(first["library_id"], current["library_id"])
 
 
 if __name__ == "__main__":

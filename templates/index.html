@@ -455,6 +455,7 @@
       <div><label for="material_settings">2. Choose your Lightburn Material Library:</label></div>
       <div><input type="file" id="material_settings" name="material_settings" accept=".clb,.lbmat,.lbrn" aria-describedby="remembered_material_library"></div>
       <div id="remembered_material_library" class="remembered-input-note" hidden></div>
+      <div id="guest_material_library_row" hidden><label for="guest_material_library">Or reuse a library retained by this browser session:</label><select id="guest_material_library" name="guest_material_library_id"><option value="">Choose a browser-session library…</option></select></div>
       <div id="saved_material_library_row" hidden><label for="saved_material_library">Or use one of your saved Material Libraries:</label><select id="saved_material_library" name="saved_material_library_id"><option value="">Choose an account library…</option></select></div>
     </div>    
     <div>
@@ -950,6 +951,7 @@
               .catch(() => {});
           }
           if (signedInAccount) loadSavedMaterialLibraries();
+          else loadGuestMaterialLibraries();
         })
         .catch(() => {});
       const sessionFromLink = new URLSearchParams(window.location.search).get('history_session');
@@ -962,6 +964,8 @@
       sessionStorage.setItem('mopa-history-session', historySession);
       const materialInput = document.getElementById('material');
       const materialLibraryInput = document.getElementById('material_settings');
+      const guestMaterialLibraryRow = document.getElementById('guest_material_library_row');
+      const guestMaterialLibraryInput = document.getElementById('guest_material_library');
       const savedMaterialLibraryRow = document.getElementById('saved_material_library_row');
       const savedMaterialLibraryInput = document.getElementById('saved_material_library');
       const uploadErrorModal = document.getElementById('upload_error_modal');
@@ -995,6 +999,7 @@
           if (status.state !== 'authenticated') return false;
           stopAuthenticationPoll();
           signedInAccount = true;
+          guestMaterialLibraryRow.hidden = true;
           if (window.machineChrome) window.machineChrome.showAuthStatus(status);
           loadSavedMaterialLibraries();
           continueAsGuestInput.value = '0';
@@ -1018,6 +1023,8 @@
       uploadErrorLogin.addEventListener('click', beginAuthentication);
       uploadErrorGuest.addEventListener('click', () => {
         stopAuthenticationPoll();
+        signedInAccount = false;
+        loadGuestMaterialLibraries();
         continueAsGuestInput.value = '1';
         uploadErrorModal.hidden = true;
         uploadForm.requestSubmit();
@@ -1043,6 +1050,25 @@
           });
         })
         .catch(() => {});
+      const guestMaterialLibraryKey = `mopa-guest-material-library:${historySession}`;
+      const loadGuestMaterialLibraries = () => fetch(
+        `/browser-material-libraries?history_session=${encodeURIComponent(historySession)}`,
+        {credentials:'same-origin', cache:'no-store'},
+      ).then(response => response.ok ? response.json() : null).then(data => {
+        const libraries = data?.libraries || [];
+        guestMaterialLibraryInput.replaceChildren(new Option('Choose a browser-session library…', ''));
+        guestMaterialLibraryRow.hidden = signedInAccount || !libraries.length;
+        libraries.forEach(library => {
+          const option = document.createElement('option');
+          option.value = library.library_id;
+          option.textContent = library.filename;
+          guestMaterialLibraryInput.appendChild(option);
+        });
+        const rememberedId = sessionStorage.getItem(guestMaterialLibraryKey);
+        if (rememberedId && libraries.some(library => library.library_id === rememberedId)) {
+          guestMaterialLibraryInput.value = rememberedId;
+        }
+      }).catch(() => {});
       const materialNameKey = `mopa-material-name:${historySession}`;
       const materialLibraryKey = `mopa-material-library:${historySession}`;
       const rememberedMaterialName = sessionStorage.getItem(materialNameKey);
@@ -1059,6 +1085,7 @@
       materialLibraryInput.addEventListener('change', () => {
         if (!materialLibraryInput.files.length) return;
         savedMaterialLibraryInput.value = '';
+        guestMaterialLibraryInput.value = '';
         const filename = materialLibraryInput.files[0].name;
         sessionStorage.setItem(materialLibraryKey, filename);
         rememberedMaterialNote.hidden = false;
@@ -1067,8 +1094,17 @@
       savedMaterialLibraryInput.addEventListener('change', () => {
         if (!savedMaterialLibraryInput.value) return;
         materialLibraryInput.value = '';
+        guestMaterialLibraryInput.value = '';
         rememberedMaterialNote.hidden = false;
         rememberedMaterialNote.textContent = `Using saved Material Library: ${savedMaterialLibraryInput.selectedOptions[0].textContent}.`;
+      });
+      guestMaterialLibraryInput.addEventListener('change', () => {
+        if (!guestMaterialLibraryInput.value) return;
+        materialLibraryInput.value = '';
+        savedMaterialLibraryInput.value = '';
+        sessionStorage.setItem(guestMaterialLibraryKey, guestMaterialLibraryInput.value);
+        rememberedMaterialNote.hidden = false;
+        rememberedMaterialNote.textContent = `Using browser-session Material Library: ${guestMaterialLibraryInput.selectedOptions[0].textContent}.`;
       });
       const encodedSettings = new URLSearchParams(window.location.search).get('settings');
       if (encodedSettings) {
@@ -1121,7 +1157,7 @@
         const artworkLooksLikeImage = artworkFile && (
           artworkFile.type.startsWith('image/') || /\.(avif|bmp|gif|jpe?g|png|tiff?|webp)$/i.test(artworkFile.name)
         );
-        const materialLooksValid = materialFile || savedMaterialLibraryInput.value || rememberedLibraryName;
+        const materialLooksValid = materialFile || savedMaterialLibraryInput.value || guestMaterialLibraryInput.value;
         document.getElementById('image').setCustomValidity(
           artworkLooksLikeImage ? '' : 'Choose an image file for your artwork, not a Lightburn Material Library.'
         );

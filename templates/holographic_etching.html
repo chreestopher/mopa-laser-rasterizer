@@ -161,9 +161,15 @@
       </select>
       <span class="form-note">This uses the same saved libraries as Rasterizer.</span>
     </label>
-    <input id="calibration_material_settings" type="file" name="material_settings" hidden disabled>
+    <label id="guest_calibration_library_row" class="full-width" hidden>Material Library source
+      <select id="guest_calibration_library_source" name="guest_material_library_id"></select>
+      <span class="form-note">Reuse the library remembered by this browser session, or upload a different Lightburn Material Library for this calibration.</span>
+    </label>
+    <label id="calibration_material_upload_row" class="full-width" hidden>Lightburn Material Library file
+      <input id="calibration_material_settings" type="file" name="material_settings" accept=".clb,.lbmat,.lbrn" disabled>
+    </label>
     <div id="calibration_remembered_material_library" class="remembered-input-note full-width" hidden></div>
-    <p class="form-note">Need another library? Add it from the <a href="/material-libraries">Material Vault</a>, then return here.</p>
+    <p id="calibration_vault_note" class="form-note" hidden>Need another library? Add it from the <a href="/material-libraries">Material Vault</a>, then return here.</p>
     <label>Material name<input id="calibration_material" name="material" list="calibration_material_suggestions" value="stainless - steel" required><datalist id="calibration_material_suggestions"></datalist></label>
     <label>Setting Description<div class="calibration-description-autocomplete"><input id="calibration_setting_description" name="setting_description" value="holographic-etching" autocomplete="off" placeholder="Type or choose a palette color" role="combobox" aria-autocomplete="list" aria-controls="calibration_setting_suggestions" aria-expanded="false" required><div id="calibration_setting_suggestions" class="calibration-description-menu" role="listbox" hidden></div></div><span class="form-note">Type to filter the Rasterizer palette, choose a swatch, or edit the color name directly to match your Material Library Description.</span></label>
     <label>Cut mode<select name="cut_mode"><option value="setting" selected>Setting</option><option value="line">Line</option><option value="fill">Fill</option><option value="offset-fill">Offset Fill</option></select><span class="form-note">Setting preserves the selected Material Library operation type. Other choices override every generated calibration swatch layer.</span></label>
@@ -237,9 +243,15 @@
       <select id="saved_artwork_library" name="saved_material_library_id"><option value="">Choose an account library…</option></select>
       <span class="form-note">Choose the Material Library used to create this recipe.</span>
     </label>
-    <input id="artwork_material_settings" name="material_settings" type="file" hidden disabled>
+    <label id="guest_artwork_library_row" class="full-width" hidden>Material Library source
+      <select id="guest_artwork_library_source" name="guest_material_library_id"></select>
+      <span class="form-note">Choose the browser-session library used to create this recipe, or upload it again.</span>
+    </label>
+    <label id="artwork_material_upload_row" class="full-width" hidden>Lightburn Material Library file
+      <input id="artwork_material_settings" name="material_settings" type="file" accept=".clb,.lbmat,.lbrn" disabled>
+    </label>
     <div id="artwork_remembered_material_library" class="remembered-input-note full-width" hidden></div>
-    <p class="form-note">Material Libraries are managed in the <a href="/material-libraries">Material Vault</a>, not uploaded from this console.</p>
+    <p id="artwork_vault_note" class="form-note" hidden>Material Libraries are managed in the <a href="/material-libraries">Material Vault</a>.</p>
     <label>Maximum processing dimension, pixels<input name="max_dimension" type="number" value="96" min="8" max="1600" step="1"><span class="form-note">Start at 64–96. The 1600-pixel limit is for serious experiments, and detailed artwork can still create a very large Lightburn file.</span></label>
     <label>Physical pixel size, mm<input name="pixel_mm" type="number" value=".5" min=".0625" max="5" step=".0625"><span class="form-note">This sets each grating patch’s width and height.</span></label>
     <label>Cut mode<select name="cut_mode"><option value="setting" selected>Setting</option><option value="line">Line</option><option value="fill">Fill</option><option value="offset-fill">Offset Fill</option></select><span class="form-note">Setting preserves the operation type from the selected holographic Material Library setting. Other choices override the generated holographic layers.</span></label>
@@ -294,6 +306,7 @@
         setHolographicGuestIntent(false);
         const wasSignedIn = operatorSignedIn;
         operatorSignedIn = true;
+        configureCalibrationLibraryControls();
         if (window.machineChrome) window.machineChrome.showAuthStatus(status);
         if (!wasSignedIn) {
           loadSavedCalibrationLibraries();
@@ -322,6 +335,7 @@
       stopHolographicAuthenticationPoll();
       setHolographicGuestIntent(true);
       operatorSignedIn = false;
+      loadGuestMaterialLibraries();
       holographicAuthModal.hidden = true;
       const retry = pendingHolographicRetry;
       pendingHolographicRetry = null;
@@ -366,12 +380,20 @@
     const calibrationForm = document.getElementById('calibration_form');
     const savedCalibrationLibraryRow = document.getElementById('saved_calibration_library_row');
     const savedCalibrationLibrary = document.getElementById('saved_calibration_library');
+    const guestCalibrationLibraryRow = document.getElementById('guest_calibration_library_row');
+    const guestCalibrationLibrarySource = document.getElementById('guest_calibration_library_source');
+    const calibrationMaterialUploadRow = document.getElementById('calibration_material_upload_row');
     const calibrationMaterialSettings = document.getElementById('calibration_material_settings');
     const calibrationRememberedMaterial = document.getElementById('calibration_remembered_material_library');
+    const calibrationVaultNote = document.getElementById('calibration_vault_note');
     const savedArtworkLibraryRow = document.getElementById('saved_artwork_library_row');
     const savedArtworkLibrary = document.getElementById('saved_artwork_library');
+    const guestArtworkLibraryRow = document.getElementById('guest_artwork_library_row');
+    const guestArtworkLibrarySource = document.getElementById('guest_artwork_library_source');
+    const artworkMaterialUploadRow = document.getElementById('artwork_material_upload_row');
     const artworkMaterialSettings = document.getElementById('artwork_material_settings');
     const artworkRememberedMaterial = document.getElementById('artwork_remembered_material_library');
+    const artworkVaultNote = document.getElementById('artwork_vault_note');
     const savedHolographicRecipeRow = document.getElementById('saved_holographic_recipe_row');
     const savedHolographicRecipe = document.getElementById('saved_holographic_recipe');
     const holographicRecipeFile = document.getElementById('holographic_recipe_file');
@@ -382,20 +404,101 @@
     const calibrationSettingSuggestions = document.getElementById('calibration_setting_suggestions');
     const savedCalibrationLibraryKey = 'calibration_form:saved_material_library_id';
     const savedArtworkLibraryKey = 'artwork_form:saved_material_library_id';
-    const rememberedMaterialFilename = () => sessionStorage.getItem(rememberedMaterialKey) || '';
+    const guestCalibrationLibraryKey = `calibration-guest-material:${historySession}`;
+    const guestArtworkLibraryKey = `artwork-guest-material:${historySession}`;
+    let guestMaterialLibraries = [];
     const refreshRememberedMaterial = () => {
-      const filename = rememberedMaterialFilename();
-      [calibrationRememberedMaterial, artworkRememberedMaterial].forEach(note => {
-        note.hidden = !filename;
-        note.textContent = filename ? `Remembered for this browser session: ${filename}` : '';
+      [
+        [calibrationRememberedMaterial, guestCalibrationLibrarySource],
+        [artworkRememberedMaterial, guestArtworkLibrarySource],
+      ].forEach(([note, select]) => {
+        const selected = guestMaterialLibraries.find(library => library.library_id === select.value);
+        note.hidden = operatorSignedIn || !selected;
+        note.textContent = selected ? `Selected for this browser session: ${selected.filename}` : '';
       });
     };
-    const rememberUploadedMaterial = input => {
-      if (!input.files.length) return;
-      sessionStorage.setItem(rememberedMaterialKey, input.files[0].name);
+    const updateGuestLibrarySource = (select, uploadRow, fileInput, storageKey) => {
+      const selectedLibrary = guestMaterialLibraries.find(library => library.library_id === select.value);
+      const uploadSelected = !selectedLibrary;
+      uploadRow.hidden = operatorSignedIn || !uploadSelected;
+      fileInput.disabled = operatorSignedIn || !uploadSelected;
+      if (selectedLibrary) {
+        sessionStorage.setItem(storageKey, selectedLibrary.library_id);
+        sessionStorage.setItem(rememberedMaterialKey, selectedLibrary.filename);
+        fileInput.value = '';
+      }
       refreshRememberedMaterial();
     };
+    const fillGuestLibrarySelect = (select, uploadRow, fileInput, storageKey, preferNewest=false) => {
+      select.replaceChildren();
+      guestMaterialLibraries.forEach(library => {
+        const option = document.createElement('option');
+        option.value = library.library_id;
+        option.textContent = library.filename;
+        select.appendChild(option);
+      });
+      const uploadOption = document.createElement('option');
+      uploadOption.value = '';
+      uploadOption.textContent = guestMaterialLibraries.length
+        ? 'Upload a different Material Library…'
+        : 'Upload a Material Library…';
+      select.appendChild(uploadOption);
+      const rememberedId = preferNewest ? guestMaterialLibraries[0]?.library_id : sessionStorage.getItem(storageKey);
+      select.value = rememberedId && guestMaterialLibraries.some(library => library.library_id === rememberedId)
+        ? rememberedId
+        : (guestMaterialLibraries[0]?.library_id || '');
+      updateGuestLibrarySource(select, uploadRow, fileInput, storageKey);
+    };
+    const configureCalibrationLibraryControls = (preferNewest='') => {
+      savedCalibrationLibraryRow.hidden = !operatorSignedIn;
+      savedArtworkLibraryRow.hidden = !operatorSignedIn;
+      calibrationVaultNote.hidden = !operatorSignedIn;
+      artworkVaultNote.hidden = !operatorSignedIn;
+      guestCalibrationLibraryRow.hidden = operatorSignedIn;
+      guestArtworkLibraryRow.hidden = operatorSignedIn;
+      if (operatorSignedIn) {
+        calibrationMaterialUploadRow.hidden = true;
+        calibrationMaterialSettings.disabled = true;
+        artworkMaterialUploadRow.hidden = true;
+        artworkMaterialSettings.disabled = true;
+        refreshRememberedMaterial();
+        return;
+      }
+      fillGuestLibrarySelect(
+        guestCalibrationLibrarySource, calibrationMaterialUploadRow,
+        calibrationMaterialSettings, guestCalibrationLibraryKey,
+        preferNewest === 'calibration',
+      );
+      fillGuestLibrarySelect(
+        guestArtworkLibrarySource, artworkMaterialUploadRow,
+        artworkMaterialSettings, guestArtworkLibraryKey,
+        preferNewest === 'artwork',
+      );
+    };
+    const loadGuestMaterialLibraries = (preferNewest='') => fetch(
+      `/browser-material-libraries?history_session=${encodeURIComponent(historySession)}`,
+      {credentials:'same-origin', cache:'no-store'},
+    ).then(response => response.ok ? response.json() : null).then(data => {
+      guestMaterialLibraries = data?.libraries || [];
+      configureCalibrationLibraryControls(preferNewest);
+    }).catch(() => {
+      guestMaterialLibraries = [];
+      configureCalibrationLibraryControls();
+    });
+    const selectedGuestLibraryAvailable = (select, fileInput) => {
+      return Boolean(fileInput.files.length || guestMaterialLibraries.some(
+        library => library.library_id === select.value,
+      ));
+    };
     refreshRememberedMaterial();
+    guestCalibrationLibrarySource.addEventListener('change', () => updateGuestLibrarySource(
+      guestCalibrationLibrarySource, calibrationMaterialUploadRow,
+      calibrationMaterialSettings, guestCalibrationLibraryKey,
+    ));
+    guestArtworkLibrarySource.addEventListener('change', () => updateGuestLibrarySource(
+      guestArtworkLibrarySource, artworkMaterialUploadRow,
+      artworkMaterialSettings, guestArtworkLibraryKey,
+    ));
     const refreshRememberedRecipe = () => {
       const filename = sessionStorage.getItem(rememberedRecipeKey) || '';
       rememberedHolographicRecipe.hidden = !filename;
@@ -541,7 +644,6 @@
       if (calibrationMaterialSettings.files.length) {
         savedCalibrationLibrary.value = '';
         loadSavedCalibrationLibraryEntries('');
-        rememberUploadedMaterial(calibrationMaterialSettings);
       }
     });
     savedArtworkLibrary.addEventListener('change', () => {
@@ -550,7 +652,6 @@
     artworkMaterialSettings.addEventListener('change', () => {
       if (artworkMaterialSettings.files.length) {
         savedArtworkLibrary.value = '';
-        rememberUploadedMaterial(artworkMaterialSettings);
       }
     });
     savedHolographicRecipe.addEventListener('change', () => {
@@ -596,19 +697,22 @@
       .then(({signed_in}) => {
         operatorSignedIn = Boolean(signed_in);
         if (signed_in) {
+          configureCalibrationLibraryControls();
           loadSavedCalibrationLibraries();
           loadSavedHolographicRecipes();
-        }
+        } else loadGuestMaterialLibraries();
       }).catch(() => {});
     calibrationForm.addEventListener('submit', async event => {
       event.preventDefault();
       const form = event.currentTarget;
       const results = document.getElementById('calibration_results');
       const button = form.querySelector('button[type="submit"]');
-      if (!savedCalibrationLibrary.value && (operatorSignedIn || !rememberedMaterialFilename())) {
-        results.textContent = operatorSignedIn
-          ? 'Choose an existing Material Vault library. Add one in the Material Vault if the list is empty.'
-          : 'No Material Library is remembered for this browser session. Add one through Rasterizer or sign in to use the Material Vault.';
+      if (operatorSignedIn && !savedCalibrationLibrary.value) {
+        results.textContent = 'Choose an existing Material Vault library. Add one in the Material Vault if the list is empty.';
+        return;
+      }
+      if (!operatorSignedIn && !selectedGuestLibraryAvailable(guestCalibrationLibrarySource, calibrationMaterialSettings)) {
+        results.textContent = 'Choose a browser-session Material Library or upload a Lightburn Material Library file.';
         return;
       }
       button.disabled = true;
@@ -626,6 +730,10 @@
         if (!response.ok) throw new Error(data.message || 'Calibration grid could not be created.');
         document.getElementById('profile_calibration_id').value = data.calibration_id;
         localStorage.setItem('holographic-calibration-id', data.calibration_id);
+        if (!operatorSignedIn && calibrationMaterialSettings.files.length) {
+          sessionStorage.setItem(rememberedMaterialKey, calibrationMaterialSettings.files[0].name);
+          await loadGuestMaterialLibraries('calibration');
+        }
         const labelSetting = data.label_setting ? ` Label layer: ${data.label_setting}.` : '';
         results.innerHTML = `Calibration grid ready.${downloadButtonList([
           {url:data.svg_url, label:'Download SVG'},
@@ -917,10 +1025,12 @@
         results.textContent = 'Choose a saved Holographic Recipe or upload an Etching Recipe JSON file.';
         return;
       }
-      if (!savedArtworkLibrary.value && (operatorSignedIn || !rememberedMaterialFilename())) {
-        results.textContent = operatorSignedIn
-          ? 'Choose the existing Material Vault library used by this Holographic Recipe.'
-          : 'No Material Library is remembered for this browser session. Add one through Rasterizer or sign in to use the Material Vault.';
+      if (operatorSignedIn && !savedArtworkLibrary.value) {
+        results.textContent = 'Choose the existing Material Vault library used by this Holographic Recipe.';
+        return;
+      }
+      if (!operatorSignedIn && !selectedGuestLibraryAvailable(guestArtworkLibrarySource, artworkMaterialSettings)) {
+        results.textContent = 'Choose the browser-session Material Library used by this recipe, or upload it again.';
         return;
       }
       button.disabled = true;

@@ -55,6 +55,7 @@ RASTER_JOB_QUEUE = "rasterizer:jobs"
 RASTER_JOB_PROCESSING_QUEUE = "rasterizer:jobs:processing"
 HISTORY_SESSION_RE = re.compile(r"^[a-f0-9-]{32,36}$")
 HISTORY_TTL_SECONDS = 7 * 24 * 60 * 60
+GUEST_MATERIAL_LIBRARY_LIMIT = 12
 DAILY_JOB_LIMIT = max(1, int(os.environ.get("DAILY_JOB_LIMIT", "3")))
 manager = multiprocessing.Manager()
 tasks = manager.dict()
@@ -567,6 +568,103 @@ def get_job_owner(task_id):
 def valid_history_session(value):
     value = str(value or "").strip().lower()
     return value if HISTORY_SESSION_RE.fullmatch(value) else None
+
+
+def _guest_material_library_entry(payload):
+    if not isinstance(payload, dict):
+        return None
+    filename = os.path.basename(str(payload.get("filename") or "").strip())
+    artifact_key = str(payload.get("key") or "").strip()
+    local_path = str(payload.get("path") or "").strip()
+    if not filename or not (artifact_key or local_path):
+        return None
+    identifier_seed = artifact_key or local_path
+    library_id = str(payload.get("library_id") or uuid.uuid5(
+        uuid.NAMESPACE_URL, f"mopa-guest-material:{identifier_seed}",
+    ))
+    return {
+        "library_id": library_id,
+        "filename": filename,
+        "key": artifact_key,
+        "path": local_path,
+        "created_at": int(payload.get("created_at") or time.time()),
+    }
+
+
+def _guest_material_library_registry(session_id):
+    session_id = valid_history_session(session_id)
+    if not session_id:
+        return []
+    try:
+        stored = json.loads(redis_client.get(f"material-libraries:{session_id}") or "[]")
+    except (TypeError, json.JSONDecodeError):
+        stored = []
+    entries, seen = [], set()
+    for payload in stored if isinstance(stored, list) else []:
+        entry = _guest_material_library_entry(payload)
+        if not entry or entry["library_id"] in seen:
+            continue
+        seen.add(entry["library_id"])
+        entries.append(entry)
+
+    # Preserve the pre-registry single remembered library as the first entry
+    # so existing guest browser sessions continue working after deployment.
+    try:
+        legacy = json.loads(redis_client.get(f"material-library:{session_id}") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        legacy = {}
+    legacy_entry = _guest_material_library_entry(legacy)
+    if legacy_entry and legacy_entry["library_id"] not in seen:
+        entries.insert(0, legacy_entry)
+    return entries[:GUEST_MATERIAL_LIBRARY_LIMIT]
+
+
+def remember_guest_material_library(session_id, payload):
+    """Retain a guest upload in the private browser-session library registry."""
+    session_id = valid_history_session(session_id)
+    entry = _guest_material_library_entry(payload)
+    if not session_id or not entry:
+        raise ValueError("A valid guest Material Library session and artifact are required.")
+    entries = [
+        existing for existing in _guest_material_library_registry(session_id)
+        if existing["library_id"] != entry["library_id"]
+    ]
+    entries.insert(0, entry)
+    redis_client.set(
+        f"material-libraries:{session_id}",
+        json.dumps(entries[:GUEST_MATERIAL_LIBRARY_LIMIT], separators=(",", ":")),
+        ex=HISTORY_TTL_SECONDS,
+    )
+    redis_client.set(
+        f"material-library:{session_id}",
+        json.dumps(entry, separators=(",", ":")),
+        ex=HISTORY_TTL_SECONDS,
+    )
+    return entry
+
+
+def list_guest_material_libraries(session_id):
+    """Return browser-safe metadata for every retained guest library."""
+    entries = _guest_material_library_registry(session_id)
+    return [{
+        "library_id": entry["library_id"],
+        "filename": entry["filename"],
+        "created_at": entry["created_at"],
+    } for entry in entries]
+
+
+def select_guest_material_library(session_id, library_id):
+    """Select one retained guest library and make it the compatibility default."""
+    library_id = str(library_id or "").strip()
+    for entry in _guest_material_library_registry(session_id):
+        if hmac.compare_digest(entry["library_id"], library_id):
+            redis_client.set(
+                f"material-library:{session_id}",
+                json.dumps(entry, separators=(",", ":")),
+                ex=HISTORY_TTL_SECONDS,
+            )
+            return entry
+    return None
 
 
 def claim_history_session(history_session, browser_session):

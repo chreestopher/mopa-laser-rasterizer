@@ -39,11 +39,14 @@ from services import (
     get_job_record,
     get_user_material_library,
     get_s3_artifact,
+    list_guest_material_libraries,
     redis_client,
     record_user_job,
     record_setting_usage,
+    remember_guest_material_library,
     resolve_material_setting_usage,
     save_user_material_library,
+    select_guest_material_library,
     tasks,
     upload_task_artifact,
     valid_history_session,
@@ -107,6 +110,7 @@ def start_task():
         return jsonify({"status": "error", "message": str(error)}), 503
     material_cache_key = f"material-library:{history_session}"
     saved_library_id = str(user_data.get("saved_material_library_id", "")).strip()
+    guest_library_id = str(user_data.get("guest_material_library_id", "")).strip()
     if material_settings and material_settings.filename:
         material_filename = secure_filename(material_settings.filename)
         material_settings_path = os.path.join(
@@ -119,11 +123,6 @@ def start_task():
             )
         except RuntimeError as error:
             return jsonify({"status": "error", "message": str(error)}), 503
-        redis_client.set(
-            material_cache_key,
-            json.dumps({"path": material_settings_path, "filename": material_filename, "key": material_key}),
-            ex=HISTORY_TTL_SECONDS,
-        )
         if user_id:
             try:
                 usage_library = save_user_material_library(
@@ -131,6 +130,12 @@ def start_task():
                 )
             except RuntimeError as error:
                 return jsonify({"status": "error", "message": str(error)}), 503
+        else:
+            remember_guest_material_library(history_session, {
+                "path": material_settings_path,
+                "filename": material_filename,
+                "key": material_key,
+            })
     elif saved_library_id:
         if not user_id:
             return jsonify({"status": "error", "message": "Sign in to use a saved Material Library."}), 401
@@ -147,6 +152,34 @@ def start_task():
             usage_library = saved_library
         except RuntimeError as error:
             return jsonify({"status": "error", "message": str(error)}), 503
+    elif guest_library_id:
+        if user_id:
+            return jsonify({
+                "status": "error",
+                "message": "Choose an account Material Library or upload a new library.",
+            }), 400
+        cached_material = select_guest_material_library(history_session, guest_library_id)
+        if not cached_material:
+            return jsonify({
+                "status": "error",
+                "message": "That browser-session Material Library is no longer available.",
+            }), 404
+        material_settings_path = cached_material.get("path")
+        material_key = cached_material.get("key")
+        if material_key and not os.path.isfile(material_settings_path or ""):
+            material_settings_path = os.path.join(
+                upload_folder,
+                f"{task_id}_cached_material_{secure_filename(cached_material['filename'])}",
+            )
+            try:
+                download_task_artifact(material_key, material_settings_path)
+            except RuntimeError as error:
+                return jsonify({"status": "error", "message": str(error)}), 503
+        if not material_settings_path or not os.path.isfile(material_settings_path):
+            return jsonify({
+                "status": "error",
+                "message": "That browser-session Material Library has expired.",
+            }), 404
     else:
         try:
             cached_material = json.loads(redis_client.get(material_cache_key) or "{}")
@@ -305,6 +338,25 @@ def file_history(session_id):
         current_app.logger.exception("Could not verify ownership for job history %s", session_id)
         return jsonify({"status": "error", "message": "Could not verify job ownership."}), 503
     return jsonify({"files": history_files})
+
+
+@routes.route("/browser-material-libraries")
+def browser_material_libraries():
+    """List retained guest libraries without exposing their files or edit APIs."""
+    history_session = private_history_session(
+        valid_history_session(request.args.get("history_session"))
+        or valid_history_session(request.cookies.get("mopa_history_session"))
+    )
+    response = make_response(jsonify({
+        "status": "ok",
+        "history_session": history_session,
+        "libraries": list_guest_material_libraries(history_session),
+    }))
+    response.set_cookie(
+        "mopa_history_session", history_session, max_age=HISTORY_TTL_SECONDS,
+        secure=request.is_secure, httponly=True, samesite="Lax",
+    )
+    return response
 
 
 @routes.route("/job-history")
