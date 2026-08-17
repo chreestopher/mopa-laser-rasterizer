@@ -408,7 +408,10 @@
       const body = new FormData(); Array.from(files).forEach(file => body.append('libraries', file));
       say('Scanning Material Library settings…');
       const response = await fetch('/account/material-libraries/preview', {method:'POST', credentials:'same-origin', body});
-      const data = await response.json();
+      const responseText = await response.text();
+      let data;
+      try { data = JSON.parse(responseText); }
+      catch { data = {message:`Material Library scan failed (HTTP ${response.status}). The server returned an unexpected response.`}; }
       if (!response.ok) return say(data.message || 'Could not scan libraries.', true);
       importPlan.innerHTML = data.libraries.map(library => `<div class="import-file" data-index="${library.index}"><label>Library name</label><input class="library-name-input import-name" value="${esc(library.filename.replace(/\.[^.]+$/, ''))}"><div class="meta">Choose the material groups to import from ${esc(library.filename)}:</div><div class="materials">${library.summary.material_names.map(material => `<label><input type="checkbox" value="${esc(material)}" checked> ${esc(material)}</label>`).join('')}</div></div>`).join('');
       importPlan.hidden = false; importButton.hidden = false; say('Choose the materials to keep, then import.');

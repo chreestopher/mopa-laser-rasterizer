@@ -117,7 +117,7 @@ def setting_values(setting):
 
 def library_entries(path, include_settings=False):
     """Return a compact, safe-to-display summary of a LightBurn library."""
-    settings = LightBurn().parse_material_library(path)
+    settings = Lightburn().parse_material_library(path)
     entries, material_names = [], []
     for entry_id, setting in enumerate(settings):
         material_name = str(getattr(setting, "materialName", "") or "").strip()
