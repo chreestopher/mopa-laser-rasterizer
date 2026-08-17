@@ -39,6 +39,9 @@
     .calibration-form input[type="file"] { padding:4px; color:#bdb58f; cursor:pointer; }
     .calibration-form input[type="file"]::file-selector-button { margin-right:10px; padding:7px 10px; border:1px solid var(--control-edge); border-radius:4px; color:#edf4e9; background:linear-gradient(var(--control-top),var(--control-base)); box-shadow:inset 0 1px rgba(255,255,255,.3),0 2px 0 var(--control-shadow); font:700 10px "Courier New",monospace; letter-spacing:.07em; cursor:pointer; text-transform:uppercase; }
     .calibration-form input[type="file"]::file-selector-button:hover { filter:brightness(1.14); }
+    .guest-library-source { display:grid; gap:6px; color:#ddd7b8; font-size:.9rem; letter-spacing:.035em; }
+    .guest-library-source[hidden] { display:none; }
+    .guest-library-source .action { justify-self:start; }
     .remembered-input-note { margin-top:7px; padding:7px 9px; border:1px solid #5e6853; border-radius:5px; color:#bdb58f; background:#11170f; box-shadow:inset 0 2px 6px #000; font:700 11px "Courier New",monospace; letter-spacing:.03em; }
     .calibration-form textarea { width:100%; min-width:0; min-height:78px; padding:9px; resize:vertical; border:2px solid #5e6853; border-radius:5px; color:var(--phosphor); background:#11170f; box-shadow:inset 0 2px 7px #000; font-family:"Courier New",monospace; }
     .calibration-form textarea:focus { outline:none; border-color:#91a477; box-shadow:0 0 0 2px rgba(131,240,106,.18),inset 0 2px 7px #000; }
@@ -161,10 +164,12 @@
       </select>
       <span class="form-note">This uses the same saved libraries as Rasterizer.</span>
     </label>
-    <label id="guest_calibration_library_row" class="full-width" hidden>Material Library source
+    <div id="guest_calibration_library_row" class="guest-library-source full-width" hidden>
+      <label for="guest_calibration_library_source">Material Library source</label>
       <select id="guest_calibration_library_source" name="guest_material_library_id"></select>
+      <button id="guest_calibration_library_upload" class="action secondary" type="button">Upload a different Material Library</button>
       <span class="form-note">Reuse the library remembered by this browser session, or upload a different Lightburn Material Library for this calibration.</span>
-    </label>
+    </div>
     <label id="calibration_material_upload_row" class="full-width" hidden>Lightburn Material Library file
       <input id="calibration_material_settings" type="file" name="material_settings" accept=".clb,.lbmat,.lbrn" disabled>
     </label>
@@ -243,10 +248,12 @@
       <select id="saved_artwork_library" name="saved_material_library_id"><option value="">Choose an account library…</option></select>
       <span class="form-note">Choose the Material Library used to create this recipe.</span>
     </label>
-    <label id="guest_artwork_library_row" class="full-width" hidden>Material Library source
+    <div id="guest_artwork_library_row" class="guest-library-source full-width" hidden>
+      <label for="guest_artwork_library_source">Material Library source</label>
       <select id="guest_artwork_library_source" name="guest_material_library_id"></select>
+      <button id="guest_artwork_library_upload" class="action secondary" type="button">Upload a different Material Library</button>
       <span class="form-note">Choose the browser-session library used to create this recipe, or upload it again.</span>
-    </label>
+    </div>
     <label id="artwork_material_upload_row" class="full-width" hidden>Lightburn Material Library file
       <input id="artwork_material_settings" name="material_settings" type="file" accept=".clb,.lbmat,.lbrn" disabled>
     </label>
@@ -382,6 +389,7 @@
     const savedCalibrationLibrary = document.getElementById('saved_calibration_library');
     const guestCalibrationLibraryRow = document.getElementById('guest_calibration_library_row');
     const guestCalibrationLibrarySource = document.getElementById('guest_calibration_library_source');
+    const guestCalibrationLibraryUpload = document.getElementById('guest_calibration_library_upload');
     const calibrationMaterialUploadRow = document.getElementById('calibration_material_upload_row');
     const calibrationMaterialSettings = document.getElementById('calibration_material_settings');
     const calibrationRememberedMaterial = document.getElementById('calibration_remembered_material_library');
@@ -390,6 +398,7 @@
     const savedArtworkLibrary = document.getElementById('saved_artwork_library');
     const guestArtworkLibraryRow = document.getElementById('guest_artwork_library_row');
     const guestArtworkLibrarySource = document.getElementById('guest_artwork_library_source');
+    const guestArtworkLibraryUpload = document.getElementById('guest_artwork_library_upload');
     const artworkMaterialUploadRow = document.getElementById('artwork_material_upload_row');
     const artworkMaterialSettings = document.getElementById('artwork_material_settings');
     const artworkRememberedMaterial = document.getElementById('artwork_remembered_material_library');
@@ -417,9 +426,10 @@
         note.textContent = selected ? `Selected for this browser session: ${selected.filename}` : '';
       });
     };
-    const updateGuestLibrarySource = (select, uploadRow, fileInput, storageKey, openFileChooser=false) => {
+    const updateGuestLibrarySource = (select, uploadButton, uploadRow, fileInput, storageKey) => {
       const selectedLibrary = guestMaterialLibraries.find(library => library.library_id === select.value);
       const uploadSelected = !selectedLibrary;
+      uploadButton.hidden = operatorSignedIn || uploadSelected;
       uploadRow.hidden = operatorSignedIn || !uploadSelected;
       fileInput.disabled = operatorSignedIn || !uploadSelected;
       if (selectedLibrary) {
@@ -428,9 +438,8 @@
         fileInput.value = '';
       }
       refreshRememberedMaterial();
-      if (openFileChooser && uploadSelected && !fileInput.disabled) fileInput.click();
     };
-    const fillGuestLibrarySelect = (select, uploadRow, fileInput, storageKey, preferNewest=false) => {
+    const fillGuestLibrarySelect = (select, uploadButton, uploadRow, fileInput, storageKey, preferNewest=false) => {
       select.replaceChildren();
       guestMaterialLibraries.forEach(library => {
         const option = document.createElement('option');
@@ -438,17 +447,17 @@
         option.textContent = library.filename;
         select.appendChild(option);
       });
-      const uploadOption = document.createElement('option');
-      uploadOption.value = '';
-      uploadOption.textContent = guestMaterialLibraries.length
-        ? 'Upload a different Material Library…'
-        : 'Upload a Material Library…';
-      select.appendChild(uploadOption);
+      if (!guestMaterialLibraries.length) {
+        const emptyOption = document.createElement('option');
+        emptyOption.value = '';
+        emptyOption.textContent = 'No Material Libraries retained by this browser';
+        select.appendChild(emptyOption);
+      }
       const rememberedId = preferNewest ? guestMaterialLibraries[0]?.library_id : sessionStorage.getItem(storageKey);
       select.value = rememberedId && guestMaterialLibraries.some(library => library.library_id === rememberedId)
         ? rememberedId
         : (guestMaterialLibraries[0]?.library_id || '');
-      updateGuestLibrarySource(select, uploadRow, fileInput, storageKey);
+      updateGuestLibrarySource(select, uploadButton, uploadRow, fileInput, storageKey);
     };
     const configureCalibrationLibraryControls = (preferNewest='') => {
       savedCalibrationLibraryRow.hidden = !operatorSignedIn;
@@ -466,12 +475,12 @@
         return;
       }
       fillGuestLibrarySelect(
-        guestCalibrationLibrarySource, calibrationMaterialUploadRow,
+        guestCalibrationLibrarySource, guestCalibrationLibraryUpload, calibrationMaterialUploadRow,
         calibrationMaterialSettings, guestCalibrationLibraryKey,
         preferNewest === 'calibration',
       );
       fillGuestLibrarySelect(
-        guestArtworkLibrarySource, artworkMaterialUploadRow,
+        guestArtworkLibrarySource, guestArtworkLibraryUpload, artworkMaterialUploadRow,
         artworkMaterialSettings, guestArtworkLibraryKey,
         preferNewest === 'artwork',
       );
@@ -493,13 +502,24 @@
     };
     refreshRememberedMaterial();
     guestCalibrationLibrarySource.addEventListener('change', () => updateGuestLibrarySource(
-      guestCalibrationLibrarySource, calibrationMaterialUploadRow,
-      calibrationMaterialSettings, guestCalibrationLibraryKey, true,
+      guestCalibrationLibrarySource, guestCalibrationLibraryUpload, calibrationMaterialUploadRow,
+      calibrationMaterialSettings, guestCalibrationLibraryKey,
     ));
     guestArtworkLibrarySource.addEventListener('change', () => updateGuestLibrarySource(
-      guestArtworkLibrarySource, artworkMaterialUploadRow,
-      artworkMaterialSettings, guestArtworkLibraryKey, true,
+      guestArtworkLibrarySource, guestArtworkLibraryUpload, artworkMaterialUploadRow,
+      artworkMaterialSettings, guestArtworkLibraryKey,
     ));
+    const openGuestLibraryFile = fileInput => {
+      fileInput.disabled = false;
+      if (typeof fileInput.showPicker === 'function') fileInput.showPicker();
+      else fileInput.click();
+    };
+    guestCalibrationLibraryUpload.addEventListener('click', () => {
+      openGuestLibraryFile(calibrationMaterialSettings);
+    });
+    guestArtworkLibraryUpload.addEventListener('click', () => {
+      openGuestLibraryFile(artworkMaterialSettings);
+    });
     const refreshRememberedRecipe = () => {
       const filename = sessionStorage.getItem(rememberedRecipeKey) || '';
       rememberedHolographicRecipe.hidden = !filename;
@@ -644,6 +664,13 @@
     calibrationMaterialSettings.addEventListener('change', () => {
       if (calibrationMaterialSettings.files.length) {
         savedCalibrationLibrary.value = '';
+        guestCalibrationLibrarySource.value = '';
+        sessionStorage.removeItem(guestCalibrationLibraryKey);
+        updateGuestLibrarySource(
+          guestCalibrationLibrarySource, guestCalibrationLibraryUpload,
+          calibrationMaterialUploadRow, calibrationMaterialSettings,
+          guestCalibrationLibraryKey,
+        );
         loadSavedCalibrationLibraryEntries('');
       }
     });
@@ -653,6 +680,13 @@
     artworkMaterialSettings.addEventListener('change', () => {
       if (artworkMaterialSettings.files.length) {
         savedArtworkLibrary.value = '';
+        guestArtworkLibrarySource.value = '';
+        sessionStorage.removeItem(guestArtworkLibraryKey);
+        updateGuestLibrarySource(
+          guestArtworkLibrarySource, guestArtworkLibraryUpload,
+          artworkMaterialUploadRow, artworkMaterialSettings,
+          guestArtworkLibraryKey,
+        );
       }
     });
     savedHolographicRecipe.addEventListener('change', () => {
