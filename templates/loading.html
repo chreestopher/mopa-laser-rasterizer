@@ -361,7 +361,7 @@
 <link rel="stylesheet" href="/static/machine_chrome.css?v=3">
 </head>
 <body>
-        {{ machine_chrome('history' if history_mode else '', 'VECTOR PROCESSING CONSOLE · SERIES 79', true, 'status-lamps', 'overlay') }}
+        {{ machine_chrome('history' if history_mode else '', 'VECTOR PROCESSING CONSOLE · SERIES 79', true, 'status-lamps', 'standard' if history_mode else 'overlay') }}
         <main class="machine-workspace">
         <div class="terminal-box" id="terminal">
             <ul class="log-list" id="log-container">
