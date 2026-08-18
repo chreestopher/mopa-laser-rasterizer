@@ -278,19 +278,26 @@ def apply_entry_update(root, entry_id, payload, creating=False):
     if cut is None:
         cut = ET.SubElement(entry, "CutSetting")
     cut.attrib["type"] = setting_type
-    preserved_layer_identity = {
-        child.tag: child.attrib.get("Value", "")
-        for child in cut
-        if child.tag in {"index", "name"}
+    submitted_values = {
+        str(key): setting_value(value)
+        for key, value in values.items()
+        if str(key) and str(key) != "SubLayer" and isinstance(value, (str, int, float, bool))
     }
-    for child in list(cut):
-        if child.tag != "SubLayer":
-            cut.remove(child)
-    defaults = {"index": "0", "name": "", "minPower": "0", "maxPower": "100", "speed": "100"}
-    defaults.update(preserved_layer_identity)
-    defaults.update({str(key): setting_value(value) for key, value in values.items() if str(key) and isinstance(value, (str, int, float, bool))})
-    for key, value in defaults.items():
-        ET.SubElement(cut, key, {"Value": value})
+    if creating:
+        new_values = {"index": "0", "name": "", "minPower": "0", "maxPower": "100", "speed": "100"}
+        new_values.update(submitted_values)
+        for key, value in new_values.items():
+            ET.SubElement(cut, key, {"Value": value})
+    else:
+        # Inline editors intentionally submit only the fields they display.
+        # Patch those fields in place so unfamiliar LightBurn values, element
+        # attributes, and sublayers remain exactly as they were in the file.
+        for key, value in submitted_values.items():
+            field = cut.find(key)
+            if field is None:
+                ET.SubElement(cut, key, {"Value": value})
+            else:
+                field.attrib["Value"] = value
     target.append(entry)
     for material in list(root.findall("Material")):
         if not material.findall("Entry"):

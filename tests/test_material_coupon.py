@@ -1,10 +1,35 @@
 import unittest
 from xml.etree import ElementTree as ET
 
-from routes.account import material_coupon_project
+from routes.account import apply_entry_update, material_coupon_project
 
 
 class MaterialCouponTests(unittest.TestCase):
+    def test_inline_setting_update_preserves_unsubmitted_lightburn_fields(self):
+        library = ET.fromstring("""
+            <LightBurnLibrary><Material name="steel">
+              <Entry Desc="Blue"><CutSetting type="Scan" custom="keep-attribute">
+                <index Value="7"/><name Value="original"/><speed Value="500"/>
+                <customImportedValue Value="keep-value" custom="keep-field-attribute"/>
+                <SubLayer type="Scan"><speed Value="250"/></SubLayer>
+              </CutSetting></Entry>
+            </Material></LightBurnLibrary>
+        """)
+
+        apply_entry_update(library, 0, {
+            "material": "steel", "description": "Blue edited", "type": "Scan",
+            "settings": {"speed": 750},
+        })
+
+        entry = library.find("Material/Entry")
+        cut = entry.find("CutSetting")
+        self.assertEqual("Blue edited", entry.attrib["Desc"])
+        self.assertEqual("750", cut.find("speed").attrib["Value"])
+        self.assertEqual("keep-attribute", cut.attrib["custom"])
+        self.assertEqual("keep-value", cut.find("customImportedValue").attrib["Value"])
+        self.assertEqual("keep-field-attribute", cut.find("customImportedValue").attrib["custom"])
+        self.assertEqual("250", cut.find("SubLayer/speed").attrib["Value"])
+
     def test_each_selected_entry_becomes_one_layer_and_cell(self):
         library = ET.fromstring("""
             <LightBurnLibrary><Material name="steel">
