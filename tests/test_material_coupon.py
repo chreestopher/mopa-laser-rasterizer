@@ -26,9 +26,7 @@ class MaterialCouponTests(unittest.TestCase):
         text = project.findall("Shape[@Type='Text']")
         self.assertEqual(["0", "0", "0"], [item.attrib["CutIndex"] for item in text])
         self.assertEqual(["Material Library Settings", "Red", "Blue"], [item.attrib["Str"] for item in text])
-        boundary = project.find("Shape[@Type='Rect'][@CutIndex='0']")
-        self.assertEqual("10", boundary.attrib["W"])
-        self.assertEqual("21", boundary.attrib["H"])
+        self.assertIsNone(project.find("Shape[@Type='Rect'][@CutIndex='0']"))
 
     def test_coupon_scales_complete_layout_to_requested_dimensions(self):
         library = ET.fromstring("""

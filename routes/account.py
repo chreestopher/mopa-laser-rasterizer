@@ -431,13 +431,6 @@ def material_coupon_project(library_root, material_name="Material Library Settin
     title.attrib["Ah"] = "1"
     ET.SubElement(title, "XForm").text = transform(native_width / 2, 3)
     objects.append(title)
-    boundary = ET.Element("Shape", {
-        "Type": "Rect", "ShapeID": "1", "CutIndex": "0",
-        "W": f"{native_width:g}", "H": f"{native_length:g}", "Cr": "0",
-    })
-    ET.SubElement(boundary, "XForm").text = transform(native_width / 2, native_length / 2)
-    objects.append(boundary)
-
     for layer_index, (_material, entry) in enumerate(entries):
         cut_setting = entry.find("CutSetting")
         if cut_setting is None:
@@ -462,7 +455,7 @@ def material_coupon_project(library_root, material_name="Material Library Settin
         cell_y = label_y + label_space_mm / 2 + cell_size_mm / 2
         label_text = str(entry.attrib.get("Desc") or f"Cell {layer_index + 1}")[:80]
         label = ET.Element("Shape", {
-            "Type": "Text", "ShapeID": str(layer_index * 2 + 2), "CutIndex": "0",
+            "Type": "Text", "ShapeID": str(layer_index * 2 + 1), "CutIndex": "0",
             "Font": "Arial,-1,100,5,50,0,0,0,0,0", "Str": str(entry.attrib.get("Desc") or f"Cell {layer_index + 1}")[:80],
             "H": f"{fitted_text_height(label_text, horizontal_pitch, 2):g}", "LS": "0", "LnS": "0", "Ah": "1", "Av": "1",
             "Weld": "1", "HasBackupPath": "0",
@@ -470,7 +463,7 @@ def material_coupon_project(library_root, material_name="Material Library Settin
         ET.SubElement(label, "XForm").text = transform(x, label_y)
         objects.append(label)
         shape = ET.Element("Shape", {
-            "Type": "Rect", "ShapeID": str(layer_index * 2 + 3), "CutIndex": str(cut_index),
+            "Type": "Rect", "ShapeID": str(layer_index * 2 + 2), "CutIndex": str(cut_index),
             "W": f"{cell_size_mm:g}", "H": f"{cell_size_mm:g}", "Cr": "0",
         })
         ET.SubElement(shape, "XForm").text = transform(x, cell_y)
