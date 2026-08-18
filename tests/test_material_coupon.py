@@ -27,6 +27,27 @@ class MaterialCouponTests(unittest.TestCase):
         self.assertEqual(["0", "0", "0"], [item.attrib["CutIndex"] for item in text])
         self.assertEqual(["Material Library Settings", "Red", "Blue"], [item.attrib["Str"] for item in text])
 
+    def test_coupon_scales_complete_layout_to_requested_dimensions(self):
+        library = ET.fromstring("""
+            <LightBurnLibrary><Material name="steel">
+              <Entry Desc="Black"><CutSetting type="Scan"><index Value="0"/><name Value="Black"/></CutSetting></Entry>
+            </Material></LightBurnLibrary>
+        """)
+        project = material_coupon_project(library, coupon_width_mm=50, coupon_length_mm=25)
+        cell = project.find("Shape[@Type='Rect']")
+        values = [float(value) for value in cell.find("XForm").text.split()]
+        self.assertAlmostEqual(5.0, values[0])
+        self.assertAlmostEqual(25.0 / 21.0, values[3])
+
+    def test_coupon_rejects_invalid_dimensions(self):
+        library = ET.fromstring("""
+            <LightBurnLibrary><Material name="steel">
+              <Entry Desc="Black"><CutSetting type="Scan"/></Entry>
+            </Material></LightBurnLibrary>
+        """)
+        with self.assertRaisesRegex(ValueError, "between 10 and 1000"):
+            material_coupon_project(library, coupon_width_mm=5, coupon_length_mm=100)
+
     def test_coupon_rejects_more_than_thirty_layers(self):
         library = ET.Element("LightBurnLibrary")
         material = ET.SubElement(library, "Material", {"name": "steel"})

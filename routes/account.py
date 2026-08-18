@@ -361,6 +361,7 @@ def selected_settings_library(user_id, selections, material_name):
 
 
 def material_coupon_project(library_root, material_name="Material Library Settings",
+                            coupon_width_mm=100.0, coupon_length_mm=100.0,
                             cell_size_mm=10.0, column_gap_mm=2.0, label_space_mm=6.0):
     """Build a compact LightBurn test grid from selected library entries."""
     entries = all_xml_entries(library_root)
@@ -368,14 +369,29 @@ def material_coupon_project(library_root, material_name="Material Library Settin
         raise ValueError("Select at least one Material Library setting.")
     if len(entries) > 29:
         raise ValueError("A labeled LightBurn coupon can contain no more than 29 selected settings.")
+    try:
+        coupon_width_mm = float(coupon_width_mm)
+        coupon_length_mm = float(coupon_length_mm)
+    except (TypeError, ValueError) as error:
+        raise ValueError("Coupon width and length must be numbers in millimeters.") from error
+    if not 10 <= coupon_width_mm <= 1000 or not 10 <= coupon_length_mm <= 1000:
+        raise ValueError("Coupon width and length must each be between 10 and 1000 mm.")
 
     project = ET.Element("LightBurnProject", {
         "AppVersion": "2.1.04", "FormatVersion": "1", "MaterialHeight": "0",
         "MirrorX": "False", "MirrorY": "True", "AskForSendName": "True",
     })
     columns = min(10, max(1, math.ceil(math.sqrt(len(entries)))))
+    rows = math.ceil(len(entries) / columns)
     horizontal_pitch = cell_size_mm + column_gap_mm
     vertical_pitch = cell_size_mm + label_space_mm
+    native_width = columns * cell_size_mm + max(0, columns - 1) * column_gap_mm
+    native_length = 8 + (rows - 1) * vertical_pitch + label_space_mm / 2 + cell_size_mm
+    scale_x = coupon_width_mm / native_width
+    scale_y = coupon_length_mm / native_length
+
+    def transform(x, y):
+        return f"{scale_x:g} 0 0 {scale_y:g} {x * scale_x:g} {y * scale_y:g}"
 
     # Layer zero is LightBurn's black layer. Reuse the selected Black recipe
     # when available; otherwise copy the first selected recipe so labels have
@@ -405,7 +421,8 @@ def material_coupon_project(library_root, material_name="Material Library Settin
         "H": "3", "LS": "0", "LnS": "0", "Ah": "0", "Av": "1",
         "Weld": "1", "HasBackupPath": "0",
     })
-    ET.SubElement(title, "XForm").text = "1 0 0 1 0 3"
+    title.attrib["Ah"] = "1"
+    ET.SubElement(title, "XForm").text = transform(native_width / 2, 3)
     objects.append(title)
 
     for layer_index, (_material, entry) in enumerate(entries):
@@ -436,13 +453,13 @@ def material_coupon_project(library_root, material_name="Material Library Settin
             "H": "2", "LS": "0", "LnS": "0", "Ah": "1", "Av": "1",
             "Weld": "1", "HasBackupPath": "0",
         })
-        ET.SubElement(label, "XForm").text = f"1 0 0 1 {x:g} {label_y:g}"
+        ET.SubElement(label, "XForm").text = transform(x, label_y)
         objects.append(label)
         shape = ET.Element("Shape", {
             "Type": "Rect", "ShapeID": str(layer_index * 2 + 2), "CutIndex": str(cut_index),
             "W": f"{cell_size_mm:g}", "H": f"{cell_size_mm:g}", "Cr": "0",
         })
-        ET.SubElement(shape, "XForm").text = f"1 0 0 1 {x:g} {cell_y:g}"
+        ET.SubElement(shape, "XForm").text = transform(x, cell_y)
         objects.append(shape)
     project.extend(objects)
     return project
@@ -499,7 +516,11 @@ def selected_material_library_settings():
                     return send_file(io.BytesIO(export_file.read()), mimetype="application/xml",
                                      as_attachment=True, download_name=filename)
             if action == "coupon":
-                coupon_root = material_coupon_project(root, material_name=material_name)
+                coupon_root = material_coupon_project(
+                    root, material_name=material_name,
+                    coupon_width_mm=payload.get("coupon_width_mm"),
+                    coupon_length_mm=payload.get("coupon_length_mm"),
+                )
                 coupon_data = ET.tostring(coupon_root, encoding="utf-8", xml_declaration=True)
                 filename = f"{secure_filename(material_name) or 'rasterizer-material'}-coupon.lbrn2"
                 return send_file(io.BytesIO(coupon_data), mimetype="application/xml",

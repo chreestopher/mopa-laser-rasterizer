@@ -32,6 +32,7 @@
     .library-actions.recipe-actions { grid-template-columns:1fr; }
     .library-equipment { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; margin:0 13px 13px; } .library-equipment label { margin:0; color:#b4bda9; font-size:.7rem; } .library-equipment label.notes,.library-equipment label.community-share { grid-column:1 / -1; } .library-equipment input { display:block; width:100%; margin-top:4px; padding:6px 7px; color:#fff1cd; border:1px solid #596451; border-radius:4px; background:#111510; font:700 11px "Courier New",monospace; } .library-equipment label.community-share { display:flex; align-items:center; gap:8px; padding:8px; border:1px solid #596451; border-radius:5px; cursor:pointer; } .library-equipment label.community-share input { flex:0 0 auto; width:16px; height:16px; margin:0; padding:0; box-shadow:none; }
     .settings-modal { position:fixed; z-index:20; inset:0; display:grid; place-items:center; padding:18px; background:rgba(0,0,0,.72); backdrop-filter:blur(3px); } .settings-window { display:flex; flex-direction:column; width:min(820px,100%); height:min(82vh,720px); overflow:hidden; border:3px solid #867f57; border-radius:14px; background:linear-gradient(145deg,#30372f,#151914); box-shadow:inset 0 0 0 3px #11140f,0 22px 70px #000; } .settings-titlebar { flex:0 0 auto; display:flex; align-items:center; gap:12px; padding:12px 15px; border-bottom:1px solid #6d704e; color:#fff3c8; background:linear-gradient(#4b5146,#2d342c); letter-spacing:.04em; } .settings-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .settings-close { margin:0; padding:5px 9px; border-color:#9d5650; background:linear-gradient(#9d4941,#6c2a25); box-shadow:0 3px 0 #32120f; } .settings-body { min-height:0; overflow-y:auto; padding:14px; scrollbar-color:#8d8a5d #141814; scrollbar-width:thin; } .settings-body::-webkit-scrollbar { width:11px; } .settings-body::-webkit-scrollbar-track { background:#141814; } .settings-body::-webkit-scrollbar-thumb { border:2px solid #141814; border-radius:8px; background:#8d8a5d; } .settings-body .meta { margin:0 0 12px; }
+    .selection-popup-window { width:min(580px,100%); height:auto; max-height:min(86vh,720px); }
     @media (max-width:760px) { .library-equipment { grid-template-columns:1fr; } .inline-entry-editor > label,.inline-entry-editor .inline-setting-row { grid-template-columns:1fr; gap:5px; } }
     @media (max-width:700px) { body { overflow-x:hidden; } .machine { width:100%; min-height:100vh; } }
     @media (min-width:900px) and (hover:hover) { body { padding:0; zoom:.8; } .machine { width:125vw; max-width:none; } }
@@ -64,6 +65,12 @@
         </details>
         <div id="holographic_recipe_list"></div>
         <div id="holographic_recipe_notice" class="notice" role="status"></div>
+      </section>
+    </div>
+    <div id="selection_modal" class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="selection_modal_title" hidden>
+      <section class="settings-window selection-popup-window">
+        <div class="settings-titlebar"><strong id="selection_modal_title" class="settings-title">SELECTED MATERIAL SETTINGS</strong><button id="selection_modal_close" class="settings-close" type="button" aria-label="Close selected actions">Close</button></div>
+        <div id="selection_modal_body" class="settings-body"></div>
       </section>
     </div>
   </main>
@@ -133,18 +140,23 @@
     let activeEntries = [];
     let activeLibraryName = '';
     let activeLibraryId = '';
-    const selectionBody = settingsBody;
+    const selectionModal = document.getElementById('selection_modal');
+    const selectionBody = document.getElementById('selection_modal_body');
     const selectionControls = () => {
       const action = document.getElementById('selection_action')?.value || 'export';
       const target = action === 'copy_existing' ? `<label>Destination Rasterizer library<select id="selection_target_library" class="library-name-input">${savedLibraries.map(library => `<option value="${esc(library.library_id)}">${esc(library.name)}</option>`).join('')}</select></label>` : '';
       const newName = action === 'copy_new' ? '<label>New Rasterizer library name<input id="selection_new_library_name" class="library-name-input" placeholder="My Color Settings"></label>' : '';
-      const couponNote = action === 'coupon' ? `<p class="meta">Each checked setting becomes one 10 mm test cell on its own LightBurn layer. Black text above each cell shows its swatch name, and the grid title uses the Material Name below. The selected Black setting is used for text when present; otherwise the first checked setting supplies the black label layer parameters. Maximum: 29 cells.</p>` : '';
+      const couponNote = action === 'coupon' ? `<p class="meta">Each checked setting becomes one test cell on its own LightBurn layer. Black text above each cell shows its swatch name, and the grid title uses the Material Name below. The complete coupon is scaled to the requested width and length. The selected Black setting is used for text when present; otherwise the first checked setting supplies the black label layer parameters. Maximum: 29 cells.</p><div class="setting-grid"><div class="setting-field"><label for="coupon_width_mm">Coupon Width (mm)</label><input id="coupon_width_mm" type="number" min="10" max="1000" step="0.1" value="100"><small>Final horizontal size of the entire coupon.</small></div><div class="setting-field"><label for="coupon_length_mm">Coupon Length (mm)</label><input id="coupon_length_mm" type="number" min="10" max="1000" step="0.1" value="100"><small>Final vertical size of the entire coupon.</small></div></div>` : '';
       const submitLabel = action === 'export' ? 'Download LightBurn Library' : (action === 'coupon' ? 'Generate Coupon' : 'Copy selected settings');
       return `<p class="meta">${selectedSettings.size} checked setting${selectedSettings.size === 1 ? '' : 's'} will be used.</p><label>Action<select id="selection_action" class="library-name-input"><option value="export"${action === 'export' ? ' selected' : ''}>Export to LightBurn</option><option value="coupon"${action === 'coupon' ? ' selected' : ''}>Generate Coupon</option><option value="copy_existing"${action === 'copy_existing' ? ' selected' : ''}>Copy to a saved library</option><option value="copy_new"${action === 'copy_new' ? ' selected' : ''}>Copy to a new saved library</option></select></label><label>Material Name<input id="selection_material_name" class="library-name-input" value="colors - stainless steel" placeholder="colors - stainless steel"></label><small>This name identifies the exported file and becomes the Material Name in exported or copied libraries.</small>${couponNote}${target}${newName}<button id="selection_submit" type="button">${submitLabel}</button>`;
     };
-    const openSelectionActions = () => { settingsTitle.textContent = 'SELECTED MATERIAL SETTINGS'; selectionBody.innerHTML = selectionControls(); };
+    const closeSelectionActions = () => { selectionModal.hidden = true; };
+    const openSelectionActions = () => { selectionBody.innerHTML = selectionControls(); selectionModal.hidden = false; document.getElementById('selection_action')?.focus(); };
     const selectedActionsButton = document.getElementById('selected_actions');
     if (selectedActionsButton) selectedActionsButton.addEventListener('click', openSelectionActions);
+    document.getElementById('selection_modal_close').addEventListener('click', closeSelectionActions);
+    selectionModal.addEventListener('click', event => { if (event.target === selectionModal) closeSelectionActions(); });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape' && !selectionModal.hidden) closeSelectionActions(); });
     const showSettingsWorkspace = async (expandLibraryId='') => {
       settingsTitle.textContent = 'MATERIAL SETTINGS CONSOLE';
       settingsBody.innerHTML = '<p class="meta">Loading the selected settings banks…</p>';
@@ -382,6 +394,10 @@
       if (!event.target.matches('#selection_submit')) return;
       const action = document.getElementById('selection_action').value;
       const payload = {action, selections:[...selectedSettings.values()], material_name:document.getElementById('selection_material_name').value.trim()};
+      if (action === 'coupon') {
+        payload.coupon_width_mm = document.getElementById('coupon_width_mm').value;
+        payload.coupon_length_mm = document.getElementById('coupon_length_mm').value;
+      }
       if (action === 'copy_existing') payload.target_library_id = document.getElementById('selection_target_library').value;
       if (action === 'copy_new') payload.new_library_name = document.getElementById('selection_new_library_name').value.trim();
       const response = await fetch('/account/material-libraries/selected-settings', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
@@ -397,7 +413,7 @@
         if (!response.ok) return say(data.message || 'Could not process the selected settings.', true);
         say(action === 'copy_new' ? 'New Rasterizer Material Library created.' : 'Selected settings copied into the saved library.');
       }
-      selectedSettings.clear(); updateSelectedCount(); await load(); await showSettingsWorkspace();
+      closeSelectionActions(); selectedSettings.clear(); updateSelectedCount(); await load(); await showSettingsWorkspace();
     });
     const fileInput = document.getElementById('libraries');
     const importPlan = document.getElementById('import_plan');
