@@ -812,7 +812,7 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
     try:
         image = Image.open(art_file.stream).convert("RGB")
     except (UnidentifiedImageError, OSError) as error:
-        raise ValueError("Upload a readable raster artwork image (.jpg, .jpeg, .png, .bmp, .tif, .tiff, or .webp).") from error
+        raise ValueError("Upload a raster artwork image (.jpg, .jpeg, .png, .bmp, .tif, .tiff, or .webp).") from error
     image.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
     pixels = np.asarray(image)
     if not pixels.size:
@@ -1228,7 +1228,7 @@ def save_calibration_profile():
         photo_image.verify()
         photo.stream.seek(0)
     except (UnidentifiedImageError, OSError):
-        return jsonify({"status": "error", "message": "Upload a readable raster image of the finished grid (.jpg, .jpeg, .png, .bmp, .tif, .tiff, or .webp)."}), 400
+        return jsonify({"status": "error", "message": "Upload a raster image of the finished grid (.jpg, .jpeg, .png, .bmp, .tif, .tiff, or .webp)."}), 400
 
     profile_id = str(uuid.uuid4())
     extension = os.path.splitext(secure_filename(photo.filename))[1].lower() or ".image"
