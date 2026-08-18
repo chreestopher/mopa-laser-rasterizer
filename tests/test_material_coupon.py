@@ -15,7 +15,7 @@ class MaterialCouponTests(unittest.TestCase):
 
         project = material_coupon_project(library)
         layers = project.findall("CutSetting")
-        cells = project.findall("Shape")
+        cells = [shape for shape in project.findall("Shape[@Type='Rect']") if shape.attrib["CutIndex"] != "0"]
 
         self.assertEqual(["0", "1", "2"], [layer.find("index").attrib["Value"] for layer in layers])
         self.assertEqual(["Coupon labels", "Red", "Blue"], [layer.find("name").attrib["Value"] for layer in layers])
@@ -26,6 +26,9 @@ class MaterialCouponTests(unittest.TestCase):
         text = project.findall("Shape[@Type='Text']")
         self.assertEqual(["0", "0", "0"], [item.attrib["CutIndex"] for item in text])
         self.assertEqual(["Material Library Settings", "Red", "Blue"], [item.attrib["Str"] for item in text])
+        boundary = project.find("Shape[@Type='Rect'][@CutIndex='0']")
+        self.assertEqual("10", boundary.attrib["W"])
+        self.assertEqual("21", boundary.attrib["H"])
 
     def test_coupon_scales_complete_layout_to_requested_dimensions(self):
         library = ET.fromstring("""
@@ -34,7 +37,7 @@ class MaterialCouponTests(unittest.TestCase):
             </Material></LightBurnLibrary>
         """)
         project = material_coupon_project(library, coupon_width_mm=50, coupon_length_mm=25)
-        cell = project.find("Shape[@Type='Rect']")
+        cell = next(shape for shape in project.findall("Shape[@Type='Rect']") if shape.attrib["CutIndex"] != "0")
         values = [float(value) for value in cell.find("XForm").text.split()]
         self.assertAlmostEqual(5.0, values[0])
         self.assertAlmostEqual(25.0 / 21.0, values[3])
