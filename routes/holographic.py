@@ -577,10 +577,17 @@ def _measure_grid_photo(photo_path, grid, rotation_degrees=0, crop=None, max_edg
     left_margin_mm = float(grid.get("left_grid_margin_mm", 0) or 0)
     grid_width_mm = columns * float(grid["cell_size_mm"])
     grid_height_mm = rows * float(grid["cell_size_mm"])
-    total_width_mm = left_margin_mm + grid_width_mm + right_label_mm
-    grid_left = round(width * left_margin_mm / total_width_mm) if left_margin_mm else 0
-    grid_right = round(width * (left_margin_mm + grid_width_mm) / total_width_mm) if right_label_mm or left_margin_mm else width
-    grid_top = round(height * top_label_mm / (grid_height_mm + top_label_mm)) if top_label_mm else 0
+    if correction == "manual_corners":
+        # The corner editor asks the operator to outline the cell matrix itself.
+        # Perspective rectification has already made that quadrilateral fill
+        # the preview, so applying the generated project's label margins again
+        # would incorrectly shrink and offset the sampling grid.
+        grid_left, grid_right, grid_top = 0, width, 0
+    else:
+        total_width_mm = left_margin_mm + grid_width_mm + right_label_mm
+        grid_left = round(width * left_margin_mm / total_width_mm) if left_margin_mm else 0
+        grid_right = round(width * (left_margin_mm + grid_width_mm) / total_width_mm) if right_label_mm or left_margin_mm else width
+        grid_top = round(height * top_label_mm / (grid_height_mm + top_label_mm)) if top_label_mm else 0
     cells = []
     manual_sample_points = manual_sample_points or {}
     preview = rectified.copy()
