@@ -3,12 +3,15 @@
 import json
 import math
 import os
+import tempfile
 import uuid
 from difflib import SequenceMatcher
+from xml.etree import ElementTree as ET
 
 import cv2
 import numpy as np
 from flask import current_app, jsonify, render_template, request, send_from_directory
+from werkzeug.utils import secure_filename
 
 from services import (
     HISTORY_TTL_SECONDS,
@@ -16,12 +19,14 @@ from services import (
     bind_job_access,
     query_laser_community,
     redis_client,
+    save_user_material_library,
     upload_task_artifact,
     valid_history_session,
 )
 
 from . import routes
 from ._job_access import browser_job_session, issue_submission_auth_token, request_can_access_job
+from .account import apply_entry_update, library_entries, mutate_library
 from .holographic import (
     _calibration_base_layer,
     _exact_setting,
@@ -81,6 +86,32 @@ def _store_artifact(owner_id, path):
         redis_client.set(_artifact_key(path), key, ex=HISTORY_TTL_SECONDS)
         # Reuse the lab's durable artifact resolver; it is prefix-agnostic.
         redis_client.set(f"holographic-artifact:{os.path.basename(path)}", key, ex=HISTORY_TTL_SECONDS)
+
+
+def _vault_entry_payloads(cells, material_name):
+    """Turn measured cells into distinct, immediately matchable palette entries."""
+    available = []
+    for color_hex, description in LIGHTBURN_PALETTE_NAMES.items():
+        available.append((_hex_rgb(color_hex), description))
+    payloads = []
+    for cell in cells:
+        observed = _hex_rgb(cell.get("observed_hex"))
+        if not observed or not available:
+            raise ValueError("A selected cell does not contain a usable measured color.")
+        palette_rgb, description = min(
+            available,
+            key=lambda item: sum((observed[channel] - item[0][channel]) ** 2 for channel in range(3)),
+        )
+        available.remove((palette_rgb, description))
+        setting = dict(cell.get("setting") or {})
+        setting_type = str(setting.pop("type", "Scan"))
+        payloads.append({
+            "material": material_name,
+            "description": description,
+            "type": setting_type if setting_type in {"Cut", "Scan", "Image", "Offset"} else "Scan",
+            "settings": setting,
+        })
+    return payloads
 
 
 def _number(value, fallback, minimum, maximum):
@@ -454,6 +485,64 @@ def save_color_discovery_recipes():
     session["saved_recipes"].extend(recipes)
     _save_session(session)
     return jsonify({"status": "ok", "recipes": recipes, "saved_count": len(session["saved_recipes"])})
+
+
+@routes.route("/color-discovery/save-to-material-vault", methods=["POST"])
+def save_color_discovery_to_material_vault():
+    user_id, auth_failure = _validated_submission_identity()
+    if auth_failure:
+        return auth_failure
+    if not user_id:
+        return jsonify({"status": "error", "message": "Sign in to save discovered colors to the Material Vault."}), 401
+    temp_path = None
+    try:
+        session = _load_session(str(request.form.get("session_id", "")))
+        grid = next(item for item in session["grids"] if item["grid_id"] == str(request.form.get("grid_id", "")))
+        selected = {int(value) for value in json.loads(request.form.get("selected_cells", "[]"))}
+        measured = {cell["index"]: cell for cell in grid.get("analysis", {}).get("cells", [])}
+        cells = [measured[index] for index in sorted(selected) if index in measured]
+        if not cells:
+            raise ValueError("Select at least one measured cell.")
+        material_name = str(request.form.get("material_name", "")).strip()
+        if not material_name or len(material_name) > 160:
+            raise ValueError("Choose a Material Name between 1 and 160 characters.")
+        entry_payloads = _vault_entry_payloads(cells, material_name)
+        target_library_id = str(request.form.get("target_library_id", "")).strip()
+        new_library_name = str(request.form.get("new_library_name", "")).strip()
+
+        def append_entries(root):
+            for payload in entry_payloads:
+                apply_entry_update(root, None, payload, creating=True)
+
+        if target_library_id:
+            summary = mutate_library(user_id, target_library_id, append_entries)
+            if summary is None:
+                return jsonify({"status": "error", "message": "That Material Library no longer exists."}), 404
+            library = {"library_id": target_library_id}
+        else:
+            if not new_library_name or len(new_library_name) > 160:
+                raise ValueError("Give the new Material Library a name between 1 and 160 characters.")
+            root = ET.Element("LightBurnLibrary")
+            append_entries(root)
+            with tempfile.NamedTemporaryFile(suffix=".clb", delete=False) as temp_file:
+                temp_path = temp_file.name
+            ET.ElementTree(root).write(temp_path, encoding="utf-8", xml_declaration=True)
+            summary = library_entries(temp_path, include_settings=True)
+            library = save_user_material_library(
+                user_id, temp_path, material_name, summary=summary, display_name=new_library_name,
+                source_filename=f"{secure_filename(new_library_name) or 'color-discovery-library'}.clb",
+            )
+        return jsonify({
+            "status": "ok", "library": library, "summary": summary,
+            "saved_count": len(entry_payloads),
+            "descriptions": [payload["description"] for payload in entry_payloads],
+        })
+    except (StopIteration, PermissionError, FileNotFoundError, RuntimeError, OSError,
+            ValueError, TypeError, json.JSONDecodeError, ET.ParseError) as error:
+        return jsonify({"status": "error", "message": str(error) or "That grid was not found."}), 400
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 @routes.route("/color-discovery/session/<session_id>")

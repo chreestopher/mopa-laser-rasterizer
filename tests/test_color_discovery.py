@@ -19,6 +19,7 @@ class ColorDiscoveryCoverageTests(unittest.TestCase):
             "build_color_discovery_grid",
             "analyze_color_discovery_grid",
             "save_color_discovery_recipes",
+            "save_color_discovery_to_material_vault",
         ):
             calls = [
                 node for node in ast.walk(functions[name])
@@ -90,6 +91,18 @@ class ColorDiscoveryCoverageTests(unittest.TestCase):
         self.assertIn("You do not need to create another session.", self.template)
         self.assertIn("$('grid_form').classList.add('next-step')", self.template)
         self.assertIn("$('grid_form').scrollIntoView", self.template)
+
+    def test_authenticated_users_can_save_discovered_colors_to_material_vault(self):
+        for expected in (
+            'id="vault_save_panel"', 'id="vault_library"', 'id="vault_material"',
+            'id="save_to_vault"', '>New Library</button>', 'id="new_library_dialog"',
+            'id="new_library_name"', 'id="new_material_name"',
+            "/color-discovery/save-to-material-vault",
+        ):
+            self.assertIn(expected, self.template)
+        self.assertIn('"description": description', self.source)
+        self.assertIn("mutate_library(user_id, target_library_id", self.source)
+        self.assertIn("save_user_material_library(", self.source)
 
 
 if __name__ == "__main__":
