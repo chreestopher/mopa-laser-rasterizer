@@ -269,6 +269,26 @@ def parse_material_settings(
             getattr(item, "materialName", "") or ""
         ).strip().casefold()
     ]
+    placeholder_settings = [
+        item for item in matching_settings
+        if (
+            str(
+                getattr(item, "entryDesc", "") or getattr(item, "name", "") or ""
+            ).strip().casefold().startswith("unconfigured ")
+            or (
+                str(getattr(item, "RasterizerPlaceholder", "0")) == "1"
+                and float(getattr(item, "maxPower", 0) or 0) == 0
+                and float(getattr(item, "speed", 0) or 0) == 0
+            )
+        )
+    ]
+    if matching_settings and len(placeholder_settings) == len(matching_settings):
+        raise ValueError(
+            f"Material '{material_name}' contains only unconfigured Rasterizer palette "
+            "entries. Replace placeholder values with complete tested settings and "
+            "rename the configured entries before using this library."
+        )
+    matching_settings = [item for item in matching_settings if item not in placeholder_settings]
     material_layer_report.update({
         "selected_material": material_name,
         "available_materials": settings_per_material,

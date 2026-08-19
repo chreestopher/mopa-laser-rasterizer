@@ -1,7 +1,9 @@
 """Public, crawlable product documentation and practical user guides."""
 
-from flask import Response, current_app, render_template, request
+from flask import Response, current_app, render_template, request, send_file
 from lib.abstract_filters import manifest as abstract_filter_manifest
+from lib.material_library_template import build_blank_palette_library
+from werkzeug.utils import secure_filename
 
 from . import routes
 
@@ -183,7 +185,18 @@ DOCS = {
         "How material names, setting descriptions, layer colors, and laser parameters are resolved during LightBurn export.",
         "A Material Library supplies the actual LightBurn cut settings attached to exported layers.",
         [("Start with LightBurn's library workflow", [{"before": "LightBurn's official ", "link_text": "Material Library documentation", "url": LIGHTBURN_MATERIAL_LIBRARY_DOCS, "after": " explains how to open the Library window, create presets from layers, organize entries, and assign or link presets. Learn those fundamentals first if Material Libraries are new to you."}]), ("Matching", ["Rasterizer layers are associated with recognized palette descriptions. Holographic calibration additionally uses the selected material name and setting Description to find its base setting."]), ("Sublayers", ["Where a matched setting contains sublayers, the workflow may use the applicable base or first sublayer according to the feature. Review the resulting LightBurn project before running it."]), ("Machine-specific data", ["Speed, power, frequency, pulse width, passes, scan interval, and cut mode are machine- and material-dependent. Treat imported settings as starting data that requires validation on your equipment."])],
-        ["material-vault", "color-discovery", "color-layers", "holographic-calibration"]),
+        ["blank-palette-library", "material-vault", "color-discovery", "color-layers", "holographic-calibration"]),
+    "blank-palette-library": _page(
+        "Blank Rasterizer Palette Material Library",
+        "Generate a safe, structured LightBurn .clb template containing placeholders for all 30 Rasterizer palette swatches.",
+        "Use this template as an organizational checklist while discovering settings for one material. It contains no usable laser recipes.",
+        [
+            ("Generate the template", ["Enter the exact Material Name you want the library to use, then download the generated .clb file below. The file contains one Fill entry for every default Rasterizer palette swatch."]),
+            ("Every entry is deliberately unusable", ["Every generated entry begins with UNCONFIGURED followed by its swatch name, such as UNCONFIGURED Blue. It is also hidden and assigned zero power and zero-valued placeholder parameters. These values exist only to keep the XML structurally complete. They are not recommendations, starting settings, or safe laser recipes. Never enable or run an unconfigured entry."]),
+            ("Replace a placeholder only after testing", ["When you discover a repeatable setting for a particular color, replace every applicable value in that entry with the tested values from the exact laser, lens, material, finish, focus, and preparation used during discovery. Remove the UNCONFIGURED prefix from both the entry Description and setting name so only the exact swatch name remains, then enable output only after reviewing every parameter."]),
+            ("Remove what you do not configure", ["Delete placeholders you do not intend to fill, or leave them visibly marked and disabled. Do not rename a placeholder to a normal swatch name until its complete tested setting has been entered. Rasterizer rejects a material that still consists entirely of its generated placeholders."]),
+            ("Review before every use", ["Open the completed library in LightBurn and verify operation type, minimum and maximum power, speed, frequency, pulse width, interval, angle, crosshatch, passes, and output state. Test on expendable material before engraving finished work. A template organizes records; it cannot make unknown settings safe."]),
+        ], ["material-libraries", "color-discovery", "material-vault", "color-layers"]),
     "color-layers": _page(
         "Color Separation and LightBurn Layers",
         "Understand how image colors become LightBurn palette layers and why unmatched colors may not export.",
@@ -876,7 +889,7 @@ DOC_GROUPS = [
     ("Rasterizer", ["preset-controls", "raster-to-vector", "svg-only-mode", "raster-vs-vector", "image-presets", "cartoon-preset", "color-photo-preset", "black-and-white-photo", "pixel-size", "color-layers"]),
     ("Abstract filters", ["abstract-filters", "abstract-filter-reference"] + [f"{slug}-filter" for slug in FILTER_PAGES]),
     ("Laser technology", ["my-personal-laser-journey", "mopa-color-laser-engraving", "types-of-lasers-for-engraving", "continuous-wave-vs-pulsed-lasers", "what-does-mopa-mean", "what-does-q-switched-mean", "diode-lasers-explained", "co2-lasers-explained", "uv-lasers-explained", "laser-engraving-parameters", "all-about-operation-mode", "all-about-laser-power", "what-is-laser-ablation", "all-about-engraving-speed", "all-about-laser-frequency", "all-about-pulse-width", "power-down-cutoff-frequency", "all-about-line-interval", "all-about-engraving-passes", "all-about-scan-angle-crosshatch", "why-fixturing-is-so-important", "laser-compatibility", "what-laser-should-i-buy", "color-discovery"]),
-    ("LightBurn and materials", ["works-with-lightburn", "material-vault", "material-coupon-generator", "community-set", "material-libraries", "lightburn-export", "lightburn-large-projects", "reduce-lightburn-object-count", "mopa-laser-workflow"]),
+    ("LightBurn and materials", ["works-with-lightburn", "material-vault", "material-coupon-generator", "community-set", "material-libraries", "blank-palette-library", "lightburn-export", "lightburn-large-projects", "reduce-lightburn-object-count", "mopa-laser-workflow"]),
     ("Holographic Etching Lab", ["holographic-etching", "what-is-iridescence", "iridescent-laser-engraving", "iridescent-engraving-challenges", "holographic-lab-workflow", "holographic-calibration", "analyze-calibration-photo", "holographic-recipes", "holographic-artwork", "diffraction-gratings", "choose-cut-mode"]),
     ("Jobs and support", ["membership-benefits", "job-history", "troubleshooting"]),
 ]
@@ -902,6 +915,22 @@ def docs_page(slug):
                            canonical=_canonical(f"/docs/{slug}"),
                            previous_page=(previous_slug, DOCS[previous_slug]) if previous_slug else None,
                            next_page=(next_slug, DOCS[next_slug]) if next_slug else None)
+
+
+@routes.route("/docs/blank-palette-library/download", methods=["POST"])
+def blank_palette_library_download():
+    material_name = str(request.form.get("material_name", "")).strip()
+    try:
+        library = build_blank_palette_library(material_name)
+    except ValueError as error:
+        return Response(str(error), status=400, mimetype="text/plain")
+    filename_material = secure_filename(material_name) or "material"
+    return send_file(
+        library,
+        mimetype="application/xml",
+        as_attachment=True,
+        download_name=f"{filename_material}-blank-rasterizer-palette.clb",
+    )
 
 
 def _canonical(path):
