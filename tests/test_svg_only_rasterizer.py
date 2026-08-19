@@ -37,6 +37,13 @@ class SvgOnlyRasterizerCoverageTests(unittest.TestCase):
         self.assertIn("{% if file.lightburn_url %}", loading)
         self.assertIn("{% if not current_svg_only %}", loading)
 
+    def test_worker_processing_does_not_require_svg_only_material_name(self):
+        services = (ROOT / "services.py").read_text(encoding="utf-8")
+        worker = (ROOT / "worker.py").read_text(encoding="utf-8")
+
+        self.assertIn("if not material_name and not svg_only", services)
+        self.assertIn("None if svg_only else material_path", worker)
+
 
 if __name__ == "__main__":
     unittest.main()

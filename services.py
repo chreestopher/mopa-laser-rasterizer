@@ -1299,8 +1299,9 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
         redis_client.expire(status_key, HISTORY_TTL_SECONDS)
         redis_client.expire(log_key, HISTORY_TTL_SECONDS)
         image_preset = str(data.get("image_preset", "cartoon")).strip().lower()
+        svg_only = str(data.get("svg_only", "false")).strip().lower() in ("true", "1", "yes", "on")
         material_name = str(data.get("material", "stainless - steel")).strip().lower()
-        if not material_name:
+        if not material_name and not svg_only:
             raise ValueError("Choose or enter a material name")
         abstract_filter = str(data.get("abstract_filter", "none")).strip().lower()
         if image_preset.startswith(ABSTRACT_PRESET_PREFIX):
@@ -1308,7 +1309,6 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
             image_preset = "abstract"
         if image_preset != "abstract" or abstract_filter not in ABSTRACT_FILTER_NAMES:
             abstract_filter = "none"
-        svg_only = str(data.get("svg_only", "false")).strip().lower() in ("true", "1", "yes", "on")
         process = subprocess.Popen([
             "python", "-u", "lib/Material_Library.py", image_path,
             os.path.join(
