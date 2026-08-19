@@ -1084,7 +1084,10 @@ def calibration_grid():
 
     count = columns * rows
     column_intervals = [interval_low + (interval_high - interval_low) * index / max(columns - 1, 1) for index in range(columns)]
-    row_angles = [180 * index / max(rows - 1, 1) for index in range(rows)]
+    # Grating orientation repeats after a half-turn, so exclude 180 degrees.
+    # Dividing the half-turn by the row count gives every row a unique,
+    # evenly spaced orientation (for example: 0, 45, 90, 135 for four rows).
+    row_angles = [180 * index / rows for index in range(rows)]
     intervals = [column_intervals[index % columns] for index in range(count)]
     angles = [row_angles[index // columns] for index in range(count)]
     sweep_values = [sweep_low + (sweep_high - sweep_low) * index / max(count - 1, 1) for index in range(count)]
