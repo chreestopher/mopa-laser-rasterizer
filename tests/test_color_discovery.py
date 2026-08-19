@@ -68,6 +68,12 @@ class ColorDiscoveryCoverageTests(unittest.TestCase):
     def test_grid_has_no_full_project_outline(self):
         self.assertNotIn("lightburn.Square(total_width_mm, total_length_mm", self.source)
 
+    def test_page_uses_shared_machine_facade_geometry(self):
+        self.assertIn("body{max-width:1040px", self.template)
+        self.assertIn("border-radius:30px", self.template)
+        self.assertIn("width:125vw;max-width:none;margin:0;zoom:.8", self.template)
+        self.assertIn("border-radius:16px", self.template)
+
 
 if __name__ == "__main__":
     unittest.main()
