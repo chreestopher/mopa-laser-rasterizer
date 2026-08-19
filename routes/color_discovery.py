@@ -12,6 +12,7 @@ from flask import current_app, jsonify, render_template, request, send_from_dire
 
 from services import (
     HISTORY_TTL_SECONDS,
+    LIGHTBURN_PALETTE_NAMES,
     bind_job_access,
     query_laser_community,
     redis_client,
@@ -248,6 +249,10 @@ def color_discovery_lab():
         "color_discovery.html",
         submission_auth_token=issue_submission_auth_token(),
         parameter_specs=PARAMETERS,
+        lightburn_palette=[
+            [str(name).strip().casefold(), color_hex]
+            for color_hex, name in LIGHTBURN_PALETTE_NAMES.items()
+        ],
     )
 
 

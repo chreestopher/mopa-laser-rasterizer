@@ -57,6 +57,13 @@ class ColorDiscoveryCoverageTests(unittest.TestCase):
         self.assertIn('"cell_width_mm": cell_width_mm', self.source)
         self.assertIn('"cell_height_mm": cell_height_mm', self.source)
 
+    def test_saved_setting_picker_renders_palette_swatches(self):
+        self.assertIn("lightburn_palette=", self.source)
+        self.assertIn('id="saved_entry_menu"', self.template)
+        self.assertIn('class="mini-swatch"', self.template)
+        self.assertIn("paletteHex(entry.description)", self.template)
+        self.assertIn("data-entry-index", self.template)
+
 
 if __name__ == "__main__":
     unittest.main()
