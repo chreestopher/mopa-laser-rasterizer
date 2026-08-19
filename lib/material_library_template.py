@@ -31,19 +31,19 @@ def build_blank_palette_library(material_name):
         "Warning": "PLACEHOLDERS_ONLY_DO_NOT_RUN",
     })
     material = ET.SubElement(root, "Material", {"name": material_name})
-    for swatch_name, layer_index in DEFAULT_RASTERIZER_PALETTE:
+    for swatch_name, _layer_index in DEFAULT_RASTERIZER_PALETTE:
         entry = ET.SubElement(material, "Entry", {
-            "Thickness": "0",
+            "Thickness": "-1.0000",
             "Desc": f"UNCONFIGURED {swatch_name}",
-            "NoThickTitle": "1",
         })
         cut = ET.SubElement(entry, "CutSetting", {"type": "Scan"})
         values = {
-            "index": layer_index, "name": f"UNCONFIGURED {swatch_name}",
+            "index": 0, "name": "",
+            "LinkPath": f"{material_name}/-1.0000/UNCONFIGURED {swatch_name}",
             "minPower": 0, "maxPower": 0, "maxPower2": 0, "speed": 0,
             "frequency": 0, "QPulseWidth": 0, "interval": 0, "angle": 0,
-            "anglePerPass": 0, "crossHatch": 0, "hide": 1, "numPasses": 1,
-            "RasterizerPlaceholder": 1,
+            "anglePerPass": 0, "crossHatch": 0, "doOutput": 0,
+            "hide": 1, "numPasses": 1,
         }
         for field, value in values.items():
             ET.SubElement(cut, field, {"Value": str(value)})

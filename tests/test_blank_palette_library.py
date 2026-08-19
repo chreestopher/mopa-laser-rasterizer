@@ -21,12 +21,17 @@ class BlankPaletteLibraryTests(unittest.TestCase):
             [entry.attrib["Desc"] for entry in entries],
         )
         for entry in entries:
+            self.assertEqual("-1.0000", entry.attrib["Thickness"])
+            self.assertNotIn("NoThickTitle", entry.attrib)
             cut = entry.find("CutSetting")
             values = {child.tag: child.attrib.get("Value") for child in cut}
+            self.assertEqual("0", values["index"])
+            self.assertEqual("", values["name"])
             self.assertEqual("0", values["maxPower"])
             self.assertEqual("0", values["speed"])
+            self.assertEqual("0", values["doOutput"])
             self.assertEqual("1", values["hide"])
-            self.assertEqual("1", values["RasterizerPlaceholder"])
+            self.assertNotIn("RasterizerPlaceholder", values)
 
     def test_material_name_is_required_and_bounded(self):
         for invalid_name in ("", "   ", "x" * 161, "bad\nname"):

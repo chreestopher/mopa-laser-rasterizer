@@ -271,16 +271,9 @@ def parse_material_settings(
     ]
     placeholder_settings = [
         item for item in matching_settings
-        if (
-            str(
-                getattr(item, "entryDesc", "") or getattr(item, "name", "") or ""
-            ).strip().casefold().startswith("unconfigured ")
-            or (
-                str(getattr(item, "RasterizerPlaceholder", "0")) == "1"
-                and float(getattr(item, "maxPower", 0) or 0) == 0
-                and float(getattr(item, "speed", 0) or 0) == 0
-            )
-        )
+        if str(
+            getattr(item, "entryDesc", "") or getattr(item, "name", "") or ""
+        ).strip().casefold().startswith("unconfigured ")
     ]
     if matching_settings and len(placeholder_settings) == len(matching_settings):
         raise ValueError(
