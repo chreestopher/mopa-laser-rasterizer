@@ -50,6 +50,7 @@ class ColorDiscoveryCoverageTests(unittest.TestCase):
         self.assertIn("control.disabled=library", self.template)
 
     def test_grid_accepts_overall_physical_dimensions(self):
+        self.assertIn('class="grid-dimensions full"', self.template)
         self.assertIn('name="grid_width_mm"', self.template)
         self.assertIn('name="grid_length_mm"', self.template)
         self.assertIn('total_width_mm = _number(request.form.get("grid_width_mm")', self.source)
