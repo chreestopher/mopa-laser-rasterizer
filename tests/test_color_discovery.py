@@ -74,6 +74,11 @@ class ColorDiscoveryCoverageTests(unittest.TestCase):
         self.assertIn("width:125vw;max-width:none;margin:0;zoom:.8", self.template)
         self.assertIn("border-radius:16px", self.template)
 
+    def test_baseline_readout_shows_fixed_minimum_and_maximum_power(self):
+        self.assertIn("Minimum power<strong>${esc(setting.minPower)}%</strong>", self.template)
+        self.assertIn("Maximum power<strong>${esc(setting.maxPower)}%</strong>", self.template)
+        self.assertNotIn("${esc(setting.minPower)}–${esc(setting.maxPower)}%", self.template)
+
 
 if __name__ == "__main__":
     unittest.main()
