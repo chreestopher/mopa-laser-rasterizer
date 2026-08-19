@@ -66,7 +66,9 @@
     <div class="grid" style="margin-top:14px">
       <label>Column parameter<select id="x_parameter" name="x_parameter"></select></label><label>Column minimum<input id="x_low" name="x_low" type="number" step="any"></label><label>Column maximum<input id="x_high" name="x_high" type="number" step="any"></label>
       <label>Row parameter<select id="y_parameter" name="y_parameter"></select></label><label>Row minimum<input id="y_low" name="y_low" type="number" step="any"></label><label>Row maximum<input id="y_high" name="y_high" type="number" step="any"></label>
-      <label>Columns<input name="columns" type="number" value="5" min="2" max="6"></label><label>Rows<input name="rows" type="number" value="5" min="2" max="6"></label><label>Cell size (mm)<input name="cell_mm" type="number" value="10" min="4" max="30" step=".5"></label>
+      <label>Columns<input name="columns" type="number" value="5" min="2" max="6"></label><label>Rows<input name="rows" type="number" value="5" min="2" max="6"></label>
+      <label>Overall grid width (mm)<input name="grid_width_mm" type="number" value="100" min="40" max="500" step=".5"><span class="note">Includes cells, row labels, and outer border.</span></label>
+      <label>Overall grid length (mm)<input name="grid_length_mm" type="number" value="100" min="40" max="500" step=".5"><span class="note">Includes cells, column labels, and outer border.</span></label>
     </div><div class="actions" style="margin-top:15px"><button type="submit">Generate Discovery Grid</button></div><p id="grid_status" class="status"></p>
   </form>
 

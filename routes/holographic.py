@@ -575,8 +575,8 @@ def _measure_grid_photo(photo_path, grid, rotation_degrees=0, crop=None, max_edg
     top_label_mm = float(grid.get("top_label_band_mm", 0) or 0)
     right_label_mm = float(grid.get("right_label_band_mm", 0) or 0)
     left_margin_mm = float(grid.get("left_grid_margin_mm", 0) or 0)
-    grid_width_mm = columns * float(grid["cell_size_mm"])
-    grid_height_mm = rows * float(grid["cell_size_mm"])
+    grid_width_mm = float(grid.get("grid_width_mm") or columns * float(grid["cell_size_mm"]))
+    grid_height_mm = float(grid.get("grid_height_mm") or rows * float(grid["cell_size_mm"]))
     if correction == "manual_corners":
         # The corner editor asks the operator to outline the cell matrix itself.
         # Perspective rectification has already made that quadrilateral fill

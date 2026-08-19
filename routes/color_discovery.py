@@ -309,7 +309,8 @@ def build_color_discovery_grid():
         rows = max(2, min(6, int(request.form.get("rows", 5))))
         if rows * columns > 29:
             raise ValueError("A discovery grid may contain at most 29 cells.")
-        cell_mm = _number(request.form.get("cell_mm"), 10, 4, 30)
+        total_width_mm = _number(request.form.get("grid_width_mm"), 100, 40, 500)
+        total_length_mm = _number(request.form.get("grid_length_mm"), 100, 40, 500)
         x_values = _axis_values(x_parameter, request.form.get("x_low"), request.form.get("x_high"), columns)
         y_values = _axis_values(y_parameter, request.form.get("y_low"), request.form.get("y_high"), rows)
         for x_value in x_values:
@@ -329,19 +330,26 @@ def build_color_discovery_grid():
     label.type = "Cut"
     project.add_layer(label)
     top_mm, right_mm, gap_mm = 7.0, 35.0, 1.5
-    pitch = cell_mm + gap_mm
-    matrix_width, matrix_height = columns * pitch, rows * pitch
+    matrix_width, matrix_height = total_width_mm - right_mm, total_length_mm - top_mm
+    cell_width_mm = (matrix_width - (columns - 1) * gap_mm) / columns
+    cell_height_mm = (matrix_height - (rows - 1) * gap_mm) / rows
+    if cell_width_mm < 4 or cell_height_mm < 4:
+        return jsonify({
+            "status": "error",
+            "message": "That overall size leaves cells smaller than 4 mm. Increase the grid dimensions or reduce its rows and columns.",
+        }), 400
+    pitch_x, pitch_y = cell_width_mm + gap_mm, cell_height_mm + gap_mm
     project.add(lightburn.Text(1.2, f"COLOR DISCOVERY {grid_id[:8]}", x=.5, y=1).layer(0))
     cells = []
     for column, value in enumerate(x_values):
-        project.add(lightburn.Text(.85, f"{PARAMETERS[x_parameter]['label']} {value:g}", x=column * pitch, y=4).layer(0))
+        project.add(lightburn.Text(.85, f"{PARAMETERS[x_parameter]['label']} {value:g}", x=column * pitch_x, y=4).layer(0))
     for row, value in enumerate(y_values):
-        project.add(lightburn.Text(.85, f"{PARAMETERS[y_parameter]['label']} {value:g}", x=matrix_width + 1, y=top_mm + row * pitch).layer(0))
+        project.add(lightburn.Text(.85, f"{PARAMETERS[y_parameter]['label']} {value:g}", x=matrix_width + 1, y=top_mm + row * pitch_y).layer(0))
     # A single high-contrast outer boundary gives photographed-grid alignment
     # one unambiguous rectangle instead of asking it to choose among cells.
-    project.add(lightburn.Square(matrix_width + right_mm, top_mm + matrix_height,
-                                 x=(matrix_width + right_mm) / 2,
-                                 y=(top_mm + matrix_height) / 2).layer(0))
+    project.add(lightburn.Square(total_width_mm, total_length_mm,
+                                 x=total_width_mm / 2,
+                                 y=total_length_mm / 2).layer(0))
     for row, y_value in enumerate(y_values):
         for column, x_value in enumerate(x_values):
             index = row * columns + column + 1
@@ -349,9 +357,9 @@ def build_color_discovery_grid():
             name = f"Discovery {index:02d} {x_parameter}={x_value:g} {y_parameter}={y_value:g}"
             layer = _setting_from_values(lightburn, baseline, index, name, overrides)
             project.add_layer(layer)
-            x = column * pitch + cell_mm / 2
-            y = top_mm + row * pitch + cell_mm / 2
-            project.add(lightburn.Square(cell_mm, cell_mm, x=x, y=y).layer(index))
+            x = column * pitch_x + cell_width_mm / 2
+            y = top_mm + row * pitch_y + cell_height_mm / 2
+            project.add(lightburn.Square(cell_width_mm, cell_height_mm, x=x, y=y).layer(index))
             complete = _serialize_setting(layer)
             cells.append({"index": index, "row": row + 1, "column": column + 1, "overrides": overrides, "setting": complete})
     upload_folder = current_app.config["UPLOAD_FOLDER"]
@@ -365,8 +373,11 @@ def build_color_discovery_grid():
     grid = {
         "grid_id": grid_id, "parent_cell": request.form.get("parent_cell") or None,
         "x_parameter": x_parameter, "y_parameter": y_parameter, "x_values": x_values, "y_values": y_values,
-        "columns": columns, "rows": rows, "cell_size_mm": pitch, "engraved_cell_size_mm": cell_mm,
-        "cell_gap_mm": gap_mm, "top_label_band_mm": top_mm,
+        "columns": columns, "rows": rows, "cell_size_mm": min(cell_width_mm, cell_height_mm),
+        "cell_width_mm": cell_width_mm, "cell_height_mm": cell_height_mm,
+        "cell_gap_mm": gap_mm, "grid_width_mm": matrix_width, "grid_height_mm": matrix_height,
+        "total_width_mm": total_width_mm, "total_length_mm": total_length_mm,
+        "top_label_band_mm": top_mm,
         "right_label_band_mm": right_mm, "left_grid_margin_mm": 0,
         "intervals_mm": [cell["setting"].get("interval", 0) for cell in cells],
         "angles_degrees": [cell["setting"].get("angle", 0) for cell in cells],
