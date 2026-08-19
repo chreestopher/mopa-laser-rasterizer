@@ -1057,7 +1057,7 @@ def job_history_links(entry):
         }
     return {
         "svg_url": f"/download/{task_id}",
-        "lightburn_url": f"/download-lbrn2/{task_id}",
+        "lightburn_url": None if parameters.get("svg_only") else f"/download-lbrn2/{task_id}",
         "reuse_url": reuse_settings_url(entry),
         "reuse_label": "Reuse Settings",
     }
@@ -1308,6 +1308,7 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
             image_preset = "abstract"
         if image_preset != "abstract" or abstract_filter not in ABSTRACT_FILTER_NAMES:
             abstract_filter = "none"
+        svg_only = str(data.get("svg_only", "false")).strip().lower() in ("true", "1", "yes", "on")
         process = subprocess.Popen([
             "python", "-u", "lib/Material_Library.py", image_path,
             os.path.join(
@@ -1316,10 +1317,11 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
                 or f"output_{task_id}_{os.path.basename(image_path)}",
             ),
             str(data.get("pixel_square_mm", "1")), str(normalize_dimension(data.get("new_width"))),
-            str(normalize_dimension(data.get("new_height"))), material_settings_path,
+            str(normalize_dimension(data.get("new_height"))), material_settings_path or "-",
             material_name, str(data.get("colors", "")), image_preset, abstract_filter,
             json.dumps(parse_abstract_filter_parameters(data.get("abstract_filter_parameters", "{}")), separators=(",", ":")),
             json.dumps(parse_color_name_overrides(data.get("color_name_overrides", "{}")), separators=(",", ":")),
+            "true" if svg_only else "false",
         ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         current_line = []
         while True:
@@ -1382,8 +1384,9 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
 def enqueue_raster_job(task_id, data, image_key, material_key, output_name,
                        image_name, material_name, user_id=None):
     """Place a portable raster job on Redis for the dedicated worker pod."""
-    if not image_key or not material_key:
-        raise RuntimeError("Queued raster jobs require durable image and material artifacts")
+    svg_only = str(data.get("svg_only", "false")).strip().lower() in ("true", "1", "yes", "on")
+    if not image_key or (not svg_only and not material_key):
+        raise RuntimeError("Queued raster jobs require their durable input artifacts")
     payload = {
         "task_id": task_id,
         "data": data,

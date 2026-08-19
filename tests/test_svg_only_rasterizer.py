@@ -15,6 +15,8 @@ class SvgOnlyRasterizerCoverageTests(unittest.TestCase):
         self.assertIn("Continue with SVG only", template)
         self.assertIn('svg_only_requested = str(user_data.get("svg_only_confirmed"', route)
         self.assertIn('"code": "material_library_confirmation_required"', route)
+        self.assertNotIn('id="material" name="material" list="material_suggestions" value="stainless - steel" required', template)
+        self.assertIn("if not material_name and not svg_only", route)
 
     def test_svg_only_mode_preserves_default_selections_and_skips_library_usage(self):
         route = (ROOT / "routes" / "jobs.py").read_text(encoding="utf-8")

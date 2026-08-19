@@ -205,18 +205,20 @@ def run_job(raw_payload, upload_folder):
     if payload.get("job_type") == "holographic_artwork":
         return run_holographic_artwork_job(payload, upload_folder)
     image_name = secure_artifact_name(payload.get("image_name"), "image")
+    svg_only = str((payload.get("data") or {}).get("svg_only", "false")).lower() in ("true", "1", "yes", "on")
     material_name = secure_artifact_name(payload.get("material_name"), "materials.clb")
     image_path = os.path.join(upload_folder, f"{task_id}_{image_name}")
     material_path = os.path.join(upload_folder, f"{task_id}_material_{material_name}")
     os.makedirs(upload_folder, exist_ok=True)
     redis_client.rpush(f"task:{task_id}:log", "Dedicated raster worker claimed the job.")
     download_task_artifact(payload["image_key"], image_path)
-    download_task_artifact(payload["material_key"], material_path)
+    if not svg_only:
+        download_task_artifact(payload["material_key"], material_path)
     long_running_script(
         task_id,
         payload.get("data") or {},
         image_path,
-        material_path,
+        None if svg_only else material_path,
         upload_folder,
         payload.get("user_id"),
         payload.get("output_name"),
