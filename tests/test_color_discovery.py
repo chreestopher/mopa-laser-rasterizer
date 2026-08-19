@@ -79,6 +79,10 @@ class ColorDiscoveryCoverageTests(unittest.TestCase):
         self.assertIn("Maximum power<strong>${esc(setting.maxPower)}%</strong>", self.template)
         self.assertNotIn("${esc(setting.minPower)}–${esc(setting.maxPower)}%", self.template)
 
+    def test_completed_grid_shows_only_the_download_action(self):
+        self.assertNotIn("Grid ready:", self.template)
+        self.assertIn("Download LightBurn Project</a>", self.template)
+
 
 if __name__ == "__main__":
     unittest.main()
