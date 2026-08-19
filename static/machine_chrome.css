@@ -1,3 +1,5 @@
+.machine-facade { max-width:1040px; margin:0; padding:38px; color:var(--machine-facade-text,#d9d2af); border:3px solid #777864; border-radius:30px; background:repeating-linear-gradient(90deg,rgba(255,255,255,.014) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 5%,#505443,#363a30 42%,#24271f 100%); box-shadow:inset 0 0 0 5px #1b1e18,inset 0 0 60px #10120e,0 0 0 1px #9a9a7e,0 20px 50px #000; font:16px/1.65 system-ui,sans-serif; }
+body.machine-facade.light-machine { color:var(--machine-facade-light-text,#171815); border-color:#7c7e7a; background:repeating-linear-gradient(90deg,rgba(0,0,0,.025) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 5%,#f0f0e9,#c8c9c3 48%,#9fa19c 100%); box-shadow:inset 0 0 0 5px #a6a8a3,inset 0 0 45px #777,0 0 0 1px #eee,0 20px 50px #000; }
 .machine-control-bay { display:flex; align-items:center; justify-content:space-between; gap:16px; margin:0 0 12px; }
 .machine-power-toggle { min-width:0; }
 .machine-theme-toggle { flex:0 0 auto; margin-left:auto; color:#d9d2af; }
@@ -75,7 +77,9 @@ body.light-machine .machine-nav-tooltip { border-color:#777974; color:#20251f; b
   body.light-machine .machine-control-bay--overlay .login-link,body.light-machine .machine-control-bay--overlay .auth-console.authorized { color:#bff39a; }
   body.light-machine .machine-control-bay--overlay .machine-theme-toggle,body.light-machine .machine-control-bay--overlay .machine-theme-toggle label { color:#292a26; text-shadow:0 1px #fff; }
 }
+@media (min-width:900px) and (hover:hover) { body.machine-facade { width:125vw; max-width:none; margin:0; zoom:.8; } }
 @media (max-width:700px) {
+  body.machine-facade { width:auto; max-width:none; overflow-x:hidden; }
   .machine-control-bay { flex-wrap:nowrap; align-items:center; gap:8px; margin-bottom:12px; }
   .machine-power-toggle,.machine-power-toggle .login-link,.machine-power-toggle .auth-console { min-width:0; }
   .login-link,.auth-console { gap:8px; font-size:10px; letter-spacing:.09em; }
