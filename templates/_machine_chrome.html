@@ -23,11 +23,11 @@
 <nav class="machine-nav" aria-label="Primary navigation">
   <span class="machine-nav-item"><a href="/"{% if current_page == 'rasterizer' %} aria-current="page"{% endif %}>Rasterizer</a><span class="machine-nav-tooltip" role="tooltip">Turn artwork into a laser-ready color engraving project.</span></span>
   <span class="machine-nav-item"><a href="/holographic-etching"{% if current_page == 'holographic' %} aria-current="page"{% endif %}>Holographic Lab</a><span class="machine-nav-tooltip" role="tooltip">Experimental diffraction-color work.</span></span>
-  <span class="machine-nav-item"><a href="/color-discovery"{% if current_page == 'discovery' %} aria-current="page"{% endif %}>Color Discovery</a><span class="machine-nav-tooltip" role="tooltip">Sweep, photograph, refine, and save laser colors.</span></span>
   <span class="machine-nav-item"><a href="/material-libraries"{% if current_page == 'materials' %} aria-current="page"{% endif %}>Material Vault</a><span class="machine-nav-tooltip" role="tooltip">Manage your saved Material Libraries and inspect their settings.</span></span>
+  <span class="machine-nav-item"><a href="/color-discovery"{% if current_page == 'discovery' %} aria-current="page"{% endif %}>Color Discovery</a><span class="machine-nav-tooltip" role="tooltip">Sweep, photograph, refine, and save laser colors.</span></span>
   <span class="machine-nav-item"><a href="/community-set"{% if current_page == 'community' %} aria-current="page"{% endif %}>Comunity Set</a><span class="machine-nav-tooltip" role="tooltip">Explore anonymous settings contributed by laser operators.</span></span>
-  <span class="machine-nav-item"><a href="/job-history"{% if current_page == 'history' %} aria-current="page"{% endif %}>Job History</a><span class="machine-nav-tooltip" role="tooltip">Review completed runs, downloads, and retained processing logs.</span></span>
   <span class="machine-nav-item"><a href="/docs"{% if current_page == 'docs' %} aria-current="page"{% endif %}>Docs</a><span class="machine-nav-tooltip" role="tooltip">Guides for Rasterizer, LightBurn, materials, and holographic workflows.</span></span>
+  <span class="machine-nav-item"><a href="/job-history"{% if current_page == 'history' %} aria-current="page"{% endif %}>Job History</a><span class="machine-nav-tooltip" role="tooltip">Review completed runs, downloads, and retained processing logs.</span></span>
 </nav>
 <script src="/static/machine_chrome.js?v=2"></script>
 {%- endmacro %}
