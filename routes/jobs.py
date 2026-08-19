@@ -22,6 +22,7 @@ from ._job_access import (
 from services import (
     ABSTRACT_FILTER_NAMES,
     HISTORY_TTL_SECONDS,
+    LIGHTBURN_PALETTE_NAMES,
     add_history_entry,
     bind_job_access,
     claim_daily_job,
@@ -111,6 +112,8 @@ def start_task():
     material_cache_key = f"material-library:{history_session}"
     saved_library_id = str(user_data.get("saved_material_library_id", "")).strip()
     guest_library_id = str(user_data.get("guest_material_library_id", "")).strip()
+    svg_only_requested = str(user_data.get("svg_only_confirmed", "")).strip() == "1"
+    svg_only = False
     if material_settings and material_settings.filename:
         material_filename = secure_filename(material_settings.filename)
         material_settings_path = os.path.join(
@@ -180,6 +183,35 @@ def start_task():
                 "status": "error",
                 "message": "That browser-session Material Library has expired.",
             }), 404
+    elif svg_only_requested:
+        svg_only = True
+        material_settings_path = None
+        material_key = None
+        submitted_names = {
+            name.strip().casefold()
+            for name in user_data.get("colors", "").split(",")
+            if name.strip()
+        }
+        try:
+            submitted_overrides = parse_color_name_overrides(
+                user_data.get("color_name_overrides", "{}")
+            )
+        except ValueError as error:
+            return jsonify({"status": "error", "message": str(error)}), 400
+        selected_default_names = [
+            official_name
+            for color_hex, official_name in LIGHTBURN_PALETTE_NAMES.items()
+            if str(submitted_overrides.get(color_hex, official_name)).strip().casefold()
+            in submitted_names
+        ]
+        if not selected_default_names:
+            return jsonify({
+                "status": "error",
+                "message": "Keep at least one default LightBurn palette swatch selected for an SVG-only job.",
+            }), 400
+        user_data["colors"] = ", ".join(selected_default_names)
+        user_data["color_name_overrides"] = json.dumps(LIGHTBURN_PALETTE_NAMES, separators=(",", ":"))
+        user_data["svg_only"] = "true"
     else:
         try:
             cached_material = json.loads(redis_client.get(material_cache_key) or "{}")
@@ -195,11 +227,15 @@ def start_task():
             except RuntimeError as error:
                 return jsonify({"status": "error", "message": str(error)}), 503
         if not material_settings_path or not os.path.isfile(material_settings_path):
-            return jsonify({"status": "error", "message": "Choose a LightBurn Material Library file"}), 400
+            return jsonify({
+                "status": "error",
+                "code": "material_library_confirmation_required",
+                "message": "Choose a LightBurn Material Library, or confirm that you want to continue with the default palette as an SVG-only job.",
+            }), 400
     try:
         submitted_preset = str(user_data.get("image_preset", "cartoon")).strip().lower()
         material_name = str(user_data.get("material", "stainless - steel")).strip().lower()
-        if not material_name:
+        if not material_name and not svg_only:
             raise ValueError("Choose or enter a material name")
         filter_name = submitted_preset.removeprefix("abstract_")
         if submitted_preset.startswith("abstract_") and filter_name not in ABSTRACT_FILTER_NAMES:
@@ -252,6 +288,7 @@ def start_task():
         ],
         "color_name_overrides": color_name_overrides,
         "filter_parameters": filter_parameters,
+        "svg_only": svg_only,
     }
     resolved_settings = []
     try:
@@ -259,12 +296,13 @@ def start_task():
         # original Material Library is available locally. This applies to both
         # signed-in and guest jobs; shared telemetry excludes artwork, account
         # identity, and guest browser identifiers.
-        resolved_settings = resolve_material_setting_usage(
-            material_settings_path,
-            material_name,
-            run_parameters["colors"],
-            color_name_overrides,
-        )
+        if not svg_only:
+            resolved_settings = resolve_material_setting_usage(
+                material_settings_path,
+                material_name,
+                run_parameters["colors"],
+                color_name_overrides,
+            )
     except Exception as error:
         # The worker retains the authoritative validation path. A library that
         # its telemetry reader cannot inspect must not reject an accepted job.
@@ -295,12 +333,13 @@ def start_task():
             "material_name": material_name,
             "run_parameters": run_parameters,
             "created_at": int(time.time()), "status": "pending",
-            "svg_url": f"/download/{task_id}", "lightburn_url": f"/download-lbrn2/{task_id}"})
+            "svg_url": f"/download/{task_id}",
+            "lightburn_url": None if svg_only else f"/download-lbrn2/{task_id}"})
     if os.environ.get("RASTER_JOB_QUEUE_ENABLED", "false").lower() == "true":
         try:
             enqueue_raster_job(
                 task_id, user_data, image_key, material_key, output_name,
-                base_name, os.path.basename(material_settings_path), user_id or None,
+                base_name, os.path.basename(material_settings_path) if material_settings_path else "", user_id or None,
             )
         except RuntimeError as error:
             redis_client.set(f"task:{task_id}:status", "failed", ex=HISTORY_TTL_SECONDS)
@@ -311,11 +350,11 @@ def start_task():
             args=(task_id, user_data, image_path, material_settings_path,
                   upload_folder, user_id or None, output_name)).start()
     response = make_response(render_template("loading.html", task_id=task_id,
-        files=[f"/download-lbrn2/{task_id}", f"/download/{task_id}"],
+        files=([f"/download-lbrn2/{task_id}"] if not svg_only else []) + [f"/download/{task_id}"],
         history_session=history_session, history_files=history_files, current_source_name=base_name,
         current_image_preset=submitted_preset,
         current_abstract_filter=submitted_filter, current_material_name=material_name,
-        current_created_at=int(time.time())))
+        current_created_at=int(time.time()), current_svg_only=svg_only))
     response.set_cookie("mopa_history_session", history_session, max_age=HISTORY_TTL_SECONDS,
         secure=request.is_secure, httponly=True, samesite="Lax")
     return response

@@ -439,6 +439,17 @@
     </div>
   </div>
 </div>
+<div id="svg_only_modal" class="upload-error-modal" role="dialog" aria-modal="true" aria-labelledby="svg_only_title" hidden>
+  <div class="upload-error-dialog">
+    <h2 id="svg_only_title">MATERIAL LIBRARY OPTIONAL</h2>
+    <p>For the full Rasterizer experience, upload or select a LightBurn Material Library and choose its material name. That lets the Rasterizer build both your layered SVG and a ready-to-use LightBurn project with your tested laser settings.</p>
+    <p>You can also continue right now without a library. The job will use the default LightBurn palette swatches you currently have selected and provide a layered SVG only; no LightBurn project will be created. You may exclude default swatches, but custom swatch names and additional non-default colors are unavailable without a Material Library.</p>
+    <div class="upload-error-actions">
+      <button class="upload-error-login" type="button" id="svg_only_continue">Continue with SVG only</button>
+      <button type="button" id="svg_only_back">Upload or select a library</button>
+    </div>
+  </div>
+</div>
   {{ machine_chrome('rasterizer', 'VECTOR PROCESSING CONSOLE · SERIES 79') }}
   <h2>Turn any image into a laser-ready color engraving project!</h2>
   <h2>Without building every color layer by hand!</h2>
@@ -452,6 +463,7 @@
     <input type="hidden" id="history_session" name="history_session">
     <input type="hidden" id="submission_auth_token" name="submission_auth_token" value="{{ submission_auth_token }}">
     <input type="hidden" id="continue_as_guest" name="continue_as_guest" value="0">
+    <input type="hidden" id="svg_only_confirmed" name="svg_only_confirmed" value="0">
     <div id="upload_error" class="upload-error" role="alert" hidden></div>
     <div class="form-group"></div>
     <div>
@@ -981,6 +993,10 @@
       const uploadErrorGuest = document.getElementById('upload_error_guest');
       const uploadErrorClose = document.getElementById('upload_error_close');
       const continueAsGuestInput = document.getElementById('continue_as_guest');
+      const svgOnlyConfirmedInput = document.getElementById('svg_only_confirmed');
+      const svgOnlyModal = document.getElementById('svg_only_modal');
+      const svgOnlyContinue = document.getElementById('svg_only_continue');
+      const svgOnlyBack = document.getElementById('svg_only_back');
       const showUploadError = (message, {reauthenticationRequired=false} = {}) => {
         uploadErrorModalMessage.textContent = message;
         uploadErrorLogin.textContent = reauthenticationRequired ? 'Reconnect account' : 'Sign in or sign up';
@@ -1091,6 +1107,7 @@
       });
       materialLibraryInput.addEventListener('change', () => {
         if (!materialLibraryInput.files.length) return;
+        svgOnlyConfirmedInput.value = '0';
         savedMaterialLibraryInput.value = '';
         guestMaterialLibraryInput.value = '';
         const filename = materialLibraryInput.files[0].name;
@@ -1100,6 +1117,7 @@
       });
       savedMaterialLibraryInput.addEventListener('change', () => {
         if (!savedMaterialLibraryInput.value) return;
+        svgOnlyConfirmedInput.value = '0';
         materialLibraryInput.value = '';
         guestMaterialLibraryInput.value = '';
         rememberedMaterialNote.hidden = false;
@@ -1107,6 +1125,7 @@
       });
       guestMaterialLibraryInput.addEventListener('change', () => {
         if (!guestMaterialLibraryInput.value) return;
+        svgOnlyConfirmedInput.value = '0';
         materialLibraryInput.value = '';
         savedMaterialLibraryInput.value = '';
         sessionStorage.setItem(guestMaterialLibraryKey, guestMaterialLibraryInput.value);
@@ -1154,6 +1173,15 @@
       } else {
         renderFilterControls();
       }
+      svgOnlyBack.addEventListener('click', () => {
+        svgOnlyModal.hidden = true;
+        materialLibraryInput.focus();
+      });
+      svgOnlyContinue.addEventListener('click', () => {
+        svgOnlyConfirmedInput.value = '1';
+        svgOnlyModal.hidden = true;
+        uploadForm.requestSubmit();
+      });
       uploadForm.addEventListener('submit', async event => {
         event.preventDefault();
         const artworkFile = document.getElementById('image').files[0];
@@ -1164,15 +1192,18 @@
         const artworkLooksLikeImage = artworkFile && (
           artworkFile.type.startsWith('image/') || /\.(avif|bmp|gif|jpe?g|png|tiff?|webp)$/i.test(artworkFile.name)
         );
-        const materialLooksValid = materialFile || savedMaterialLibraryInput.value || guestMaterialLibraryInput.value;
+        const materialLooksValid = materialFile || savedMaterialLibraryInput.value || guestMaterialLibraryInput.value || rememberedLibraryName;
         document.getElementById('image').setCustomValidity(
           artworkLooksLikeImage ? '' : 'Choose an image file for your artwork, not a LightBurn Material Library.'
         );
-        materialLibraryInput.setCustomValidity(
-          materialLooksValid ? '' : 'Choose a LightBurn Material Library file before starting the job.'
-        );
-        if (!artworkLooksLikeImage || !materialLooksValid) {
-          (!artworkLooksLikeImage ? document.getElementById('image') : materialLibraryInput).reportValidity();
+        materialLibraryInput.setCustomValidity('');
+        if (!artworkLooksLikeImage) {
+          document.getElementById('image').reportValidity();
+          return;
+        }
+        if (!materialLooksValid && svgOnlyConfirmedInput.value !== '1') {
+          svgOnlyModal.hidden = false;
+          svgOnlyContinue.focus();
           return;
         }
 
@@ -1187,6 +1218,14 @@
             const data = contentType.includes('application/json')
               ? await response.json()
               : { message: `Could not start this job (HTTP ${response.status}).` };
+            if (data.code === 'material_library_confirmation_required') {
+              sessionStorage.removeItem(materialLibraryKey);
+              rememberedMaterialNote.hidden = true;
+              svgOnlyConfirmedInput.value = '0';
+              svgOnlyModal.hidden = false;
+              svgOnlyContinue.focus();
+              return;
+            }
             uploadError.textContent = data.message || 'Could not start this job.';
             uploadError.hidden = false;
             showUploadError(uploadError.textContent, {

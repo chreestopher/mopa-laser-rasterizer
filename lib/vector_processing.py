@@ -1474,6 +1474,7 @@ def export_processed_layers(
     lb_project_instance,
     punch_through_black=False,
     black_lightburn_geometry=None,
+    export_lightburn=True,
 ):
     """
     Sort, scale, and export all finalized geometry to SVG and LightBurn.
@@ -1576,7 +1577,7 @@ def export_processed_layers(
         # LightBurn
         # --------------------------------------------------------------------
 
-        if color_hex in target_colors:
+        if export_lightburn and color_hex in target_colors:
 
             printLogMessage(
                 f"[Export layer {export_index}/{total_export_layers}] START: "
@@ -1629,15 +1630,17 @@ def export_processed_layers(
 def save_vector_output(
     root,
     output_svg_path,
-    lb_project_instance
+    lb_project_instance,
+    export_lightburn=True,
 ):
     """
     Write SVG and LightBurn output files.
     """
 
     lightburn_object_count = len(getattr(lb_project_instance, "objects", []))
+    svg_step = "1/2" if export_lightburn else "1/1"
     printLogMessage(
-        f"[File serialization 1/2] START: writing the .svg file with "
+        f"[File serialization {svg_step}] START: writing the .svg file with "
         f"{len(root)} top-level objects to {output_svg_path}."
     )
     tree = ET.ElementTree(
@@ -1656,9 +1659,13 @@ def save_vector_output(
         xml_declaration=True
     )
     printLogMessage(
-        f"[File serialization 1/2] DONE: wrote {len(root)}/{len(root)} "
+        f"[File serialization {svg_step}] DONE: wrote {len(root)}/{len(root)} "
         "top-level .svg file objects."
     )
+
+    if not export_lightburn:
+        printLogMessage(".svg file export complete. LightBurn project export was skipped for SVG-only mode.")
+        return
 
     printLogMessage(
         f"[File serialization 2/2] START: writing "
@@ -1699,7 +1706,8 @@ def raster_to_puzzle_and_lightburn(
     image_preset=None,
     abstract_filter=None,
     filter_parameters=None,
-    job_settings=None
+    job_settings=None,
+    export_lightburn=True,
 ):
     """
     Parses a raster image, applies a structural vector scale_factor,
@@ -2000,6 +2008,7 @@ def raster_to_puzzle_and_lightburn(
         lb_project_instance=lb_project_instance,
         punch_through_black=not preserve_source_black,
         black_lightburn_geometry=black_lightburn_geometry,
+        export_lightburn=export_lightburn,
     )
 
     # =========================================================================
@@ -2009,7 +2018,8 @@ def raster_to_puzzle_and_lightburn(
     save_vector_output(
         root=root,
         output_svg_path=output_svg_path,
-        lb_project_instance=lb_project_instance
+        lb_project_instance=lb_project_instance,
+        export_lightburn=export_lightburn,
     )
 
 

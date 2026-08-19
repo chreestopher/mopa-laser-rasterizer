@@ -399,7 +399,7 @@
                         <div class="file-actions">
                         <a class="download-button reuse-settings-button" href="{{ file.reuse_url }}">{{ file.reuse_label or 'Reuse Settings' }}</a>
                         <a class="download-button{% if file.status != 'completed' %} disabled{% endif %}" href="{{ file.svg_url }}">SVG</a>
-                        <a class="download-button{% if file.status != 'completed' %} disabled{% endif %}" href="{{ file.lightburn_url }}">LBRN2</a>
+                        {% if file.lightburn_url %}<a class="download-button{% if file.status != 'completed' %} disabled{% endif %}" href="{{ file.lightburn_url }}">LBRN2</a>{% endif %}
                         <button class="download-button log-button" type="button" data-task-id="{{ file.task_id }}">Logs</button>
                         </div>
                     </div>
@@ -411,7 +411,7 @@
                         <div class="file-menu-details"><span><strong>Style:</strong> <span class="file-meta">{{ current_image_preset|replace('_', ' ') }}{% if current_abstract_filter and current_abstract_filter != 'none' %} · {{ current_abstract_filter|replace('_', ' ') }}{% endif %}</span></span>{% if current_material_name %}<span><strong>Material:</strong> {{ current_material_name }}</span>{% endif %}<span><strong>Status:</strong> <span class="file-status">[pending]</span></span></div>
                         <div class="file-actions">
                         <a class="download-button disabled" href="/download/{{ task_id }}">SVG</a>
-                        <a class="download-button disabled" href="/download-lbrn2/{{ task_id }}">LBRN2</a>
+                        {% if not current_svg_only %}<a class="download-button disabled" href="/download-lbrn2/{{ task_id }}">LBRN2</a>{% endif %}
                         <button class="download-button log-button" type="button" data-task-id="{{ task_id }}">Logs</button>
                         </div>
                     </div>
@@ -432,8 +432,9 @@ const currentTaskFile = {
     material_name: {{ current_material_name|default('', true)|tojson }},
     created_at: {{ current_created_at|default(0, true) }},
     status: 'pending',
+    run_parameters: {svg_only: {{ current_svg_only|default(false)|tojson }}},
     svg_url: `/download/${taskId}`,
-    lightburn_url: `/download-lbrn2/${taskId}`,
+    lightburn_url: {{ (none if current_svg_only else '/download-lbrn2/' ~ task_id)|tojson }},
 };
 if (historySession) sessionStorage.setItem('mopa-history-session', historySession);
 const logContainer = document.getElementById("log-container");
@@ -492,11 +493,14 @@ function fileRowHtml(file) {
     const parameters = fileParametersHtml(file.run_parameters);
     const reuseUrl = escapeHtml(file.reuse_url || '/');
     const reuseLabel = escapeHtml(file.reuse_label || 'Reuse Settings');
+    const lightburnAction = file.lightburn_url
+      ? `<a class="download-button${disabled}" href="${file.lightburn_url}">LBRN2</a>`
+      : '';
     return `<div class="file-summary"><span class="file-time">${timestamp}</span><span class="source-name">${name}</span></div>` +
       `<div class="file-menu"><div class="file-menu-details"><span><strong>Style:</strong> <span class="file-meta">${preset}${filter}</span></span>` +
       `${material ? `<span><strong>Material:</strong> ${material}</span>` : ''}<span><strong>Status:</strong> <span class="file-status">[${status}]</span></span></div>${parameters}` +
       `<div class="file-actions"><a class="download-button reuse-settings-button" href="${reuseUrl}">${reuseLabel}</a><a class="download-button${disabled}" href="${file.svg_url}">SVG</a>` +
-      `<a class="download-button${disabled}" href="${file.lightburn_url}">LBRN2</a><button class="download-button log-button" type="button" data-task-id="${escapeHtml(file.task_id)}">Logs</button></div></div>`;
+      `${lightburnAction}<button class="download-button log-button" type="button" data-task-id="${escapeHtml(file.task_id)}">Logs</button></div></div>`;
 }
 
 function ensureCurrentTaskRow() {

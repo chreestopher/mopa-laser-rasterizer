@@ -32,6 +32,7 @@ def main(argv=None):
     new_height = new_height.strip() or "0"
     filter_parameters = {}
     color_name_overrides = {}
+    svg_only = len(argv) > 12 and argv[12].strip().lower() in ("true", "1", "yes", "on")
     if len(argv) > 10 and argv[10].strip():
         try:
             filter_parameters = json.loads(argv[10])
@@ -62,29 +63,34 @@ def main(argv=None):
     # Keep the exporter dependency explicit at the compatibility boundary.
     # init_lightburn also registers it internally for direct API callers.
     vector_processing.lightburn = lightburn_module
-    if len(limit_list) <= 1:
+    if len(limit_list) <= 1 and not svg_only:
         limit_list = [value[-1].lower() for value in target_colors.values()]
     limit_list.extend(("black", "light-gray"))
     material_layer_report = {"loaded": [], "skipped": []}
     filter_module = vector_processing.ABSTRACT_FILTER_MODULES.get(abstract_filter)
     required_setting = getattr(filter_module, "SETTING_NAME", None)
-    try:
-        target_colors, filter_setting_layers = vector_processing.parse_material_settings(
-            lb,
-            material_library_file,
-            limit_list,
-            target_colors,
-            material_name=material_name,
-            material_layer_report=material_layer_report,
-            required_setting_names=[required_setting] if required_setting else [],
-            return_setting_layers=True,
-        )
-    except ValueError as error:
-        # A missing material is an expected user-input error.  The parser has
-        # already emitted the useful material list, so avoid adding a Python
-        # traceback to the task console.
-        raise SystemExit(str(error))
-    if required_setting:
+    if svg_only:
+        filter_setting_layers = {}
+        material_layer_report.update({"mode": "svg_only", "loaded": [], "skipped": []})
+        print("SVG-only mode: using the complete default Rasterizer palette; Material Library loading is skipped.", flush=True)
+    else:
+        try:
+            target_colors, filter_setting_layers = vector_processing.parse_material_settings(
+                lb,
+                material_library_file,
+                limit_list,
+                target_colors,
+                material_name=material_name,
+                material_layer_report=material_layer_report,
+                required_setting_names=[required_setting] if required_setting else [],
+                return_setting_layers=True,
+            )
+        except ValueError as error:
+            # A missing material is an expected user-input error.  The parser has
+            # already emitted the useful material list, so avoid adding a Python
+            # traceback to the task console.
+            raise SystemExit(str(error))
+    if required_setting and not svg_only:
         setting_layer_id = filter_setting_layers[required_setting.casefold()]
         filter_parameters["_setting_layer_id"] = setting_layer_id
         if not bool(
@@ -100,7 +106,7 @@ def main(argv=None):
                     break
 
     configure_output_layers = getattr(filter_module, "configure_output_layers", None)
-    if callable(configure_output_layers):
+    if callable(configure_output_layers) and not svg_only:
         try:
             configure_output_layers(lb, target_colors, filter_parameters)
         except ValueError as error:
@@ -137,6 +143,7 @@ def main(argv=None):
             "effective_limit_colors": limit_list,
             "material_library_layers": material_layer_report,
         },
+        export_lightburn=not svg_only,
     )
 
 
