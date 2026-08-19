@@ -83,6 +83,12 @@ class ColorDiscoveryCoverageTests(unittest.TestCase):
         self.assertNotIn("Grid ready:", self.template)
         self.assertIn("Download LightBurn Project</a>", self.template)
 
+    def test_community_baseline_advances_user_to_grid_step(self):
+        self.assertIn('id="community_status"', self.template)
+        self.assertIn("You do not need to create another session.", self.template)
+        self.assertIn("$('grid_form').classList.add('next-step')", self.template)
+        self.assertIn("$('grid_form').scrollIntoView", self.template)
+
 
 if __name__ == "__main__":
     unittest.main()
