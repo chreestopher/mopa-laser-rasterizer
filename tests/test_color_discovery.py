@@ -65,6 +65,9 @@ class ColorDiscoveryCoverageTests(unittest.TestCase):
         self.assertIn("paletteHex(entry.description)", self.template)
         self.assertIn("data-entry-index", self.template)
 
+    def test_grid_has_no_full_project_outline(self):
+        self.assertNotIn("lightburn.Square(total_width_mm, total_length_mm", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -350,11 +350,6 @@ def build_color_discovery_grid():
         project.add(lightburn.Text(.85, f"{PARAMETERS[x_parameter]['label']} {value:g}", x=column * pitch_x, y=4).layer(0))
     for row, value in enumerate(y_values):
         project.add(lightburn.Text(.85, f"{PARAMETERS[y_parameter]['label']} {value:g}", x=matrix_width + 1, y=top_mm + row * pitch_y).layer(0))
-    # A single high-contrast outer boundary gives photographed-grid alignment
-    # one unambiguous rectangle instead of asking it to choose among cells.
-    project.add(lightburn.Square(total_width_mm, total_length_mm,
-                                 x=total_width_mm / 2,
-                                 y=total_length_mm / 2).layer(0))
     for row, y_value in enumerate(y_values):
         for column, x_value in enumerate(x_values):
             index = row * columns + column + 1
