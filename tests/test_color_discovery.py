@@ -44,6 +44,11 @@ class ColorDiscoveryCoverageTests(unittest.TestCase):
         self.assertIn("x_parameter == y_parameter", self.source)
         self.assertIn("rows * columns > 29", self.source)
 
+    def test_manual_frequency_default_is_valid_and_inactive_sources_are_disabled(self):
+        self.assertIn('name="manual_frequency" type="number" value="100000" min="1" step="1"', self.template)
+        self.assertIn("control.disabled=!library", self.template)
+        self.assertIn("control.disabled=library", self.template)
+
 
 if __name__ == "__main__":
     unittest.main()
