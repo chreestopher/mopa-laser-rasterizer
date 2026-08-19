@@ -57,6 +57,8 @@ class ColorDiscoveryCoverageTests(unittest.TestCase):
         self.assertIn('total_length_mm = _number(request.form.get("grid_length_mm")', self.source)
         self.assertIn('"cell_width_mm": cell_width_mm', self.source)
         self.assertIn('"cell_height_mm": cell_height_mm', self.source)
+        self.assertIn("matrix_width, matrix_height = total_width_mm, total_length_mm", self.source)
+        self.assertIn("Row labels extend beyond it.", self.template)
 
     def test_saved_setting_picker_renders_palette_swatches(self):
         self.assertIn("lightburn_palette=", self.source)

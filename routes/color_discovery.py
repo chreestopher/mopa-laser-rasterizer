@@ -335,7 +335,10 @@ def build_color_discovery_grid():
     label.type = "Cut"
     project.add_layer(label)
     top_mm, right_mm, gap_mm = 7.0, 35.0, 1.5
-    matrix_width, matrix_height = total_width_mm - right_mm, total_length_mm - top_mm
+    # The operator-entered dimensions describe the actual test-cell matrix.
+    # Labels sit outside that area and must not silently consume its width or
+    # length (for example, a 75 mm grid must retain 75 mm of test cells).
+    matrix_width, matrix_height = total_width_mm, total_length_mm
     cell_width_mm = (matrix_width - (columns - 1) * gap_mm) / columns
     cell_height_mm = (matrix_height - (rows - 1) * gap_mm) / rows
     if cell_width_mm < 4 or cell_height_mm < 4:
@@ -376,7 +379,8 @@ def build_color_discovery_grid():
         "columns": columns, "rows": rows, "cell_size_mm": min(cell_width_mm, cell_height_mm),
         "cell_width_mm": cell_width_mm, "cell_height_mm": cell_height_mm,
         "cell_gap_mm": gap_mm, "grid_width_mm": matrix_width, "grid_height_mm": matrix_height,
-        "total_width_mm": total_width_mm, "total_length_mm": total_length_mm,
+        "total_width_mm": matrix_width + right_mm,
+        "total_length_mm": top_mm + matrix_height,
         "top_label_band_mm": top_mm,
         "right_label_band_mm": right_mm, "left_grid_margin_mm": 0,
         "intervals_mm": [cell["setting"].get("interval", 0) for cell in cells],
