@@ -443,6 +443,9 @@ const statusLamps = document.getElementById('status-lamps');
 
 let logIndex = 0;
 let activeLogTaskId = taskId;
+let selectedLogIndex = 0;
+let selectedLogTerminal = false;
+let selectedLogPollInFlight = false;
 
 const downloadList = document.getElementById('download-list');
 
@@ -665,6 +668,8 @@ function appendLogMessage(message) {
 
 async function showTaskLogs(selectedTaskId) {
     activeLogTaskId = selectedTaskId;
+    selectedLogIndex = 0;
+    selectedLogTerminal = false;
     logContainer.innerHTML = '';
     appendLogMessage(`Loading retained logs for task ${selectedTaskId}...`);
     try {
@@ -676,6 +681,8 @@ async function showTaskLogs(selectedTaskId) {
         const logs = data.logs || [];
         if (logs.length) logs.forEach(appendLogMessage);
         else appendLogMessage('No retained log lines are available for this run. Job logs are kept for seven days.');
+        selectedLogIndex = data.log_count ?? logs.length;
+        selectedLogTerminal = data.status === 'completed' || data.status === 'failed';
         if (selectedTaskId === taskId) logIndex = data.log_count ?? logs.length;
     } catch (error) {
         logContainer.innerHTML = '';
@@ -683,14 +690,52 @@ async function showTaskLogs(selectedTaskId) {
     }
 }
 
-function updateCurrentFileRow(status) {
-    const row = downloadList.querySelector(`[data-task-id="${taskId}"]`);
+async function pollSelectedTaskLogs() {
+    const selectedTaskId = activeLogTaskId;
+    if (!selectedTaskId || selectedTaskId === taskId || selectedLogTerminal || selectedLogPollInFlight) return;
+    selectedLogPollInFlight = true;
+    try {
+        const response = await fetch(
+            `/task-status/${encodeURIComponent(selectedTaskId)}?after=${selectedLogIndex}`,
+            {cache:'no-store'},
+        );
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || `Log request returned ${response.status}`);
+        // A different Logs button may have been selected while this request
+        // was in flight. Never append the previous job's lines to its console.
+        if (activeLogTaskId !== selectedTaskId) return;
+        const logs = data.logs || [];
+        logs.forEach(appendLogMessage);
+        selectedLogIndex = data.log_count ?? (selectedLogIndex + logs.length);
+        updateTaskFileRow(selectedTaskId, data.status || 'pending');
+        if (data.status === 'completed' || data.status === 'failed') {
+            selectedLogTerminal = true;
+            appendLogMessage(data.status === 'completed'
+                ? 'Task completed successfully!'
+                : `CRITICAL FAILURE: ${data.error || 'Check server logs'}`);
+            setTimeout(refreshFileHistory, 500);
+        }
+    } catch (error) {
+        console.error(`Unable to follow logs for task ${selectedTaskId}:`, error);
+    } finally {
+        selectedLogPollInFlight = false;
+    }
+}
+
+setInterval(pollSelectedTaskLogs, 1000);
+
+function updateTaskFileRow(selectedTaskId, status) {
+    const row = downloadList.querySelector(`[data-task-id="${selectedTaskId}"]`);
     if (!row) return;
     const statusElement = row.querySelector('.file-status');
     if (statusElement) statusElement.textContent = `[${status}]`;
     row.querySelectorAll('.download-button').forEach(button => {
         button.classList.toggle('disabled', status !== 'completed');
     });
+}
+
+function updateCurrentFileRow(status) {
+    updateTaskFileRow(taskId, status);
 }
 
 function updateStatusLamps(status) {
