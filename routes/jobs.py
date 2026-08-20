@@ -12,13 +12,22 @@ from PIL import Image, UnidentifiedImageError
 from werkzeug.utils import secure_filename
 
 from . import routes
+from ._job_access import (
+    browser_job_session,
+    private_history_session,
+    request_can_access_history,
+    request_can_access_job,
+    validate_submission_auth,
+)
 from services import (
     ABSTRACT_FILTER_NAMES,
     HISTORY_TTL_SECONDS,
+    LIGHTBURN_PALETTE_NAMES,
     add_history_entry,
+    bind_job_access,
     claim_daily_job,
     cleanup_redis_inflight,
-    get_history_entries,
+    get_accessible_history_entries,
     long_running_script,
     enqueue_raster_job,
     normalize_dimension,
@@ -31,12 +40,14 @@ from services import (
     get_job_record,
     get_user_material_library,
     get_s3_artifact,
-    get_job_owner,
+    list_guest_material_libraries,
     redis_client,
     record_user_job,
     record_setting_usage,
+    remember_guest_material_library,
     resolve_material_setting_usage,
     save_user_material_library,
+    select_guest_material_library,
     tasks,
     upload_task_artifact,
     valid_history_session,
@@ -47,10 +58,20 @@ from services import (
 def start_task():
     if request.method == "GET":
         return redirect("/")
+    explicit_guest = str(request.form.get("continue_as_guest", "")).strip() == "1"
+    user_id, auth_error = validate_submission_auth(
+        request.form.get("submission_auth_token", ""),
+        allow_explicit_guest=explicit_guest,
+    )
+    if auth_error:
+        return jsonify({
+            "status": "error",
+            "code": auth_error["code"],
+            "message": auth_error["message"],
+        }), auth_error["status"]
     if "image" not in request.files or not request.files["image"].filename:
         return jsonify({"status": "error", "message": "Choose an artwork file"}), 400
 
-    user_id = request.headers.get("x-amzn-oidc-identity", "").strip()
     anonymous_id = None
     if not user_id:
         anonymous_id = session.get("anonymous_quota_id")
@@ -62,8 +83,10 @@ def start_task():
     user_data = request.form.to_dict()
     user_data["new_width"] = str(normalize_dimension(user_data.get("new_width")))
     user_data["new_height"] = str(normalize_dimension(user_data.get("new_height")))
-    history_session = (valid_history_session(user_data.get("history_session"))
-        or valid_history_session(request.cookies.get("mopa_history_session")) or str(uuid.uuid4()))
+    history_session = private_history_session(
+        valid_history_session(request.cookies.get("mopa_history_session"))
+        or valid_history_session(user_data.get("history_session"))
+    )
     image_file = request.files["image"]
     material_settings = request.files.get("material_settings")
     usage_library = None
@@ -88,6 +111,9 @@ def start_task():
         return jsonify({"status": "error", "message": str(error)}), 503
     material_cache_key = f"material-library:{history_session}"
     saved_library_id = str(user_data.get("saved_material_library_id", "")).strip()
+    guest_library_id = str(user_data.get("guest_material_library_id", "")).strip()
+    svg_only_requested = str(user_data.get("svg_only_confirmed", "")).strip() == "1"
+    svg_only = False
     if material_settings and material_settings.filename:
         material_filename = secure_filename(material_settings.filename)
         material_settings_path = os.path.join(
@@ -100,11 +126,6 @@ def start_task():
             )
         except RuntimeError as error:
             return jsonify({"status": "error", "message": str(error)}), 503
-        redis_client.set(
-            material_cache_key,
-            json.dumps({"path": material_settings_path, "filename": material_filename, "key": material_key}),
-            ex=HISTORY_TTL_SECONDS,
-        )
         if user_id:
             try:
                 usage_library = save_user_material_library(
@@ -112,6 +133,12 @@ def start_task():
                 )
             except RuntimeError as error:
                 return jsonify({"status": "error", "message": str(error)}), 503
+        else:
+            remember_guest_material_library(history_session, {
+                "path": material_settings_path,
+                "filename": material_filename,
+                "key": material_key,
+            })
     elif saved_library_id:
         if not user_id:
             return jsonify({"status": "error", "message": "Sign in to use a saved Material Library."}), 401
@@ -128,6 +155,63 @@ def start_task():
             usage_library = saved_library
         except RuntimeError as error:
             return jsonify({"status": "error", "message": str(error)}), 503
+    elif guest_library_id:
+        if user_id:
+            return jsonify({
+                "status": "error",
+                "message": "Choose an account Material Library or upload a new library.",
+            }), 400
+        cached_material = select_guest_material_library(history_session, guest_library_id)
+        if not cached_material:
+            return jsonify({
+                "status": "error",
+                "message": "That browser-session Material Library is no longer available.",
+            }), 404
+        material_settings_path = cached_material.get("path")
+        material_key = cached_material.get("key")
+        if material_key and not os.path.isfile(material_settings_path or ""):
+            material_settings_path = os.path.join(
+                upload_folder,
+                f"{task_id}_cached_material_{secure_filename(cached_material['filename'])}",
+            )
+            try:
+                download_task_artifact(material_key, material_settings_path)
+            except RuntimeError as error:
+                return jsonify({"status": "error", "message": str(error)}), 503
+        if not material_settings_path or not os.path.isfile(material_settings_path):
+            return jsonify({
+                "status": "error",
+                "message": "That browser-session Material Library has expired.",
+            }), 404
+    elif svg_only_requested:
+        svg_only = True
+        material_settings_path = None
+        material_key = None
+        submitted_names = {
+            name.strip().casefold()
+            for name in user_data.get("colors", "").split(",")
+            if name.strip()
+        }
+        try:
+            submitted_overrides = parse_color_name_overrides(
+                user_data.get("color_name_overrides", "{}")
+            )
+        except ValueError as error:
+            return jsonify({"status": "error", "message": str(error)}), 400
+        selected_default_names = [
+            official_name
+            for color_hex, official_name in LIGHTBURN_PALETTE_NAMES.items()
+            if str(submitted_overrides.get(color_hex, official_name)).strip().casefold()
+            in submitted_names
+        ]
+        if not selected_default_names:
+            return jsonify({
+                "status": "error",
+                "message": "Keep at least one default LightBurn palette swatch selected for an SVG-only job.",
+            }), 400
+        user_data["colors"] = ", ".join(selected_default_names)
+        user_data["color_name_overrides"] = json.dumps(LIGHTBURN_PALETTE_NAMES, separators=(",", ":"))
+        user_data["svg_only"] = "true"
     else:
         try:
             cached_material = json.loads(redis_client.get(material_cache_key) or "{}")
@@ -143,11 +227,15 @@ def start_task():
             except RuntimeError as error:
                 return jsonify({"status": "error", "message": str(error)}), 503
         if not material_settings_path or not os.path.isfile(material_settings_path):
-            return jsonify({"status": "error", "message": "Choose a LightBurn Material Library file"}), 400
+            return jsonify({
+                "status": "error",
+                "code": "material_library_confirmation_required",
+                "message": "Choose a LightBurn Material Library, or confirm that you want to continue with the default palette as an SVG-only job.",
+            }), 400
     try:
         submitted_preset = str(user_data.get("image_preset", "cartoon")).strip().lower()
         material_name = str(user_data.get("material", "stainless - steel")).strip().lower()
-        if not material_name:
+        if not material_name and not svg_only:
             raise ValueError("Choose or enter a material name")
         filter_name = submitted_preset.removeprefix("abstract_")
         if submitted_preset.startswith("abstract_") and filter_name not in ABSTRACT_FILTER_NAMES:
@@ -178,6 +266,9 @@ def start_task():
     # Register the status before recording history.  Otherwise the history
     # reader can see a brand-new entry before its worker starts and mistake it
     # for an expired task.
+    bind_job_access(
+        task_id, user_id=user_id or None, browser_session=browser_job_session(),
+    )
     redis_client.set(f"task:{task_id}:status", "pending", ex=HISTORY_TTL_SECONDS)
     submitted_preset = str(user_data.get("image_preset", "cartoon")).strip().lower()
     submitted_filter = (
@@ -197,6 +288,7 @@ def start_task():
         ],
         "color_name_overrides": color_name_overrides,
         "filter_parameters": filter_parameters,
+        "svg_only": svg_only,
     }
     resolved_settings = []
     try:
@@ -204,12 +296,13 @@ def start_task():
         # original Material Library is available locally. This applies to both
         # signed-in and guest jobs; shared telemetry excludes artwork, account
         # identity, and guest browser identifiers.
-        resolved_settings = resolve_material_setting_usage(
-            material_settings_path,
-            material_name,
-            run_parameters["colors"],
-            color_name_overrides,
-        )
+        if not svg_only:
+            resolved_settings = resolve_material_setting_usage(
+                material_settings_path,
+                material_name,
+                run_parameters["colors"],
+                color_name_overrides,
+            )
     except Exception as error:
         # The worker retains the authoritative validation path. A library that
         # its telemetry reader cannot inspect must not reject an accepted job.
@@ -229,7 +322,10 @@ def start_task():
         current_app.logger.warning("Could not record Material Library usage for %s: %s", task_id, error)
     add_history_entry(history_session, task_id, base_name, submitted_preset, submitted_filter,
                       material_name, run_parameters)
-    history_files = get_history_entries(history_session)
+    history_files = get_accessible_history_entries(
+        history_session, user_id=user_id or None,
+        browser_session=browser_job_session(),
+    )
     if not any(item.get("task_id") == task_id for item in history_files):
         history_files.insert(0, {"task_id": task_id, "source_name": base_name,
             "image_preset": submitted_preset,
@@ -237,12 +333,13 @@ def start_task():
             "material_name": material_name,
             "run_parameters": run_parameters,
             "created_at": int(time.time()), "status": "pending",
-            "svg_url": f"/download/{task_id}", "lightburn_url": f"/download-lbrn2/{task_id}"})
+            "svg_url": f"/download/{task_id}",
+            "lightburn_url": None if svg_only else f"/download-lbrn2/{task_id}"})
     if os.environ.get("RASTER_JOB_QUEUE_ENABLED", "false").lower() == "true":
         try:
             enqueue_raster_job(
                 task_id, user_data, image_key, material_key, output_name,
-                base_name, os.path.basename(material_settings_path), user_id or None,
+                base_name, os.path.basename(material_settings_path) if material_settings_path else "", user_id or None,
             )
         except RuntimeError as error:
             redis_client.set(f"task:{task_id}:status", "failed", ex=HISTORY_TTL_SECONDS)
@@ -253,11 +350,11 @@ def start_task():
             args=(task_id, user_data, image_path, material_settings_path,
                   upload_folder, user_id or None, output_name)).start()
     response = make_response(render_template("loading.html", task_id=task_id,
-        files=[f"/download-lbrn2/{task_id}", f"/download/{task_id}"],
+        files=([f"/download-lbrn2/{task_id}"] if not svg_only else []) + [f"/download/{task_id}"],
         history_session=history_session, history_files=history_files, current_source_name=base_name,
         current_image_preset=submitted_preset,
         current_abstract_filter=submitted_filter, current_material_name=material_name,
-        current_created_at=int(time.time())))
+        current_created_at=int(time.time()), current_svg_only=svg_only))
     response.set_cookie("mopa_history_session", history_session, max_age=HISTORY_TTL_SECONDS,
         secure=request.is_secure, httponly=True, samesite="Lax")
     return response
@@ -268,14 +365,55 @@ def file_history(session_id):
     session_id = valid_history_session(session_id)
     if not session_id:
         return jsonify({"files": []}), 400
-    return jsonify({"files": get_history_entries(session_id)})
+    if not request_can_access_history(session_id):
+        return jsonify({"status": "error", "message": "You do not have access to this job history."}), 403
+    try:
+        history_files = get_accessible_history_entries(
+            session_id,
+            user_id=request.headers.get("x-amzn-oidc-identity", "").strip() or None,
+            browser_session=browser_job_session(),
+        )
+    except RuntimeError:
+        current_app.logger.exception("Could not verify ownership for job history %s", session_id)
+        return jsonify({"status": "error", "message": "Could not verify job ownership."}), 503
+    return jsonify({"files": history_files})
+
+
+@routes.route("/browser-material-libraries")
+def browser_material_libraries():
+    """List retained guest libraries without exposing their files or edit APIs."""
+    history_session = private_history_session(
+        valid_history_session(request.args.get("history_session"))
+        or valid_history_session(request.cookies.get("mopa_history_session"))
+    )
+    response = make_response(jsonify({
+        "status": "ok",
+        "history_session": history_session,
+        "libraries": list_guest_material_libraries(history_session),
+    }))
+    response.set_cookie(
+        "mopa_history_session", history_session, max_age=HISTORY_TTL_SECONDS,
+        secure=request.is_secure, httponly=True, samesite="Lax",
+    )
+    return response
 
 
 @routes.route("/job-history")
 def job_history():
     """Open the shared console in history mode for account or guest runs."""
     history_session = valid_history_session(request.cookies.get("mopa_history_session", "")) or ""
-    history_files = get_history_entries(history_session) if history_session else []
+    history_files = []
+    if history_session and request_can_access_history(history_session):
+        try:
+            history_files = get_accessible_history_entries(
+                history_session,
+                user_id=request.headers.get("x-amzn-oidc-identity", "").strip() or None,
+                browser_session=browser_job_session(),
+            )
+        except RuntimeError:
+            current_app.logger.exception(
+                "Could not verify ownership for job history %s", history_session,
+            )
     active_task_id = valid_history_session(request.args.get("task_id", "")) or ""
     if active_task_id:
         access_error = _job_access_error(active_task_id, browser_navigation=True)
@@ -361,15 +499,15 @@ def _output_file(task_id, extension=None):
 
 
 def _job_access_error(task_id, browser_navigation=False):
-    """Keep account-owned jobs private while leaving legacy guest jobs usable."""
+    """Keep account and guest jobs private to their owning identity."""
     try:
-        owner_id = get_job_owner(task_id)
+        allowed = request_can_access_job(task_id)
     except RuntimeError:
         return jsonify({"status": "error", "message": "Could not verify job ownership."}), 503
-    if owner_id and request.headers.get("x-amzn-oidc-identity", "").strip() != owner_id:
+    if not allowed:
         if browser_navigation:
             return render_template("access_denied.html"), 403
-        return jsonify({"status": "error", "message": "This job belongs to a different account."}), 403
+        return jsonify({"status": "error", "message": "You do not have access to this job."}), 403
     return None
 
 
@@ -432,7 +570,7 @@ def download_file(task_id):
 
 @routes.route("/download-svg/<task_id>")
 def download_svg(task_id):
-    """Download the exact SVG output for any shared-history job type."""
+    """Download the exact .svg file output for any shared-history job type."""
     access_error = _job_access_error(task_id, browser_navigation=True)
     if access_error:
         return access_error
@@ -444,7 +582,7 @@ def download_svg(task_id):
         + glob.glob(os.path.join(current_app.config["UPLOAD_FOLDER"], f"output_{task_id}_*.svg"))
     )
     if not candidates:
-        return jsonify({"status": "error", "message": "SVG file not found"}), 404
+        return jsonify({"status": "error", "message": ".svg file not found"}), 404
     filename = os.path.basename(candidates[0])
     return send_from_directory(
         current_app.config["UPLOAD_FOLDER"], filename, as_attachment=True,
@@ -474,7 +612,7 @@ def download_lbrn2(task_id):
         )
     filename = _output_file(task_id, ".lbrn2")
     if not filename:
-        return jsonify({"status": "error", "message": "LightBurn file (.lbrn2) not found on disk"}), 404
+        return jsonify({"status": "error", "message": ".lbrn2 file not found on disk"}), 404
     cleanup_redis_inflight(task_id)
     return send_from_directory(
         current_app.config["UPLOAD_FOLDER"], filename, as_attachment=True,
@@ -506,4 +644,7 @@ def view_image(task_id):
 
 @routes.route("/success/<task_id>")
 def success_page(task_id):
+    access_error = _job_access_error(task_id, browser_navigation=True)
+    if access_error:
+        return access_error
     return render_template("success.html", task_id=task_id)

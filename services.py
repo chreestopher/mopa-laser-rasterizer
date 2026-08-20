@@ -4,6 +4,7 @@ import json
 import base64
 import glob
 import hashlib
+import hmac
 import multiprocessing
 import os
 import re
@@ -14,7 +15,7 @@ import uuid
 from decimal import Decimal
 from numbers import Integral, Real
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import boto3
 import redis
@@ -47,13 +48,18 @@ LIGHTBURN_PALETTE_NAMES = {
 ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
     "crystal", "ripple", "centerline", "glitch", "shattered", "deep_fryer",
+    "krasnow_grating",
 }
 ABSTRACT_PRESET_PREFIX = "abstract_"
 RASTER_JOB_QUEUE = "rasterizer:jobs"
 RASTER_JOB_PROCESSING_QUEUE = "rasterizer:jobs:processing"
 HISTORY_SESSION_RE = re.compile(r"^[a-f0-9-]{32,36}$")
 HISTORY_TTL_SECONDS = 7 * 24 * 60 * 60
+GUEST_MATERIAL_LIBRARY_LIMIT = 12
 DAILY_JOB_LIMIT = max(1, int(os.environ.get("DAILY_JOB_LIMIT", "3")))
+COMMUNITY_CONTRIBUTOR_SECRET = os.environ.get(
+    "COMMUNITY_CONTRIBUTOR_SECRET", os.environ.get("APP_SESSION_SECRET", "local-development-only-secret")
+).encode("utf-8")
 manager = multiprocessing.Manager()
 tasks = manager.dict()
 
@@ -125,7 +131,7 @@ def resolve_material_setting_usage(material_settings_path, material_name, select
     chosen.update({names["#000000"].casefold(), names["#B4B4B4"].casefold()})
     requested_material = str(material_name or "").strip().casefold()
     matched = {}
-    for setting in Lightburn().parse_material_library(material_settings_path):
+    for setting in LightBurn().parse_material_library(material_settings_path):
         if str(getattr(setting, "materialName", "") or "").strip().casefold() != requested_material:
             continue
         labels = {
@@ -395,9 +401,220 @@ def delete_user_holographic_recipe(user_id, recipe_id):
     return True
 
 
-def rename_user_material_library(user_id, library_id, display_name, laser_source=None, lens_field_of_view=None, notes=None):
+def _community_normalized_value(value):
+    normalized = " ".join(str(value or "").strip().casefold().replace("×", "x").split())
+    normalized = re.sub(r"\s*x\s*", "x", normalized)
+    normalized = re.sub(r"\s*mm\b", "mm", normalized)
+    return normalized
+
+
+def _community_filter_value(value):
+    """Create a stable exact-match value for community lookup partitions."""
+    return quote(_community_normalized_value(value), safe="")
+
+
+def _community_substring_match(value, query):
+    return not query or _community_normalized_value(query) in _community_normalized_value(value)
+
+
+def _community_exact_match(value, query):
+    return not query or _community_normalized_value(value) == _community_normalized_value(query)
+
+
+def _community_filter_partitions(laser_source, lens_field_of_view, materials):
+    dimensions = {
+        "laser": _community_filter_value(laser_source),
+        "lens": _community_filter_value(lens_field_of_view),
+    }
+    partitions = set()
+    for material in materials or [""]:
+        values = {**dimensions, "material": _community_filter_value(material)}
+        populated = [key for key in ("laser", "lens", "material") if values[key]]
+        for mask in range(1, 1 << len(populated)):
+            chosen = [key for index, key in enumerate(populated) if mask & (1 << index)]
+            signature = "#".join(f"{key}={values[key]}" for key in chosen)
+            partitions.add(f"LASER_COMMUNITY_INDEX#{signature}")
+    return sorted(partitions)
+
+
+def _community_query_partition(laser_source="", lens_field_of_view="", material=""):
+    values = {
+        "laser": _community_filter_value(laser_source),
+        "lens": _community_filter_value(lens_field_of_view),
+        "material": _community_filter_value(material),
+    }
+    signature = "#".join(
+        f"{key}={values[key]}" for key in ("laser", "lens", "material") if values[key]
+    )
+    return f"LASER_COMMUNITY_INDEX#{signature}" if signature else ""
+
+
+def _official_community_swatch(entry):
+    color_hex = str(entry.get("swatch_hex", "") or "").upper()
+    if color_hex in LIGHTBURN_PALETTE_NAMES:
+        return color_hex, LIGHTBURN_PALETTE_NAMES[color_hex]
+    description = str(entry.get("source_description", entry.get("description", "")) or "").strip()
+    color_hex = next((candidate for candidate, official_name in LIGHTBURN_PALETTE_NAMES.items()
+                      if official_name.casefold() == description.casefold()), "")
+    return color_hex, LIGHTBURN_PALETTE_NAMES.get(color_hex, "Unassigned")
+
+
+def _annotate_community_swatches(user_id, summary):
+    """Resolve editable setting descriptions back to account palette hexes."""
+    preferences = get_user_preferences(user_id)
+    overrides = preferences.get("color_name_overrides", {}) if isinstance(preferences, dict) else {}
+    override_lookup = {
+        str(label).strip().casefold(): str(color_hex).upper()
+        for color_hex, label in overrides.items()
+        if str(color_hex).upper() in LIGHTBURN_PALETTE_NAMES and str(label).strip()
+    }
+    official_lookup = {name.casefold(): color_hex for color_hex, name in LIGHTBURN_PALETTE_NAMES.items()}
+    for entry in summary.get("entries", []):
+        description = str(entry.get("description", "") or "").strip()
+        color_hex = override_lookup.get(description.casefold()) or official_lookup.get(description.casefold(), "")
+        entry["swatch_hex"] = color_hex
+        entry["official_color"] = LIGHTBURN_PALETTE_NAMES.get(color_hex, "Unassigned")
+    return summary
+
+
+def _laser_community_row(community, entry):
+    settings = _json_values(entry.get("settings", {}))
+    swatch, official_color = _official_community_swatch(entry)
+    return {
+        "laser_source": community.get("laser_source", ""),
+        "lens": community.get("lens_field_of_view", ""),
+        "material": entry.get("material", ""),
+        "color": official_color,
+        "swatch": swatch,
+        "operation": entry.get("type", ""),
+        "settings": settings,
+        "notes": community.get("notes", ""),
+    }
+
+
+def query_laser_community(laser_source="", lens_field_of_view="", material="", color="", limit=300):
+    """Return anonymous settings with a substring match for Material."""
     table = account_table()
-    if not table or not get_user_material_library(user_id, library_id):
+    if not table:
+        raise RuntimeError("Comunity Set storage is not configured.")
+    if not any((laser_source, lens_field_of_view, material, color)):
+        raise ValueError("Enter a laser model/source, lens, material, or color.")
+    try:
+        rows = []
+        query_args = {
+            "KeyConditionExpression": Key("pk").eq("LASER_COMMUNITY"),
+            "ScanIndexForward": False,
+        }
+        while True:
+            response = table.query(**query_args)
+            for community in response.get("Items", []):
+                if not _community_exact_match(community.get("laser_source", ""), laser_source):
+                    continue
+                if not _community_exact_match(community.get("lens_field_of_view", ""), lens_field_of_view):
+                    continue
+                for entry in community.get("summary", {}).get("entries", []):
+                    if not _community_substring_match(entry.get("material", ""), material):
+                        continue
+                    _, resolved_color = _official_community_swatch(entry)
+                    if resolved_color == "Unassigned":
+                        continue
+                    if not _community_exact_match(resolved_color, color):
+                        continue
+                    rows.append(_laser_community_row(community, entry))
+                    if len(rows) >= limit:
+                        return rows
+            last_key = response.get("LastEvaluatedKey")
+            if not last_key:
+                break
+            query_args["ExclusiveStartKey"] = last_key
+        return rows
+    except ClientError as error:
+        raise RuntimeError("Could not query Comunity Set settings.") from error
+
+
+def _anonymous_community_contributor(user_id):
+    """Return a stable, non-public token used only for distinct-contributor counts."""
+    return hmac.new(COMMUNITY_CONTRIBUTOR_SECRET, user_id.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _write_laser_community_record(table, user_id, library_id, summary, laser_source,
+                                  lens_field_of_view, notes):
+    """Write the anonymous canonical record and all seven possible filter indexes."""
+    summary = _annotate_community_swatches(user_id, summary)
+    canonical_key = {"pk": "LASER_COMMUNITY", "sk": f"MATERIAL#{library_id}"}
+    old_item = table.get_item(Key=canonical_key).get("Item") or {}
+    updated_at = int(time.time())
+    index_sk = f"UPDATED#{time.time_ns():019d}#MATERIAL#{library_id}"
+    partitions = _community_filter_partitions(
+        laser_source, lens_field_of_view, summary.get("material_names", []),
+    )
+    index_keys = [{"pk": partition, "sk": index_sk} for partition in partitions]
+    canonical_item = {
+        **canonical_key,
+        "material_name": ", ".join(summary.get("material_names", []))[:160],
+        "laser_source": laser_source,
+        "lens_field_of_view": lens_field_of_view,
+        "notes": notes,
+        "summary": _dynamodb_values(summary),
+        "index_keys": index_keys,
+        "updated_at": updated_at,
+    }
+    contributor = _anonymous_community_contributor(user_id)
+    with table.batch_writer() as batch:
+        for old_key in old_item.get("index_keys", []):
+            if isinstance(old_key, dict) and old_key.get("pk") and old_key.get("sk"):
+                batch.delete_item(Key={"pk": old_key["pk"], "sk": old_key["sk"]})
+        batch.put_item(Item=canonical_item)
+        for index_key in index_keys:
+            batch.put_item(Item={
+                **index_key,
+                "community_pk": canonical_key["pk"],
+                "community_sk": canonical_key["sk"],
+                "laser_source": laser_source,
+                "lens_field_of_view": lens_field_of_view,
+                "material_names": summary.get("material_names", []),
+                "updated_at": updated_at,
+            })
+        for entry in summary.get("entries", []):
+            entry_id = entry.get("entry_id")
+            if entry_id is None or not isinstance(entry.get("settings"), dict):
+                continue
+            setting_key = {
+                "pk": "LASER_COMMUNITY_SETTINGS",
+                "sk": f"SETTING#{library_id}#{entry_id}",
+            }
+            swatch_hex, official_color = _official_community_swatch(entry)
+            batch.put_item(Item={
+                **setting_key,
+                "community_pk": canonical_key["pk"],
+                "community_sk": canonical_key["sk"],
+                "contributor": contributor,
+                "laser_source": laser_source,
+                "lens_field_of_view": lens_field_of_view,
+                "material": entry.get("material", ""),
+                "description": official_color,
+                "swatch_hex": swatch_hex,
+                "source_description": entry.get("description", ""),
+                "type": entry.get("type", ""),
+                "settings": _dynamodb_values(entry["settings"]),
+                "updated_at": updated_at,
+            })
+            color_key = _community_filter_value(official_color)
+            if color_key:
+                batch.put_item(Item={
+                    "pk": f"LASER_COMMUNITY_COLOR_INDEX#color={color_key}",
+                    "sk": f"UPDATED#{time.time_ns():019d}#SETTING#{library_id}#{entry_id}",
+                    "setting_pk": setting_key["pk"],
+                    "setting_sk": setting_key["sk"],
+                })
+
+
+def rename_user_material_library(user_id, library_id, display_name, laser_source=None,
+                                 lens_field_of_view=None, notes=None, laser_community=False,
+                                 community_summary=None):
+    table = account_table()
+    library = get_user_material_library(user_id, library_id) if table else None
+    if not table or not library:
         return False
     display_name = str(display_name or "").strip()
     if not display_name or len(display_name) > 160:
@@ -405,21 +622,31 @@ def rename_user_material_library(user_id, library_id, display_name, laser_source
     laser_source = str(laser_source or "").strip()
     lens_field_of_view = str(lens_field_of_view or "").strip()
     notes = str(notes or "").strip()
+    # Community contribution is permanent once accepted for this library.
+    laser_community = library.get("laser_community") is True or laser_community is True
     if len(laser_source) > 160 or len(lens_field_of_view) > 160 or len(notes) > 1000:
         raise ValueError("Laser Source and Lens Field of View must be 160 characters or fewer, and Notes 1000 characters or fewer.")
     try:
         table.update_item(
             Key={"pk": f"USER#{user_id}", "sk": f"MATERIAL#{library_id}"},
-            UpdateExpression="SET #name = :name, laser_source = :laser_source, lens_field_of_view = :lens_field_of_view, notes = :notes, updated_at = :updated_at",
+            UpdateExpression="SET #name = :name, laser_source = :laser_source, lens_field_of_view = :lens_field_of_view, notes = :notes, laser_community = :laser_community, updated_at = :updated_at",
             ExpressionAttributeNames={"#name": "name"},
             ExpressionAttributeValues={
                 ":name": display_name,
                 ":laser_source": laser_source,
                 ":lens_field_of_view": lens_field_of_view,
                 ":notes": notes,
+                ":laser_community": laser_community,
                 ":updated_at": int(time.time()),
             },
         )
+        if laser_community:
+            # Community records contain useful machine context and settings, but
+            # never the owner ID, private object key, filename, or personal name.
+            _write_laser_community_record(
+                table, user_id, library_id, community_summary or library.get("summary", {}), laser_source,
+                lens_field_of_view, notes,
+            )
     except ClientError as error:
         raise RuntimeError("Could not rename the saved Material Library.") from error
     return True
@@ -442,6 +669,11 @@ def update_user_material_library_file(user_id, library_id, local_file_path, summ
                 ":updated_at": int(time.time()),
             },
         )
+        if library.get("laser_community") is True:
+            _write_laser_community_record(
+                table, user_id, library_id, summary, library.get("laser_source", ""),
+                library.get("lens_field_of_view", ""), library.get("notes", ""),
+            )
     except ClientError as error:
         raise RuntimeError("Could not save Material Library changes.") from error
     return True
@@ -567,6 +799,186 @@ def valid_history_session(value):
     return value if HISTORY_SESSION_RE.fullmatch(value) else None
 
 
+def _guest_material_library_entry(payload):
+    if not isinstance(payload, dict):
+        return None
+    filename = os.path.basename(str(payload.get("filename") or "").strip())
+    artifact_key = str(payload.get("key") or "").strip()
+    local_path = str(payload.get("path") or "").strip()
+    if not filename or not (artifact_key or local_path):
+        return None
+    identifier_seed = artifact_key or local_path
+    library_id = str(payload.get("library_id") or uuid.uuid5(
+        uuid.NAMESPACE_URL, f"mopa-guest-material:{identifier_seed}",
+    ))
+    return {
+        "library_id": library_id,
+        "filename": filename,
+        "key": artifact_key,
+        "path": local_path,
+        "created_at": int(payload.get("created_at") or time.time()),
+    }
+
+
+def _guest_material_library_registry(session_id):
+    session_id = valid_history_session(session_id)
+    if not session_id:
+        return []
+    try:
+        stored = json.loads(redis_client.get(f"material-libraries:{session_id}") or "[]")
+    except (TypeError, json.JSONDecodeError):
+        stored = []
+    entries, seen = [], set()
+    for payload in stored if isinstance(stored, list) else []:
+        entry = _guest_material_library_entry(payload)
+        if not entry or entry["library_id"] in seen:
+            continue
+        seen.add(entry["library_id"])
+        entries.append(entry)
+
+    # Preserve the pre-registry single remembered library as the first entry
+    # so existing guest browser sessions continue working after deployment.
+    try:
+        legacy = json.loads(redis_client.get(f"material-library:{session_id}") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        legacy = {}
+    legacy_entry = _guest_material_library_entry(legacy)
+    if legacy_entry and legacy_entry["library_id"] not in seen:
+        entries.insert(0, legacy_entry)
+    return entries[:GUEST_MATERIAL_LIBRARY_LIMIT]
+
+
+def remember_guest_material_library(session_id, payload):
+    """Retain a guest upload in the private browser-session library registry."""
+    session_id = valid_history_session(session_id)
+    entry = _guest_material_library_entry(payload)
+    if not session_id or not entry:
+        raise ValueError("A valid guest Material Library session and artifact are required.")
+    entries = [
+        existing for existing in _guest_material_library_registry(session_id)
+        if existing["library_id"] != entry["library_id"]
+    ]
+    entries.insert(0, entry)
+    redis_client.set(
+        f"material-libraries:{session_id}",
+        json.dumps(entries[:GUEST_MATERIAL_LIBRARY_LIMIT], separators=(",", ":")),
+        ex=HISTORY_TTL_SECONDS,
+    )
+    redis_client.set(
+        f"material-library:{session_id}",
+        json.dumps(entry, separators=(",", ":")),
+        ex=HISTORY_TTL_SECONDS,
+    )
+    return entry
+
+
+def list_guest_material_libraries(session_id):
+    """Return browser-safe metadata for every retained guest library."""
+    entries = _guest_material_library_registry(session_id)
+    return [{
+        "library_id": entry["library_id"],
+        "filename": entry["filename"],
+        "created_at": entry["created_at"],
+    } for entry in entries]
+
+
+def select_guest_material_library(session_id, library_id):
+    """Select one retained guest library and make it the compatibility default."""
+    library_id = str(library_id or "").strip()
+    for entry in _guest_material_library_registry(session_id):
+        if hmac.compare_digest(entry["library_id"], library_id):
+            redis_client.set(
+                f"material-library:{session_id}",
+                json.dumps(entry, separators=(",", ":")),
+                ex=HISTORY_TTL_SECONDS,
+            )
+            return entry
+    return None
+
+
+def claim_history_session(history_session, browser_session):
+    """Claim a client history ID for one signed Flask browser session."""
+    browser_session = valid_history_session(browser_session)
+    if not browser_session:
+        raise ValueError("A valid browser session is required for job history.")
+    candidate = valid_history_session(history_session) or str(uuid.uuid4())
+    for _attempt in range(2):
+        access_key = f"history:{candidate}:access"
+        if redis_client.set(access_key, browser_session, ex=HISTORY_TTL_SECONDS, nx=True):
+            return candidate
+        existing = valid_history_session(redis_client.get(access_key))
+        if existing and hmac.compare_digest(existing, browser_session):
+            redis_client.expire(access_key, HISTORY_TTL_SECONDS)
+            return candidate
+        candidate = str(uuid.uuid4())
+    raise RuntimeError("Could not create a private job-history session.")
+
+
+def history_access_allowed(history_session, browser_session):
+    history_session = valid_history_session(history_session)
+    browser_session = valid_history_session(browser_session)
+    if not history_session or not browser_session:
+        return False
+    expected = valid_history_session(redis_client.get(f"history:{history_session}:access"))
+    return bool(expected) and hmac.compare_digest(expected, browser_session)
+
+
+def bind_job_access(task_id, user_id=None, browser_session=None):
+    """Bind a job to either its signed-in account or its guest browser session."""
+    task_id = valid_history_session(task_id)
+    if not task_id:
+        raise ValueError("A valid task ID is required for job ownership.")
+    user_id = str(user_id or "").strip()
+    if user_id:
+        binding = {"kind": "account", "value": user_id}
+    else:
+        browser_session = valid_history_session(browser_session)
+        if not browser_session:
+            raise ValueError("A valid guest browser session is required for job ownership.")
+        binding = {"kind": "guest", "value": browser_session}
+    redis_client.set(
+        f"task:{task_id}:access",
+        json.dumps(binding, separators=(",", ":")),
+        ex=HISTORY_TTL_SECONDS,
+    )
+
+
+def _job_access_binding(task_id):
+    try:
+        binding = json.loads(redis_client.get(f"task:{task_id}:access") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return None
+    kind, value = binding.get("kind"), str(binding.get("value") or "").strip()
+    if kind == "account" and value:
+        return kind, value
+    if kind == "guest" and valid_history_session(value):
+        return kind, value
+    return None
+
+
+def job_access_allowed(task_id, user_id=None, browser_session=None):
+    """Return whether the supplied account or guest session owns a job."""
+    task_id = valid_history_session(task_id)
+    if not task_id:
+        return False
+    user_id = str(user_id or "").strip()
+    browser_session = valid_history_session(browser_session)
+
+    # Durable account ownership is authoritative even if the Redis binding has
+    # expired or disagrees. An account job must never fall back to guest access.
+    owner_id = get_job_owner(task_id)
+    if owner_id:
+        return bool(user_id) and hmac.compare_digest(str(owner_id), user_id)
+
+    binding = _job_access_binding(task_id)
+    if not binding:
+        return False
+    kind, expected_identity = binding
+    if kind == "account":
+        return bool(user_id) and hmac.compare_digest(expected_identity, user_id)
+    return bool(browser_session) and hmac.compare_digest(expected_identity, browser_session)
+
+
 def claim_daily_job(user_id):
     """Atomically claim one authenticated user's daily job allowance."""
     now = datetime.now(timezone.utc)
@@ -645,7 +1057,7 @@ def job_history_links(entry):
         }
     return {
         "svg_url": f"/download/{task_id}",
-        "lightburn_url": f"/download-lbrn2/{task_id}",
+        "lightburn_url": None if parameters.get("svg_only") else f"/download-lbrn2/{task_id}",
         "reuse_url": reuse_settings_url(entry),
         "reuse_label": "Reuse Settings",
     }
@@ -688,6 +1100,16 @@ def get_history_entries(session_id):
             pipeline.lrem(history_key, 0, raw_entry)
         pipeline.execute()
     return entries
+
+
+def get_accessible_history_entries(session_id, user_id=None, browser_session=None):
+    """Return only browser-history rows whose jobs the requester still owns."""
+    return [
+        entry for entry in get_history_entries(session_id)
+        if job_access_allowed(
+            entry.get("task_id"), user_id=user_id, browser_session=browser_session,
+        )
+    ]
 
 
 def parse_abstract_filter_parameters(raw_value):
@@ -877,8 +1299,9 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
         redis_client.expire(status_key, HISTORY_TTL_SECONDS)
         redis_client.expire(log_key, HISTORY_TTL_SECONDS)
         image_preset = str(data.get("image_preset", "cartoon")).strip().lower()
+        svg_only = str(data.get("svg_only", "false")).strip().lower() in ("true", "1", "yes", "on")
         material_name = str(data.get("material", "stainless - steel")).strip().lower()
-        if not material_name:
+        if not material_name and not svg_only:
             raise ValueError("Choose or enter a material name")
         abstract_filter = str(data.get("abstract_filter", "none")).strip().lower()
         if image_preset.startswith(ABSTRACT_PRESET_PREFIX):
@@ -894,10 +1317,11 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
                 or f"output_{task_id}_{os.path.basename(image_path)}",
             ),
             str(data.get("pixel_square_mm", "1")), str(normalize_dimension(data.get("new_width"))),
-            str(normalize_dimension(data.get("new_height"))), material_settings_path,
+            str(normalize_dimension(data.get("new_height"))), material_settings_path or "-",
             material_name, str(data.get("colors", "")), image_preset, abstract_filter,
             json.dumps(parse_abstract_filter_parameters(data.get("abstract_filter_parameters", "{}")), separators=(",", ":")),
             json.dumps(parse_color_name_overrides(data.get("color_name_overrides", "{}")), separators=(",", ":")),
+            "true" if svg_only else "false",
         ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         current_line = []
         while True:
@@ -951,13 +1375,18 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
             update_user_job(task_id, "failed", error_message=str(error))
         except RuntimeError as status_error:
             print(f"[Thread-{task_id}] Could not save durable failure state: {status_error}", flush=True)
+    finally:
+        redis_client.expire(f"task:{task_id}:status", HISTORY_TTL_SECONDS)
+        redis_client.expire(f"task:{task_id}:log", HISTORY_TTL_SECONDS)
+        redis_client.expire(f"task:{task_id}:access", HISTORY_TTL_SECONDS)
 
 
 def enqueue_raster_job(task_id, data, image_key, material_key, output_name,
                        image_name, material_name, user_id=None):
     """Place a portable raster job on Redis for the dedicated worker pod."""
-    if not image_key or not material_key:
-        raise RuntimeError("Queued raster jobs require durable image and material artifacts")
+    svg_only = str(data.get("svg_only", "false")).strip().lower() in ("true", "1", "yes", "on")
+    if not image_key or (not svg_only and not material_key):
+        raise RuntimeError("Queued raster jobs require their durable input artifacts")
     payload = {
         "task_id": task_id,
         "data": data,
@@ -1010,3 +1439,4 @@ def cleanup_redis_inflight(task_id):
         redis_client.expire(download_key, HISTORY_TTL_SECONDS)
     redis_client.expire(f"task:{task_id}:status", HISTORY_TTL_SECONDS)
     redis_client.expire(f"task:{task_id}:log", HISTORY_TTL_SECONDS)
+    redis_client.expire(f"task:{task_id}:access", HISTORY_TTL_SECONDS)

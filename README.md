@@ -1,72 +1,159 @@
-# MOPA-LASER-RASTERIZER
+# MOPA Laser Rasterizer
 
-Simple web form for processing image files to prepare for color engraving on stainless steel
+MOPA Laser Rasterizer is a Flask web application that converts raster artwork into color-separated vector geometry for laser engraving. It exports a layered SVG and, when supplied with a compatible LightBurn Material Library, a `.lbrn2` project containing the operator's matched settings.
 
-## To use this app:
-### add your laser settings for each color to a lightburn material settings file 
-Make sure the MaterilName contains "stainless steel"
+The vector pipeline gives each processed color its own closed region. Adjacent regions are fitted together and removed from the geometry around them, avoiding unintended gaps and stacked overlaps between color layers.
 
-Make sure the Material Settings Description matches one of the following descriptions:
+The application prepares artwork and project files; it does not control a laser or determine safe engraving parameters. Every generated project and Material Library setting must be reviewed and tested by the operator.
 
-| Description | hex color code for layer |
-| --- | --- |
-| Light-Gray  | #B4B4B4 |
-| Black | #000000 |
-| Blue | #0000FF |
-| Red | #FF0000 | 
-| Green | #00E000 |
-| Yellow | #D0D000 |
-| Orange | #FF8000 |
-| Cyan | #00E0E0 |
-| Magenta | #FF00FF |
-| Dark-Blue | #0000A0 |
-| Dark-Red | #A00000 |
-| Dark-Green | #00A000 |
-| Dark-Yellow | #A0A000 |
-| Dark-Orange | #C08000 |
-| Light-Blue | #00A0FF |
-| Dark-Magenta | #A000A0 |
-| Medium-Gray | #808080 |
-| Slate-Blue | #7D87B9 |
-| Rose | #BB7784 |
-| Periwinkle-Blue | #4A6FE3 |
-| Raspberry | #D33F6A |
-| Sage-Green | #8CD78C |
-| Peach | #F0B98D |
-| Light-Pink | #F6C4E1 |
-| Orchid-Pink | #FA9ED4 |
-| Deep-Purple | #500A78 |
-| Rust-Brown | #B45A00 |
-| Teal | #004754 |
-| Bright-Mint-Green | #86FA88 |
-| Light-Gold | #FFDB66 |
+## Features
 
-## Project Structure
+- Raster-to-vector conversion for JPG, JPEG, PNG, BMP, TIFF, and WebP artwork
+- Layered SVG output with no Material Library required
+- LightBurn `.lbrn2` export using settings from `.clb`, `.lbmat`, or compatible `.lbrn` files
+- Editable palette selection and Material Library description matching
+- Cartoon, Color Photo, and dithered Black and White Photo presets
+- Abstract vector filters with configurable controls
+- Material Vault for importing, editing, combining, and exporting saved libraries
+- Labeled LightBurn material-coupon generation
+- Color Discovery calibration, photo analysis, and recipe saving
+- Browser-session and account-backed job history
+- Community settings browser
+- Experimental Holographic Etching Lab for diffraction-grid calibration and artwork generation
+- Public user documentation at `/docs`
 
+## Rasterizer workflow
+
+1. Develop and verify color settings on the actual machine, lens, material, finish, and focus arrangement.
+2. Store the settings in a LightBurn Material Library. Setting descriptions should match Rasterizer palette names; palette labels can also be edited in the UI to match an existing library.
+3. Upload artwork and optionally select or upload the Material Library.
+4. Choose the material, processing dimensions, physical pixel size, palette, and image preset.
+5. Build the project and download the SVG or `.lbrn2` output.
+6. Inspect the scale, geometry, layers, cut modes, and every laser parameter in LightBurn before testing on expendable stock.
+
+Leaving the material blank and confirming SVG-only mode skips Material Library parsing and `.lbrn2` generation. The resulting SVG contains vector geometry but no machine settings.
+
+## Local development
+
+### Requirements
+
+- Python 3.11
+- pip
+- Native build tools and Potrace development libraries required by `pypotrace`
+- Redis when exercising queued jobs or Redis-backed production behavior
+
+The Docker image installs the required Debian packages: `build-essential`, `libpotrace-dev`, `libagg-dev`, `pkg-config`, and `python3-dev`.
+
+### Run the web application
+
+```bash
+python -m venv .venv
 ```
+
+Activate the environment:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+On Linux or macOS:
+
+```bash
+source .venv/bin/activate
+```
+
+Install dependencies and start Flask:
+
+```bash
+pip install -r requirements.txt
+python app.py
+```
+
+Open `http://localhost:8000`.
+
+Local submissions run in background threads by default. Set `RASTER_JOB_QUEUE_ENABLED=true` and run `python worker.py` separately to use the Redis-backed worker path.
+
+### Run with Docker
+
+```bash
+docker build -t mopa-laser-rasterizer .
+docker run --rm -p 8000:8000 mopa-laser-rasterizer
+```
+
+The production container starts Gunicorn with one process and four threads so the process-local task cache remains shared.
+
+## Configuration
+
+The application reads configuration from environment variables. It does not automatically load `.env` files.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `UPLOAD_FOLDER` | `./uploads` | Node-local job and artifact storage |
+| `APP_SESSION_SECRET` | Development-only value | Signs Flask and anonymous browser sessions; replace in production |
+| `SESSION_COOKIE_SECURE` | `false` | Restricts session cookies to HTTPS when `true` |
+| `PUBLIC_APP_URL` | Request origin | Canonical public URL used by documentation and metadata |
+| `DAILY_JOB_LIMIT` | `3` | Anonymous daily Rasterizer job allowance |
+| `RASTER_JOB_QUEUE_ENABLED` | `false` | Sends Rasterizer work to the Redis queue when `true` |
+| `REDIS_HOST` | `localhost` | Redis host |
+| `REDIS_PORT` | `6379` | Redis port |
+| `AWS_REGION` | `us-east-2` | AWS region for S3 and DynamoDB clients |
+| `S3_BUCKET_NAME` | empty | Durable job input and output bucket |
+| `DYNAMODB_TABLE_NAME` | empty | Account, job, library, and recipe data table |
+| `COGNITO_DOMAIN` | empty | Cognito sign-in domain |
+| `COGNITO_CLIENT_ID` | empty | Cognito application client ID |
+| `COMMUNITY_CONTRIBUTOR_SECRET` | Session secret | Signs community-contributor operations |
+
+Worker lease and recovery timing can be tuned with `RASTER_JOB_LEASE_SECONDS`, `RASTER_JOB_HEARTBEAT_SECONDS`, `RASTER_JOB_RECOVERY_INTERVAL_SECONDS`, and `RASTER_JOB_RECOVERY_LOCK_SECONDS`.
+
+Production infrastructure and deployment instructions are maintained in [README-K8S.md](README-K8S.md).
+
+## Project structure
+
+```text
 mopa-laser-rasterizer/
-├── app.py               # Main server application
-├── static/                   # Static HTML files directory
-│   └── index.html          # Add your HTML files here
-├── templates/              # Templated HTML files directory
-├── lib/                    # Core library and utility modules
-│   ├── lightburn.py        # library for interacting with lightburn project and material files
-│   └── Material_Library.py # process sent file with sent material settings file
-└── README.md               # This file
+|-- app.py                    Flask application factory and local server
+|-- services.py               Shared storage, queue, session, and job services
+|-- worker.py                 Redis-backed raster job worker
+|-- routes/                   HTTP routes grouped by application area
+|-- lib/
+|   |-- vector_processing.py  Raster quantization and vector geometry pipeline
+|   |-- Material_Library.py   Raster job entry point and library integration
+|   |-- lightburn.py          LightBurn library and project model
+|   `-- abstract_filters/     Registered abstract geometry transforms
+|-- templates/                Jinja application pages
+|-- static/                   Shared browser assets and documentation diagrams
+|-- tests/                    Unit and route-level regression tests
+|-- k8s/                      Kubernetes resources
+`-- docs/                     Operational and recovery documentation
 ```
 
-## Getting Started
+Route modules are discovered automatically by `routes/register_routes()`. Add a module beneath `routes/` and decorate views with the shared `routes` blueprint.
 
-### Prerequisites
+Abstract filters are registered through `lib/abstract_filters`. Each filter owns its manifest metadata, controls, normalization, and geometry transform.
 
-- Python 3.6 or higher
-- pip install -r requirements.txt
+## Tests
 
-### Running the Server 
+Run the test suite from the repository root:
 
-1. Open a terminal in the project directory
-2. Run the server:
-   ```bash
-   python app.py
-   ```
-3. Open your browser and navigate to: `http://localhost:8000`
+```bash
+python -m unittest discover -s tests
+```
+
+The tests cover vector export behavior, SVG-only jobs, authentication intent, job access and history, Material Library coupons, Color Discovery, palette generation, and Holographic Lab access paths.
+
+## Holographic Etching Lab
+
+The Holographic Lab is an experimental calibration workflow for angle-dependent diffraction structures:
+
+1. Generate and engrave a grid that sweeps fill interval, angle, and optionally another laser parameter.
+2. Upload a controlled photograph of the finished grid.
+3. Align and analyze the grid, curate useful measured cells, and save a recipe profile.
+4. Apply that recipe to artwork as small grating patches and inspect the generated LightBurn project.
+
+Resolution grows project complexity quickly because each processed artwork pixel can become physical vector geometry. Start with small calibration pieces and low processing dimensions.
+
+## Safety and result variability
+
+MOPA color and diffraction results depend on the exact source, lens, focus, material alloy, finish, preparation, power, speed, frequency, pulse width, interval, scan direction, passes, and thermal history. A screen color or shared recipe does not guarantee a matching physical result.
+
+Use suitable materials, guarding, extraction, fixturing, and manufacturer-approved parameter ranges. Supervise every job and verify generated files in LightBurn before enabling output.

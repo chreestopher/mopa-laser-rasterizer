@@ -20,6 +20,7 @@ from services import (
     LIGHTBURN_PALETTE_NAMES,
     RASTER_JOB_QUEUE,
     add_history_entry,
+    bind_job_access,
     download_task_artifact,
     download_user_holographic_recipe,
     download_user_material_library,
@@ -29,13 +30,21 @@ from services import (
     redis_client,
     raster_queue_position,
     record_user_job,
+    remember_guest_material_library,
     save_user_material_library,
     save_user_holographic_recipe,
+    select_guest_material_library,
     upload_task_artifact,
     valid_history_session,
 )
 
 from . import routes
+from ._job_access import (
+    browser_job_session,
+    private_history_session,
+    request_can_access_job,
+    validate_submission_auth,
+)
 
 
 SWEEP_SETTINGS = {
@@ -58,8 +67,32 @@ LIGHTBURN_LAYER_ID_BY_HEX = {
 }
 
 
+def _validated_submission_identity():
+    """Apply the shared account/guest intent contract to Holographic Lab POSTs."""
+    explicit_guest = str(request.form.get("continue_as_guest", "")).strip() == "1"
+    user_id, auth_error = validate_submission_auth(
+        request.form.get("submission_auth_token", ""),
+        allow_explicit_guest=explicit_guest,
+    )
+    if auth_error:
+        response = jsonify({
+            "status": "error",
+            "code": auth_error["code"],
+            "message": auth_error["message"],
+        })
+        return user_id or None, (response, auth_error["status"])
+    return user_id or None, None
+
+
+def _guest_profile_url(filename, user_id):
+    """Offer portable calibration files only to the guest workflow."""
+    if user_id:
+        return None
+    return f"/holographic-etching/download/{os.path.basename(filename)}"
+
+
 def _resolve_material_library(task_id, uploaded_library, saved_library_id, history_session,
-                              material_name=""):
+                              material_name="", guest_library_id=""):
     """Use the Rasterizer's shared guest cache and account Material Vault."""
     upload_folder = current_app.config["UPLOAD_FOLDER"]
     user_id = request.headers.get("x-amzn-oidc-identity", "").strip()
@@ -74,16 +107,14 @@ def _resolve_material_library(task_id, uploaded_library, saved_library_id, histo
         artifact_key = upload_task_artifact(
             task_id, library_path, category="inputs", user_id=user_id or None
         )
-        if cache_key:
-            redis_client.set(
-                cache_key,
-                json.dumps({"path": library_path, "filename": filename, "key": artifact_key}),
-                ex=HISTORY_TTL_SECONDS,
-            )
         if user_id:
             save_user_material_library(
                 user_id, library_path, material_name, source_filename=filename
             )
+        elif history_session:
+            remember_guest_material_library(history_session, {
+                "path": library_path, "filename": filename, "key": artifact_key,
+            })
         return library_path
 
     if saved_library_id:
@@ -98,6 +129,22 @@ def _resolve_material_library(task_id, uploaded_library, saved_library_id, histo
         library_path = os.path.join(upload_folder, f"{task_id}_saved_material_{filename}")
         download_user_material_library(saved_library, library_path)
         return library_path
+
+    if guest_library_id:
+        if user_id:
+            raise PermissionError("Choose a Material Vault library for an authenticated workflow.")
+        cached = select_guest_material_library(history_session, guest_library_id)
+        if not cached:
+            raise FileNotFoundError("That browser-session Material Library is no longer available.")
+        library_path = cached.get("path")
+        artifact_key = cached.get("key")
+        if artifact_key and not os.path.isfile(library_path or ""):
+            filename = secure_filename(cached.get("filename") or "library.clb")
+            library_path = os.path.join(upload_folder, f"{task_id}_cached_material_{filename}")
+            download_task_artifact(artifact_key, library_path)
+        if library_path and os.path.isfile(library_path):
+            return library_path
+        raise FileNotFoundError("That browser-session Material Library has expired.")
 
     if cache_key:
         try:
@@ -528,12 +575,19 @@ def _measure_grid_photo(photo_path, grid, rotation_degrees=0, crop=None, max_edg
     top_label_mm = float(grid.get("top_label_band_mm", 0) or 0)
     right_label_mm = float(grid.get("right_label_band_mm", 0) or 0)
     left_margin_mm = float(grid.get("left_grid_margin_mm", 0) or 0)
-    grid_width_mm = columns * float(grid["cell_size_mm"])
-    grid_height_mm = rows * float(grid["cell_size_mm"])
-    total_width_mm = left_margin_mm + grid_width_mm + right_label_mm
-    grid_left = round(width * left_margin_mm / total_width_mm) if left_margin_mm else 0
-    grid_right = round(width * (left_margin_mm + grid_width_mm) / total_width_mm) if right_label_mm or left_margin_mm else width
-    grid_top = round(height * top_label_mm / (grid_height_mm + top_label_mm)) if top_label_mm else 0
+    grid_width_mm = float(grid.get("grid_width_mm") or columns * float(grid["cell_size_mm"]))
+    grid_height_mm = float(grid.get("grid_height_mm") or rows * float(grid["cell_size_mm"]))
+    if correction == "manual_corners":
+        # The corner editor asks the operator to outline the cell matrix itself.
+        # Perspective rectification has already made that quadrilateral fill
+        # the preview, so applying the generated project's label margins again
+        # would incorrectly shrink and offset the sampling grid.
+        grid_left, grid_right, grid_top = 0, width, 0
+    else:
+        total_width_mm = left_margin_mm + grid_width_mm + right_label_mm
+        grid_left = round(width * left_margin_mm / total_width_mm) if left_margin_mm else 0
+        grid_right = round(width * (left_margin_mm + grid_width_mm) / total_width_mm) if right_label_mm or left_margin_mm else width
+        grid_top = round(height * top_label_mm / (grid_height_mm + top_label_mm)) if top_label_mm else 0
     cells = []
     manual_sample_points = manual_sample_points or {}
     preview = rectified.copy()
@@ -765,7 +819,7 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
     try:
         image = Image.open(art_file.stream).convert("RGB")
     except (UnidentifiedImageError, OSError) as error:
-        raise ValueError("Upload a readable artwork image, such as JPG or PNG.") from error
+        raise ValueError("Upload a raster artwork image (.jpg, .jpeg, .png, .bmp, .tif, .tiff, or .webp).") from error
     image.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
     pixels = np.asarray(image)
     if not pixels.size:
@@ -913,7 +967,7 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
     stem = f"holographic_art_{task_id}"
     svg_name, lbrn_name = f"{stem}.svg", f"{stem}.lbrn2"
     total_rectangles = coalesced_count + len(black_rectangles)
-    progress(f"[Step 7/8] START: serializing {total_rectangles}/{total_rectangles} vector rectangles to SVG and LightBurn.")
+    progress(f"[Step 7/8] START: serializing {total_rectangles}/{total_rectangles} vector rectangles to the .svg file and .lbrn2 file.")
     _write_holographic_svg(
         os.path.join(upload_folder, svg_name), pixels.shape[1], pixels.shape[0], recipes_by_name, pixel_mm,
         black_rectangles=black_rectangles,
@@ -966,8 +1020,12 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
 
 @routes.route("/holographic-etching/calibration-grid", methods=["POST"])
 def calibration_grid():
+    _user_id, auth_failure = _validated_submission_identity()
+    if auth_failure:
+        return auth_failure
     library = request.files.get("material_settings")
     saved_library_id = str(request.form.get("saved_material_library_id", "")).strip()
+    guest_library_id = str(request.form.get("guest_material_library_id", "")).strip()
     material = str(request.form.get("material", "")).strip()
     description = str(request.form.get("setting_description", "")).strip()
     laser_source = str(request.form.get("laser_source", "")).strip()
@@ -993,9 +1051,14 @@ def calibration_grid():
 
     task_id = str(uuid.uuid4())
     upload_folder = current_app.config["UPLOAD_FOLDER"]
+    history_session = private_history_session(
+        valid_history_session(request.cookies.get("mopa_history_session"))
+        or valid_history_session(request.form.get("history_session"))
+    )
     try:
         library_path = _resolve_material_library(
-            task_id, library, saved_library_id, request.form.get("history_session"), material
+            task_id, library, saved_library_id, history_session, material,
+            guest_library_id=guest_library_id,
         )
     except PermissionError as error:
         return jsonify({"status": "error", "message": str(error)}), 401
@@ -1021,7 +1084,10 @@ def calibration_grid():
 
     count = columns * rows
     column_intervals = [interval_low + (interval_high - interval_low) * index / max(columns - 1, 1) for index in range(columns)]
-    row_angles = [180 * index / max(rows - 1, 1) for index in range(rows)]
+    # Grating orientation repeats after a half-turn, so exclude 180 degrees.
+    # Dividing the half-turn by the row count gives every row a unique,
+    # evenly spaced orientation (for example: 0, 45, 90, 135 for four rows).
+    row_angles = [180 * index / rows for index in range(rows)]
     intervals = [column_intervals[index % columns] for index in range(count)]
     angles = [row_angles[index // columns] for index in range(count)]
     sweep_values = [sweep_low + (sweep_high - sweep_low) * index / max(count - 1, 1) for index in range(count)]
@@ -1148,6 +1214,9 @@ def save_calibration_profile():
     source grid, photograph, and viewing conditions gives the later analyzer a
     stable, self-contained calibration record to work from.
     """
+    user_id, auth_failure = _validated_submission_identity()
+    if auth_failure:
+        return auth_failure
     photo = request.files.get("grid_photo")
     calibration_id = str(request.form.get("calibration_id", "")).strip()
     profile_name = str(request.form.get("profile_name", "")).strip()
@@ -1169,7 +1238,7 @@ def save_calibration_profile():
         photo_image.verify()
         photo.stream.seek(0)
     except (UnidentifiedImageError, OSError):
-        return jsonify({"status": "error", "message": "Upload a readable image of the finished grid, such as a JPG or PNG."}), 400
+        return jsonify({"status": "error", "message": "Upload a raster image of the finished grid (.jpg, .jpeg, .png, .bmp, .tif, .tiff, or .webp)."}), 400
 
     profile_id = str(uuid.uuid4())
     extension = os.path.splitext(secure_filename(photo.filename))[1].lower() or ".image"
@@ -1205,7 +1274,7 @@ def save_calibration_profile():
     return jsonify({
         "status": "saved",
         "profile_id": profile_id,
-        "profile_url": f"/holographic-etching/download/{profile_name_on_disk}",
+        "profile_url": _guest_profile_url(profile_name_on_disk, user_id),
         "message": "Calibration photo and conditions saved. It is ready for measurement.",
     })
 
@@ -1213,6 +1282,9 @@ def save_calibration_profile():
 @routes.route("/holographic-etching/analyze-calibration", methods=["POST"])
 def analyze_calibration_profile():
     """Measure visible cell colors from a saved calibration-grid photograph."""
+    user_id, auth_failure = _validated_submission_identity()
+    if auth_failure:
+        return auth_failure
     profile_id = str(request.form.get("profile_id", "")).strip()
     upload_folder = current_app.config["UPLOAD_FOLDER"]
     try:
@@ -1296,7 +1368,7 @@ def analyze_calibration_profile():
     return jsonify({
         "status": "measured",
         "profile_id": profile_id,
-        "profile_url": f"/holographic-etching/download/{os.path.basename(profile_path)}",
+        "profile_url": _guest_profile_url(profile_path, user_id),
         "preview_url": f"/holographic-etching/preview/{preview_name}",
         "correction": correction,
         "rotation_degrees": rotation_degrees,
@@ -1309,6 +1381,9 @@ def analyze_calibration_profile():
 @routes.route("/holographic-etching/save-recipes", methods=["POST"])
 def save_holographic_recipes():
     """Persist the operator's chosen calibration cells as a reusable palette."""
+    user_id, auth_failure = _validated_submission_identity()
+    if auth_failure:
+        return auth_failure
     profile_id = str(request.form.get("profile_id", "")).strip()
     try:
         selected = json.loads(str(request.form.get("recipes", "[]")))
@@ -1362,15 +1437,16 @@ def save_holographic_recipes():
                         "key": recipe_artifact_key}),
             ex=HISTORY_TTL_SECONDS,
         )
-    user_id = request.headers.get("x-amzn-oidc-identity", "").strip()
+    saved_recipe_id = None
     if user_id:
         try:
-            save_user_holographic_recipe(
+            saved_recipe = save_user_holographic_recipe(
                 user_id, profile_path, profile.get("profile_name"),
                 metadata={"profile_name": profile.get("profile_name", ""), "recipe_count": len(recipes),
                           "material": profile.get("grid", {}).get("material", "")},
                 source_filename=os.path.basename(profile_path),
             )
+            saved_recipe_id = saved_recipe.get("recipe_id")
         except RuntimeError as error:
             current_app.logger.exception("Could not save generated Holographic Recipe to the account")
             return jsonify({"status": "error", "message": str(error)}), 503
@@ -1378,20 +1454,36 @@ def save_holographic_recipes():
     return jsonify({
         "status": "saved",
         "recipe_count": len(recipes),
-        "profile_url": f"/holographic-etching/download/{os.path.basename(profile_path)}",
+        "profile_url": _guest_profile_url(profile_path, user_id),
+        "account_saved": bool(user_id),
+        "saved_recipe_id": saved_recipe_id,
         "palette_diagnostics": profile["palette_diagnostics"],
-        "message": f"Saved {len(recipes)} holographic recipe(s) into this calibration profile.",
+        "message": (
+            f"Saved {len(recipes)} holographic recipe(s) to your Recipe Vault."
+            if user_id else
+            f"Prepared {len(recipes)} holographic recipe(s). Download the recipe file before leaving."
+        ),
     })
 
 
 @routes.route("/holographic-etching/build-artwork", methods=["POST"])
 def build_holographic_artwork():
+    user_id, auth_failure = _validated_submission_identity()
+    if auth_failure:
+        return auth_failure
     artwork = request.files.get("artwork")
     profile_file = request.files.get("recipe_profile")
     saved_recipe_id = str(request.form.get("saved_holographic_recipe_id", "")).strip()
     material_file = request.files.get("material_settings")
     saved_library_id = str(request.form.get("saved_material_library_id", "")).strip()
-    artwork_task_id = valid_history_session(request.form.get("artwork_task_id")) or str(uuid.uuid4())
+    guest_library_id = str(request.form.get("guest_material_library_id", "")).strip()
+    # Task IDs and access identities are server-controlled. Client-generated
+    # IDs are useful UI hints but must not be allowed to claim another job.
+    artwork_task_id = str(uuid.uuid4())
+    history_session = private_history_session(
+        valid_history_session(request.cookies.get("mopa_history_session"))
+        or valid_history_session(request.form.get("history_session"))
+    )
     def fail(message, status_code):
         payload = {"status": "error", "message": str(message)}
         return jsonify(payload), status_code
@@ -1404,11 +1496,12 @@ def build_holographic_artwork():
         return fail("Processing resolution and pixel size must be numbers.", 400)
     try:
         recipe_path = _resolve_holographic_recipe(
-            artwork_task_id, profile_file, saved_recipe_id, request.form.get("history_session")
+            artwork_task_id, profile_file, saved_recipe_id, history_session
         )
         library_path = _resolve_material_library(
             artwork_task_id, material_file, saved_library_id,
-            request.form.get("history_session"), request.form.get("material", "")
+            history_session, request.form.get("material", ""),
+            guest_library_id=guest_library_id,
         )
         preserve_black_outlines = request.form.get("preserve_black_outlines") in {"on", "true", "1"}
         cut_mode = str(request.form.get("cut_mode", "setting")).strip().lower()
@@ -1417,7 +1510,6 @@ def build_holographic_artwork():
         artwork_name = secure_filename(artwork.filename) or "artwork.png"
         artwork_path = os.path.join(current_app.config["UPLOAD_FOLDER"], f"{artwork_task_id}_{artwork_name}")
         artwork.save(artwork_path)
-        user_id = request.headers.get("x-amzn-oidc-identity", "").strip() or None
         artwork_key = upload_task_artifact(artwork_task_id, artwork_path, category="inputs", user_id=user_id)
         recipe_key = upload_task_artifact(artwork_task_id, recipe_path, category="inputs", user_id=user_id)
         material_key = upload_task_artifact(artwork_task_id, library_path, category="inputs", user_id=user_id)
@@ -1425,9 +1517,6 @@ def build_holographic_artwork():
             raise RuntimeError("Queued Holographic Artwork jobs require durable artifact storage.")
         with open(recipe_path, encoding="utf-8") as recipe_stream:
             recipe_summary = json.load(recipe_stream)
-        history_session = (valid_history_session(request.form.get("history_session"))
-                           or valid_history_session(request.cookies.get("mopa_history_session"))
-                           or str(uuid.uuid4()))
         display_material = (recipe_summary.get("grid") or {}).get("material") or os.path.basename(library_path)
         run_parameters = {
             "job_type": "holographic_artwork",
@@ -1457,10 +1546,13 @@ def build_holographic_artwork():
             history_session, artwork_task_id, artwork_name, "holographic_artwork", "none",
             display_material, run_parameters,
         )
-        redis_client.lpush(RASTER_JOB_QUEUE, json.dumps(payload, separators=(",", ":")))
+        bind_job_access(
+            artwork_task_id, user_id=user_id, browser_session=browser_job_session(),
+        )
         redis_client.set(f"task:{artwork_task_id}:status", "pending", ex=HISTORY_TTL_SECONDS)
         redis_client.rpush(f"task:{artwork_task_id}:log", "Holographic Artwork job queued for a dedicated worker.")
         redis_client.expire(f"task:{artwork_task_id}:log", HISTORY_TTL_SECONDS)
+        redis_client.lpush(RASTER_JOB_QUEUE, json.dumps(payload, separators=(",", ":")))
     except PermissionError as error:
         return fail(error, 401)
     except FileNotFoundError as error:
@@ -1484,6 +1576,12 @@ def holographic_artwork_status(task_id):
     task_id = valid_history_session(task_id)
     if not task_id:
         return jsonify({"status": "error", "message": "Unknown artwork task."}), 404
+    try:
+        allowed = request_can_access_job(task_id)
+    except RuntimeError:
+        return jsonify({"status": "error", "message": "Could not verify job ownership."}), 503
+    if not allowed:
+        return jsonify({"status": "error", "message": "You do not have access to this job."}), 403
     status = redis_client.get(f"task:{task_id}:status")
     if not status:
         return jsonify({"status": "error", "message": "Artwork task status was not found."}), 404
@@ -1535,6 +1633,18 @@ def preview_calibration_file(filename):
 def download_calibration_file(filename):
     if not (filename.startswith("holographic_calibration_") or filename.startswith("holographic_profile_") or filename.startswith("holographic_art_")):
         return jsonify({"status": "error", "message": "Unknown calibration file."}), 404
+    if filename.startswith("holographic_art_"):
+        task_id = valid_history_session(
+            filename.removeprefix("holographic_art_").split(".", 1)[0]
+        )
+        if not task_id:
+            return jsonify({"status": "error", "message": "Unknown artwork file."}), 404
+        try:
+            allowed = request_can_access_job(task_id)
+        except RuntimeError:
+            return jsonify({"status": "error", "message": "Could not verify job ownership."}), 503
+        if not allowed:
+            return jsonify({"status": "error", "message": "You do not have access to this job."}), 403
     try:
         return _download_holographic_artifact(current_app.config["UPLOAD_FOLDER"], filename)
     except (OSError, RuntimeError):

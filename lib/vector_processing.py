@@ -248,10 +248,10 @@ def parse_material_settings(
     This function:
         1) parses the material settings file
         2) filters the materials based on the limit colors passed in
-        3) filters the lightburn layer TARGET_COLORS:
+        3) filters the LightBurn layer TARGET_COLORS:
             to only include colors that exist in the material setings list
-        4) returns the new lightburn layer TARGET_COLORS for use in pixel generation=
-            this ensures that we only find the closest lightburn layer color that exists in our material settings
+        4) returns the new LightBurn layer TARGET_COLORS for use in pixel generation=
+            this ensures that we only find the closest LightBurn layer color that exists in our material settings
     """
     if material_layer_report is None:
         material_layer_report = {"loaded": [], "skipped": []}
@@ -269,6 +269,19 @@ def parse_material_settings(
             getattr(item, "materialName", "") or ""
         ).strip().casefold()
     ]
+    placeholder_settings = [
+        item for item in matching_settings
+        if str(
+            getattr(item, "entryDesc", "") or getattr(item, "name", "") or ""
+        ).strip().casefold().startswith("unconfigured ")
+    ]
+    if matching_settings and len(placeholder_settings) == len(matching_settings):
+        raise ValueError(
+            f"Material '{material_name}' contains only unconfigured Rasterizer palette "
+            "entries. Replace placeholder values with complete tested settings and "
+            "rename the configured entries before using this library."
+        )
+    matching_settings = [item for item in matching_settings if item not in placeholder_settings]
     material_layer_report.update({
         "selected_material": material_name,
         "available_materials": settings_per_material,
@@ -374,9 +387,9 @@ def parse_material_settings(
 def init_lightburn(the_colors_limit, color_name_overrides=None):
     """
         This Function:
-            1) initializes lightburn module
+            1) initializes LightBurn module
             2) initiallizes the full list of lighburn layer colors
-            3) filters the lightburn layer colors so it only contains colors in limit_colors list
+            3) filters the LightBurn layer colors so it only contains colors in limit_colors list
             4) returns the initialized objects to be used by other functions
     """
     # Define the module name and its exact absolute file path
@@ -457,7 +470,7 @@ def init_lightburn(the_colors_limit, color_name_overrides=None):
     sys.modules[module_name] = lightburn
     spec.loader.exec_module(lightburn)
 
-    # Create the lightburn object
+    # Create the LightBurn object
     lb = lightburn.Lightburn()
     return filtered_colors, lb, lightburn
 
@@ -1105,6 +1118,17 @@ def process_color_layers(
             f"{len(boxes)} source objects."
         )
 
+    # A small number of filters need the complete set of cleaned color layers
+    # to perform a coherent reassignment. Existing geometry-only filters do
+    # not expose this capability and therefore keep their exact prior path.
+    remap_layers = getattr(filter_module, "remap_layers", None)
+    if callable(remap_layers):
+        printLogMessage(f"Applying cross-layer mapping for abstract filter '{filter_name}'...")
+        processed_layers = remap_layers(processed_layers, target_colors, settings)
+        printLogMessage(
+            f"Cross-layer mapping produced {len(processed_layers)} calibrated output layers."
+        )
+
     return processed_layers
 
 
@@ -1463,6 +1487,7 @@ def export_processed_layers(
     lb_project_instance,
     punch_through_black=False,
     black_lightburn_geometry=None,
+    export_lightburn=True,
 ):
     """
     Sort, scale, and export all finalized geometry to SVG and LightBurn.
@@ -1549,7 +1574,7 @@ def export_processed_layers(
 
         printLogMessage(
             f"[Export layer {export_index}/{total_export_layers}] START: "
-            f"writing {geometry_count}/{geometry_count} objects to SVG."
+            f"writing {geometry_count}/{geometry_count} objects to the .svg file."
         )
         add_geometry_to_svg(
             root,
@@ -1558,14 +1583,14 @@ def export_processed_layers(
         )
         printLogMessage(
             f"[Export layer {export_index}/{total_export_layers}] DONE: "
-            f"wrote {geometry_count}/{geometry_count} objects to SVG."
+            f"wrote {geometry_count}/{geometry_count} objects to the .svg file."
         )
 
         # --------------------------------------------------------------------
         # LightBurn
         # --------------------------------------------------------------------
 
-        if color_hex in target_colors:
+        if export_lightburn and color_hex in target_colors:
 
             printLogMessage(
                 f"[Export layer {export_index}/{total_export_layers}] START: "
@@ -1618,15 +1643,17 @@ def export_processed_layers(
 def save_vector_output(
     root,
     output_svg_path,
-    lb_project_instance
+    lb_project_instance,
+    export_lightburn=True,
 ):
     """
     Write SVG and LightBurn output files.
     """
 
     lightburn_object_count = len(getattr(lb_project_instance, "objects", []))
+    svg_step = "1/2" if export_lightburn else "1/1"
     printLogMessage(
-        f"[File serialization 1/2] START: writing SVG with "
+        f"[File serialization {svg_step}] START: writing the .svg file with "
         f"{len(root)} top-level objects to {output_svg_path}."
     )
     tree = ET.ElementTree(
@@ -1635,7 +1662,7 @@ def save_vector_output(
 
     printLogMessage(
         f"Writing finalized scaled "
-        f"zero-overlap SVG to: "
+        f"zero-overlap .svg file to: "
         f"{output_svg_path}"
     )
 
@@ -1645,9 +1672,13 @@ def save_vector_output(
         xml_declaration=True
     )
     printLogMessage(
-        f"[File serialization 1/2] DONE: wrote {len(root)}/{len(root)} "
-        "top-level SVG objects."
+        f"[File serialization {svg_step}] DONE: wrote {len(root)}/{len(root)} "
+        "top-level .svg file objects."
     )
+
+    if not export_lightburn:
+        printLogMessage(".svg file export complete. LightBurn project export was skipped for SVG-only mode.")
+        return
 
     printLogMessage(
         f"[File serialization 2/2] START: writing "
@@ -1663,7 +1694,7 @@ def save_vector_output(
     )
 
     printLogMessage(
-        "SVG and LightBurn export complete."
+        ".svg file and .lbrn2 file export complete."
     )
 
 # ============================================================================
@@ -1688,7 +1719,8 @@ def raster_to_puzzle_and_lightburn(
     image_preset=None,
     abstract_filter=None,
     filter_parameters=None,
-    job_settings=None
+    job_settings=None,
+    export_lightburn=True,
 ):
     """
     Parses a raster image, applies a structural vector scale_factor,
@@ -1811,6 +1843,17 @@ def raster_to_puzzle_and_lightburn(
     filter_name, _ = normalize_abstract_settings(
         abstract_filter, filter_parameters
     )
+    filter_module = ABSTRACT_FILTER_MODULES.get(filter_name)
+    if bool(getattr(filter_module, "USES_SOURCE_LUMINANCE", False)):
+        filter_parameters["_angle_image"] = prepare_raster_image(
+            raster_image_path=raster_image_path,
+            new_height=new_height,
+            new_width=new_width,
+            quantize_colors=None,
+        ).convert("L")
+        printLogMessage(
+            "Krasnow Color Grating: prepared source luminance for per-patch line angles."
+        )
     centerline_mode = filter_name == "centerline"
     transparent_mode = (
         (image_preset == "bw_dither_photograph"
@@ -1822,7 +1865,12 @@ def raster_to_puzzle_and_lightburn(
             )
         ))
     )
-    preserve_source_black = centerline_mode or transparent_mode
+    filter_preserves_source_black = bool(
+        getattr(filter_module, "PRESERVE_SOURCE_BLACK", False)
+    )
+    preserve_source_black = (
+        centerline_mode or transparent_mode or filter_preserves_source_black
+    )
     transparent_rgb_values = None
     if image_preset == "bw_dither_photograph" and transparent_mode:
         # ``Image.quantize(colors=2)`` produces two exact source colors. Pick
@@ -1943,6 +1991,11 @@ def raster_to_puzzle_and_lightburn(
         printLogMessage(
             "Transparent mode: light source areas remain transparent; no black canvas added."
         )
+    elif filter_preserves_source_black:
+        printLogMessage(
+            f"{filter_name}: preserving source-derived Black geometry; "
+            "no synthetic Black canvas or punch-through added."
+        )
 
     # =========================================================================
     # 7. Create SVG document
@@ -1968,6 +2021,7 @@ def raster_to_puzzle_and_lightburn(
         lb_project_instance=lb_project_instance,
         punch_through_black=not preserve_source_black,
         black_lightburn_geometry=black_lightburn_geometry,
+        export_lightburn=export_lightburn,
     )
 
     # =========================================================================
@@ -1977,7 +2031,8 @@ def raster_to_puzzle_and_lightburn(
     save_vector_output(
         root=root,
         output_svg_path=output_svg_path,
-        lb_project_instance=lb_project_instance
+        lb_project_instance=lb_project_instance,
+        export_lightburn=export_lightburn,
     )
 
 

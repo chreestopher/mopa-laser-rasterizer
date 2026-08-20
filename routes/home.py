@@ -7,11 +7,40 @@ from flask import current_app, jsonify, redirect, render_template, request
 from services import LIGHTBURN_PALETTE_NAMES
 
 from . import routes
+from ._job_access import (
+    authentication_state,
+    clear_authenticated_browser_expectation,
+    issue_submission_auth_token,
+    remember_authenticated_browser,
+)
+
+
+@routes.before_app_request
+def retain_account_expectation():
+    """Remember authenticated browsers without treating header loss as logout."""
+    remember_authenticated_browser()
 
 
 @routes.route("/")
 def index():
-    return render_template("index.html")
+    return render_template(
+        "index.html",
+        canonical=f"{_public_url()}/",
+        submission_auth_token=issue_submission_auth_token(),
+    )
+
+
+def _public_url():
+    return (current_app.config.get("PUBLIC_APP_URL") or
+            f"{request.scheme}://{request.host}").rstrip("/")
+
+
+@routes.route("/color-laser-engraving-tool")
+def color_laser_engraving_tool():
+    return render_template(
+        "color_laser_engraving_tool.html",
+        canonical=f"{_public_url()}/color-laser-engraving-tool",
+    )
 
 
 @routes.route("/login")
@@ -22,14 +51,17 @@ def login():
 
 @routes.route("/auth-status")
 def auth_status():
-    """Expose only the ALB-authenticated state needed by the console chrome."""
-    return jsonify({"signed_in": bool(request.headers.get("x-amzn-oidc-identity", "").strip())})
+    """Expose the account, guest, or reconnect state needed by the UI."""
+    response = jsonify(authentication_state())
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @routes.route("/logout")
 def logout():
     """Clear ALB's auth session and finish the Cognito hosted-UI sign-out flow."""
-    public_url = current_app.config.get("PUBLIC_APP_URL") or f"{request.scheme}://{request.host}"
+    clear_authenticated_browser_expectation()
+    public_url = _public_url()
     cognito_domain = current_app.config.get("COGNITO_DOMAIN")
     client_id = current_app.config.get("COGNITO_CLIENT_ID")
     if cognito_domain and client_id:
@@ -63,7 +95,11 @@ def holographic_etching():
         [name.lower(), color_hex]
         for color_hex, name in LIGHTBURN_PALETTE_NAMES.items()
     ]
-    return render_template("holographic_etching.html", lightburn_palette=palette)
+    return render_template(
+        "holographic_etching.html",
+        lightburn_palette=palette,
+        submission_auth_token=issue_submission_auth_token(),
+    )
 
 
 @routes.route("/material-libraries")

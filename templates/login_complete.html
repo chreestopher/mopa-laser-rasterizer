@@ -1,4 +1,23 @@
 <!doctype html>
-<title>Signing in</title>
-<meta http-equiv="refresh" content="0; url=/">
-<p>Signing in… <a href="/">Continue</a></p>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Signing in</title>
+</head>
+<body>
+  <p>Account access restored. You may return to the Rasterizer.</p>
+  <p><a href="/">Continue</a></p>
+  <script>
+    (() => {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({type:'mopa-authentication-complete'}, window.location.origin);
+        window.close();
+        window.setTimeout(() => window.location.replace('/'), 500);
+        return;
+      }
+      window.location.replace('/');
+    })();
+  </script>
+</body>
+</html>

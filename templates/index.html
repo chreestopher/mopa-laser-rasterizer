@@ -4,7 +4,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MOPA-LASER-RASTERIZER</title>
+<title>Free MOPA Laser Color Engraving Tool for LightBurn | Rasterizer</title>
+<meta name="description" content="Turn images into a color-separated, laser-ready .svg file and a LightBurn project using your tested MOPA laser color settings and Material Library.">
+<link rel="canonical" href="{{ canonical }}">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Free MOPA Laser Color Engraving Tool for LightBurn">
+<meta property="og:description" content="Prepare images as a color-separated .svg file and a LightBurn project backed by your tested MOPA laser settings.">
+<meta property="og:url" content="{{ canonical }}">
+<script type="application/ld+json">{{ {"@context":"https://schema.org","@type":"WebApplication","name":"MOPA Laser Rasterizer","url":canonical,"applicationCategory":"DesignApplication","operatingSystem":"Any operating system with a modern web browser","description":"A browser-based color laser engraving tool that converts images into a color-separated .svg file and a LightBurn project using operator-supplied Material Library settings.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"featureList":["MOPA color engraving artwork preparation","Color-separated vector layers","LightBurn .lbrn2 file export","LightBurn Material Library mapping","Material Library test coupon generation"]}|tojson }}</script>
 
 <style>
   /* Keep padding and borders inside the mobile viewport, matching the
@@ -276,9 +283,9 @@
       background: #e0e0e0;
   }
   :root { --cream:#d9d2af; --phosphor:#83f06a; --control-top:#66766d; --control-base:#34443e; --control-edge:#9ba89f; --control-shadow:#18221e; }
-  html { min-height:100%; background:#11130f; }
+  html { min-height:100%; overflow-x:hidden; background:#11130f; }
   body {
-    max-width:1040px; margin:28px auto; padding:38px; color:var(--cream);
+    max-width:1040px; margin:0; padding:38px; color:var(--cream);
     background:repeating-linear-gradient(90deg,rgba(255,255,255,.014) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 5%,#505443,#363a30 42%,#24271f 100%);
     border:3px solid #777864; border-radius:30px;
     box-shadow:inset 0 0 0 5px #1b1e18,inset 0 0 60px #10120e,0 0 0 1px #9a9a7e,0 20px 50px #000;
@@ -312,34 +319,10 @@
   .collapsible-info summary:hover { color:#d7d0aa; }
   .collapsible-info:not([open]):hover > :not(summary) { display:block; }
   .collapsible-copy { margin:.65em 0 0; }
-  .getting-started-list { margin:0 0 1em; padding:0; color:#aaa98e; list-style:none; }
-  .getting-started-list li { position:relative; margin:.55em 0; padding-left:1.8em; }
-  .getting-started-list li::before { position:absolute; left:0; top:-.08em; width:1.25em; color:var(--phosphor); font-size:1.15em; font-weight:700; text-align:center; text-shadow:0 0 5px rgba(131,240,106,.55); }
-  .getting-started-list .step-files::before { content:"🖼"; }
-  .getting-started-list .step-material::before { content:"⚙"; }
-  .getting-started-list .step-colors::before { content:"🎨"; }
-  .getting-started-list .step-mapping::before { content:"🔗"; }
-  .getting-started-list .step-library::before { content:"📚"; }
-  .getting-started-list .step-style::before { content:"✨"; }
-  .getting-started-list .step-pixel-size::before { content:"📏"; }
-  .getting-started-list .step-dimensions::before { content:"📐"; }
-  .getting-started-list .step-maximum::before { content:"▲"; color:#f0ad32; text-shadow:0 0 5px rgba(240,173,50,.6); }
-  .how-it-works-list { margin:.65em 0 0; padding:0; color:#aaa98e; list-style:none; }
-  .how-it-works-list li { position:relative; margin:.55em 0; padding-left:1.8em; }
-  .how-it-works-list li::before { position:absolute; left:0; top:-.08em; width:1.25em; color:var(--phosphor); font-size:1.15em; font-weight:700; text-align:center; text-shadow:0 0 5px rgba(131,240,106,.55); }
-  .how-it-works-list .works-pixels::before { content:"🖼"; }
-  .how-it-works-list .works-vectors::before { content:"🧩"; }
-  .how-it-works-list .works-settings::before { content:"⚙"; }
-  .how-it-works-list .works-punch::before { content:"✂"; }
-  .how-it-works-intro { margin:.8em 0 1.35em; color:#d7d0aa; font-style:italic; }
-  .how-it-works-transition { margin:0; color:var(--phosphor); font:700 .9em "Courier New",monospace; letter-spacing:.06em; text-transform:uppercase; }
-  .rasterizer-checklist { margin:1em 0; padding:0; color:#aaa98e; list-style:none; }
-  .rasterizer-checklist li { position:relative; margin:.55em 0; padding-left:1.8em; }
-  .rasterizer-checklist li::before { position:absolute; left:0; top:-.08em; width:1.25em; color:var(--phosphor); font-size:1.15em; font-weight:700; text-align:center; text-shadow:0 0 5px rgba(131,240,106,.55); }
-  .rasterizer-checklist .benefit-time::before { content:"⏱"; }
-  .rasterizer-checklist .benefit-create::before { content:"⚡"; }
-  .rasterizer-checklist .benefit-style::before { content:"🎨"; }
-  .rasterizer-checklist .benefit-settings::before { content:"🧭"; }
+  .rasterizer-intro { margin:1em 0 1.35em; padding:14px 16px; border-left:3px solid var(--phosphor); color:#c9c7ae; background:rgba(18,22,16,.52); }
+  .rasterizer-intro p { margin:0 0 .55em; }
+  .rasterizer-intro p:last-child { margin-bottom:0; }
+  .rasterizer-intro a { color:var(--phosphor); font-weight:700; }
   form { padding:24px; border:2px solid #73745f; border-radius:20px; background:rgba(17,20,15,.42); box-shadow:inset 0 0 0 4px #292d24,inset 0 0 25px rgba(0,0,0,.65),0 6px 0 #161813; }
   .abstract-panel { background:#20251d; border:2px solid #686a57; border-radius:16px; box-shadow:inset 0 0 18px #0d100c; }
   label,.color-label { color:#ddd7b8; letter-spacing:.035em; }
@@ -398,7 +381,7 @@
   .color-square { border-radius:8px; border:2px solid #777864; box-shadow:inset 0 0 0 2px rgba(0,0,0,.35),0 3px 0 #171913; }
   form > div, form > div > div, .form-group { min-width:0; max-width:100%; }
   @media (max-width:700px) {
-    body { width:auto; max-width:none; margin:0; padding:20px; border-radius:0; overflow-x:hidden; }
+    body { width:auto; max-width:none; overflow-x:hidden; }
     h1 { font-size:clamp(18px,6vw,25px); }
     .console-status-line { grid-template-columns:1fr; gap:7px; padding:0; }
     .console-subtitle { grid-column:1; grid-row:1; }
@@ -418,44 +401,21 @@
     .color-grid { grid-template-columns:repeat(4, minmax(0, 1fr)); }
   }
   @media (min-width:701px) {
-    .color-grid { grid-template-columns:repeat(12, minmax(0, 1fr)); gap:12px 8px; }
+    .color-grid { grid-template-columns:repeat(10, minmax(0, 1fr)); gap:12px 8px; }
   }
-  .theme-toggle { display:flex; justify-content:flex-end; margin-bottom:12px; }
-  .login-link,.auth-console { display:flex; align-items:center; gap:8px; margin-right:auto; color:#f2a25d; font:700 10px "Courier New",monospace; letter-spacing:.09em; text-decoration:none; text-transform:uppercase; }
-  .login-link[hidden],.auth-console[hidden] { display:none; }
-  .auth-machine-switch { position:relative; width:30px; height:30px; border:2px solid #151713; border-radius:6px; background:radial-gradient(circle at 5px 5px,#2a2c28 0 1px,transparent 1.5px),radial-gradient(circle at 25px 5px,#2a2c28 0 1px,transparent 1.5px),radial-gradient(circle at 5px 25px,#2a2c28 0 1px,transparent 1.5px),radial-gradient(circle at 25px 25px,#2a2c28 0 1px,transparent 1.5px),linear-gradient(135deg,#4c5048,#d0cec0 48%,#5b5d54); box-shadow:inset 0 0 0 2px #929488,0 2px 3px #000; }
-  .auth-machine-switch::before { content:""; position:absolute; left:8px; bottom:7px; width:10px; height:10px; border:2px solid #20221d; border-radius:50%; background:radial-gradient(circle at 35% 30%,#f4f0db,#7d8178 48%,#373a34); box-shadow:0 0 0 1px #cbc8b4; }
-  .auth-machine-switch::after { content:""; position:absolute; left:11px; bottom:12px; width:7px; height:21px; border:1px solid #151713; border-radius:3px 3px 1px 1px; background:linear-gradient(90deg,#42463f,#f4f1d9 50%,#4d514a); box-shadow:0 0 0 1px #c9c6b0,1px 2px 2px rgba(0,0,0,.65); transform-origin:50% calc(100% + 5px); transform:rotate(53deg); transition:transform .2s ease,box-shadow .2s ease; }
-  .auth-machine-switch.is-on::after { transform:rotate(0); box-shadow:0 0 0 1px #c9c6b0,0 0 9px #80e85c,1px 2px 2px rgba(0,0,0,.65); }
-  .auth-console.authorized { color:#bff39a; }
-  .auth-console a:not(.auth-machine-switch) { color:inherit; text-decoration:none; border-bottom:1px dotted currentColor; }
-  .theme-toggle label { display:flex; align-items:center; gap:9px; font:700 11px "Courier New",monospace; letter-spacing:.1em; text-transform:uppercase; }
-  .theme-toggle input { position:absolute; opacity:0; }
-  .toggle-track { position:relative; width:54px; height:26px; border:2px solid #777864; border-radius:14px; background:#171b15; box-shadow:inset 0 3px 6px #000; cursor:pointer; }
-  .toggle-track::after { content:""; position:absolute; top:3px; left:4px; width:16px; height:16px; border-radius:50%; background:#d3652e; box-shadow:0 0 7px #ed863d,0 2px 2px #000; transition:transform .2s; }
-  .theme-toggle input:checked + .toggle-track::after { transform:translateX(26px); background:#dad8ce; box-shadow:0 0 5px #fff,0 2px 2px #555; }
   body.light-machine { color:#171815; background:repeating-linear-gradient(90deg,rgba(0,0,0,.025) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 5%,#f0f0e9,#c8c9c3 48%,#9fa19c 100%); border-color:#7c7e7a; box-shadow:inset 0 0 0 5px #a6a8a3,inset 0 0 45px #777,0 0 0 1px #eee,0 20px 50px #000; }
   body.light-machine h1,body.light-machine h2,body.light-machine label,body.light-machine .color-label { color:#151613; text-shadow:0 1px 0 #fff,0 -1px 0 #777; }
-  body.light-machine .console-subtitle,body.light-machine h3,body.light-machine .filter-description,body.light-machine .color-name,body.light-machine .getting-started-list,body.light-machine .how-it-works-list,body.light-machine .rasterizer-checklist,body.light-machine .collapsible-info,body.light-machine .collapsible-info summary,body.light-machine .remembered-input-note,body.light-machine .holographic-lab-link { color:#343530; }
+  body.light-machine .console-subtitle,body.light-machine h3,body.light-machine .filter-description,body.light-machine .color-name,body.light-machine .rasterizer-intro,body.light-machine .collapsible-info,body.light-machine .collapsible-info summary,body.light-machine .remembered-input-note,body.light-machine .holographic-lab-link { color:#343530; }
   body.light-machine .holographic-lab-link a { color:#1d5c2c; text-decoration:underline; text-decoration-thickness:2px; text-underline-offset:3px; text-shadow:none; }
   body.light-machine .holographic-lab-link a:hover { color:#0d3b18; text-shadow:0 1px #fff; }
-  .machine-nav { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin:0 0 18px; padding:6px; border:1px solid #6d725d; border-radius:10px; background:linear-gradient(#252b24,#151914); box-shadow:inset 0 0 0 2px #0d100c,0 3px 0 #0a0c09; }
-  .machine-nav a { display:flex; align-items:center; justify-content:center; min-height:32px; padding:6px 8px; border:1px solid #596451; border-radius:5px; color:#d9d2af; background:linear-gradient(#465149,#29352f); font:700 clamp(8px,1.5vw,11px) "Courier New",monospace; letter-spacing:.04em; text-align:center; text-decoration:none; text-transform:uppercase; }
-  .machine-nav a:hover,.machine-nav a:focus-visible { color:#f5f1d7; border-color:#a8c99b; background:linear-gradient(#657b6c,#3c5447); outline:0; }
-  .machine-nav a[aria-current="page"] { color:#eaf7df; border-color:#93bf82; background:linear-gradient(#527448,#2d542d); box-shadow:inset 0 0 8px rgba(141,240,108,.28); }
-  body.light-machine .machine-nav { border-color:#777974; background:linear-gradient(#dcddd7,#bcbeb8); box-shadow:inset 0 0 0 2px #f1f1eb,0 3px 0 #858782; }
-  body.light-machine .machine-nav a { color:#20251f; border-color:#7b857d; background:linear-gradient(#e6e8e2,#b2bab3); text-shadow:0 1px #fff; }
-  body.light-machine .machine-nav a:hover,body.light-machine .machine-nav a:focus-visible { color:#102b16; background:linear-gradient(#d5e5cd,#a8c89c); }
-  body.light-machine .machine-nav a[aria-current="page"] { color:#102b16; border-color:#527d50; background:linear-gradient(#b8d2aa,#8eaf82); box-shadow:inset 0 0 8px rgba(40,109,36,.18); }
-  @media (max-width:520px) { .machine-nav { grid-template-columns:1fr; } }
   body.light-machine .remembered-input-note { border-color:#777974; background:#dedfd9; box-shadow:inset 0 1px 5px #999; }
   body.light-machine .upload-error { color:#781e11; background:#f8d8d1; border-color:#b84736; box-shadow:inset 0 1px 4px #d6a39a; }
   body.light-machine .upload-error-dialog { color:#352016; background:#f0e8d9; border-color:#a95030; box-shadow:0 12px 40px #333,inset 0 0 0 4px #d0c2aa; }
   body.light-machine .upload-error-dialog h2 { color:#873419; }
   body.light-machine .upload-error-login { color:#173113; border-color:#5e9850; background:linear-gradient(#c4e2ad,#86b873); box-shadow:inset 0 1px #efffe4,0 4px 0 #4e7841; }
-  body.light-machine .auth-console { color:#8a321d; }
-  body.light-machine .auth-console.authorized { color:#2a6b22; }
-  body.light-machine .how-it-works-intro { color:#343530; }
+  body.light-machine .rasterizer-intro { border-color:#2c6e36; background:rgba(220,221,216,.6); }
+  body.light-machine .rasterizer-intro a { color:#1d5c2c; text-decoration:underline; text-decoration-thickness:2px; text-underline-offset:3px; text-shadow:none; }
+  body.light-machine .rasterizer-intro a:hover,body.light-machine .rasterizer-intro a:focus-visible { color:#0d3b18; }
   @media (prefers-reduced-motion:reduce) { .status-lamp::before { animation:none; } }
   body.light-machine form { background:rgba(220,221,216,.5); border-color:#777974; box-shadow:inset 0 0 0 4px #b1b3ae,inset 0 0 20px #888,0 6px 0 #686a66; }
   body.light-machine .abstract-panel { background:#b9bbb5; border-color:#777974; box-shadow:inset 0 0 15px #8c8e89; }
@@ -467,7 +427,7 @@
     body { width:125vw; max-width:none; margin:0; zoom:.8; }
   }
 </style>
-<link rel="stylesheet" href="/static/machine_chrome.css">
+<link rel="stylesheet" href="/static/machine_chrome.css?v=3">
 </head>
 <body>
 <div id="upload_error_modal" class="upload-error-modal" role="alertdialog" aria-modal="true" aria-labelledby="upload_error_title" hidden>
@@ -475,68 +435,37 @@
     <h2 id="upload_error_title">PROCESSING CONSOLE NOTICE</h2>
     <div id="upload_error_modal_message"></div>
     <div class="upload-error-actions">
-      <a class="upload-error-login" href="/login">Sign in or sign up</a>
+      <button class="upload-error-login" type="button" id="upload_error_login">Sign in or sign up</button>
+      <button type="button" id="upload_error_guest" hidden>Continue explicitly as guest</button>
       <button type="button" id="upload_error_close">Back to the controls</button>
     </div>
   </div>
 </div>
-  <div class="theme-toggle">
-    <a id="login_link" class="login-link" href="/login"><span class="auth-machine-switch" aria-hidden="true"></span><span>Operator access, sign in</span></a>
-    <div id="auth_console" class="auth-console authorized" hidden><a class="auth-machine-switch is-on" href="/logout" aria-label="Sign out"></a><span>Operator authorized</span></div>
-    <label><span>Dark</span><input id="theme_switch" type="checkbox"><span class="toggle-track"></span><span>Light</span></label>
-  </div>
-  {# <div class="page-header">
-    <h1><a class="home-title" href="/" aria-label="Return to MOPA Laser Rasterizer home"><span class="facade-title" aria-hidden="true"><span>M</span><span>O</span><span>P</span><span>A</span><span>-</span><span>L</span><span>A</span><span>S</span><span>E</span><span>R</span><span>-</span><span>R</span><span>A</span><span>S</span><span>T</span><span>E</span><span>R</span><span>I</span><span>Z</span><span>E</span><span>R</span></span></a></h1>
-    <div class="console-status-line">
-      <div class="status-lamps" role="status" aria-label="MOPA laser processing system indicators">
-        <span class="status-lamp mopa-lamp">MOPA</span>
-        <span class="status-lamp laser-lamp">Laser</span>
-        <span class="status-lamp raster-lamp">Raster</span>
-        <span class="status-lamp vector-lamp">Vector</span>
-        <span class="status-lamp power-lamp">Power</span>
-      </div>
-      <span class="console-subtitle">VECTOR PROCESSING CONSOLE · SERIES 79</span>
+<div id="svg_only_modal" class="upload-error-modal" role="dialog" aria-modal="true" aria-labelledby="svg_only_title" hidden>
+  <div class="upload-error-dialog">
+    <h2 id="svg_only_title">MATERIAL LIBRARY OPTIONAL</h2>
+    <p>For the full Rasterizer experience, upload or select a LightBurn Material Library and choose its material name. That lets the Rasterizer build both your layered SVG and a ready-to-use LightBurn project with your tested laser settings.</p>
+    <p>You can also continue right now without a library. The job will use the default LightBurn palette swatches you currently have selected and provide a layered SVG only; no LightBurn project will be created. You may exclude default swatches, but custom swatch names and additional non-default colors are unavailable without a Material Library.</p>
+    <div class="upload-error-actions">
+      <button class="upload-error-login" type="button" id="svg_only_continue">Continue with SVG only</button>
+      <button type="button" id="svg_only_back">Upload or select a library</button>
     </div>
   </div>
-  <nav class="machine-nav" aria-label="Primary navigation"><a href="/" aria-current="page">Rasterizer</a><a href="/holographic-etching">Holographic Lab</a><a href="/material-libraries">Material Vault</a></nav> #}
+</div>
   {{ machine_chrome('rasterizer', 'VECTOR PROCESSING CONSOLE · SERIES 79') }}
   <h2>Turn any image into a laser-ready color engraving project!</h2>
   <h2>Without building every color layer by hand!</h2>
-  <details class="collapsible-info">
-    <summary>Getting Started</summary>
-    <ul class="getting-started-list">
-      <li class="step-files">Bring your own artwork and LightBurn Material Library file.</li>
-      <li class="step-material">Choose or type the exact material name from that library.</li>
-      <li class="step-colors">Choose your engraving colors. Click a swatch to exclude it from the artwork, click it again to bring it back.</li>
-      <li class="step-mapping">Link a swatch to its laser setting. Click and edit its color name so it exactly matches the <strong>Description</strong> field of the LightBurn Material Library setting you want to use.</li>
-      <li class="step-library">Planning plenty of color engraving? For the smoothest workflow, rename your Material Library setting descriptions to match the Rasterizer’s palette color names.</li>
-      <li class="step-style">Choose an image preset.</li>
-      <li class="step-pixel-size">Set Square MM Size to choose the physical size of individual pixels processed.</li>
-      <li class="step-dimensions">Enter either the processing width or processing height in pixels. That value multiplied by the processing pixel size determines the finished physical dimension; the other dimension is calculated automatically to preserve your artwork’s aspect ratio.</li>
-      <li class="step-maximum"><strong>Important:</strong> for maximum Rasterizer detail, set the image’s largest processing dimension to <strong>1600</strong> pixels and set Square MM Size to its minimum, <strong>0.0625 mm</strong>. That gives you the smallest processing pixels and the largest available pixel count, fully maxing out the Rasterizer’s resolution capability. It also asks more of the machine and takes longer, so this is your official signal to make a coffee, drink it, and let the Rasterizer do its thing.</li>
-    </ul>
-  </details>
-  <details class="collapsible-info">
-    <summary>How does it work?</summary>
-    <p class="how-it-works-intro">Honestly, no one knows for sure. We found the Rasterizer in an abandoned missile silo and were initially afraid to turn it on. Luckily, it appears to prefer turning images into laser-ready color projects.</p>
-    <p class="how-it-works-transition">Okay, seriously, here’s what it does:</p>
-    <ul class="how-it-works-list">
-      <li class="works-pixels">The Rasterizer reads your artwork pixel by pixel and reduces it to the engraving colors you selected.</li>
-      <li class="works-vectors">It joins matching color regions into clean, closed vector shapes that are ready for the laser.</li>
-      <li class="works-settings">It creates each LightBurn layer using the matching setting from your Material Library.</li>
-      <li class="works-punch">But wait, there’s more: it creates precise punch-through geometry for every color, so layers clear their own space with no overlapping engraves, stray open paths, or messy boundaries.</li>
-    </ul>
-  </details>
-  <ul class="rasterizer-checklist">
-    <li class="benefit-time">Spend less time tracing, sorting layers, and setting up jobs.</li>
-    <li class="benefit-create">Spend more time making beautiful markings on metals.</li>
-    <li class="benefit-style">Choose a photo preset for a polished starting point, or an abstract style when you want to turn the signal all the way up.</li>
-    <li class="benefit-settings">You focus on finding those knockout color settings, and the Rasterizer handles everything else.</li>
-  </ul>
+  <div class="rasterizer-intro">
+    <p>Spend less time tracing artwork, sorting color layers, and assigning LightBurn layers. Choose a photo preset or abstract style, then let the Rasterizer prepare layered vector artwork for final review in LightBurn.</p>
+    <p><a href="/color-laser-engraving-tool">Explore the MOPA Laser color engraving tool</a> · <a href="/docs#getting-started">Getting started</a> · <a href="/docs#how-it-works">How the Rasterizer works</a> · <a href="/docs/preset-controls">Understand every control</a> · <a href="/docs/my-personal-laser-journey">My Personal Laser Journey</a></p>
+  </div>
      
   <!-- Form Section -->
   <form action="/upload" method="post" enctype="multipart/form-data"> 
     <input type="hidden" id="history_session" name="history_session">
+    <input type="hidden" id="submission_auth_token" name="submission_auth_token" value="{{ submission_auth_token }}">
+    <input type="hidden" id="continue_as_guest" name="continue_as_guest" value="0">
+    <input type="hidden" id="svg_only_confirmed" name="svg_only_confirmed" value="0">
     <div id="upload_error" class="upload-error" role="alert" hidden></div>
     <div class="form-group"></div>
     <div>
@@ -547,11 +476,12 @@
       <div><label for="material_settings">2. Choose your LightBurn Material Library:</label></div>
       <div><input type="file" id="material_settings" name="material_settings" accept=".clb,.lbmat,.lbrn" aria-describedby="remembered_material_library"></div>
       <div id="remembered_material_library" class="remembered-input-note" hidden></div>
+      <div id="guest_material_library_row" hidden><label for="guest_material_library">Or reuse a library retained by this browser session:</label><select id="guest_material_library" name="guest_material_library_id"><option value="">Choose a browser-session library…</option></select></div>
       <div id="saved_material_library_row" hidden><label for="saved_material_library">Or use one of your saved Material Libraries:</label><select id="saved_material_library" name="saved_material_library_id"><option value="">Choose an account library…</option></select></div>
     </div>    
     <div>
-      <div><label for="material">3. Choose material to engrave (exact Material Library name):</label></div>
-      <div><input id="material" name="material" list="material_suggestions" value="stainless - steel" required><datalist id="material_suggestions"><option value="stainless - steel">Stainless Steel</option><option value="titanium">Titanium</option></datalist></div>
+      <div><label for="material">3. Choose material to engrave (use the exact material name under which its settings are stored in the Material Library, or leave blank to run in SVG-only mode):</label></div>
+      <div><input id="material" name="material" list="material_suggestions" value="stainless - steel"><datalist id="material_suggestions"><option value="stainless - steel">Stainless Steel</option><option value="titanium">Titanium</option></datalist></div>
     </div>
     <div>
       <div><label for="pixel_square_mm">4. Set processing dimensions, pixel scale (mm per raster pixel):</label> </div>
@@ -574,7 +504,7 @@
     </div>
     <div>
     <div>      
-      <!-- Lightburn Color Palette Grid Section -->
+      <!-- LightBurn Color Palette Grid Section -->
       <div class="palette-section">
         <label style="font-size: 0.9rem; font-weight: 600;">5. Tune your engraving color palette</label>
         <h3>All available colors are included to start. Click a swatch to exclude it from the artwork. For settings, either keep the default color names and use those same names in your Material Library, or click a color name to retitle it to your library’s exact Entry Description or cut-setting name. Presto: the matching Material Library setting is copied onto that color’s LightBurn layer. Nearby colors are reassigned to the closest remaining engraving color, so you can experiment with confidence.</h3>
@@ -633,6 +563,7 @@
           <option value="abstract_glitch">Digital Glitch</option>
           <option value="abstract_deep_fryer">Deep Fryer</option>
           <option value="abstract_shattered">Shattered</option>
+          <option value="abstract_krasnow_grating">Krasnow Color Grating</option>
           <option value="abstract_none">Abstract: None</option>
         </optgroup>
       </select>
@@ -730,6 +661,14 @@
           ['fall_distance', 20, 0, 160, 1], ['gravity_bias', 1.4, .2, 4, .1],
           ['rotation', 22, 0, 180, 1], ['break_origin_x', .5, 0, 1, .01],
           ['break_origin_y', .35, 0, 1, .01], ['seed', 1, 0, 999999, 1]]
+      },
+      krasnow_grating: {
+        description: 'Transforms the normally color-separated non-Black artwork into open parallel-line patches and distributes corrected grating levels across the available non-Black layers in LightBurn order. The Material Library entry matching Holographic is treated as the machine-specific 1.00 µm calibration anchor. Each output layer receives an independent copy that preserves the anchor power, frequency, pulse width, passes, and other values while scaling speed for a target pitch between approximately 0.55 and 1.55 µm. Speed Spread scales each layer\'s deviation around the anchor: 0 gives every layer the anchor speed, 1 uses the normal calculated range, and 2 doubles the variation without moving the 1.00 µm layer. With a 300 mm/s anchor and Speed Spread 1 this yields 165–465 mm/s, following Ben Krasnow\'s fixed-frequency progression. A single output layer uses the unmodified 1.00 µm anchor speed. Clones retain their original color, name, and ID and use Line mode for the generated open paths. Black keeps its source geometry and Black setting, with no synthetic canvas or punch-through.',
+        controls: [['speed_spread', 1, 0, 2, .001], ['gradient_top', 165, 0, 255, 1], ['gradient_bottom', 90, 0, 255, 1],
+          ['gradient_curve', 1, .2, 5, .05], ['hue_rotation', .13, 0, 1, .01],
+          ['saturation_cutoff', .2, 0, 1, .01], ['patch_size_mm', .4, .1, 5, .05],
+          ['line_spacing_mm', .06, .01, .5, .005], ['angle_min', -90, -180, 180, 1],
+          ['angle_max', 90, -180, 180, 1]]
       },
       /* Retired Abstract Holographic preset.
       holographic: {
@@ -964,16 +903,6 @@
     });
 
     document.addEventListener('DOMContentLoaded', () => {
-      const themeSwitch = document.getElementById('theme_switch');
-      const loginLink = document.getElementById('login_link');
-      const authConsole = document.getElementById('auth_console');
-      const savedTheme = localStorage.getItem('mopa-machine-theme') || 'dark';
-      themeSwitch.checked = savedTheme === 'light';
-      document.body.classList.toggle('light-machine', themeSwitch.checked);
-      themeSwitch.addEventListener('change', () => {
-        document.body.classList.toggle('light-machine', themeSwitch.checked);
-        localStorage.setItem('mopa-machine-theme', themeSwitch.checked ? 'light' : 'dark');
-      });
       let accountSaveTimer = null;
       let signedInAccount = false;
       let accountPreferencesTouched = false;
@@ -1028,12 +957,10 @@
         updateFilterParameters();
         updatePaletteFields();
       };
-      fetch('/auth-status', { credentials: 'same-origin' })
-        .then(response => response.ok ? response.json() : { signed_in: false })
+      const machineChromeAuthStatus = window.machineChrome && window.machineChrome.authStatus;
+      (machineChromeAuthStatus || Promise.resolve({state:'unknown', signed_in:false}))
         .then(({ signed_in }) => {
           signedInAccount = Boolean(signed_in);
-          loginLink.hidden = Boolean(signed_in);
-          authConsole.hidden = !signed_in;
           if (signedInAccount && !new URLSearchParams(window.location.search).get('settings')) {
             fetch('/account/preferences', { credentials: 'same-origin' })
               .then(response => response.ok ? response.json() : null)
@@ -1045,6 +972,7 @@
               .catch(() => {});
           }
           if (signedInAccount) loadSavedMaterialLibraries();
+          else loadGuestMaterialLibraries();
         })
         .catch(() => {});
       const sessionFromLink = new URLSearchParams(window.location.search).get('history_session');
@@ -1057,18 +985,78 @@
       sessionStorage.setItem('mopa-history-session', historySession);
       const materialInput = document.getElementById('material');
       const materialLibraryInput = document.getElementById('material_settings');
+      const guestMaterialLibraryRow = document.getElementById('guest_material_library_row');
+      const guestMaterialLibraryInput = document.getElementById('guest_material_library');
       const savedMaterialLibraryRow = document.getElementById('saved_material_library_row');
       const savedMaterialLibraryInput = document.getElementById('saved_material_library');
       const uploadErrorModal = document.getElementById('upload_error_modal');
       const uploadErrorModalMessage = document.getElementById('upload_error_modal_message');
+      const uploadErrorLogin = document.getElementById('upload_error_login');
+      const uploadErrorGuest = document.getElementById('upload_error_guest');
       const uploadErrorClose = document.getElementById('upload_error_close');
-      const showUploadError = message => {
+      const continueAsGuestInput = document.getElementById('continue_as_guest');
+      const svgOnlyConfirmedInput = document.getElementById('svg_only_confirmed');
+      const svgOnlyModal = document.getElementById('svg_only_modal');
+      const svgOnlyContinue = document.getElementById('svg_only_continue');
+      const svgOnlyBack = document.getElementById('svg_only_back');
+      const showUploadError = (message, {reauthenticationRequired=false} = {}) => {
         uploadErrorModalMessage.textContent = message;
+        uploadErrorLogin.textContent = reauthenticationRequired ? 'Reconnect account' : 'Sign in or sign up';
+        uploadErrorGuest.hidden = !reauthenticationRequired;
         uploadErrorModal.hidden = false;
-        uploadErrorClose.focus();
+        (reauthenticationRequired ? uploadErrorLogin : uploadErrorClose).focus();
       };
       uploadErrorClose.addEventListener('click', () => {
         uploadErrorModal.hidden = true;
+      });
+      let authenticationPoll = null;
+      const stopAuthenticationPoll = () => {
+        if (authenticationPoll) window.clearInterval(authenticationPoll);
+        authenticationPoll = null;
+      };
+      const resumeAfterAuthentication = async () => {
+        try {
+          const response = await fetch('/auth-status', {
+            credentials:'same-origin',
+            cache:'no-store',
+          });
+          const status = response.ok ? await response.json() : {state:'unknown'};
+          if (status.state !== 'authenticated') return false;
+          stopAuthenticationPoll();
+          signedInAccount = true;
+          guestMaterialLibraryRow.hidden = true;
+          if (window.machineChrome) window.machineChrome.showAuthStatus(status);
+          loadSavedMaterialLibraries();
+          continueAsGuestInput.value = '0';
+          uploadErrorModal.hidden = true;
+          uploadForm.requestSubmit();
+          return true;
+        } catch (_) {
+          return false;
+        }
+      };
+      const beginAuthentication = () => {
+        continueAsGuestInput.value = '0';
+        const loginWindow = window.open('/login?popup=1', 'mopa-account-login', 'popup,width=540,height=720');
+        if (!loginWindow) {
+          uploadErrorModalMessage.textContent = 'Your browser blocked the sign-in window. Allow popups for this site, then choose Sign in again. Your form remains unchanged.';
+          return;
+        }
+        stopAuthenticationPoll();
+        authenticationPoll = window.setInterval(resumeAfterAuthentication, 1000);
+      };
+      uploadErrorLogin.addEventListener('click', beginAuthentication);
+      uploadErrorGuest.addEventListener('click', () => {
+        stopAuthenticationPoll();
+        signedInAccount = false;
+        loadGuestMaterialLibraries();
+        continueAsGuestInput.value = '1';
+        uploadErrorModal.hidden = true;
+        uploadForm.requestSubmit();
+      });
+      window.addEventListener('message', event => {
+        if (event.origin !== window.location.origin || event.data?.type !== 'mopa-authentication-complete') return;
+        resumeAfterAuthentication();
       });
       const rememberedMaterialNote = document.getElementById('remembered_material_library');
       const loadSavedMaterialLibraries = () => fetch('/account/material-libraries', { credentials: 'same-origin' })
@@ -1087,6 +1075,25 @@
           });
         })
         .catch(() => {});
+      const guestMaterialLibraryKey = `mopa-guest-material-library:${historySession}`;
+      const loadGuestMaterialLibraries = () => fetch(
+        `/browser-material-libraries?history_session=${encodeURIComponent(historySession)}`,
+        {credentials:'same-origin', cache:'no-store'},
+      ).then(response => response.ok ? response.json() : null).then(data => {
+        const libraries = data?.libraries || [];
+        guestMaterialLibraryInput.replaceChildren(new Option('Choose a browser-session library…', ''));
+        guestMaterialLibraryRow.hidden = signedInAccount || !libraries.length;
+        libraries.forEach(library => {
+          const option = document.createElement('option');
+          option.value = library.library_id;
+          option.textContent = library.filename;
+          guestMaterialLibraryInput.appendChild(option);
+        });
+        const rememberedId = sessionStorage.getItem(guestMaterialLibraryKey);
+        if (rememberedId && libraries.some(library => library.library_id === rememberedId)) {
+          guestMaterialLibraryInput.value = rememberedId;
+        }
+      }).catch(() => {});
       const materialNameKey = `mopa-material-name:${historySession}`;
       const materialLibraryKey = `mopa-material-library:${historySession}`;
       const rememberedMaterialName = sessionStorage.getItem(materialNameKey);
@@ -1102,7 +1109,9 @@
       });
       materialLibraryInput.addEventListener('change', () => {
         if (!materialLibraryInput.files.length) return;
+        svgOnlyConfirmedInput.value = '0';
         savedMaterialLibraryInput.value = '';
+        guestMaterialLibraryInput.value = '';
         const filename = materialLibraryInput.files[0].name;
         sessionStorage.setItem(materialLibraryKey, filename);
         rememberedMaterialNote.hidden = false;
@@ -1110,9 +1119,20 @@
       });
       savedMaterialLibraryInput.addEventListener('change', () => {
         if (!savedMaterialLibraryInput.value) return;
+        svgOnlyConfirmedInput.value = '0';
         materialLibraryInput.value = '';
+        guestMaterialLibraryInput.value = '';
         rememberedMaterialNote.hidden = false;
         rememberedMaterialNote.textContent = `Using saved Material Library: ${savedMaterialLibraryInput.selectedOptions[0].textContent}.`;
+      });
+      guestMaterialLibraryInput.addEventListener('change', () => {
+        if (!guestMaterialLibraryInput.value) return;
+        svgOnlyConfirmedInput.value = '0';
+        materialLibraryInput.value = '';
+        savedMaterialLibraryInput.value = '';
+        sessionStorage.setItem(guestMaterialLibraryKey, guestMaterialLibraryInput.value);
+        rememberedMaterialNote.hidden = false;
+        rememberedMaterialNote.textContent = `Using browser-session Material Library: ${guestMaterialLibraryInput.selectedOptions[0].textContent}.`;
       });
       const encodedSettings = new URLSearchParams(window.location.search).get('settings');
       if (encodedSettings) {
@@ -1155,6 +1175,15 @@
       } else {
         renderFilterControls();
       }
+      svgOnlyBack.addEventListener('click', () => {
+        svgOnlyModal.hidden = true;
+        materialLibraryInput.focus();
+      });
+      svgOnlyContinue.addEventListener('click', () => {
+        svgOnlyConfirmedInput.value = '1';
+        svgOnlyModal.hidden = true;
+        uploadForm.requestSubmit();
+      });
       uploadForm.addEventListener('submit', async event => {
         event.preventDefault();
         const artworkFile = document.getElementById('image').files[0];
@@ -1165,15 +1194,18 @@
         const artworkLooksLikeImage = artworkFile && (
           artworkFile.type.startsWith('image/') || /\.(avif|bmp|gif|jpe?g|png|tiff?|webp)$/i.test(artworkFile.name)
         );
-        const materialLooksValid = materialFile || savedMaterialLibraryInput.value || rememberedLibraryName;
+        const materialLooksValid = materialFile || savedMaterialLibraryInput.value || guestMaterialLibraryInput.value || rememberedLibraryName;
         document.getElementById('image').setCustomValidity(
           artworkLooksLikeImage ? '' : 'Choose an image file for your artwork, not a LightBurn Material Library.'
         );
-        materialLibraryInput.setCustomValidity(
-          materialLooksValid ? '' : 'Choose a LightBurn Material Library file before starting the job.'
-        );
-        if (!artworkLooksLikeImage || !materialLooksValid) {
-          (!artworkLooksLikeImage ? document.getElementById('image') : materialLibraryInput).reportValidity();
+        materialLibraryInput.setCustomValidity('');
+        if (!artworkLooksLikeImage) {
+          document.getElementById('image').reportValidity();
+          return;
+        }
+        if (!materialLooksValid && svgOnlyConfirmedInput.value !== '1') {
+          svgOnlyModal.hidden = false;
+          svgOnlyContinue.focus();
           return;
         }
 
@@ -1188,9 +1220,19 @@
             const data = contentType.includes('application/json')
               ? await response.json()
               : { message: `Could not start this job (HTTP ${response.status}).` };
+            if (data.code === 'material_library_confirmation_required') {
+              sessionStorage.removeItem(materialLibraryKey);
+              rememberedMaterialNote.hidden = true;
+              svgOnlyConfirmedInput.value = '0';
+              svgOnlyModal.hidden = false;
+              svgOnlyContinue.focus();
+              return;
+            }
             uploadError.textContent = data.message || 'Could not start this job.';
             uploadError.hidden = false;
-            showUploadError(uploadError.textContent);
+            showUploadError(uploadError.textContent, {
+              reauthenticationRequired: data.code === 'reauthentication_required',
+            });
             return;
           }
           const page = await response.text();

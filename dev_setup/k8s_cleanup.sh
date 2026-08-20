@@ -53,7 +53,7 @@ if [ -n "$STATUS_KEYS" ]; then
         for task_id in "${TASK_IDS[@]}"; do
             echo "Purging tracked task: $task_id ..."
             delete_s3_task "$task_id"
-            run_delete kubectl exec -n "$NAMESPACE" "$REDIS_POD" -- redis-cli --no-auth-warning del "task:$task_id:status" "task:$task_id:log" "task:$task_id:downloads"
+            run_delete kubectl exec -n "$NAMESPACE" "$REDIS_POD" -- redis-cli --no-auth-warning del "task:$task_id:status" "task:$task_id:log" "task:$task_id:downloads" "task:$task_id:access"
             run_delete kubectl exec -n "$NAMESPACE" "$APP_POD" -- sh -c "rm -f '$UPLOAD_DIR'/'$task_id'.* '$UPLOAD_DIR'/*'$task_id'*"
         done
         echo "Tracked task cleanup finished."
@@ -88,7 +88,7 @@ for file in $DISK_FILES; do
     # Check if this task still has an active status tracker in Redis
     REDIS_EXISTS=$(kubectl exec -n "$NAMESPACE" "$REDIS_POD" -- redis-cli --no-auth-warning exists "task:$task_id:status")
     
-    # Redis 'EXISTS' returns 0 if the key does not exist (meaning it expired or completed 3 downloads)
+    # Redis 'EXISTS' returns 0 if the key expired or the task was manually purged.
     if [ "$REDIS_EXISTS" -eq 0 ]; then
         ORPHANED_FILES+=("$file")
     fi

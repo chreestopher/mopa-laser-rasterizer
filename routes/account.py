@@ -4,6 +4,7 @@ import os
 import tempfile
 import json
 import io
+import math
 from copy import deepcopy
 from xml.etree import ElementTree as ET
 
@@ -14,6 +15,7 @@ from lib.lightburn import Lightburn
 
 from services import (
     ABSTRACT_FILTER_NAMES,
+    LIGHTBURN_PALETTE_NAMES,
     delete_user_material_library,
     delete_user_holographic_recipe,
     download_user_holographic_recipe,
@@ -276,13 +278,26 @@ def apply_entry_update(root, entry_id, payload, creating=False):
     if cut is None:
         cut = ET.SubElement(entry, "CutSetting")
     cut.attrib["type"] = setting_type
-    for child in list(cut):
-        if child.tag != "SubLayer":
-            cut.remove(child)
-    defaults = {"index": "0", "name": "", "minPower": "0", "maxPower": "100", "speed": "100"}
-    defaults.update({str(key): setting_value(value) for key, value in values.items() if str(key) and isinstance(value, (str, int, float, bool))})
-    for key, value in defaults.items():
-        ET.SubElement(cut, key, {"Value": value})
+    submitted_values = {
+        str(key): setting_value(value)
+        for key, value in values.items()
+        if str(key) and str(key) != "SubLayer" and isinstance(value, (str, int, float, bool))
+    }
+    if creating:
+        new_values = {"index": "0", "name": "", "minPower": "0", "maxPower": "100", "speed": "100"}
+        new_values.update(submitted_values)
+        for key, value in new_values.items():
+            ET.SubElement(cut, key, {"Value": value})
+    else:
+        # Inline editors intentionally submit only the fields they display.
+        # Patch those fields in place so unfamiliar LightBurn values, element
+        # attributes, and sublayers remain exactly as they were in the file.
+        for key, value in submitted_values.items():
+            field = cut.find(key)
+            if field is None:
+                ET.SubElement(cut, key, {"Value": value})
+            else:
+                field.attrib["Value"] = value
     target.append(entry)
     for material in list(root.findall("Material")):
         if not material.findall("Entry"):
@@ -300,7 +315,7 @@ def mutate_library(user_id, library_id, callback):
         tree = ET.parse(temp_path)
         callback(tree.getroot())
         tree.write(temp_path, encoding="utf-8", xml_declaration=True)
-        summary = library_entries(temp_path)
+        summary = library_entries(temp_path, include_settings=True)
         update_user_material_library_file(user_id, library_id, temp_path, summary)
         return summary
     finally:
@@ -350,6 +365,118 @@ def selected_settings_library(user_id, selections, material_name):
         for temp_path in temp_paths:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
+
+
+def material_coupon_project(library_root, material_name="Material Library Settings",
+                            coupon_width_mm=100.0, coupon_length_mm=100.0,
+                            cell_size_mm=10.0, column_gap_mm=2.0, label_space_mm=6.0):
+    """Build a compact LightBurn test grid from selected library entries."""
+    entries = all_xml_entries(library_root)
+    if not entries:
+        raise ValueError("Select at least one Material Library setting.")
+    if len(entries) > 29:
+        raise ValueError("A labeled LightBurn coupon can contain no more than 29 selected settings.")
+    try:
+        coupon_width_mm = float(coupon_width_mm)
+        coupon_length_mm = float(coupon_length_mm)
+    except (TypeError, ValueError) as error:
+        raise ValueError("Coupon width and length must be numbers in millimeters.") from error
+    if not 10 <= coupon_width_mm <= 1000 or not 10 <= coupon_length_mm <= 1000:
+        raise ValueError("Coupon width and length must each be between 10 and 1000 mm.")
+
+    project = ET.Element("LightBurnProject", {
+        "AppVersion": "2.1.04", "FormatVersion": "1", "MaterialHeight": "0",
+        "MirrorX": "False", "MirrorY": "True", "AskForSendName": "True",
+    })
+    columns = min(10, max(1, math.ceil(math.sqrt(len(entries)))))
+    rows = math.ceil(len(entries) / columns)
+    horizontal_pitch = cell_size_mm + column_gap_mm
+    vertical_pitch = cell_size_mm + label_space_mm
+    native_width = columns * cell_size_mm + max(0, columns - 1) * column_gap_mm
+    native_length = 8 + (rows - 1) * vertical_pitch + label_space_mm / 2 + cell_size_mm
+    scale_x = coupon_width_mm / native_width
+    scale_y = coupon_length_mm / native_length
+
+    def transform(x, y):
+        return f"{scale_x:g} 0 0 {scale_y:g} {x * scale_x:g} {y * scale_y:g}"
+
+    def fitted_text_height(text, available_width, preferred_height):
+        # Arial's typical glyph width is roughly 0.6 times its height. Keep
+        # titles and labels inside the coupon before the whole card is scaled.
+        estimated_units = max(1.0, len(str(text)) * 0.62)
+        return min(preferred_height, available_width / estimated_units)
+
+    # Layer zero is LightBurn's black layer. Reuse the selected Black recipe
+    # when available; otherwise copy the first selected recipe so labels have
+    # explicit, inspectable parameters rather than invented laser settings.
+    black_entry = next(
+        (entry for _material, entry in entries
+         if str(entry.attrib.get("Desc", "")).strip().casefold() == "black"),
+        entries[0][1],
+    )
+    label_layer = deepcopy(black_entry.find("CutSetting"))
+    label_index = label_layer.find("index")
+    if label_index is None:
+        label_index = ET.Element("index")
+        label_layer.insert(0, label_index)
+    label_index.attrib["Value"] = "0"
+    label_name = label_layer.find("name")
+    if label_name is None:
+        label_name = ET.Element("name")
+        label_layer.insert(1, label_name)
+    label_name.attrib["Value"] = "Coupon labels"
+    project.append(label_layer)
+
+    objects = []
+    title_text = str(material_name)[:120]
+    title = ET.Element("Shape", {
+        "Type": "Text", "ShapeID": "0", "CutIndex": "0",
+        "Font": "Arial,-1,100,5,50,0,0,0,0,0", "Str": title_text,
+        "H": f"{fitted_text_height(title_text, native_width, 3):g}", "LS": "0", "LnS": "0", "Ah": "0", "Av": "1",
+        "Weld": "1", "HasBackupPath": "0",
+    })
+    title.attrib["Ah"] = "1"
+    ET.SubElement(title, "XForm").text = transform(native_width / 2, 3)
+    objects.append(title)
+    for layer_index, (_material, entry) in enumerate(entries):
+        cut_setting = entry.find("CutSetting")
+        if cut_setting is None:
+            continue
+        layer = deepcopy(cut_setting)
+        index_element = layer.find("index")
+        if index_element is None:
+            index_element = ET.Element("index")
+            layer.insert(0, index_element)
+        cut_index = layer_index + 1
+        index_element.attrib["Value"] = str(cut_index)
+        name_element = layer.find("name")
+        if name_element is None:
+            name_element = ET.Element("name")
+            layer.insert(1, name_element)
+        name_element.attrib["Value"] = str(entry.attrib.get("Desc") or f"Coupon {layer_index + 1}")[:80]
+        project.append(layer)
+
+        row, column = divmod(layer_index, columns)
+        x = cell_size_mm / 2 + column * horizontal_pitch
+        label_y = 8 + row * vertical_pitch
+        cell_y = label_y + label_space_mm / 2 + cell_size_mm / 2
+        label_text = str(entry.attrib.get("Desc") or f"Cell {layer_index + 1}")[:80]
+        label = ET.Element("Shape", {
+            "Type": "Text", "ShapeID": str(layer_index * 2 + 1), "CutIndex": "0",
+            "Font": "Arial,-1,100,5,50,0,0,0,0,0", "Str": str(entry.attrib.get("Desc") or f"Cell {layer_index + 1}")[:80],
+            "H": f"{fitted_text_height(label_text, horizontal_pitch, 2):g}", "LS": "0", "LnS": "0", "Ah": "1", "Av": "1",
+            "Weld": "1", "HasBackupPath": "0",
+        })
+        ET.SubElement(label, "XForm").text = transform(x, label_y)
+        objects.append(label)
+        shape = ET.Element("Shape", {
+            "Type": "Rect", "ShapeID": str(layer_index * 2 + 2), "CutIndex": str(cut_index),
+            "W": f"{cell_size_mm:g}", "H": f"{cell_size_mm:g}", "Cr": "0",
+        })
+        ET.SubElement(shape, "XForm").text = transform(x, cell_y)
+        objects.append(shape)
+    project.extend(objects)
+    return project
 
 
 @routes.route("/account/material-libraries/selected-settings", methods=["POST"])
@@ -402,6 +529,16 @@ def selected_material_library_settings():
                 with open(output_path, "rb") as export_file:
                     return send_file(io.BytesIO(export_file.read()), mimetype="application/xml",
                                      as_attachment=True, download_name=filename)
+            if action == "coupon":
+                coupon_root = material_coupon_project(
+                    root, material_name=material_name,
+                    coupon_width_mm=payload.get("coupon_width_mm"),
+                    coupon_length_mm=payload.get("coupon_length_mm"),
+                )
+                coupon_data = ET.tostring(coupon_root, encoding="utf-8", xml_declaration=True)
+                filename = f"{secure_filename(material_name) or 'rasterizer-material'}-coupon.lbrn2"
+                return send_file(io.BytesIO(coupon_data), mimetype="application/xml",
+                                 as_attachment=True, download_name=filename)
             raise ValueError("Choose an action for the selected settings.")
         finally:
             if os.path.exists(output_path):
@@ -511,6 +648,7 @@ def material_libraries():
                 "laser_source": item.get("laser_source", ""),
                 "lens_field_of_view": item.get("lens_field_of_view", ""),
                 "notes": item.get("notes", ""),
+                "laser_community": item.get("laser_community") is True,
                 "summary": item.get("summary", {}),
             }
             for item in libraries
@@ -531,9 +669,25 @@ def material_library_detail(library_id):
             return jsonify({"status": "ok"})
         if request.method == "PATCH":
             payload = request.get_json(silent=True) or {}
+            existing_library = get_user_material_library(user_id, library_id)
+            if not existing_library:
+                return jsonify({"status": "error", "message": "That Material Library no longer exists."}), 404
+            laser_community = existing_library.get("laser_community") is True or payload.get("laser_community") is True
+            community_summary = None
+            if laser_community:
+                with tempfile.NamedTemporaryFile(suffix=".clb", delete=False) as community_file:
+                    community_path = community_file.name
+                try:
+                    download_user_material_library(existing_library, community_path)
+                    community_summary = library_entries(community_path, include_settings=True)
+                finally:
+                    if os.path.exists(community_path):
+                        os.remove(community_path)
             if not rename_user_material_library(
                 user_id, library_id, payload.get("name"),
                 payload.get("laser_source"), payload.get("lens_field_of_view"), payload.get("notes"),
+                laser_community,
+                community_summary,
             ):
                 return jsonify({"status": "error", "message": "That Material Library no longer exists."}), 404
             return jsonify({
@@ -541,6 +695,7 @@ def material_library_detail(library_id):
                 "laser_source": str(payload.get("laser_source") or "").strip(),
                 "lens_field_of_view": str(payload.get("lens_field_of_view") or "").strip(),
                 "notes": str(payload.get("notes") or "").strip(),
+                "laser_community": laser_community,
             })
         library = get_user_material_library(user_id, library_id)
         if not library:
@@ -549,7 +704,7 @@ def material_library_detail(library_id):
             temp_path = temp_file.name
         try:
             download_user_material_library(library, temp_path)
-            return jsonify({"status": "ok", "library": {"library_id": library_id, "name": library.get("name", "Material Library"), "laser_source": library.get("laser_source", ""), "lens_field_of_view": library.get("lens_field_of_view", ""), "notes": library.get("notes", ""), "summary": library_entries(temp_path, include_settings=True)}})
+            return jsonify({"status": "ok", "library": {"library_id": library_id, "name": library.get("name", "Material Library"), "laser_source": library.get("laser_source", ""), "lens_field_of_view": library.get("lens_field_of_view", ""), "notes": library.get("notes", ""), "laser_community": library.get("laser_community") is True, "summary": library_entries(temp_path, include_settings=True)}})
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
