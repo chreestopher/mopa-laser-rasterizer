@@ -1065,8 +1065,24 @@
         savedMaterialNameInput.hidden = true;
         materialInput.hidden = false;
       };
-      const showSavedLibraryMaterialNames = libraryId => {
-        const library = savedMaterialLibrariesById.get(libraryId);
+      const showSavedLibraryMaterialNames = async libraryId => {
+        if (!libraryId) { showManualMaterialName(); return; }
+        savedMaterialNameInput.replaceChildren(new Option('Loading material namesâ€¦', ''));
+        savedMaterialNameInput.hidden = false;
+        materialInput.hidden = true;
+        let library = savedMaterialLibrariesById.get(libraryId);
+        try {
+          const response = await fetch(`/account/material-libraries/${encodeURIComponent(libraryId)}`, {
+            credentials:'same-origin', cache:'no-store',
+          });
+          const data = response.ok ? await response.json() : null;
+          if (data?.library) {
+            library = data.library;
+            savedMaterialLibrariesById.set(libraryId, library);
+          }
+        } catch (_) {}
+        // Ignore a late response if the operator selected another source.
+        if (savedMaterialLibraryInput.value !== libraryId) return;
         const materialNames = (library?.summary?.material_names || [])
           .map(name => String(name || '').trim()).filter(Boolean);
         if (!materialNames.length) {
@@ -1149,14 +1165,14 @@
         rememberedMaterialNote.hidden = false;
         rememberedMaterialNote.textContent = `Current Material Library: ${filename}. This file will replace the remembered library.`;
       });
-      savedMaterialLibraryInput.addEventListener('change', () => {
+      savedMaterialLibraryInput.addEventListener('change', async () => {
         if (!savedMaterialLibraryInput.value) { showManualMaterialName(); return; }
         svgOnlyConfirmedInput.value = '0';
         materialLibraryInput.value = '';
         guestMaterialLibraryInput.value = '';
         rememberedMaterialNote.hidden = false;
         rememberedMaterialNote.textContent = `Using saved Material Library: ${savedMaterialLibraryInput.selectedOptions[0].textContent}.`;
-        showSavedLibraryMaterialNames(savedMaterialLibraryInput.value);
+        await showSavedLibraryMaterialNames(savedMaterialLibraryInput.value);
       });
       guestMaterialLibraryInput.addEventListener('change', () => {
         if (!guestMaterialLibraryInput.value) return;

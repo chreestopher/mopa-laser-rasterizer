@@ -76,6 +76,8 @@ class HolographicAuthenticationCoverageTests(unittest.TestCase):
 
         self.assertIn('id="saved_material_name"', template)
         self.assertIn("library?.summary?.material_names", template)
+        self.assertIn("/account/material-libraries/${encodeURIComponent(libraryId)}", template)
+        self.assertIn("cache:'no-store'", template)
         self.assertIn("showSavedLibraryMaterialNames(savedMaterialLibraryInput.value)", template)
         self.assertIn("materialInput.value = savedMaterialNameInput.value", template)
         self.assertIn("showManualMaterialName();", template)
