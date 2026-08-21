@@ -175,6 +175,6 @@ Resolution grows project complexity quickly because each processed artwork pixel
 
 ## Safety and result variability
 
-MOPA color and diffraction results depend on the exact source, lens, focus, material alloy, finish, preparation, power, speed, frequency, pulse width, interval, scan direction, passes, and thermal history. A screen color or shared recipe does not guarantee a matching physical result.
+MOPA Laser color and diffraction results depend on the exact source, lens, focus, material alloy, finish, preparation, power, speed, frequency, pulse width, interval, scan direction, passes, and thermal history. A screen color or shared recipe does not guarantee a matching physical result.
 
 Use suitable materials, guarding, extraction, fixturing, and manufacturer-approved parameter ranges. Supervise every job and verify generated files in LightBurn before enabling output.

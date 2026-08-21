@@ -43,6 +43,14 @@ def color_laser_engraving_tool():
     )
 
 
+@routes.route("/laser-engraving-tool")
+def laser_engraving_tool():
+    return render_template(
+        "laser_engraving_tool.html",
+        canonical=f"{_public_url()}/laser-engraving-tool",
+    )
+
+
 @routes.route("/login")
 def login():
     """ALB authenticates this route before returning users to the app home."""

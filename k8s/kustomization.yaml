@@ -11,7 +11,7 @@ commonLabels:
   managed-by: kustomize
 
 commonAnnotations:
-  description: "Re-rasterize color images into LightBurn MOPA color engraving projects for your laser"
+  description: "Re-rasterize color images into LightBurn MOPA Laser color engraving projects for your laser"
 
 resources:
 - deployment.yaml
