@@ -88,7 +88,7 @@ kubectl label node <node-name> mopa-laser-rasterizer-host=true
 
 Set `HOST_APP_PATH` in `.env.local` to the absolute path of that checkout (or
 use the provided default in `.env.example`). After pulling code on that EC2
-host, restart the deployment—no image build is needed for source-only changes:
+host, restart the deployment-no image build is needed for source-only changes:
 
 ```bash
 cd /home/ubuntu/mopa-laser-rasterizer

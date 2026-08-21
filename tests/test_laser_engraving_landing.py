@@ -19,6 +19,8 @@ class LaserEngravingLandingCoverageTests(unittest.TestCase):
         self.assertIn('href="/color-laser-engraving-tool"', page)
         self.assertIn('/docs/svg-only-mode', page)
         self.assertIn('/docs/laser-compatibility', page)
+        self.assertIn("Hatch Palette settings require LightBurn mode", page)
+        self.assertIn("SVG-only mode does not apply Hatch Palette angles", page)
 
 
 if __name__ == "__main__":
