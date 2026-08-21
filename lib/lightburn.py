@@ -259,8 +259,10 @@ class Layer:
                 f'        <index Value="{self.index}"/>\n'
                 f'        <name Value="{self.name}"/>\n'
                 f'        <minPower Value="{self.minPower}"/>\n'
-                f'        <maxPower Value="{self.maxPower}"/>\n'
-                f'        <maxPower2 Value="{self.maxPower2}"/>\n'
+                f'        <maxPower Value="{self.maxPower}"/>\n')
+        if self.maxPower2 is not None:
+            f.write(f'        <maxPower2 Value="{self.maxPower2}"/>\n')
+        f.write(
                 f'        <speed Value="{self.speed}"/>\n'
                 f'        <frequency Value="{self.frequency}"/>\n'      # if self.frequency not None else None
                 f'        <QPulseWidth Value="{self.QPulseWidth}"/>\n'  #if self.QPulseWidth not None else None
@@ -430,6 +432,9 @@ class Lightburn:
             setting.type = setting_type
             setting.linkPath = None
             setting.subLayers = []
+            # Preserve whether the imported setting actually defines a
+            # secondary-output power. Layer defaults must not manufacture it.
+            setting.maxPower2 = None
 
             for child in element:
                 value = child.attrib.get("Value")
