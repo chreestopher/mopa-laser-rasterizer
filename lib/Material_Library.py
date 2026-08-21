@@ -113,6 +113,7 @@ def main(argv=None):
             raise SystemExit(str(error))
 
     vector_settings = dict(preset)
+    vector_settings.update(getattr(filter_module, "VECTOR_DEFAULTS", {}))
     for name in ("min_island_area", "simplification_factor", "smoothing_radius"):
         if name in filter_parameters:
             vector_settings[name] = filter_parameters[name]

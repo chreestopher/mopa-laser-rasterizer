@@ -134,6 +134,94 @@ found_lb_hex = {}
 # never become a raster-color destination.
 NON_IMAGE_SWATCHES = set()
 
+LIGHTBURN_TEAL_RGB = (0, 71, 84)
+LIGHTBURN_TEAL_LUMINANCE = (
+    .2126 * LIGHTBURN_TEAL_RGB[0]
+    + .7152 * LIGHTBURN_TEAL_RGB[1]
+    + .0722 * LIGHTBURN_TEAL_RGB[2]
+)
+
+
+def source_black_cutoff_mask(source_img):
+    """Reserve source pixels strictly darker than LightBurn Teal for Black."""
+    pixels = np.asarray(source_img.convert("RGB"), dtype=np.float64)
+    luminance = (
+        .2126 * pixels[:, :, 0]
+        + .7152 * pixels[:, :, 1]
+        + .0722 * pixels[:, :, 2]
+    )
+    return luminance < LIGHTBURN_TEAL_LUMINANCE
+
+
+def load_resized_source_black_cutoff_mask(raster_image_path, output_size):
+    """Resize the source cutoff mask without interpolating its membership."""
+    with Image.open(raster_image_path) as source:
+        original_mask = source_black_cutoff_mask(source)
+    mask_image = Image.fromarray(original_mask.astype(np.uint8) * 255)
+    resized_mask = mask_image.resize(output_size, Image.Resampling.NEAREST)
+    return np.asarray(resized_mask, dtype=np.uint8) == 255
+
+
+def restore_reserved_black(quantized_img, source_black_mask):
+    """Restore reserved source darkness after non-Black quantization."""
+    output = np.asarray(quantized_img.convert("RGB"), dtype=np.uint8).copy()
+    output[source_black_mask] = (0, 0, 0)
+    return Image.fromarray(output)
+
+
+def holographic_lab_black_mask(source_img):
+    """Return the Holographic Etching Lab's adaptive dark two-color mask."""
+    quantized = source_img.convert("RGB").quantize(colors=2, method=0).convert("RGB")
+    pixels = np.asarray(quantized, dtype=np.uint8)
+    palette_colors = {tuple(pixel) for pixel in pixels.reshape(-1, 3)}
+    if not palette_colors:
+        return np.zeros(pixels.shape[:2], dtype=bool)
+
+    def luminance(rgb):
+        return .2126 * rgb[0] + .7152 * rgb[1] + .0722 * rgb[2]
+
+    darkest_color = min(palette_colors, key=luminance)
+    if len(palette_colors) == 1 and luminance(darkest_color) >= 128:
+        return np.zeros(pixels.shape[:2], dtype=bool)
+    return np.all(pixels == darkest_color, axis=2)
+
+
+def _mask_to_merged_geometry(mask):
+    """Convert a boolean raster mask into coalesced rectangle geometry."""
+    height, width = mask.shape
+    visited = np.zeros((height, width), dtype=bool)
+    rectangles = []
+    for y in range(height):
+        for x in range(width):
+            if not mask[y, x] or visited[y, x]:
+                continue
+            rectangle_width = 1
+            while (
+                x + rectangle_width < width
+                and mask[y, x + rectangle_width]
+                and not visited[y, x + rectangle_width]
+            ):
+                rectangle_width += 1
+            rectangle_height = 1
+            while y + rectangle_height < height:
+                row = mask[y + rectangle_height, x:x + rectangle_width]
+                row_visited = visited[y + rectangle_height, x:x + rectangle_width]
+                if row_visited.any() or not np.all(row):
+                    break
+                rectangle_height += 1
+            visited[y:y + rectangle_height, x:x + rectangle_width] = True
+            rectangles.append(box(x, y, x + rectangle_width, y + rectangle_height))
+    return unary_union(rectangles) if rectangles else GeometryCollection()
+
+
+def replace_krasnow_black_layer(processed_layers, black_hex, source_img):
+    """Replace only Krasnow Black while preserving every grating carrier."""
+    output = dict(processed_layers)
+    output[black_hex] = _mask_to_merged_geometry(
+        holographic_lab_black_mask(source_img)
+    )
+    return output
+
 
 def nearest_available_swatch(r, g, b, target_colors, prefer_non_black=True):
     """Choose a configured swatch by RGB distance when a neutral fallback is absent."""
@@ -571,7 +659,8 @@ def prepare_raster_image(
     new_height,
     new_width,
     quantize_colors,
-    target_colors=None
+    target_colors=None,
+    prevent_palette_black=False,
 ):
     """
     Open, convert, resize, and optionally quantize the raster image.
@@ -614,8 +703,18 @@ def prepare_raster_image(
             palette_values = []
             for color_hex in active_swatches[:256]:
                 palette_values.extend(hex_to_rgb(color_hex))
-            palette.putpalette(palette_values + [0] * (768 - len(palette_values)))
-            img = img.quantize(palette=palette, dither=Image.Dither.NONE).convert("RGB")
+            if prevent_palette_black:
+                final_swatch = palette_values[-3:]
+                padding_entries = 256 - len(active_swatches[:256])
+                palette.putpalette(palette_values + final_swatch * padding_entries)
+                img = img.quantize(
+                    colors=len(active_swatches[:256]),
+                    palette=palette,
+                    dither=Image.Dither.NONE,
+                ).convert("RGB")
+            else:
+                palette.putpalette(palette_values + [0] * (768 - len(palette_values)))
+                img = img.quantize(palette=palette, dither=Image.Dither.NONE).convert("RGB")
             printLogMessage(
                 f"Using {len(active_swatches)} active LightBurn swatches as the quantization palette."
             )
@@ -1814,6 +1913,16 @@ def raster_to_puzzle_and_lightburn(
     printLogMessage(
         "[Raster preparation 1/1] START: loading, resizing, and quantizing the source image."
     )
+    filter_parameters = dict(filter_parameters or {})
+    filter_name, _ = normalize_abstract_settings(
+        abstract_filter, filter_parameters
+    )
+    krasnow_mode = filter_name == "krasnow_grating"
+    if krasnow_mode:
+        printLogMessage(
+            "Krasnow Color Grating: reserving below-Teal source darkness for "
+            "the later adaptive Black mask; Black will not become a grating carrier."
+        )
     img = prepare_raster_image(
         raster_image_path=raster_image_path,
         new_height=new_height,
@@ -1824,9 +1933,19 @@ def raster_to_puzzle_and_lightburn(
         # actual source values. Every other preset uses real LightBurn swatches.
         target_colors=(None if image_preset == "bw_dither_photograph" else {
             color_hex: metadata for color_hex, metadata in TARGET_COLORS.items()
-            if color_hex.upper() not in NON_IMAGE_SWATCHES
-        })
+            if (
+                color_hex.upper() not in NON_IMAGE_SWATCHES
+                and (not krasnow_mode or color_hex != black_hex)
+            )
+        }),
+        prevent_palette_black=krasnow_mode,
     )
+
+    if krasnow_mode:
+        source_black_mask = load_resized_source_black_cutoff_mask(
+            raster_image_path, img.size
+        )
+        img = restore_reserved_black(img, source_black_mask)
 
     width, height = img.size
     printLogMessage(
@@ -1837,12 +1956,8 @@ def raster_to_puzzle_and_lightburn(
     # Every color layer must use the same radial center and extent.  Keeping
     # this internal value shared prevents independently warped layers from
     # crossing or drifting apart at formerly common boundaries.
-    filter_parameters = dict(filter_parameters or {})
     filter_parameters["_canvas_bounds"] = (0, 0, width, height)
     filter_parameters["_scale_factor"] = scale_factor
-    filter_name, _ = normalize_abstract_settings(
-        abstract_filter, filter_parameters
-    )
     filter_module = ABSTRACT_FILTER_MODULES.get(filter_name)
     if bool(getattr(filter_module, "USES_SOURCE_LUMINANCE", False)):
         filter_parameters["_angle_image"] = prepare_raster_image(
@@ -1932,7 +2047,7 @@ def raster_to_puzzle_and_lightburn(
             target_colors=TARGET_COLORS,
             black_hex=black_hex,
             ignore_background_hex=ignore_background_hex,
-            include_black=preserve_source_black,
+            include_black=(preserve_source_black and not krasnow_mode),
             transparent=transparent_mode,
             transparent_rgb_values=transparent_rgb_values,
             light_threshold=_number(
@@ -1963,6 +2078,23 @@ def raster_to_puzzle_and_lightburn(
         abstract_filter=abstract_filter,
         filter_parameters=filter_parameters,
     )
+
+    if krasnow_mode:
+        source_img = prepare_raster_image(
+            raster_image_path=raster_image_path,
+            new_height=new_height,
+            new_width=new_width,
+            quantize_colors=None,
+        )
+        processed_layers = replace_krasnow_black_layer(
+            processed_layers,
+            black_hex,
+            source_img,
+        )
+        printLogMessage(
+            "Krasnow Color Grating: emitted the adaptive source-derived Black "
+            "mask after building non-Black grating carriers."
+        )
 
     # =========================================================================
     # 6. Build the BLACK layer around the colored geometry

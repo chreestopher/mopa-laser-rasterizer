@@ -5,9 +5,10 @@ artwork. This module's optional ``remap_layers`` capability then
 rebuilds those finished color regions as open parallel-line patches and
 assigns each patch across the available non-black LightBurn layers.
 
-The layer colors are identifiers, not promises about the engraved color. True
-Black contains only geometry classified from the source raster; this preset
-does not synthesize a Black canvas or punch into Black. The selected material's
+The layer colors are identifiers, not promises about the engraved color. Black
+is excluded from the grating carriers and is emitted later as an independent,
+source-derived dark mask. This preset does not synthesize a Black canvas or
+punch into Black. The selected material's
 Holographic recipe is treated as a calibrated 1-micron anchor. Every non-black
 output layer receives an independent copy whose speed is scaled to create its
 target microscopic pitch while retaining the anchor's other laser values.
@@ -45,6 +46,15 @@ DEFAULTS = {
     "line_spacing_mm": .06,
     "angle_min": -90,
     "angle_max": 90,
+}
+
+# The general Abstract preset deliberately performs aggressive cleanup for
+# broad filled shapes. Krasnow needs the source regions to remain faithful so
+# thin outlines are not closed into large blobs before the gratings are built.
+VECTOR_DEFAULTS = {
+    "min_island_area": 0,
+    "simplification_factor": 0.0,
+    "smoothing_radius": 0.001,
 }
 
 CONTROLS = (
@@ -263,12 +273,7 @@ def _patch_lines(region, patch, angle_degrees, spacing):
 
 
 def remap_layers(processed_layers, target_colors, settings):
-    """Build open gratings while retaining only source-derived Black geometry."""
-    source_black = {
-        color_hex: geometry
-        for color_hex, geometry in processed_layers.items()
-        if str(color_hex).upper() == "#000000"
-    }
+    """Build open gratings from non-Black source layers only."""
     bounds = settings.get("_canvas_bounds")
     if not bounds or len(bounds) != 4:
         nonempty = [geometry for geometry in processed_layers.values() if not geometry.is_empty]
@@ -280,7 +285,7 @@ def remap_layers(processed_layers, target_colors, settings):
     min_x, min_y, max_x, max_y = bounds
     grating_swatches = _grating_swatches(target_colors)
     if not grating_swatches:
-        return source_black
+        return {}
 
     scale_factor = number(settings.get("_scale_factor"), 1, 1e-9, 1000)
     patch_size = number(settings.get("patch_size_mm"), .4, .1, 5) / scale_factor
@@ -323,7 +328,7 @@ def remap_layers(processed_layers, target_colors, settings):
                 y += patch_size
             x += patch_size
 
-    remapped = dict(source_black)
+    remapped = {}
     for swatch, swatch_pieces in pieces.items():
         if swatch_pieces:
             remapped[swatch] = unary_union(swatch_pieces)
