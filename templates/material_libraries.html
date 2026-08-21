@@ -159,7 +159,7 @@
       const entries = summary?.entries || [];
       if (!entries.length) return '<p class="meta">Open settings to inspect this library.</p>';
       const hatch = libraryIntent === 'hatch_palette';
-      return `<div class="entries"><table class="${selectable ? 'selectable-entries ' : ''}${hatch ? 'hatch-entries' : ''}"><thead><tr>${selectable ? '<th>Pick</th>' : ''}${hatch ? '<th>Hatch</th>' : ''}<th>Material</th><th>Type</th><th>Description</th></tr></thead><tbody>${entries.map((entry, index) => { const key = selectionKey(libraryId, entry); const swatch = matchedRasterizerSwatch(entry.description); const description = swatch ? `<span class="entry-description"><span class="entry-palette-swatch" style="background:${swatch[1]}" title="Rasterizer palette: ${esc(swatch[0])}"></span>${esc(entry.description)}</span>` : esc(entry.description); return `<tr${clickable ? ` class="entry-row" data-library-id="${esc(libraryId)}" data-entry-index="${index}"` : ''}>${selectable ? `<td><input class="entry-select" type="checkbox" data-library-id="${esc(libraryId)}" data-entry-index="${index}" ${selectedSettings.has(key) ? 'checked' : ''} aria-label="Select ${esc(entry.description)}"></td>` : ''}${hatch ? `<td>${hatchPreview(entry)}</td>` : ''}<td>${esc(entry.material)}</td><td>${esc(displayOperationType(entry.type))}</td><td>${description}</td></tr>${activeInlineEntryKeys.has(key) ? `<tr><td colspan="${(selectable ? 4 : 3) + (hatch ? 1 : 0)}">${inlineEntryEditor(libraryId, entry)}</td></tr>` : ''}`; }).join('')}</tbody></table></div>`;
+      return `<div class="entries"><table class="${selectable ? 'selectable-entries ' : ''}${hatch ? 'hatch-entries' : ''}"><thead><tr>${selectable ? '<th>Pick</th>' : ''}${hatch ? '<th>Hatch</th>' : ''}<th>Material</th><th>Type</th><th>Edit</th></tr></thead><tbody>${entries.map((entry, index) => { const key = selectionKey(libraryId, entry); const swatch = matchedRasterizerSwatch(entry.description); const description = swatch ? `<span class="entry-description"><span class="entry-palette-swatch" style="background:${swatch[1]}" title="Rasterizer palette: ${esc(swatch[0])}"></span>${esc(entry.description)}</span>` : esc(entry.description); return `<tr${clickable ? ` class="entry-row" data-library-id="${esc(libraryId)}" data-entry-index="${index}"` : ''}>${selectable ? `<td><input class="entry-select" type="checkbox" data-library-id="${esc(libraryId)}" data-entry-index="${index}" ${selectedSettings.has(key) ? 'checked' : ''} aria-label="Select ${esc(entry.description)}"></td>` : ''}${hatch ? `<td>${hatchPreview(entry)}</td>` : ''}<td>${esc(entry.material)}</td><td>${esc(displayOperationType(entry.type))}</td><td>${description}</td></tr>${activeInlineEntryKeys.has(key) ? `<tr><td colspan="${(selectable ? 4 : 3) + (hatch ? 1 : 0)}">${inlineEntryEditor(libraryId, entry)}</td></tr>` : ''}`; }).join('')}</tbody></table></div>`;
     };
     const load = async () => {
       const response = await fetch('/account/material-libraries', {credentials:'same-origin'});
@@ -406,6 +406,9 @@
         const editorRow = document.createElement('tr');
         editorRow.innerHTML = `<td colspan="${library.library_intent === 'hatch_palette' ? 5 : 4}">${inlineEntryEditor(activeLibraryId, entry)}</td>`;
         row.insertAdjacentElement('afterend', editorRow);
+        const editor = editorRow.querySelector('.inline-entry-editor');
+        editor?.scrollIntoView({behavior:'smooth', block:'center'});
+        editor?.querySelector('[data-entry-field="description"]')?.focus({preventScroll:true});
         return;
       }
       if (event.target.matches('#settings_back')) showEntryList();
