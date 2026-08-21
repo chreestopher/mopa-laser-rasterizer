@@ -274,7 +274,8 @@ def get_user_material_library(user_id, library_id):
 
 
 def save_user_material_library(user_id, local_file_path, material_name="", summary=None,
-                               display_name=None, source_filename=None):
+                               display_name=None, source_filename=None,
+                               library_intent="color_palette"):
     """Store an uploaded LightBurn library once under its Cognito owner."""
     table = account_table()
     if not table or not S3_BUCKET_NAME:
@@ -282,6 +283,7 @@ def save_user_material_library(user_id, local_file_path, material_name="", summa
     library_id = str(uuid.uuid4())
     filename = os.path.basename(source_filename or local_file_path)
     library_name = str(display_name or filename).strip()[:160] or filename
+    library_intent = "hatch_palette" if library_intent == "hatch_palette" else "color_palette"
     s3_key = f"users/{user_id}/materials/{library_id}/{filename}"
     try:
         # Material libraries are outside the S3 lifecycle rules, so they do
@@ -294,6 +296,7 @@ def save_user_material_library(user_id, local_file_path, material_name="", summa
             "name": library_name,
             "original_name": filename,
             "material_name": str(material_name or "").strip()[:160],
+            "library_intent": library_intent,
             "s3_key": s3_key,
             "created_at": int(time.time()),
         }
@@ -303,7 +306,8 @@ def save_user_material_library(user_id, local_file_path, material_name="", summa
     except ClientError as error:
         raise RuntimeError("Could not save the Material Library to this account.") from error
     return {"library_id": library_id, "name": library_name, "original_name": filename,
-            "material_name": str(material_name or "").strip()}
+            "material_name": str(material_name or "").strip(),
+            "library_intent": library_intent}
 
 
 def download_user_material_library(library, local_path):
@@ -611,7 +615,7 @@ def _write_laser_community_record(table, user_id, library_id, summary, laser_sou
 
 def rename_user_material_library(user_id, library_id, display_name, laser_source=None,
                                  lens_field_of_view=None, notes=None, laser_community=False,
-                                 community_summary=None):
+                                 community_summary=None, library_intent=None):
     table = account_table()
     library = get_user_material_library(user_id, library_id) if table else None
     if not table or not library:
@@ -622,6 +626,11 @@ def rename_user_material_library(user_id, library_id, display_name, laser_source
     laser_source = str(laser_source or "").strip()
     lens_field_of_view = str(lens_field_of_view or "").strip()
     notes = str(notes or "").strip()
+    library_intent = (
+        library.get("library_intent", "color_palette")
+        if library_intent is None
+        else ("hatch_palette" if library_intent == "hatch_palette" else "color_palette")
+    )
     # Community contribution is permanent once accepted for this library.
     laser_community = library.get("laser_community") is True or laser_community is True
     if len(laser_source) > 160 or len(lens_field_of_view) > 160 or len(notes) > 1000:
@@ -629,7 +638,7 @@ def rename_user_material_library(user_id, library_id, display_name, laser_source
     try:
         table.update_item(
             Key={"pk": f"USER#{user_id}", "sk": f"MATERIAL#{library_id}"},
-            UpdateExpression="SET #name = :name, laser_source = :laser_source, lens_field_of_view = :lens_field_of_view, notes = :notes, laser_community = :laser_community, updated_at = :updated_at",
+            UpdateExpression="SET #name = :name, laser_source = :laser_source, lens_field_of_view = :lens_field_of_view, notes = :notes, laser_community = :laser_community, library_intent = :library_intent, updated_at = :updated_at",
             ExpressionAttributeNames={"#name": "name"},
             ExpressionAttributeValues={
                 ":name": display_name,
@@ -637,6 +646,7 @@ def rename_user_material_library(user_id, library_id, display_name, laser_source
                 ":lens_field_of_view": lens_field_of_view,
                 ":notes": notes,
                 ":laser_community": laser_community,
+                ":library_intent": library_intent,
                 ":updated_at": int(time.time()),
             },
         )

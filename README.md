@@ -15,6 +15,7 @@ The application prepares artwork and project files; it does not control a laser 
 - Cartoon, Color Photo, and dithered Black and White Photo presets
 - Abstract vector filters with configurable controls
 - Material Vault for importing, editing, combining, and exporting saved libraries
+- Hatch Palettes that clone a base Fill or Offset Fill setting across LightBurn swatches and plan per-layer hatch angles and line intervals
 - Labeled LightBurn material-coupon generation
 - Color Discovery calibration, photo analysis, and recipe saving
 - Browser-session and account-backed job history
@@ -37,41 +38,61 @@ Leaving the material blank and confirming SVG-only mode skips Material Library p
 
 ### Requirements
 
-- Python 3.11
-- pip
-- Native build tools and Potrace development libraries required by `pypotrace`
+- Ubuntu WSL
+- Python 3.11 or newer
 - Redis when exercising queued jobs or Redis-backed production behavior
 
 The Docker image installs the required Debian packages: `build-essential`, `libpotrace-dev`, `libagg-dev`, `pkg-config`, and `python3-dev`.
 
 ### Run the web application
 
+From the repository root inside Ubuntu WSL, install the native packages,
+create `.venv`, and install the application and test dependencies:
+
 ```bash
-python -m venv .venv
+bash dev_setup/setup-wsl.sh
 ```
 
-Activate the environment:
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-On Linux or macOS:
+Activate the environment in each new WSL shell:
 
 ```bash
 source .venv/bin/activate
 ```
 
-Install dependencies and start Flask:
+Start Flask:
 
 ```bash
-pip install -r requirements.txt
 python app.py
 ```
 
 Open `http://localhost:8000`.
 
 Local submissions run in background threads by default. Set `RASTER_JOB_QUEUE_ENABLED=true` and run `python worker.py` separately to use the Redis-backed worker path.
+
+Run the rasterizer command-line application through the WSL environment with:
+
+```bash
+bash run-cli.sh INPUT OUTPUT_BASE PIXEL_MM WIDTH HEIGHT MATERIAL_LIBRARY MATERIAL COLORS PRESET FILTER
+```
+
+Optional filter JSON, palette-name JSON, and SVG-only arguments are forwarded
+to `lib/Material_Library.py`. For example:
+
+```bash
+bash run-cli.sh input.png output/job 0.125 800 0 settings.clb "colors - stainless steel" "Red,Blue,Green" cartoon none '{}' '{}' false
+```
+
+For the repository's hardcoded sample configuration, place `test-input.png`
+and `tests.clb` in the repository root, then run:
+
+```bash
+bash run-sample.sh
+```
+
+The sample uses all 30 default swatches, the `colors - stainless steel`
+material, an 800-pixel target width, 0.125 mm pixel size, Cartoon processing,
+and a minimum island area of 50. Output is written under
+`uploads/cli-sample/`.
 
 ### Run with Docker
 

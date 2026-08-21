@@ -39,6 +39,7 @@
     body.light-machine { --case:#d1d2cb; --panel:#d9dad4; --ink:#171815; --green:#286d24; --amber:#7c4815; color:#171815; background:#f0f0e9; } body.light-machine .machine { border-color:#7c7e7a; background:repeating-linear-gradient(90deg,rgba(0,0,0,.025) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 5%,#f0f0e9,#c8c9c3 48%,#9fa19c 100%); box-shadow:inset 0 0 0 5px #a6a8a3,inset 0 0 45px #777,0 0 0 1px #eee,0 20px 50px #000; } body.light-machine .panel,body.light-machine .library,body.light-machine .import-file,body.light-machine .settings-accordion,body.light-machine .inline-entry-editor { color:#171815; border-color:#777974; background:#d8d9d3; box-shadow:inset 0 0 15px #999; } body.light-machine .meta,body.light-machine small,body.light-machine .sub { color:#343530; } body.light-machine .settings-toolbar,body.light-machine .selection-actions,body.light-machine .settings-accordion summary,body.light-machine .settings-accordion-content,body.light-machine .inline-setting-row { border-color:#777974; } body.light-machine .settings-toolbar strong,body.light-machine .settings-accordion summary { color:#171815; text-shadow:0 1px #fff; } body.light-machine .entry-row:hover { background:#c0c2bb; box-shadow:inset 3px 0 #286d24; } body.light-machine th,body.light-machine td { border-color:#9a9c96; } body.light-machine input[type=file],body.light-machine .library-name-input,body.light-machine .setting-field input,body.light-machine .setting-field select,body.light-machine .inline-entry-editor input,body.light-machine .inline-entry-editor select { color:#171815; border-color:#777974; background:#dedfd9; box-shadow:inset 0 1px 5px #999; } body.light-machine .setting-field,body.light-machine .materials label { color:#171815; border-color:#777974; background:#d5d6cf; } body.light-machine .settings-window { color:#171815; border-color:#777974; background:#d8d9d3; } body.light-machine .settings-titlebar { color:#171815; border-color:#777974; background:linear-gradient(#dedfd9,#aeb0aa); } body.light-machine .settings-body::-webkit-scrollbar-track { background:#c1c2bc; } body.light-machine .settings-body::-webkit-scrollbar-thumb { border-color:#c1c2bc; background:#777974; }
     body.light-machine .inline-entry-editor input,body.light-machine .inline-entry-editor select { color:#171815; border:0; border-radius:0; background:transparent; box-shadow:none; } body.light-machine .inline-entry-editor select { color-scheme:light; } body.light-machine .inline-entry-editor select option { color:#171815; background:#dedfd9; } body.light-machine .inline-entry-editor input:focus,body.light-machine .inline-entry-editor select:focus { box-shadow:inset 0 0 0 1px rgba(40,109,36,.6),0 0 5px rgba(40,109,36,.22); } body.light-machine .library-equipment input { color:#171815; border-color:#777974; background:#dedfd9; box-shadow:inset 0 1px 5px #999; } body.light-machine .entry-row:hover { color:#171815; background:linear-gradient(90deg,#b8d2aa,#d5e5cd); box-shadow:inset 4px 0 #286d24,inset 0 0 10px rgba(40,109,36,.13); } body.light-machine button:not(.delete),body.light-machine input[type=file]::file-selector-button { color:#171815; border-color:#69756e; background:linear-gradient(#e1e4df,#aeb6af); box-shadow:inset 0 1px rgba(255,255,255,.8),0 3px 0 #737a74; text-shadow:0 1px #fff; }
     .palette-autocomplete { position:relative; width:100%; } .palette-autocomplete-menu { position:absolute; z-index:10; top:calc(100% + 4px); left:0; right:0; max-height:190px; overflow-y:auto; border:1px solid #677663; border-radius:6px; background:#111510; box-shadow:0 9px 20px rgba(0,0,0,.55); } .palette-autocomplete-option { display:flex; align-items:center; gap:8px; width:100%; margin:0 !important; padding:7px 9px !important; border:0; border-bottom:1px solid #303a2e; border-radius:0 !important; color:#edf4e9; background:transparent; box-shadow:none !important; font:700 11px "Courier New",monospace; letter-spacing:.04em; text-align:left; text-transform:none; } .palette-autocomplete-option:hover,.palette-autocomplete-option:focus { background:#40583b; outline:0; } .palette-autocomplete-swatch,.entry-palette-swatch,.library-palette-swatch { flex:0 0 13px; width:13px; height:13px; border:1px solid #d9d6be; border-radius:2px; box-shadow:inset 0 0 1px rgba(0,0,0,.6); } .entry-description { display:inline-flex; align-items:center; gap:7px; } .library-palette-summary { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin:0 13px 13px; padding-top:10px; border-top:1px solid #374035; } .library-palette-summary .meta { margin-right:3px; } button.library-palette-swatch { width:16px; height:16px; margin:0; padding:0; cursor:pointer; } button.library-palette-swatch:hover,button.library-palette-swatch:focus { outline:2px solid var(--green); outline-offset:2px; filter:brightness(1.16); } body.light-machine .palette-autocomplete-menu { border-color:#777974; background:#e1e2dc; box-shadow:0 9px 20px rgba(0,0,0,.55); } body.light-machine .palette-autocomplete-option { color:#171815; border-color:#b2b4ae; } body.light-machine .palette-autocomplete-option:hover,body.light-machine .palette-autocomplete-option:focus { background:#b8d2aa; } body.light-machine .library-palette-summary { border-color:#9a9c96; }
+    .hatch-chip { display:inline-block; width:42px; height:42px; border:1px solid #a9ad9e; border-radius:4px; background-color:#111510; box-shadow:inset 0 0 0 1px rgba(0,0,0,.55); } button.library-palette-swatch.hatch-chip { width:30px; height:30px; } .library-intent-badge { display:inline-block; margin-left:7px; padding:3px 6px; border:1px solid #8c8457; border-radius:999px; color:#fff1cd; font-size:.65rem; letter-spacing:.05em; } .hatch-planner { margin:0 13px 13px; padding:10px; border:1px solid #596451; border-radius:6px; } .hatch-planner summary { cursor:pointer; color:var(--amber); font-weight:700; } .hatch-planner-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(135px,1fr)); gap:8px; margin-top:10px; } .hatch-planner-grid label { margin:0; font-size:.72rem; } .hatch-planner-grid input { width:100%; margin-top:4px; padding:6px; color:#fff1cd; border:1px solid #596451; border-radius:4px; background:#111510; }
     @media (max-width:760px) { .library-palette-summary .meta { flex:0 0 100%; margin-right:0; } }
   </style>
 <link rel="stylesheet" href="/static/machine_chrome.css?v=3">
@@ -49,7 +50,7 @@
     <section id="sign_in_panel" class="panel" hidden><p>Sign in to open your personal Material Library Vault.</p><a href="/login">Initialize secure operator access →</a></section>
     <div id="manager" hidden>
       <section class="panel vault-terminal">
-        <div id="settings_workspace" class="settings-workspace"><div class="settings-toolbar"><strong id="settings_modal_title">MATERIAL SETTINGS CONSOLE</strong></div><details id="vault_controls" class="settings-accordion"><summary>LOAD OR BUILD A SETTINGS LIBRARY</summary><div class="settings-accordion-content"><label for="libraries">Load one or more LightBurn Material Library files</label><input id="libraries" type="file" accept=".clb,.lbmat,.lbrn" multiple><button id="scan" type="button">Import</button><button id="new_library" type="button">New Settings Library</button><div id="import_plan" class="import-plan" hidden></div><button id="import" type="button" hidden>Import selected materials</button></div></details><div class="selection-actions"><span id="selected_count" class="meta">Selected settings: 0</span><span><a href="/docs/material-coupon-generator">Coupon generator help</a> <button id="selected_actions" type="button" disabled>Selected actions</button></span></div><div id="settings_modal_body" class="settings-body"></div></div>
+        <div id="settings_workspace" class="settings-workspace"><div class="settings-toolbar"><strong id="settings_modal_title">MATERIAL SETTINGS CONSOLE</strong></div><details id="vault_controls" class="settings-accordion"><summary>LOAD OR BUILD A SETTINGS LIBRARY</summary><div class="settings-accordion-content"><label for="libraries">Load one or more LightBurn Material Library files</label><input id="libraries" type="file" accept=".clb,.lbmat,.lbrn" multiple><button id="scan" type="button">Import</button><button id="new_library" type="button">New Settings Library</button><button id="new_hatch_palette" type="button">New Hatch Palette</button><p class="meta">Hatch Palettes use LightBurn swatch colors as artwork-matching identifiers. Their line previews show each layer's hatch angle and relative line density.</p><div id="import_plan" class="import-plan" hidden></div><button id="import" type="button" hidden>Import selected materials</button></div></details><div class="selection-actions"><span id="selected_count" class="meta">Selected settings: 0</span><span><a href="/docs/material-coupon-generator">Coupon generator help</a> <button id="selected_actions" type="button" disabled>Selected actions</button></span></div><div id="settings_modal_body" class="settings-body"></div></div>
         <div id="notice" class="notice" role="status"></div>
       </section>
       <section class="panel vault-terminal recipe-console" aria-labelledby="holographic_recipe_heading">
@@ -72,6 +73,35 @@
       <section class="settings-window selection-popup-window">
         <div class="settings-titlebar"><strong id="selection_modal_title" class="settings-title">SELECTED MATERIAL SETTINGS</strong><button id="selection_modal_close" class="settings-close" type="button" aria-label="Close selected actions">Close</button></div>
         <div id="selection_modal_body" class="settings-body"></div>
+      </section>
+    </div>
+    <div id="hatch_modal" class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="hatch_modal_title" hidden>
+      <section class="settings-window selection-popup-window">
+        <div class="settings-titlebar"><strong id="hatch_modal_title" class="settings-title">NEW HATCH PALETTE</strong><button id="hatch_modal_close" class="settings-close" type="button">Close</button></div>
+        <div class="settings-body">
+          <p class="meta">Every swatch clones one base Fill setting. Only its LightBurn layer identity, hatch angle, and line interval vary.</p>
+          <label>Palette name<input id="hatch_name" class="library-name-input" value="My Hatch Palette"></label>
+          <label>Material name<input id="hatch_material" class="library-name-input" value="hatch palette"></label>
+          <label>Initial line interval (mm)<input id="hatch_interval" class="library-name-input" type="number" min="0.000001" step="any" value="0.1"></label>
+          <label>Base setting source<select id="hatch_base_mode" class="library-name-input"><option value="library">Saved Material Library setting</option><option value="manual">Enter manually</option></select></label>
+          <div id="hatch_library_base"><label>Saved library<select id="hatch_source_library" class="library-name-input"></select></label><label>Base Fill setting<select id="hatch_source_entry" class="library-name-input"></select></label></div>
+          <div id="hatch_manual_base" class="setting-grid" hidden>
+            <div class="setting-field"><label>Operation Type</label><select id="hatch_base_type"><option value="Scan">Fill</option><option value="Offset">Offset Fill</option></select></div>
+            <div class="setting-field"><label>Speed (mm/s)</label><input data-hatch-base="speed" type="number" step="any" value="1000"></div>
+            <div class="setting-field"><label>Maximum Power (%)</label><input data-hatch-base="maxPower" type="number" step="any" value="20"></div>
+            <div class="setting-field"><label>Minimum Power (%)</label><input data-hatch-base="minPower" type="number" step="any" value="20"></div>
+            <div class="setting-field"><label>Maximum Power 2 (%)</label><input data-hatch-base="maxPower2" type="number" step="any" value="20"></div>
+            <div class="setting-field"><label>Frequency (Hz)</label><input data-hatch-base="frequency" type="number" step="any" value="300000"></div>
+            <div class="setting-field"><label>Pulse Width (ns)</label><input data-hatch-base="QPulseWidth" type="number" step="any" value="50"></div>
+            <div class="setting-field"><label>Passes</label><input data-hatch-base="numPasses" type="number" min="1" step="1" value="1"></div>
+            <div class="setting-field"><label>Angle Per Pass</label><input data-hatch-base="anglePerPass" type="number" step="any" value="0"></div>
+            <div class="setting-field"><label>Cross Hatch</label><select data-hatch-base="crossHatch"><option value="0">Off</option><option value="1">On</option></select></div>
+            <div class="setting-field"><label>Bidirectional Fill</label><select data-hatch-base="bidir"><option value="0">Off</option><option value="1">On</option></select></div>
+            <div class="setting-field"><label>Overscan</label><input data-hatch-base="overscan" type="number" step="any" value="0"></div>
+          </div>
+          <p id="hatch_offset_warning" class="notice" hidden><strong>Offset Fill warning:</strong> LightBurn controls the effective offset-path hatch direction. The Rasterizer can store and display an angle, but it cannot guarantee that Offset Fill will follow that angle like ordinary Fill mode.</p>
+          <button id="hatch_create" type="button">Create Hatch Palette</button>
+        </div>
       </section>
     </div>
   </main>
@@ -124,10 +154,11 @@
     };
     const selectionKey = (libraryId, entry) => `${libraryId}:${entry.entry_id}`;
     const displayOperationType = type => type === 'Scan' ? 'Fill' : type === 'Cut' ? 'Line' : type;
-    const renderEntries = (summary, libraryId, clickable=false, selectable=false) => {
+    const renderEntries = (summary, libraryId, clickable=false, selectable=false, libraryIntent='color_palette') => {
       const entries = summary?.entries || [];
       if (!entries.length) return '<p class="meta">Open settings to inspect this library.</p>';
-      return `<div class="entries"><table><thead><tr>${selectable ? '<th>Pick</th>' : ''}<th>Material</th><th>Type</th><th>Description</th></tr></thead><tbody>${entries.map((entry, index) => { const key = selectionKey(libraryId, entry); const swatch = matchedRasterizerSwatch(entry.description); const description = swatch ? `<span class="entry-description"><span class="entry-palette-swatch" style="background:${swatch[1]}" title="Rasterizer palette: ${esc(swatch[0])}"></span>${esc(entry.description)}</span>` : esc(entry.description); return `<tr${clickable ? ` class="entry-row" data-library-id="${esc(libraryId)}" data-entry-index="${index}"` : ''}>${selectable ? `<td><input class="entry-select" type="checkbox" data-library-id="${esc(libraryId)}" data-entry-index="${index}" ${selectedSettings.has(key) ? 'checked' : ''} aria-label="Select ${esc(entry.description)}"></td>` : ''}<td>${esc(entry.material)}</td><td>${esc(displayOperationType(entry.type))}</td><td>${description}</td></tr>${activeInlineEntryKeys.has(key) ? `<tr><td colspan="${selectable ? 4 : 3}">${inlineEntryEditor(libraryId, entry)}</td></tr>` : ''}`; }).join('')}</tbody></table></div>`;
+      const hatch = libraryIntent === 'hatch_palette';
+      return `<div class="entries"><table><thead><tr>${selectable ? '<th>Pick</th>' : ''}${hatch ? '<th>Hatch</th>' : ''}<th>Material</th><th>Type</th><th>Description</th></tr></thead><tbody>${entries.map((entry, index) => { const key = selectionKey(libraryId, entry); const swatch = matchedRasterizerSwatch(entry.description); const description = swatch ? `<span class="entry-description"><span class="entry-palette-swatch" style="background:${swatch[1]}" title="Rasterizer palette: ${esc(swatch[0])}"></span>${esc(entry.description)}</span>` : esc(entry.description); return `<tr${clickable ? ` class="entry-row" data-library-id="${esc(libraryId)}" data-entry-index="${index}"` : ''}>${selectable ? `<td><input class="entry-select" type="checkbox" data-library-id="${esc(libraryId)}" data-entry-index="${index}" ${selectedSettings.has(key) ? 'checked' : ''} aria-label="Select ${esc(entry.description)}"></td>` : ''}${hatch ? `<td>${hatchPreview(entry)}</td>` : ''}<td>${esc(entry.material)}</td><td>${esc(displayOperationType(entry.type))}</td><td>${description}</td></tr>${activeInlineEntryKeys.has(key) ? `<tr><td colspan="${(selectable ? 4 : 3) + (hatch ? 1 : 0)}">${inlineEntryEditor(libraryId, entry)}</td></tr>` : ''}`; }).join('')}</tbody></table></div>`;
     };
     const load = async () => {
       const response = await fetch('/account/material-libraries', {credentials:'same-origin'});
@@ -159,6 +190,7 @@
     document.getElementById('selection_modal_close').addEventListener('click', closeSelectionActions);
     selectionModal.addEventListener('click', event => { if (event.target === selectionModal) closeSelectionActions(); });
     document.addEventListener('keydown', event => { if (event.key === 'Escape' && !selectionModal.hidden) closeSelectionActions(); });
+    const hatchPlanner = library => library.library_intent === 'hatch_palette' ? `<details class="hatch-planner"><summary>Hatch Angle &amp; Interval Planner</summary><p class="meta">Angles are distributed across the palette without duplicating the ending orientation. Leave intervals blank to preserve them. Offset Fill is allowed, but LightBurn controls its effective offset-path hatch direction.</p><div class="hatch-planner-grid"><label>Start angle (Â°)<input class="hatch-start-angle" type="number" step="any" value="0"></label><label>Angular span (Â°)<input class="hatch-angle-span" type="number" min="0.001" max="360" step="any" value="180"></label><label>First interval (mm)<input class="hatch-interval-start" type="number" min="0.000001" step="any" placeholder="Preserve"></label><label>Last interval (mm)<input class="hatch-interval-end" type="number" min="0.000001" step="any" placeholder="Same as first"></label></div><button class="apply-hatch-plan" type="button">Apply Hatch Plan</button></details>` : '';
     const showSettingsWorkspace = async (expandLibraryId='') => {
       settingsTitle.textContent = 'MATERIAL SETTINGS CONSOLE';
       settingsBody.innerHTML = '<p class="meta">Loading the selected settings banks…</p>';
@@ -170,7 +202,7 @@
           return data.library;
         }));
         detailedLibraries = new Map(loaded.map(library => [library.library_id, library]));
-        settingsBody.innerHTML = loaded.length ? `<p class="meta">Open any settings bank, check entries for the shared export tray, or click an entry to edit it in place.</p>${loaded.map(library => `<section class="settings-accordion" data-library-id="${esc(library.library_id)}"><div class="settings-library-head"><span class="meta">Settings: ${esc(library.summary?.entry_count ?? 0)}</span><div class="rename"><input class="library-name-input" value="${esc(library.name)}" aria-label="Library name"><button class="rename-button" type="button">Save</button></div><div class="library-actions"><button class="settings-toggle" type="button" aria-expanded="${library.library_id === expandLibraryId}">Settings</button><button class="delete" type="button">Delete</button></div></div><div class="library-equipment"><label>Laser Source<input class="library-laser-source" value="${esc(library.laser_source)}" placeholder="Optional"></label><label>Lens Field of View<input class="library-lens-field-of-view" value="${esc(library.lens_field_of_view)}" placeholder="Optional, e.g. 110 × 110 mm"></label><label class="notes">Notes<input class="library-notes" value="${esc(library.notes)}" placeholder="Optional setup notes"></label></div>${libraryPaletteSummary(library.summary?.entries)}<div class="settings-accordion-content" ${library.library_id === expandLibraryId ? '' : 'hidden'}><button class="settings-add-library" data-library-id="${esc(library.library_id)}" type="button">Add Setting</button>${activeNewLibraryId === library.library_id ? inlineEntryEditor(library.library_id) : ''}${renderEntries(library.summary, library.library_id, true, true)}</div></section>`).join('')}` : '<p class="empty">No saved libraries yet. Use the library intake section above to import one or build a new library.</p>';
+        settingsBody.innerHTML = loaded.length ? `<p class="meta">Open any settings bank, check entries for the shared export tray, or click an entry to edit it in place.</p>${loaded.map(library => `<section class="settings-accordion" data-library-id="${esc(library.library_id)}"><div class="settings-library-head"><span class="meta">Settings: ${esc(library.summary?.entry_count ?? 0)}<span class="library-intent-badge">${library.library_intent === 'hatch_palette' ? 'HATCH PALETTE' : 'COLOR PALETTE'}</span></span><div class="rename"><input class="library-name-input" value="${esc(library.name)}" aria-label="Library name"><button class="rename-button" type="button">Save</button></div><div class="library-actions"><button class="settings-toggle" type="button" aria-expanded="${library.library_id === expandLibraryId}">Settings</button><button class="delete" type="button">Delete</button></div></div><div class="library-equipment"><label>Laser Source<input class="library-laser-source" value="${esc(library.laser_source)}" placeholder="Optional"></label><label>Lens Field of View<input class="library-lens-field-of-view" value="${esc(library.lens_field_of_view)}" placeholder="Optional, e.g. 110 × 110 mm"></label><label class="notes">Notes<input class="library-notes" value="${esc(library.notes)}" placeholder="Optional setup notes"></label></div>${libraryPaletteSummary(library.summary?.entries, library.library_intent)}${hatchPlanner(library)}<div class="settings-accordion-content" ${library.library_id === expandLibraryId ? '' : 'hidden'}><button class="settings-add-library" data-library-id="${esc(library.library_id)}" type="button">Add Setting</button>${activeNewLibraryId === library.library_id ? inlineEntryEditor(library.library_id) : ''}${renderEntries(library.summary, library.library_id, true, true, library.library_intent)}</div></section>`).join('')}` : '<p class="empty">No saved libraries yet. Use the library intake section above to import one or build a new library.</p>';
         loaded.forEach(library => {
           const equipment = settingsBody.querySelector(`[data-library-id="${CSS.escape(String(library.library_id))}"] .library-equipment`);
           if (!equipment) return;
@@ -208,10 +240,22 @@
       ['black','#000000'],['blue','#0000FF'],['red','#FF0000'],['green','#00E000'],['yellow','#D0D000'],['orange','#FF8000'],['cyan','#00E0E0'],['magenta','#FF00FF'],['light-gray','#B4B4B4'],['dark-blue','#0000A0'],['dark-red','#A00000'],['dark-green','#00A000'],['dark-yellow','#A0A000'],['dark-orange','#C08000'],['light-blue','#00A0FF'],['dark-magenta','#A000A0'],['medium-gray','#808080'],['slate-blue','#7D87B9'],['rose','#BB7784'],['periwinkle-blue','#4A6FE3'],['raspberry','#D33F6A'],['sage-green','#8CD78C'],['peach','#F0B98D'],['light-pink','#F6C4E1'],['orchid-pink','#FA9ED4'],['deep-purple','#500A78'],['rust-brown','#B45A00'],['teal','#004754'],['bright-mint-green','#86FA88'],['light-gold','#FFDB66']
     ];
     const matchedRasterizerSwatch = description => rasterizerPalette.find(([name]) => name.toLocaleLowerCase() === String(description ?? '').trim().toLocaleLowerCase());
-    const libraryPaletteSummary = entries => {
+    const hatchPreview = (entry, compact=false) => {
+      const swatch = matchedRasterizerSwatch(entry.description);
+      const color = swatch?.[1] || '#B4B4B4';
+      const angle = Number(entry.settings?.angle ?? 0);
+      const interval = Number(entry.settings?.interval ?? 0);
+      const lpi = interval > 0 ? 25.4 / interval : 0;
+      const spacing = interval > 0 ? Math.max(3, Math.min(20, interval * 70)) : 20;
+      const style = `background-color:#111510;background-image:repeating-linear-gradient(${angle}deg,${color} 0 2px,transparent 2px ${spacing}px)`;
+      const details = `${angle.toFixed(2)}Â°${lpi ? ` Â· ${lpi.toFixed(1)} LPI` : ' Â· interval unset'}`;
+      return `<span class="hatch-chip${compact ? ' library-palette-swatch' : ''}" style="${style}" title="${esc(entry.description)} Â· ${esc(details)}" aria-label="${esc(entry.description)} hatch ${esc(details)}"></span>${compact ? '' : `<small>${esc(details)}</small>`}`;
+    };
+    const libraryPaletteSummary = (entries, libraryIntent='color_palette') => {
       const matched = (entries || []).map((entry, index) => [entry, index, matchedRasterizerSwatch(entry.description)]).filter(([, , swatch]) => swatch).sort(([, , left], [, , right]) => rasterizerPalette.indexOf(left) - rasterizerPalette.indexOf(right));
       if (!matched.length) return '<div class="library-palette-summary"><span class="meta">Rasterizer palette: no matching swatches</span></div>';
-      return `<div class="library-palette-summary"><span class="meta">Rasterizer palette:</span>${matched.map(([entry, index, swatch]) => `<button class="library-palette-swatch" type="button" data-entry-index="${index}" style="background:${swatch[1]}" title="Open ${esc(entry.description)}"></button>`).join('')}</div>`;
+      const hatch = libraryIntent === 'hatch_palette';
+      return `<div class="library-palette-summary"><span class="meta">${hatch ? 'Hatch Palette:' : 'Rasterizer palette:'}</span>${matched.map(([entry, index, swatch]) => hatch ? `<button class="library-palette-swatch hatch-chip" type="button" data-entry-index="${index}" style="${hatchPreview(entry, true).match(/style="([^"]*)"/)?.[1] || ''}" title="Open ${esc(entry.description)} hatch"></button>` : `<button class="library-palette-swatch" type="button" data-entry-index="${index}" style="background:${swatch[1]}" title="Open ${esc(entry.description)}"></button>`).join('')}</div>`;
     };
     const descriptionAutocomplete = value => `<div class="palette-autocomplete"><input data-entry-field="description" data-palette-autocomplete="true" autocomplete="off" value="${esc(value)}"><div class="palette-autocomplete-menu" role="listbox" hidden></div></div>`;
     const fillPaletteAutocomplete = (input, reveal=true) => {
@@ -283,6 +327,18 @@
       }
       if (event.target.matches('.entry-select')) return;
       const libraryCard = event.target.closest('.settings-accordion');
+      if (event.target.matches('.apply-hatch-plan') && libraryCard) {
+        const payload = {
+          start_angle:Number(libraryCard.querySelector('.hatch-start-angle').value),
+          angle_span:Number(libraryCard.querySelector('.hatch-angle-span').value),
+          interval_start:libraryCard.querySelector('.hatch-interval-start').value,
+          interval_end:libraryCard.querySelector('.hatch-interval-end').value,
+        };
+        const response = await fetch(`/account/material-libraries/${encodeURIComponent(libraryCard.dataset.libraryId)}/hatch-plan`, {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+        const data = await response.json();
+        if (!response.ok) return say(data.message || 'Could not apply hatch plan.', true);
+        say('Hatch angles and intervals applied; base laser settings were preserved.'); await load(); await showSettingsWorkspace(libraryCard.dataset.libraryId); return;
+      }
       if (event.target.matches('.rename-button') && libraryCard) {
         const name = libraryCard.querySelector('.library-name-input').value.trim();
         const laser_source = libraryCard.querySelector('.library-laser-source').value.trim();
@@ -347,7 +403,7 @@
         if (activeInlineEntryKeys.has(key) && existingEditor) { activeInlineEntryKeys.delete(key); row.nextElementSibling.remove(); return; }
         activeInlineEntryKeys.add(key);
         const editorRow = document.createElement('tr');
-        editorRow.innerHTML = `<td colspan="4">${inlineEntryEditor(activeLibraryId, entry)}</td>`;
+        editorRow.innerHTML = `<td colspan="${library.library_intent === 'hatch_palette' ? 5 : 4}">${inlineEntryEditor(activeLibraryId, entry)}</td>`;
         row.insertAdjacentElement('afterend', editorRow);
         return;
       }
@@ -453,6 +509,65 @@
         if (!response.ok) return say(data.message || 'Could not create library.', true);
         say('New Settings Library created. Open Settings, then Add Setting.'); load();
       } catch (_) { say('Could not create the library. Check the server logs for details.', true); }
+    });
+    const hatchModal = document.getElementById('hatch_modal');
+    const hatchSourceLibrary = document.getElementById('hatch_source_library');
+    const hatchSourceEntry = document.getElementById('hatch_source_entry');
+    const updateHatchSourceEntries = () => {
+      const library = detailedLibraries.get(hatchSourceLibrary.value);
+      const entries = (library?.summary?.entries || []).filter(entry => ['Scan','Offset'].includes(entry.type));
+      hatchSourceEntry.innerHTML = entries.map(entry => `<option value="${esc(entry.entry_id)}" data-setting-type="${esc(entry.type)}">${esc(entry.material)} Â· ${esc(entry.description)} Â· ${esc(displayOperationType(entry.type))}</option>`).join('');
+      if (!entries.length) hatchSourceEntry.innerHTML = '<option value="">No Fill or Offset Fill settings available</option>';
+      updateHatchOffsetWarning();
+    };
+    const updateHatchOffsetWarning = () => {
+      const manual = document.getElementById('hatch_base_mode').value === 'manual';
+      const type = manual ? document.getElementById('hatch_base_type').value : hatchSourceEntry.selectedOptions[0]?.dataset.settingType;
+      document.getElementById('hatch_offset_warning').hidden = type !== 'Offset';
+    };
+    document.getElementById('new_hatch_palette').addEventListener('click', async () => {
+      if (!detailedLibraries.size && savedLibraries.length) await showSettingsWorkspace();
+      hatchSourceLibrary.innerHTML = [...detailedLibraries.values()].map(library => `<option value="${esc(library.library_id)}">${esc(library.name)}</option>`).join('');
+      updateHatchSourceEntries();
+      if (!hatchSourceLibrary.value || !hatchSourceEntry.value) {
+        const mode = document.getElementById('hatch_base_mode');
+        mode.value = 'manual';
+        mode.dispatchEvent(new Event('change'));
+      }
+      hatchModal.hidden = false;
+      document.getElementById('hatch_name').focus();
+    });
+    document.getElementById('hatch_modal_close').addEventListener('click', () => { hatchModal.hidden = true; });
+    hatchModal.addEventListener('click', event => { if (event.target === hatchModal) hatchModal.hidden = true; });
+    hatchSourceLibrary.addEventListener('change', updateHatchSourceEntries);
+    hatchSourceEntry.addEventListener('change', updateHatchOffsetWarning);
+    document.getElementById('hatch_base_type').addEventListener('change', updateHatchOffsetWarning);
+    document.getElementById('hatch_base_mode').addEventListener('change', event => {
+      const manual = event.target.value === 'manual';
+      document.getElementById('hatch_library_base').hidden = manual;
+      document.getElementById('hatch_manual_base').hidden = !manual;
+      updateHatchOffsetWarning();
+    });
+    document.getElementById('hatch_create').addEventListener('click', async () => {
+      const baseMode = document.getElementById('hatch_base_mode').value;
+      const payload = {
+        name:document.getElementById('hatch_name').value.trim(),
+        material_name:document.getElementById('hatch_material').value.trim(),
+        interval_mm:document.getElementById('hatch_interval').value,
+        library_intent:'hatch_palette', base_mode:baseMode,
+      };
+      if (baseMode === 'library') {
+        payload.source_library_id = hatchSourceLibrary.value;
+        payload.source_entry_id = Number(hatchSourceEntry.value);
+      } else {
+        payload.base_type = document.getElementById('hatch_base_type').value;
+        payload.base_settings = {};
+        document.querySelectorAll('[data-hatch-base]').forEach(input => { if (input.value !== '') payload.base_settings[input.dataset.hatchBase] = Number(input.value); });
+      }
+      const response = await fetch('/account/material-libraries/new', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+      const data = await response.json();
+      if (!response.ok) return say(data.message || 'Could not create Hatch Palette.', true);
+      hatchModal.hidden = true; say('Hatch Palette created from the selected base setting.'); await load(); await showSettingsWorkspace(data.library.library_id);
     });
     const machineChromeAuthStatus = window.machineChrome && window.machineChrome.authStatus;
     (machineChromeAuthStatus || Promise.resolve({state:'unknown', signed_in:false})).then(data => { document.getElementById(data.signed_in ? 'manager' : 'sign_in_panel').hidden = false; if (data.signed_in) { load().then(() => showSettingsWorkspace()).catch(error => say(error.message, true)); loadHolographicRecipes().catch(error => { holographicRecipeNotice.textContent = error.message; }); } }).catch(() => { document.getElementById('sign_in_panel').hidden = false; });

@@ -1,3 +1,6 @@
 uploads/
 k8s/deployment.local.yaml
 __pycache__/
+.venv/
+.pytest_cache/
+*.py[cod]

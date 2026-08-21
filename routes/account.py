@@ -12,6 +12,10 @@ from flask import jsonify, request, send_file
 from werkzeug.utils import secure_filename
 
 from lib.lightburn import Lightburn
+from lib.material_library_template import (
+    DEFAULT_RASTERIZER_PALETTE,
+    build_hatch_palette_library,
+)
 
 from services import (
     ABSTRACT_FILTER_NAMES,
@@ -304,6 +308,63 @@ def apply_entry_update(root, entry_id, payload, creating=False):
             root.remove(material)
 
 
+def apply_hatch_plan(root, start_angle=0, angle_span=180,
+                     interval_start=None, interval_end=None):
+    """Evenly distribute hatch angles and optional intervals over palette entries."""
+    try:
+        start_angle = float(start_angle)
+        angle_span = float(angle_span)
+    except (TypeError, ValueError) as error:
+        raise ValueError("Start angle and angle span must be numbers.") from error
+    if not -360 <= start_angle <= 360 or not 0 < angle_span <= 360:
+        raise ValueError("Start angle must be between -360 and 360, and span above 0 through 360 degrees.")
+
+    if interval_start in (None, ""):
+        interval_start = interval_end = None
+    else:
+        try:
+            interval_start = float(interval_start)
+            interval_end = interval_start if interval_end in (None, "") else float(interval_end)
+        except (TypeError, ValueError) as error:
+            raise ValueError("Line intervals must be positive numbers.") from error
+        if not 0 < interval_start <= 100 or not 0 < interval_end <= 100:
+            raise ValueError("Line intervals must be above 0 and no greater than 100 mm.")
+
+    layer_order = {
+        name.casefold(): layer_index
+        for name, layer_index in DEFAULT_RASTERIZER_PALETTE
+    }
+    entries = all_xml_entries(root)
+    entries.sort(key=lambda item: (
+        layer_order.get(str(item[1].attrib.get("Desc", "")).strip().casefold(), 1000),
+        str(item[1].attrib.get("Desc", "")).casefold(),
+    ))
+    count = len(entries)
+    if not count:
+        raise ValueError("This Hatch Palette has no settings to plan.")
+
+    def set_value(cut, name, value):
+        field = cut.find(name)
+        if field is None:
+            field = ET.SubElement(cut, name)
+        field.attrib["Value"] = f"{value:.6f}".rstrip("0").rstrip(".")
+
+    for position, (_material, entry) in enumerate(entries):
+        cut = entry.find("CutSetting")
+        if cut is None:
+            cut = ET.SubElement(entry, "CutSetting")
+        angle = start_angle + position * angle_span / count
+        set_value(cut, "angle", angle)
+        if interval_start is not None:
+            fraction = position / max(count - 1, 1)
+            interval = interval_start + fraction * (interval_end - interval_start)
+            set_value(cut, "interval", interval)
+        for sublayer in cut.findall(".//SubLayer"):
+            set_value(sublayer, "angle", angle)
+            if interval_start is not None:
+                set_value(sublayer, "interval", interval)
+
+
 def mutate_library(user_id, library_id, callback):
     library = get_user_material_library(user_id, library_id)
     if not library:
@@ -580,14 +641,74 @@ def new_material_library():
         return jsonify({"status": "error", "message": "Sign in to create a Material Library."}), 401
     payload = request.get_json(silent=True) or {}
     name = str(payload.get("name", "")).strip()
+    library_intent = (
+        "hatch_palette"
+        if payload.get("library_intent") == "hatch_palette"
+        else "color_palette"
+    )
     if not name or len(name) > 160:
         return jsonify({"status": "error", "message": "Library names must be between 1 and 160 characters."}), 400
     with tempfile.NamedTemporaryFile(suffix=".clb", delete=False) as temp_file:
         temp_path = temp_file.name
     try:
-        ET.ElementTree(ET.Element("LightBurnLibrary")).write(temp_path, encoding="utf-8", xml_declaration=True)
-        library = save_user_material_library(user_id, temp_path, "", summary=library_entries(temp_path),
-                                             display_name=name, source_filename=f"{secure_filename(name) or 'material-library'}.clb")
+        material_name = str(payload.get("material_name", "")).strip()
+        if library_intent == "hatch_palette":
+            base_entry = None
+            base_settings = None
+            if payload.get("base_mode") == "library":
+                source_library = get_user_material_library(
+                    user_id, str(payload.get("source_library_id", "")).strip()
+                )
+                try:
+                    source_entry_id = int(payload.get("source_entry_id"))
+                except (TypeError, ValueError) as error:
+                    raise ValueError("Choose a base setting from a saved Material Library.") from error
+                if not source_library:
+                    raise ValueError("Choose an available base Material Library.")
+                with tempfile.NamedTemporaryFile(suffix=".clb", delete=False) as source_file:
+                    source_path = source_file.name
+                try:
+                    download_user_material_library(source_library, source_path)
+                    source_entries = all_xml_entries(ET.parse(source_path).getroot())
+                    if source_entry_id < 0 or source_entry_id >= len(source_entries):
+                        raise ValueError("The selected base setting no longer exists.")
+                    base_entry = source_entries[source_entry_id][1]
+                    # The template builder clones synchronously, but detach a
+                    # copy before its parsed source document is discarded.
+                    base_entry = deepcopy(base_entry)
+                finally:
+                    if os.path.exists(source_path):
+                        os.remove(source_path)
+            else:
+                supplied = payload.get("base_settings", {})
+                if not isinstance(supplied, dict):
+                    raise ValueError("Manual base settings must be an object.")
+                allowed = {
+                    "minPower", "maxPower", "maxPower2", "speed", "frequency",
+                    "QPulseWidth", "numPasses", "anglePerPass", "crossHatch",
+                    "bidir", "overscan", "overscanPercent", "dotTime", "dotSpacing",
+                    "doOutput", "hide",
+                }
+                base_settings = {
+                    str(key): value for key, value in supplied.items()
+                    if key in allowed and isinstance(value, (str, int, float, bool))
+                }
+                base_settings.setdefault("doOutput", 1)
+                base_settings.setdefault("hide", 0)
+            hatch_library = build_hatch_palette_library(
+                material_name or "hatch palette",
+                payload.get("interval_mm", 0.1),
+                base_entry=base_entry,
+                base_settings=base_settings,
+                base_type=("Offset" if payload.get("base_type") == "Offset" else "Scan"),
+            )
+            with open(temp_path, "wb") as output_file:
+                output_file.write(hatch_library.read())
+        else:
+            ET.ElementTree(ET.Element("LightBurnLibrary")).write(temp_path, encoding="utf-8", xml_declaration=True)
+        library = save_user_material_library(user_id, temp_path, material_name, summary=library_entries(temp_path),
+                                             display_name=name, source_filename=f"{secure_filename(name) or 'material-library'}.clb",
+                                             library_intent=library_intent)
         return jsonify({"status": "ok", "library": library}), 201
     except (RuntimeError, OSError, ValueError, ET.ParseError) as error:
         return jsonify({"status": "error", "message": str(error)}), 400
@@ -649,6 +770,7 @@ def material_libraries():
                 "lens_field_of_view": item.get("lens_field_of_view", ""),
                 "notes": item.get("notes", ""),
                 "laser_community": item.get("laser_community") is True,
+                "library_intent": item.get("library_intent", "color_palette"),
                 "summary": item.get("summary", {}),
             }
             for item in libraries
@@ -688,6 +810,7 @@ def material_library_detail(library_id):
                 payload.get("laser_source"), payload.get("lens_field_of_view"), payload.get("notes"),
                 laser_community,
                 community_summary,
+                payload.get("library_intent"),
             ):
                 return jsonify({"status": "error", "message": "That Material Library no longer exists."}), 404
             return jsonify({
@@ -696,6 +819,11 @@ def material_library_detail(library_id):
                 "lens_field_of_view": str(payload.get("lens_field_of_view") or "").strip(),
                 "notes": str(payload.get("notes") or "").strip(),
                 "laser_community": laser_community,
+                "library_intent": (
+                    ("hatch_palette" if payload.get("library_intent") == "hatch_palette" else "color_palette")
+                    if "library_intent" in payload
+                    else existing_library.get("library_intent", "color_palette")
+                ),
             })
         library = get_user_material_library(user_id, library_id)
         if not library:
@@ -704,7 +832,7 @@ def material_library_detail(library_id):
             temp_path = temp_file.name
         try:
             download_user_material_library(library, temp_path)
-            return jsonify({"status": "ok", "library": {"library_id": library_id, "name": library.get("name", "Material Library"), "laser_source": library.get("laser_source", ""), "lens_field_of_view": library.get("lens_field_of_view", ""), "notes": library.get("notes", ""), "laser_community": library.get("laser_community") is True, "summary": library_entries(temp_path, include_settings=True)}})
+            return jsonify({"status": "ok", "library": {"library_id": library_id, "name": library.get("name", "Material Library"), "laser_source": library.get("laser_source", ""), "lens_field_of_view": library.get("lens_field_of_view", ""), "notes": library.get("notes", ""), "laser_community": library.get("laser_community") is True, "library_intent": library.get("library_intent", "color_palette"), "summary": library_entries(temp_path, include_settings=True)}})
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
@@ -726,6 +854,34 @@ def edit_material_library_entry(library_id, entry_id=None):
         )
         if summary is None:
             return jsonify({"status": "error", "message": "That Material Library no longer exists."}), 404
+        return jsonify({"status": "ok", "summary": summary})
+    except (RuntimeError, OSError, ValueError, ET.ParseError) as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+
+@routes.route("/account/material-libraries/<library_id>/hatch-plan", methods=["POST"])
+def plan_material_library_hatches(library_id):
+    user_id = authenticated_user_id()
+    if not user_id:
+        return jsonify({"status": "error", "message": "Sign in to plan Hatch Palettes."}), 401
+    payload = request.get_json(silent=True) or {}
+    try:
+        library = get_user_material_library(user_id, library_id)
+        if not library:
+            return jsonify({"status": "error", "message": "That Material Library no longer exists."}), 404
+        if library.get("library_intent", "color_palette") != "hatch_palette":
+            raise ValueError("Change this library to a Hatch Palette before applying a hatch plan.")
+        summary = mutate_library(
+            user_id,
+            library_id,
+            lambda root: apply_hatch_plan(
+                root,
+                payload.get("start_angle", 0),
+                payload.get("angle_span", 180),
+                payload.get("interval_start"),
+                payload.get("interval_end"),
+            ),
+        )
         return jsonify({"status": "ok", "summary": summary})
     except (RuntimeError, OSError, ValueError, ET.ParseError) as error:
         return jsonify({"status": "error", "message": str(error)}), 400

@@ -1,10 +1,31 @@
 import unittest
 from xml.etree import ElementTree as ET
 
-from routes.account import apply_entry_update, material_coupon_project
+from routes.account import apply_entry_update, apply_hatch_plan, material_coupon_project
 
 
 class MaterialCouponTests(unittest.TestCase):
+    def test_hatch_plan_preserves_base_settings_and_offset_mode(self):
+        library = ET.fromstring("""
+            <LightBurnLibrary><Material name="steel">
+              <Entry Desc="Black"><CutSetting type="Offset"><speed Value="500"/><frequency Value="300000"/><interval Value="0.2"/><angle Value="90"/><SubLayer type="Offset"><speed Value="450"/><interval Value="0.3"/><angle Value="45"/></SubLayer></CutSetting></Entry>
+              <Entry Desc="Blue"><CutSetting type="Scan"><speed Value="500"/><frequency Value="300000"/><interval Value="0.2"/><angle Value="90"/></CutSetting></Entry>
+            </Material></LightBurnLibrary>
+        """)
+
+        apply_hatch_plan(library, start_angle=0, angle_span=180, interval_start=.1, interval_end=.2)
+
+        black, blue = library.findall("Material/Entry")
+        self.assertEqual("Offset", black.find("CutSetting").attrib["type"])
+        self.assertEqual("Scan", blue.find("CutSetting").attrib["type"])
+        self.assertEqual("500", black.find("CutSetting/speed").attrib["Value"])
+        self.assertEqual("450", black.find("CutSetting/SubLayer/speed").attrib["Value"])
+        self.assertEqual("0", black.find("CutSetting/angle").attrib["Value"])
+        self.assertEqual("0", black.find("CutSetting/SubLayer/angle").attrib["Value"])
+        self.assertEqual("90", blue.find("CutSetting/angle").attrib["Value"])
+        self.assertEqual("0.1", black.find("CutSetting/interval").attrib["Value"])
+        self.assertEqual("0.2", blue.find("CutSetting/interval").attrib["Value"])
+
     def test_inline_setting_update_preserves_unsubmitted_lightburn_fields(self):
         library = ET.fromstring("""
             <LightBurnLibrary><Material name="steel">
