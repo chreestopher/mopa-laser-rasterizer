@@ -984,6 +984,7 @@
       document.getElementById('history_session').value = historySession;
       sessionStorage.setItem('mopa-history-session', historySession);
       const materialInput = document.getElementById('material');
+      const savedMaterialNameInput = document.getElementById('saved_material_name');
       const materialLibraryInput = document.getElementById('material_settings');
       const guestMaterialLibraryRow = document.getElementById('guest_material_library_row');
       const guestMaterialLibraryInput = document.getElementById('guest_material_library');
@@ -1059,11 +1060,36 @@
         resumeAfterAuthentication();
       });
       const rememberedMaterialNote = document.getElementById('remembered_material_library');
+      let savedMaterialLibrariesById = new Map();
+      const showManualMaterialName = () => {
+        savedMaterialNameInput.hidden = true;
+        materialInput.hidden = false;
+      };
+      const showSavedLibraryMaterialNames = libraryId => {
+        const library = savedMaterialLibrariesById.get(libraryId);
+        const materialNames = (library?.summary?.material_names || [])
+          .map(name => String(name || '').trim()).filter(Boolean);
+        if (!materialNames.length) {
+          showManualMaterialName();
+          return;
+        }
+        savedMaterialNameInput.replaceChildren(...materialNames.map(name => new Option(name, name)));
+        const preferred = materialNames.includes(materialInput.value.trim())
+          ? materialInput.value.trim()
+          : materialNames[0];
+        savedMaterialNameInput.value = preferred;
+        materialInput.value = preferred;
+        materialInput.hidden = true;
+        savedMaterialNameInput.hidden = false;
+        sessionStorage.setItem(materialNameKey, preferred);
+        saveAccountPreferences();
+      };
       const loadSavedMaterialLibraries = () => fetch('/account/material-libraries', { credentials: 'same-origin' })
         .then(response => response.ok ? response.json() : null)
         .then(data => {
           const libraries = data?.libraries || [];
           if (!libraries.length) return;
+          savedMaterialLibrariesById = new Map(libraries.map(library => [library.library_id, library]));
           savedMaterialLibraryRow.hidden = false;
           libraries.forEach(library => {
             const option = document.createElement('option');
@@ -1107,29 +1133,37 @@
         sessionStorage.setItem(materialNameKey, materialInput.value.trim());
         saveAccountPreferences();
       });
+      savedMaterialNameInput.addEventListener('change', () => {
+        materialInput.value = savedMaterialNameInput.value;
+        sessionStorage.setItem(materialNameKey, materialInput.value.trim());
+        saveAccountPreferences();
+      });
       materialLibraryInput.addEventListener('change', () => {
         if (!materialLibraryInput.files.length) return;
         svgOnlyConfirmedInput.value = '0';
         savedMaterialLibraryInput.value = '';
         guestMaterialLibraryInput.value = '';
+        showManualMaterialName();
         const filename = materialLibraryInput.files[0].name;
         sessionStorage.setItem(materialLibraryKey, filename);
         rememberedMaterialNote.hidden = false;
         rememberedMaterialNote.textContent = `Current Material Library: ${filename}. This file will replace the remembered library.`;
       });
       savedMaterialLibraryInput.addEventListener('change', () => {
-        if (!savedMaterialLibraryInput.value) return;
+        if (!savedMaterialLibraryInput.value) { showManualMaterialName(); return; }
         svgOnlyConfirmedInput.value = '0';
         materialLibraryInput.value = '';
         guestMaterialLibraryInput.value = '';
         rememberedMaterialNote.hidden = false;
         rememberedMaterialNote.textContent = `Using saved Material Library: ${savedMaterialLibraryInput.selectedOptions[0].textContent}.`;
+        showSavedLibraryMaterialNames(savedMaterialLibraryInput.value);
       });
       guestMaterialLibraryInput.addEventListener('change', () => {
         if (!guestMaterialLibraryInput.value) return;
         svgOnlyConfirmedInput.value = '0';
         materialLibraryInput.value = '';
         savedMaterialLibraryInput.value = '';
+        showManualMaterialName();
         sessionStorage.setItem(guestMaterialLibraryKey, guestMaterialLibraryInput.value);
         rememberedMaterialNote.hidden = false;
         rememberedMaterialNote.textContent = `Using browser-session Material Library: ${guestMaterialLibraryInput.selectedOptions[0].textContent}.`;

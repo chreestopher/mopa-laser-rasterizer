@@ -71,6 +71,15 @@ class HolographicAuthenticationCoverageTests(unittest.TestCase):
         self.assertIn("/browser-material-libraries", rasterizer_template)
         self.assertNotIn("guest_material_library_id", vault_template)
 
+    def test_saved_rasterizer_library_populates_its_material_name_selector(self):
+        template = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+
+        self.assertIn('id="saved_material_name"', template)
+        self.assertIn("library?.summary?.material_names", template)
+        self.assertIn("showSavedLibraryMaterialNames(savedMaterialLibraryInput.value)", template)
+        self.assertIn("materialInput.value = savedMaterialNameInput.value", template)
+        self.assertIn("showManualMaterialName();", template)
+
     def test_holographic_forms_offer_upload_or_existing_library_to_every_user(self):
         template = (
             ROOT / "templates" / "holographic_etching.html"
