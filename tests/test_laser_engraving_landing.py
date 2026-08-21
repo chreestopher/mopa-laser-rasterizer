@@ -21,6 +21,8 @@ class LaserEngravingLandingCoverageTests(unittest.TestCase):
         self.assertIn('/docs/laser-compatibility', page)
         self.assertIn("Hatch Palette settings require LightBurn mode", page)
         self.assertIn("SVG-only mode does not apply Hatch Palette angles", page)
+        self.assertIn("Each Entry Description must match its Rasterizer swatch name", page)
+        self.assertIn("Members:</strong> create and retain Hatch Palettes", page)
 
 
 if __name__ == "__main__":
