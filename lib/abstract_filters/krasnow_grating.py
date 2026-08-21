@@ -274,6 +274,12 @@ def _patch_lines(region, patch, angle_degrees, spacing):
 
 def remap_layers(processed_layers, target_colors, settings):
     """Build open gratings from non-Black source layers only."""
+    progress = settings.get("_progress_logger")
+
+    def log(message):
+        if callable(progress):
+            progress(message)
+
     bounds = settings.get("_canvas_bounds")
     if not bounds or len(bounds) != 4:
         nonempty = [geometry for geometry in processed_layers.values() if not geometry.is_empty]
@@ -292,10 +298,11 @@ def remap_layers(processed_layers, target_colors, settings):
     line_spacing = number(settings.get("line_spacing_mm"), .06, .01, .5) / scale_factor
     pieces = {swatch: [] for swatch in grating_swatches}
 
+    layer_plans = []
+    total_patches = 0
     for source_hex, geometry in processed_layers.items():
         if geometry.is_empty or str(source_hex).upper() == "#000000":
             continue
-
         start_x = max(
             min_x,
             math.floor((geometry.bounds[0] - min_x) / patch_size) * patch_size + min_x,
@@ -304,10 +311,30 @@ def remap_layers(processed_layers, target_colors, settings):
             min_y,
             math.floor((geometry.bounds[1] - min_y) / patch_size) * patch_size + min_y,
         )
+        stop_x = min(geometry.bounds[2], max_x)
+        stop_y = min(geometry.bounds[3], max_y)
+        x_count = max(0, math.ceil((stop_x - start_x) / patch_size - 1e-12))
+        y_count = max(0, math.ceil((stop_y - start_y) / patch_size - 1e-12))
+        total_patches += x_count * y_count
+        layer_plans.append((source_hex, geometry, start_x, start_y, stop_x, stop_y))
+
+    log(
+        f"[Krasnow mapping 1/3] DONE: planned {total_patches} candidate "
+        f"patches across {len(layer_plans)} non-Black source layers."
+    )
+    log(
+        f"[Krasnow mapping 2/3] START: clipping patches and generating "
+        f"open grating paths for {total_patches} candidate patches."
+    )
+    processed_patches = 0
+    report_interval = max(1, math.ceil(total_patches / 20))
+    next_report = report_interval
+
+    for source_hex, geometry, start_x, start_y, stop_x, stop_y in layer_plans:
         x = start_x
-        while x < min(geometry.bounds[2], max_x):
+        while x < stop_x:
             y = start_y
-            while y < min(geometry.bounds[3], max_y):
+            while y < stop_y:
                 patch = box(x, y, min(x + patch_size, max_x), min(y + patch_size, max_y))
                 region = geometry.intersection(patch)
                 if not region.is_empty:
@@ -325,11 +352,44 @@ def remap_layers(processed_layers, target_colors, settings):
                     pieces[grating_swatches[level]].extend(
                         _patch_lines(region, patch, angle, line_spacing)
                     )
+                processed_patches += 1
+                if processed_patches >= next_report or processed_patches == total_patches:
+                    percent = round(processed_patches / max(total_patches, 1) * 100)
+                    log(
+                        f"[Krasnow mapping 2/3] PROGRESS: processed "
+                        f"{processed_patches}/{total_patches} candidate patches ({percent}%)."
+                    )
+                    next_report += report_interval
                 y += patch_size
             x += patch_size
 
+    segment_count = sum(len(swatch_pieces) for swatch_pieces in pieces.values())
+    populated = [
+        (swatch, swatch_pieces)
+        for swatch, swatch_pieces in pieces.items()
+        if swatch_pieces
+    ]
+    log(
+        f"[Krasnow mapping 2/3] DONE: generated {segment_count} open path "
+        f"segments across {len(populated)} carrier layers."
+    )
+    log(
+        f"[Krasnow mapping 3/3] START: merging path segments for "
+        f"{len(populated)} populated carrier layers."
+    )
     remapped = {}
-    for swatch, swatch_pieces in pieces.items():
-        if swatch_pieces:
-            remapped[swatch] = unary_union(swatch_pieces)
+    for index, (swatch, swatch_pieces) in enumerate(populated, 1):
+        log(
+            f"[Krasnow mapping 3/3] Carrier {index}/{len(populated)} START: "
+            f"merging {len(swatch_pieces)} segments for {swatch}."
+        )
+        remapped[swatch] = unary_union(swatch_pieces)
+        log(
+            f"[Krasnow mapping 3/3] Carrier {index}/{len(populated)} DONE: "
+            f"merged {len(swatch_pieces)} segments for {swatch}."
+        )
+    log(
+        f"[Krasnow mapping 3/3] DONE: produced {len(remapped)} calibrated "
+        "carrier layers."
+    )
     return remapped

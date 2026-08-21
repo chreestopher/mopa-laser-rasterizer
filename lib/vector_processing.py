@@ -1223,6 +1223,8 @@ def process_color_layers(
     remap_layers = getattr(filter_module, "remap_layers", None)
     if callable(remap_layers):
         printLogMessage(f"Applying cross-layer mapping for abstract filter '{filter_name}'...")
+        if filter_name == "krasnow_grating":
+            settings["_progress_logger"] = printLogMessage
         processed_layers = remap_layers(processed_layers, target_colors, settings)
         printLogMessage(
             f"Cross-layer mapping produced {len(processed_layers)} calibrated output layers."

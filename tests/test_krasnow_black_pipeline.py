@@ -52,6 +52,34 @@ def test_krasnow_does_not_build_gratings_from_black_geometry():
     assert remapped == {}
 
 
+def test_krasnow_cross_layer_mapping_reports_internal_progress():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+    messages = []
+
+    remapped = krasnow.remap_layers(
+        processed_layers={"#0000FF": box(0, 0, 2, 2)},
+        target_colors={
+            "#000000": (0, 0, "Black"),
+            "#0000FF": (240, 1, "Blue"),
+        },
+        settings={
+            "_canvas_bounds": (0, 0, 2, 2),
+            "_scale_factor": 1,
+            "_progress_logger": messages.append,
+            "patch_size_mm": 1,
+            "line_spacing_mm": 0.25,
+            "angle_min": 0,
+            "angle_max": 0,
+        },
+    )
+
+    assert remapped
+    assert any("[Krasnow mapping 1/3] DONE" in message for message in messages)
+    assert any("[Krasnow mapping 2/3] PROGRESS" in message for message in messages)
+    assert any("[Krasnow mapping 3/3] Carrier 1/1 START" in message for message in messages)
+    assert any("[Krasnow mapping 3/3] DONE" in message for message in messages)
+
+
 def test_krasnow_black_mask_replaces_only_the_black_layer():
     blue = box(0, 0, 1, 1).boundary
     old_black = box(10, 10, 11, 11)
