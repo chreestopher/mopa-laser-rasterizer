@@ -51,6 +51,20 @@ def laser_engraving_tool():
     )
 
 
+@routes.route("/founding-sponsors")
+def founding_sponsors():
+    """Recognize the manufacturers supporting the project's early growth."""
+    # Add confirmed sponsors here. Keeping the records structured makes it
+    # straightforward to add logos, links, supplied libraries, and materials
+    # without redesigning the page.
+    sponsors = []
+    return render_template(
+        "founding_sponsors.html",
+        canonical=f"{_public_url()}/founding-sponsors",
+        sponsors=sponsors,
+    )
+
+
 @routes.route("/login")
 def login():
     """ALB authenticates this route before returning users to the app home."""

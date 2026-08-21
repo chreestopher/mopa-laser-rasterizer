@@ -963,7 +963,7 @@ def _canonical(path):
 
 @routes.route("/sitemap.xml")
 def sitemap():
-    paths = ["/", "/laser-engraving-tool", "/color-laser-engraving-tool", "/holographic-etching", "/color-discovery", "/material-libraries", "/community-set", "/docs"]
+    paths = ["/", "/laser-engraving-tool", "/color-laser-engraving-tool", "/founding-sponsors", "/holographic-etching", "/color-discovery", "/material-libraries", "/community-set", "/docs"]
     paths.extend(f"/docs/{slug}" for slug in DOCS)
     body = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
     body += "\n".join(f"  <url><loc>{_canonical(path)}</loc></url>" for path in paths)
