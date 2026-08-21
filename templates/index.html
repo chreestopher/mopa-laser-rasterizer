@@ -52,6 +52,8 @@
     border-bottom: 1px solid #e2e8f0;
     padding-bottom: 24px;
   }
+  .palette-actions { display:flex; justify-content:flex-end; margin:-8px 0 12px; }
+  .palette-actions button { width:auto; margin:0; padding:7px 11px; font-size:.72rem; }
   .color-grid {
     display: grid;
     grid-template-columns: repeat(8, minmax(0, 1fr));
@@ -508,6 +510,7 @@
       <div class="palette-section">
         <label style="font-size: 0.9rem; font-weight: 600;">5. Tune your engraving color palette</label>
         <h3>All available colors are included to start. Click a swatch to exclude it from the artwork. For settings, either keep the default color names and use those same names in your Material Library, or click a color name to retitle it to your library’s exact Entry Description or cut-setting name. Presto: the matching Material Library setting is copied onto that color’s LightBurn layer. Nearby colors are reassigned to the closest remaining engraving color, so you can experiment with confidence.</h3>
+        <div class="palette-actions"><button type="button" id="reset_swatches" title="Restore official swatch names and the default enabled palette">Reset swatches</button></div>
         <div class="color-grid">
           <div class="color-card"><span class="color-name">black</span><div class="color-square" style="background-color: #000000;"></div><span class="color-hex">#000000</span></div>
           <div class="color-card"><span class="color-name">blue</span><div class="color-square" style="background-color: #0000FF;"></div><span class="color-hex">#0000FF</span></div>
@@ -1308,6 +1311,13 @@
     const colorNameOverrides = document.getElementById('color_name_overrides');
     const paletteCards = Array.from(document.querySelectorAll('.color-card'));
     const paletteGrid = document.querySelector('.color-grid');
+    const defaultPaletteNames = new Map(paletteCards.map(card => [
+      card.querySelector('.color-hex').textContent.trim().toUpperCase(),
+      card.querySelector('.color-name').textContent.trim()
+    ]));
+    const defaultSelectedColorHexes = new Set(paletteCards
+      .filter(card => !card.hasAttribute('data-default-excluded'))
+      .map(card => card.querySelector('.color-hex').textContent.trim().toUpperCase()));
     const selectedColorHexes = new Set(paletteCards
       .filter(card => !card.hasAttribute('data-default-excluded'))
       .map(card => card.querySelector('.color-hex').textContent.trim().toUpperCase()));
@@ -1355,6 +1365,16 @@
         }
         updatePaletteFields();
       });
+    });
+    document.getElementById('reset_swatches').addEventListener('click', () => {
+      selectedColorHexes.clear();
+      defaultSelectedColorHexes.forEach(hex => selectedColorHexes.add(hex));
+      paletteCards.forEach(card => {
+        const hex = card.querySelector('.color-hex').textContent.trim().toUpperCase();
+        card.querySelector('.color-name').textContent = defaultPaletteNames.get(hex) || hex;
+        card.querySelector('.color-square').classList.toggle('selected', !selectedColorHexes.has(hex));
+      });
+      updatePaletteFields();
     });
     updatePaletteFields();
   </script>
