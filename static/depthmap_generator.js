@@ -393,18 +393,22 @@ function drawRelief() {
   const context = reliefCanvas.getContext("2d");
   const imageData = context.createImageData(outputWidth, outputHeight);
   const light = [-.45, -.55, .7];
+  const decodeProximity = value => invertControl.checked ? 1 - value : value;
   for (let y = 0; y < outputHeight; y += 1) {
     for (let x = 0; x < outputWidth; x += 1) {
       const index = y * outputWidth + x;
-      const left = outputDepth[y * outputWidth + Math.max(0, x - 1)];
-      const right = outputDepth[y * outputWidth + Math.min(outputWidth - 1, x + 1)];
-      const up = outputDepth[Math.max(0, y - 1) * outputWidth + x];
-      const down = outputDepth[Math.min(outputHeight - 1, y + 1) * outputWidth + x];
+      const left = decodeProximity(outputDepth[y * outputWidth + Math.max(0, x - 1)]);
+      const right = decodeProximity(outputDepth[y * outputWidth + Math.min(outputWidth - 1, x + 1)]);
+      const up = decodeProximity(outputDepth[Math.max(0, y - 1) * outputWidth + x]);
+      const down = decodeProximity(outputDepth[Math.min(outputHeight - 1, y + 1) * outputWidth + x]);
       const nx = (left - right) * 4;
       const ny = (up - down) * 4;
       const length = Math.hypot(nx, ny, 1);
       const shade = Math.max(0, (nx * light[0] + ny * light[1] + light[2]) / length);
-      const value = Math.round((.18 + shade * .65 + outputDepth[index] * .17) * 255);
+      // Preserve the grayscale map as the dominant visual signal. Lighting
+      // only modulates it slightly so relief highlights cannot imply a
+      // contradictory depth ordering.
+      const value = Math.round(outputDepth[index] * (.8 + shade * .2) * 255);
       const offset = index * 4;
       imageData.data[offset] = Math.round(value * .78);
       imageData.data[offset + 1] = Math.round(value * .9);

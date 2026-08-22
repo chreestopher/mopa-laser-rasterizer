@@ -55,6 +55,8 @@ class DepthMapGeneratorCoverageTests(unittest.TestCase):
         self.assertIn("function createColorMatchMap()", script)
         self.assertIn("function applyColorGuidance()", script)
         self.assertIn("function boxBlur(", script)
+        self.assertIn("outputDepth[index] * (.8 + shade * .2)", script)
+        self.assertIn("invertControl.checked ? 1 - value : value", script)
         self.assertIn("async function loadSavedDepthPalettes()", script)
         self.assertIn("function selectDepthPalette()", script)
         self.assertIn('fetch("/account/depth-palettes"', script)
