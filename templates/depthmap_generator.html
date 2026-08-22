@@ -1,0 +1,58 @@
+{% from "_machine_chrome.html" import machine_chrome %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Experimental AI Depth Map Generator | MOPA Laser Rasterizer</title>
+  <meta name="description" content="Experimentally estimate relative depth from one image in your browser and export an adjustable 8-bit or 16-bit grayscale depth map.">
+  <link rel="canonical" href="{{ canonical }}">
+  <meta name="robots" content="noindex,nofollow">
+  <style>
+    :root{--ink:#e4e3cf;--green:#8ee474;--line:#566251;--warn:#e4b45e}*{box-sizing:border-box}html{min-height:100%;overflow-x:hidden;background:#11130f}body{max-width:1400px;margin:0;padding:38px;color:var(--ink);border:3px solid #777864;border-radius:30px;background:repeating-linear-gradient(90deg,rgba(255,255,255,.014) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 5%,#505443,#363a30 42%,#24271f 100%);box-shadow:inset 0 0 0 5px #1b1e18,inset 0 0 60px #10120e,0 0 0 1px #9a9a7e,0 20px 50px #000;font:16px/1.55 system-ui,sans-serif}main{min-width:0;max-width:1180px;margin:0 auto}.panel{margin:24px 0;padding:24px;border:1px solid var(--line);border-radius:12px;background:rgba(19,24,18,.84)}.hero{text-align:center}.eyebrow,.status-label{color:var(--green);font:700 .8rem "Courier New",monospace;letter-spacing:.12em;text-transform:uppercase}.hero h1{margin:.15em 0;font:500 clamp(2.3rem,7vw,5rem)/1 Impact,"Arial Narrow",system-ui,sans-serif;text-transform:uppercase;text-shadow:0 3px #000}.hero p{max-width:800px;margin:12px auto}.experimental{display:inline-block;padding:7px 12px;border:1px solid var(--warn);border-radius:5px;color:#ffe2a7;background:#2b2112;font:700 .78rem "Courier New",monospace;text-transform:uppercase}.upload{display:grid;place-items:center;min-height:170px;padding:24px;border:2px dashed #71806b;border-radius:10px;text-align:center;background:#111610}.upload.is-dragging{border-color:var(--green);background:#172116}.upload input{max-width:100%}.actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:16px}.button{min-height:44px;padding:9px 16px;border:2px solid #8ba584;border-radius:7px;color:#f2ffe9;background:linear-gradient(#587150,#30472d);box-shadow:inset 0 1px rgba(255,255,255,.16),0 4px 0 #101a0f;font:700 .76rem "Courier New",monospace;letter-spacing:.05em;text-transform:uppercase;cursor:pointer}.button.secondary{border-color:#6d725d;background:linear-gradient(#41483c,#282e25)}.button:disabled{cursor:not-allowed;filter:grayscale(1);opacity:.48}.progress{width:100%;height:14px;margin-top:16px;accent-color:#70c95f}.workspace{display:grid;grid-template-columns:minmax(240px,.7fr) minmax(0,2fr);gap:20px}.controls{display:grid;align-content:start;gap:15px}.control label{display:flex;justify-content:space-between;gap:10px;font-weight:700}.control input[type=range]{width:100%;accent-color:var(--green)}.previews{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}.preview-card{min-width:0;padding:12px;border:1px solid #4c5948;border-radius:8px;background:#111510}.preview-card h3{margin:0 0 9px;font:700 .78rem "Courier New",monospace;letter-spacing:.06em;text-transform:uppercase}.preview-card canvas,.preview-card img{display:block;width:100%;height:auto;min-height:150px;border-radius:4px;background:repeating-conic-gradient(#242820 0 25%,#1a1d17 0 50%) 0/20px 20px;object-fit:contain}.note{border-left:5px solid var(--warn)}.error{color:#ffaaa0}.fine-print{color:#c5c7b5;font-size:.91rem}body.light-machine{--ink:#20221e;color:var(--ink);border-color:#777974;background:radial-gradient(circle at 50% 5%,#f0f0e9,#c8c9c3 48%,#9fa19c 100%)}body.light-machine .panel{color:#20221e;border-color:#858780;background:rgba(225,226,220,.93)}body.light-machine .hero h1{text-shadow:0 1px #fff}body.light-machine .upload,body.light-machine .preview-card{border-color:#858780;background:#d9dbd4}@media(min-width:900px) and (hover:hover){body{width:125vw;max-width:none;zoom:.8}}@media(max-width:900px){.workspace{grid-template-columns:minmax(0,1fr)}.previews{grid-template-columns:minmax(0,1fr)}}@media(max-width:700px){body{width:auto;max-width:none;padding:16px}.panel{padding:18px}}
+  </style>
+  <link rel="stylesheet" href="/static/machine_chrome.css?v=3">
+</head>
+<body>
+  {{ machine_chrome('', 'EXPERIMENTAL DEPTH ANALYSIS · SERIES 79', false) }}
+  <main>
+    <section class="panel hero">
+      <p class="eyebrow">Client-side monocular depth estimation</p>
+      <h1>Depth Map Generator</h1>
+      <p>Estimate relative scene depth from a single image, inspect a relief-style projection, adjust the usable range, and export grayscale depth maps for further preparation.</p>
+      <span class="experimental">Experimental - not yet released</span>
+    </section>
+
+    <section class="panel">
+      <div id="depth_drop_zone" class="upload">
+        <div><h2>Choose an image</h2><p>Drop a PNG, JPEG, WebP, BMP, or TIFF here, or select one from your device.</p><input id="depth_input" type="file" accept="image/png,image/jpeg,image/webp,image/bmp,image/tiff"></div>
+      </div>
+      <div class="actions"><button id="depth_generate" class="button" type="button" disabled>Generate depth map</button><button id="depth_reset" class="button secondary" type="button" disabled>Reset</button></div>
+      <progress id="depth_progress" class="progress" max="100" value="0" hidden></progress>
+      <p id="depth_status" class="status-label" role="status" aria-live="polite">Waiting for an image.</p>
+      <p id="depth_error" class="error" role="alert" hidden></p>
+    </section>
+
+    <section id="depth_workspace" class="panel workspace" hidden>
+      <div class="controls">
+        <h2>Depth adjustments</h2>
+        <div class="control"><label for="depth_near">Near clip <output id="depth_near_value">0%</output></label><input id="depth_near" type="range" min="0" max="95" value="0"></div>
+        <div class="control"><label for="depth_far">Far clip <output id="depth_far_value">100%</output></label><input id="depth_far" type="range" min="5" max="100" value="100"></div>
+        <div class="control"><label for="depth_gamma">Depth curve <output id="depth_gamma_value">1.00</output></label><input id="depth_gamma" type="range" min="25" max="300" value="100"></div>
+        <label><input id="depth_invert" type="checkbox"> Invert depth (black becomes near)</label>
+        <div class="actions"><button id="depth_export_8" class="button" type="button">Download 8-bit PNG</button><button id="depth_export_16" class="button secondary" type="button">Download 16-bit PNG</button></div>
+        <p class="fine-print">An 8-bit image contains 256 gray levels. The 16-bit export contains 65,536 levels and preserves smoother gradients for compatible downstream software.</p>
+      </div>
+      <div class="previews">
+        <div class="preview-card"><h3>Source image</h3><canvas id="depth_source_canvas"></canvas></div>
+        <div class="preview-card"><h3>Grayscale depth</h3><canvas id="depth_map_canvas"></canvas></div>
+        <div class="preview-card"><h3>Relief projection</h3><canvas id="depth_relief_canvas"></canvas></div>
+        <div class="preview-card"><h3>Depth convention</h3><canvas id="depth_legend_canvas" width="640" height="360"></canvas></div>
+      </div>
+    </section>
+
+    <aside class="panel note"><strong>Important limitation:</strong> a single photograph cannot provide measured physical depth. The model infers relative depth from visual cues and can misread reflections, transparency, shadows, abstract artwork, or unfamiliar objects. Always inspect and edit the result before using it for relief engraving. The uploaded image is processed locally; the browser downloads the AI model from Hugging Face when first used.</aside>
+  </main>
+  <script type="module" src="/static/depthmap_generator.js?v=1"></script>
+</body>
+</html>

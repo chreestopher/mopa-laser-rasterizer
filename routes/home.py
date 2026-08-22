@@ -65,6 +65,15 @@ def founding_sponsors():
     )
 
 
+@routes.route("/depthmap-generator")
+def depthmap_generator():
+    """Unlisted, client-side experimental depth-map workspace."""
+    return render_template(
+        "depthmap_generator.html",
+        canonical=f"{_public_url()}/depthmap-generator",
+    )
+
+
 @routes.route("/login")
 def login():
     """ALB authenticates this route before returning users to the app home."""

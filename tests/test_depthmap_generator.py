@@ -1,0 +1,29 @@
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class DepthMapGeneratorCoverageTests(unittest.TestCase):
+    def test_unlisted_depthmap_page_uses_client_side_inference(self):
+        home = (ROOT / "routes" / "home.py").read_text(encoding="utf-8")
+        docs = (ROOT / "routes" / "docs.py").read_text(encoding="utf-8")
+        chrome = (ROOT / "templates" / "_machine_chrome.html").read_text(encoding="utf-8")
+        page = (ROOT / "templates" / "depthmap_generator.html").read_text(encoding="utf-8")
+        script = (ROOT / "static" / "depthmap_generator.js").read_text(encoding="utf-8")
+
+        self.assertIn('@routes.route("/depthmap-generator")', home)
+        self.assertIn('"depthmap_generator.html"', home)
+        self.assertNotIn('"/depthmap-generator"', docs)
+        self.assertNotIn('href="/depthmap-generator"', chrome)
+        self.assertIn('content="noindex,nofollow"', page)
+        self.assertIn('src="/static/depthmap_generator.js?v=1"', page)
+        self.assertIn('pipeline("depth-estimation"', script)
+        self.assertIn('options.device = "webgpu"', script)
+        self.assertIn('CompressionStream("deflate")', script)
+        self.assertIn('Download 16-bit PNG', page)
+
+
+if __name__ == "__main__":
+    unittest.main()
