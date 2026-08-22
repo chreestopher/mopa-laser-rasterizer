@@ -51,6 +51,14 @@ def laser_engraving_tool():
     )
 
 
+@routes.route("/depthmap-relief-engraving-tool")
+def depthmap_relief_engraving_tool():
+    return render_template(
+        "depthmap_relief_engraving_tool.html",
+        canonical=f"{_public_url()}/depthmap-relief-engraving-tool",
+    )
+
+
 @routes.route("/founding-sponsors")
 def founding_sponsors():
     """Recognize the manufacturers supporting the project's early growth."""

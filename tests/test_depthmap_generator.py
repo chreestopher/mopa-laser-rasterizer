@@ -6,6 +6,29 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DepthMapGeneratorCoverageTests(unittest.TestCase):
+    def test_depthmap_landing_and_complete_documentation_are_published(self):
+        home = (ROOT / "routes" / "home.py").read_text(encoding="utf-8")
+        docs = (ROOT / "routes" / "docs.py").read_text(encoding="utf-8")
+        landing = (ROOT / "templates" / "depthmap_relief_engraving_tool.html").read_text(encoding="utf-8")
+        lab = (ROOT / "templates" / "depthmap_generator.html").read_text(encoding="utf-8")
+
+        self.assertIn('@routes.route("/depthmap-relief-engraving-tool")', home)
+        self.assertIn('"depthmap_relief_engraving_tool.html"', home)
+        self.assertIn('"/depthmap-relief-engraving-tool"', docs)
+        self.assertIn("Depthmap Generator for Relief Laser Engraving", landing)
+        self.assertIn('href="/depthmap-generator"', landing)
+        self.assertIn('href="/docs/depthmap-generator"', landing)
+        self.assertIn("machine_chrome('experimental'", landing)
+        self.assertIn('href="/docs/depthmap-generator"', lab)
+        self.assertIn("Experimental - active development", lab)
+        for slug in (
+            "depthmap-generator", "depthmap-workflow", "depth-palettes",
+            "depthmap-adjustments", "depthmap-manual-editing", "depthmap-export",
+            "depthmap-limitations",
+        ):
+            self.assertIn(f'"{slug}": _page(', docs)
+        self.assertIn('("Depthmap / Relief Engraving Lab", ["depthmap-generator"', docs)
+
     def test_experimental_laboratories_hub_links_both_machine_shell_labs(self):
         home = (ROOT / "routes" / "home.py").read_text(encoding="utf-8")
         chrome = (ROOT / "templates" / "_machine_chrome.html").read_text(encoding="utf-8")

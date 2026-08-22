@@ -901,6 +901,93 @@ DOCS.update({
         ], ["laser-engraving-parameters", "all-about-line-interval", "all-about-engraving-passes", "diffraction-gratings"]),
 })
 
+DOCS.update({
+    "depthmap-generator": _page(
+        "Depthmap Generator and Relief Engraving Lab",
+        "Complete guide to initializing, correcting, previewing, and exporting relative grayscale depthmaps for relief laser engraving preparation.",
+        "The Depthmap/Relief Engraving Lab turns one flat image into an editable relative-depth starting point. It combines an in-browser depth model, optional source-color guidance, manual correction tools, proportional sizing, relief visualization, and 8-bit or 16-bit grayscale export.",
+        [
+            ("Open the laboratory", [{"before": "Use the public ", "link_text": "Depthmap/Relief Engraving Lab", "path": "/depthmap-generator", "after": " in a desktop or laptop browser."}, {"before": "For a shorter introduction, visit the ", "link_text": "Depthmap Generator landing page", "path": "/depthmap-relief-engraving-tool", "after": "."}]),
+            ("What the result represents", ["The grayscale output represents inferred relative depth. By default, darker areas are farther and lighter areas are closer. Invert Depth reverses that convention. The numbers do not represent millimeters, and equal grayscale changes do not guarantee equal physical engraving depth.", "The model estimates visible form from perspective, boundaries, texture, shading, familiar objects, and other image cues. It cannot see hidden surfaces or recover measured three-dimensional geometry from one photograph."]),
+            ("The five-stage workflow", ["Choose and inspect a source image, initialize the depthmap base, optionally guide selected source colors with a saved Depth Palette, adjust and paint the map, then review both previews and export the appropriate PNG.", "The process is iterative. Color guidance, clipping, curve, inversion, dimensions, border padding, and brush corrections all rerender the grayscale map and relief projection."]),
+            ("Processing stays in the browser", ["The selected photograph is decoded and processed locally rather than uploaded as a Rasterizer job. The browser downloads the depth model when needed. This distributes processing to the user's device but requires substantial local memory and CPU or WebGPU resources."]),
+            ("What the Lab does not do", ["It does not generate laser power, speed, frequency, interval, pass, focus, or material-removal settings. It does not send a job to a laser, create measured 3D geometry, guarantee a safe process, or predict the exact relief that a particular machine and material will produce."]),
+        ], ["depthmap-workflow", "depth-palettes", "depthmap-adjustments", "depthmap-manual-editing", "depthmap-export", "depthmap-limitations"]),
+    "depthmap-workflow": _page(
+        "Depthmap Generator Workflow",
+        "Step-by-step workflow for moving from a source image to a reviewed grayscale depthmap and relief engraving input.",
+        "A dependable result comes from treating initialization as a draft and moving deliberately through source review, optional guidance, correction, and export.",
+        [
+            ("1. Choose a source image", ["Load a PNG, JPEG, WebP, BMP, or TIFF. The source preview appears below the file chooser so orientation, crop, composition, and visible artifacts can be checked before processing.", "Clean, well-separated forms with meaningful boundaries and consistent lighting are easier to interpret. Reflections, transparency, heavy shadows, flat graphic art, and ambiguous overlaps often require more correction."]),
+            ("2. Initialize the depthmap", ["Press Initialize Depthmap. The first run may spend several minutes downloading and preparing the client-side model. Processing status and progress report model loading and estimation separately from file-loading messages.", "The initial grayscale base appears beneath processing status. This read-only copy is capped at 1024 pixels on its longest side for display efficiency; it mirrors the full editable output rather than limiting export resolution."]),
+            ("3. Apply optional color guidance", ["Choose a saved Depth Palette when source colors contain useful depth meaning that perspective alone may not communicate. Toggle individual swatches to decide which configured colors influence the result. No Depth Palette is required.", "Guidance can be selected before or after initialization. Changing the palette, enabled swatches, or boundary feathering rerenders an initialized map."]),
+            ("4. Adjust and correct", ["Use Near Clip, Far Clip, Depth Curve, and Invert Depth to organize the tonal range. Set proportional artwork dimensions, add an optional far-depth perimeter, and paint explicit depth where interpretation is wrong.", "Inspect the grayscale preview and relief projection together. The grayscale is the data; the relief projection adds lighting only to make slopes easier to inspect."]),
+            ("5. Export and test", ["Download an 8-bit or 16-bit grayscale PNG. Import it into the software used to prepare the laser process, establish a tested grayscale-to-removal strategy, and run a small material test before valuable work."]),
+        ], ["depthmap-generator", "depth-palettes", "depthmap-adjustments", "depthmap-manual-editing", "depthmap-export"]),
+    "depth-palettes": _page(
+        "Using Depth Palettes for Color-Guided Depth",
+        "Create Depth Palettes in Material Vault and use source-image colors to influence relative depth without replacing perspective estimation completely.",
+        "Depth Palettes provide an interpretation layer for artwork whose colors communicate form even when photographic perspective cues are weak or absent.",
+        [
+            ("Where Depth Palettes are created", [{"before": "Depth Palette values are created and edited only in ", "link_text": "Material Vault", "path": "/material-libraries", "after": ". The Depthmap Generator selects saved palettes and toggles their swatches, but it does not edit assigned depth or influence values."}]),
+            ("Depth and influence", ["Each recognized Rasterizer swatch stores a target from farther to closer and an influence percentage. At zero influence, matched pixels follow the initialized perspective estimate. At full influence, they move to the assigned target. Intermediate values blend the two.", "Neutral depth is the midpoint. Values below it are labeled farther; values above it are labeled closer. Enabled controls whether that swatch is available when the palette is selected."]),
+            ("Color matching", ["The Lab compares source colors with recognized palette colors and builds a color-match map. Boundary feathering smooths transitions between guided regions and surrounding perspective depth. Higher feathering can reduce hard seams but may spread assigned depth beyond a sharp boundary."]),
+            ("Selecting swatches in a job", ["With no palette selected, compact swatches show available color identities but cannot be toggled. After selecting a palette, configured swatches expand into labeled controls and can be included or excluded for the current image without changing the saved palette."]),
+            ("When guidance helps", ["Use color guidance for illustrations, diagrams, synthetic artwork, game assets, painted objects, or false-color images where hue has intentional depth meaning. Use moderate influence when perspective is mostly correct and color should only nudge ambiguous regions."]),
+            ("When guidance hurts", ["Photographic color often describes material or lighting rather than depth. A red object can exist at many distances. Avoid high influence unless colors genuinely encode intended form, and inspect boundaries for halos or flattened detail."]),
+        ], ["material-vault", "depthmap-generator", "depthmap-workflow", "depthmap-adjustments"]),
+    "depthmap-adjustments": _page(
+        "Depthmap Adjustment Controls",
+        "Reference for depth clipping, curve, inversion, linked dimensions, far-depth border padding, grayscale preview, and relief projection.",
+        "Adjustment controls reshape the initialized relative-depth field. They do not add measured information, but they can make the available range more useful and prepare a predictable image canvas.",
+        [
+            ("Near Clip and Far Clip", ["Clipping remaps a selected portion of the initialized range across the full grayscale output. The controls cannot cross, so a usable interval remains.", "Tighter clipping increases contrast between retained depths but discards distinctions outside the selected range. Watch for broad areas collapsing to solid black or white."]),
+            ("Depth Curve", ["Depth Curve applies a gamma-style redistribution. It changes how much grayscale precision is allocated to portions of the range without changing basic ordering. Use the relief preview to check whether slopes become too abrupt or flat."]),
+            ("Invert Depth", ["By default, black means farther and white means closer. Invert Depth makes black near and white far. Inversion updates the grayscale map, border value, brush preview, Depth Palette display, legend, and export."]),
+            ("Linked artwork dimensions", ["Width and Height are dimensions for the proportional artwork region. Editing either recalculates the other from the initialized aspect ratio and prevents stretching.", "Resizing changes sampling, not the detail inferred by the model. Enlarging creates more pixels but cannot recreate missing geometric information."]),
+            ("Far-depth border", ["Border Padding adds the selected number of farthest-depth pixels to every side. Final width and height each increase by twice the padding. Padding is limited automatically so neither canvas dimension exceeds 8192 pixels.", "Use the border when the depthmap must share a predictable background with other geometry. The perimeter joins the background rather than introducing a raised frame."]),
+            ("Grayscale versus relief preview", ["The grayscale preview is actual depth data and the editable surface. The relief projection calculates directional shading from neighboring values so slopes are easier to see. Relief lighting can imply brightness that is not underlying depth, so use it as an inspection aid rather than a value reference."]),
+        ], ["depthmap-generator", "depthmap-workflow", "depthmap-manual-editing", "depthmap-export"]),
+    "depthmap-manual-editing": _page(
+        "Painting Manual Depth Corrections",
+        "Use the Depthmap Generator brush to replace incorrect areas with an explicit farther or closer grayscale depth.",
+        "Automatic estimation is a starting point. The brush provides a direct way to replace local mistakes without leaving the browser.",
+        [
+            ("Brush Depth", ["Brush Depth chooses replacement relative depth from Farther to Closer. Its circular indicator displays the grayscale value that will be written, and inversion is reflected in that color."]),
+            ("Brush Size", ["Brush Size controls diameter in output pixels. The indicator changes size with the slider. A larger output may require a proportionally larger brush to cover the same visible feature."]),
+            ("Painting", ["Click or drag on the editable grayscale preview. The brush replaces values rather than blending opacity. Pointer interpolation fills the path between sampled positions so ordinary dragging does not leave a dotted stroke.", "Painted edits appear in both grayscale previews, the relief projection, and exported files."]),
+            ("Clear Painted Edits", ["Clear Painted Edits removes the manual correction layer and rerenders from current initialized depth, palette guidance, clipping, curve, inversion, dimensions, and padding. It does not reset those controls."]),
+            ("Editing strategy", ["Correct large background mistakes first, then refine silhouettes and internal surfaces. Use smaller strokes near boundaries. Compare relief after each group of edits, but return to grayscale when exact value matters."]),
+            ("Resizing after painting", ["Changing output dimensions or border padding rebuilds the output canvas. Set intended size and perimeter before detailed painting whenever possible so correction coordinates remain aligned with the final map."]),
+        ], ["depthmap-workflow", "depthmap-adjustments", "depthmap-export", "depthmap-limitations"]),
+    "depthmap-export": _page(
+        "Exporting a Depthmap for Relief Laser Engraving",
+        "Choose 8-bit or 16-bit grayscale PNG, understand what is exported, and hand the image off safely to laser preparation software.",
+        "The Lab exports a grayscale PNG. Converting those values into physical relief remains a separate, machine-specific production task.",
+        [
+            ("8-bit PNG", ["The 8-bit export stores 256 grayscale levels and is broadly compatible with image editors and laser software. It is often sufficient for shallow relief, coarse tests, and software that internally reduces precision."]),
+            ("16-bit PNG", ["The 16-bit export stores up to 65,536 grayscale levels and can preserve smoother gradients through compatible workflows. Confirm that every downstream application retains 16-bit grayscale; some silently convert it to 8-bit."]),
+            ("What is included", ["Exports include clipping, curve, inversion, Depth Palette guidance, enabled swatches, boundary feathering, proportional resizing, far-depth border padding, and painted corrections. The shaded relief visualization is not included."]),
+            ("No laser parameters are embedded", ["PNG pixels do not carry tested speed, power, frequency, pulse width, interval, focus, pass, or material settings. The Lab does not create a LightBurn layer recipe for variable-depth removal."]),
+            ("Build a material-specific mapping", ["Determine how receiving software maps grayscale to exposure or passes, then characterize actual removal on the exact machine, lens, focus, material, preparation, extraction, and cleanup process. Measure tests rather than assuming grayscale is linear depth."]),
+            ("Safety and review", ["Preview the imported image, verify physical size and orientation, confirm whether black or white produces greater removal, and test a coupon. Deep engraving can create heat, debris, taper, redeposition, focus change, fire risk, and long run times."]),
+        ], ["depthmap-generator", "depthmap-adjustments", "depthmap-manual-editing", "laser-engraving-parameters", "mopa-laser-workflow"]),
+    "depthmap-limitations": _page(
+        "Depthmap Generator Limitations and Troubleshooting",
+        "Understand mobile reloads, model ambiguity, memory use, browser requirements, misleading relief previews, and common depthmap failure modes.",
+        "The laboratory runs a demanding depth model in the user's browser. That makes local processing possible, but device limits and image ambiguity remain real constraints.",
+        [
+            ("Mobile reload loops", ["Most phones have lower per-tab memory limits than desktop browsers. The decoded photograph, depth model, tensors, floating-point arrays, and canvases can cause the operating system to terminate and reload the page without a catchable JavaScript exception.", "Use a desktop or laptop, especially for source images larger than 500 × 500 pixels. Repeatedly retrying the same image on a phone can produce the same reload loop."]),
+            ("First run is slow", ["The browser may need to download the model before initialization. WebGPU is attempted when available; otherwise the tool falls back to a compatible CPU path that can take substantially longer. Leave the page open while processing status changes."]),
+            ("Memory grows with pixel count", ["A decoded image and each full-resolution RGBA canvas require roughly four bytes per pixel, while floating-point depth arrays also require roughly four bytes per value. Several copies may exist. The upper read-only preview is capped at 1024 pixels on its longest side, but editable output and exports can be much larger."]),
+            ("Incorrect foreground and background", ["Shadows may be mistaken for depth, reflections may look like surfaces, transparent objects may collapse into the background, and overlapping forms may be ordered incorrectly. Use Depth Palette guidance when colors encode form, then brush corrections for local errors."]),
+            ("Black and white appear reversed", ["Check the Depth Convention legend and Invert Depth setting. The correct convention depends on downstream software's grayscale-to-removal mapping, not a universal relief rule."]),
+            ("Relief and grayscale look different", ["The relief projection applies directional lighting to local slopes. It should reveal shape, but its brightness is not an exact display of grayscale depth. Treat the grayscale preview and exported PNG as authoritative."]),
+            ("Large export or browser slowdown", ["Reduce linked artwork dimensions and border padding. Increasing export resolution does not increase inferred detail, and oversized canvases add memory pressure to every rerender and brush operation."]),
+        ], ["depthmap-generator", "depthmap-workflow", "depth-palettes", "depthmap-adjustments", "depthmap-export"]),
+})
+
+
 DOCS["power-down-cutoff-frequency"]["diagram"] = {
     "src": "/static/docs/jpt-e2-60-m7-power-down-cutoff-chart.svg",
     "alt": "Logarithmic chart of JPT YDFLP-E2-60-M7-M-R pulse width versus power-down cutoff frequency",
@@ -914,6 +1001,7 @@ DOC_GROUPS = [
     ("Laser technology", ["my-personal-laser-journey", "mopa-color-laser-engraving", "types-of-lasers-for-engraving", "continuous-wave-vs-pulsed-lasers", "what-does-mopa-mean", "what-does-q-switched-mean", "diode-lasers-explained", "co2-lasers-explained", "uv-lasers-explained", "laser-engraving-parameters", "all-about-operation-mode", "all-about-laser-power", "what-is-laser-ablation", "all-about-engraving-speed", "all-about-laser-frequency", "all-about-pulse-width", "power-down-cutoff-frequency", "all-about-line-interval", "all-about-engraving-passes", "all-about-scan-angle-crosshatch", "why-fixturing-is-so-important", "laser-compatibility", "what-laser-should-i-buy", "color-discovery"]),
     ("LightBurn and materials", ["works-with-lightburn", "material-vault", "hatch-palettes", "material-coupon-generator", "community-set", "material-libraries", "blank-palette-library", "lightburn-export", "lightburn-large-projects", "reduce-lightburn-object-count", "mopa-laser-workflow"]),
     ("Holographic Etching Lab", ["holographic-etching", "what-is-iridescence", "iridescent-laser-engraving", "iridescent-engraving-challenges", "holographic-lab-workflow", "holographic-calibration", "analyze-calibration-photo", "holographic-recipes", "holographic-artwork", "diffraction-gratings", "choose-cut-mode"]),
+    ("Depthmap / Relief Engraving Lab", ["depthmap-generator", "depthmap-workflow", "depth-palettes", "depthmap-adjustments", "depthmap-manual-editing", "depthmap-export", "depthmap-limitations"]),
     ("Jobs and support", ["membership-benefits", "job-history", "troubleshooting"]),
 ]
 DOC_ORDER = [slug for _group, slugs in DOC_GROUPS for slug in slugs]
@@ -963,7 +1051,7 @@ def _canonical(path):
 
 @routes.route("/sitemap.xml")
 def sitemap():
-    paths = ["/", "/laser-engraving-tool", "/color-laser-engraving-tool", "/founding-sponsors", "/experimental-laboratories", "/holographic-etching", "/depthmap-generator", "/color-discovery", "/material-libraries", "/community-set", "/docs"]
+    paths = ["/", "/laser-engraving-tool", "/color-laser-engraving-tool", "/depthmap-relief-engraving-tool", "/founding-sponsors", "/experimental-laboratories", "/holographic-etching", "/depthmap-generator", "/color-discovery", "/material-libraries", "/community-set", "/docs"]
     paths.extend(f"/docs/{slug}" for slug in DOCS)
     body = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
     body += "\n".join(f"  <url><loc>{_canonical(path)}</loc></url>" for path in paths)
