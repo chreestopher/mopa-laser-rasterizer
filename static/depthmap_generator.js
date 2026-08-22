@@ -10,6 +10,7 @@ const status = document.querySelector("#depth_status");
 const error = document.querySelector("#depth_error");
 const workspace = document.querySelector("#depth_workspace");
 const sourceCanvas = document.querySelector("#depth_source_canvas");
+const sourcePreview = document.querySelector("#depth_source_preview");
 const mapCanvas = document.querySelector("#depth_map_canvas");
 const reliefCanvas = document.querySelector("#depth_relief_canvas");
 const legendCanvas = document.querySelector("#depth_legend_canvas");
@@ -77,6 +78,7 @@ async function acceptFile(file) {
   sourceUrl = URL.createObjectURL(file);
   const image = await loadImage(sourceUrl);
   drawContainedImage(sourceCanvas, image);
+  sourcePreview.hidden = false;
   generateButton.disabled = false;
   resetButton.disabled = false;
   workspace.hidden = false;
@@ -501,6 +503,7 @@ function reset() {
   if (sourceUrl) URL.revokeObjectURL(sourceUrl);
   sourceUrl = null;
   input.value = "";
+  sourcePreview.hidden = true;
   workspace.hidden = true;
   colorGuidancePanel.hidden = true;
   resetButton.disabled = true;
