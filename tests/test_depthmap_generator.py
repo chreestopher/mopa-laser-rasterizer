@@ -25,6 +25,8 @@ class DepthMapGeneratorCoverageTests(unittest.TestCase):
         self.assertIn('Download 16-bit PNG', page)
         self.assertIn('id="depth_output_width"', page)
         self.assertIn('id="depth_output_height"', page)
+        self.assertIn("#depth_input::file-selector-button", page)
+        self.assertIn("#depth_input::-webkit-file-upload-button", page)
         self.assertIn("outputDepth.fill(farthest)", script)
         self.assertIn("Math.min(outputWidth / depthWidth, outputHeight / depthHeight)", script)
         self.assertEqual(script.count("createImageData(outputWidth, outputHeight)"), 2)
