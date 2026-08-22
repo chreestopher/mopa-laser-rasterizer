@@ -250,7 +250,16 @@ function updateBrushDepthPreview() {
   brushDepthValue.value = depth === 0 ? "Farther" : depth === 100 ? "Closer" : `${depth}% closer`;
   brushGrayValue.value = `${gray} / 255`;
   brushDepthPreview.style.backgroundColor = `rgb(${gray}, ${gray}, ${gray})`;
-  brushDepthPreview.setAttribute("aria-label", `Brush grayscale preview: ${gray} out of 255, ${brushDepthValue.value}`);
+  brushDepthPreview.setAttribute("aria-label", `Brush preview: ${brushSizeControl.value} pixel diameter, grayscale ${gray} out of 255, ${brushDepthValue.value}`);
+}
+
+function updateBrushSizePreview() {
+  const brushSize = Number(brushSizeControl.value);
+  const displaySize = 14 + (brushSize - 1) / 199 * 62;
+  brushSizeValue.value = `${brushSize} px`;
+  brushDepthPreview.style.width = `${displaySize}px`;
+  brushDepthPreview.style.height = `${displaySize}px`;
+  updateBrushDepthPreview();
 }
 
 function drawGrayscale() {
@@ -403,7 +412,7 @@ for (const control of [nearControl, farControl, gammaControl, invertControl]) co
   renderAdjustedDepth();
 });
 for (const control of [outputWidthControl, outputHeightControl]) control.addEventListener("change", renderAdjustedDepth);
-brushSizeControl.addEventListener("input", () => { brushSizeValue.value = `${brushSizeControl.value} px`; });
+brushSizeControl.addEventListener("input", updateBrushSizePreview);
 brushDepthControl.addEventListener("input", updateBrushDepthPreview);
 clearPaintButton.addEventListener("click", clearPaintedDepth);
 mapCanvas.addEventListener("pointerdown", event => {
@@ -421,3 +430,4 @@ document.querySelector("#depth_export_8").addEventListener("click", export8Bit);
 document.querySelector("#depth_export_16").addEventListener("click", () => export16Bit().catch(cause => setStatus(cause.message, true)));
 drawLegend();
 updateBrushDepthPreview();
+updateBrushSizePreview();
