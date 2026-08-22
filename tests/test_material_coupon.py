@@ -31,6 +31,40 @@ class MaterialCouponTests(unittest.TestCase):
 
         validate_unique_entry_descriptions(library)
 
+    def test_inline_editor_accepts_a_nonstandard_swatch_name(self):
+        library = ET.fromstring("""
+            <LightBurnLibrary><Material name="steel">
+              <Entry Desc="Blue"><CutSetting type="Scan"><name Value="Blue"/></CutSetting></Entry>
+              <Entry Desc="Dark-Orange"><CutSetting type="Scan"/></Entry>
+              <Entry Desc="dark-orange"><CutSetting type="Scan"/></Entry>
+            </Material></LightBurnLibrary>
+        """)
+
+        apply_entry_update(library, 0, {
+            "material": "steel",
+            "description": "Customer Iridescent 01",
+            "type": "Scan",
+            "settings": {"speed": 750},
+        })
+        entry = library.findall("Material/Entry")[-1]
+        self.assertEqual("Customer Iridescent 01", entry.attrib["Desc"])
+
+    def test_inline_editor_rejects_a_duplicate_custom_name(self):
+        library = ET.fromstring("""
+            <LightBurnLibrary><Material name="steel">
+              <Entry Desc="Customer Iridescent 01"><CutSetting type="Scan"/></Entry>
+              <Entry Desc="Blue"><CutSetting type="Scan"/></Entry>
+            </Material></LightBurnLibrary>
+        """)
+
+        with self.assertRaisesRegex(ValueError, "already contains a setting"):
+            apply_entry_update(library, 1, {
+                "material": "steel",
+                "description": " customer iridescent 01 ",
+                "type": "Scan",
+                "settings": {},
+            })
+
     def test_coupon_allows_duplicate_names_from_multiple_libraries(self):
         library = ET.fromstring("""
             <LightBurnLibrary><Material name="combined coupon">

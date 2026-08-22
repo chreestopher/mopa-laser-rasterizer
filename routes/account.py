@@ -319,6 +319,22 @@ def setting_value(value):
     return str(value)
 
 
+def ensure_entry_description_available(root, material_name, description, excluded_entry=None):
+    material_key = str(material_name or "").strip().casefold()
+    description_key = str(description or "").strip().casefold()
+    for material in root.findall("Material"):
+        if str(material.attrib.get("name", "") or "").strip().casefold() != material_key:
+            continue
+        for entry in material.findall("Entry"):
+            if entry is excluded_entry:
+                continue
+            if str(entry.attrib.get("Desc", "") or "").strip().casefold() == description_key:
+                raise ValueError(
+                    f"Material '{material_name}' already contains a setting named '{description}'. "
+                    "Choose a unique swatch name."
+                )
+
+
 def apply_entry_update(root, entry_id, payload, creating=False):
     material_name = str(payload.get("material", "")).strip()
     description = str(payload.get("description", "")).strip()
@@ -335,6 +351,8 @@ def apply_entry_update(root, entry_id, payload, creating=False):
         if entry_id < 0 or entry_id >= len(entries):
             raise ValueError("That Material Library entry no longer exists.")
         old_material, entry = entries[entry_id]
+    ensure_entry_description_available(root, material_name, description, excluded_entry=entry)
+    if not creating:
         old_material.remove(entry)
     target = next((material for material in root.findall("Material") if material.attrib.get("name") == material_name), None)
     if target is None:
@@ -439,7 +457,6 @@ def mutate_library(user_id, library_id, callback):
         download_user_material_library(library, temp_path)
         tree = ET.parse(temp_path)
         callback(tree.getroot())
-        validate_unique_entry_descriptions(tree.getroot())
         tree.write(temp_path, encoding="utf-8", xml_declaration=True)
         summary = library_entries(temp_path, include_settings=True)
         update_user_material_library_file(user_id, library_id, temp_path, summary)
@@ -657,6 +674,7 @@ def selected_material_library_settings():
                     if destination is None:
                         destination = ET.SubElement(target_root, "Material", {"name": material_name})
                     destination.extend(deepcopy(source_entries))
+                    validate_unique_entry_descriptions(target_root)
 
                 result = mutate_library(user_id, target_library_id, append_selected_entries)
                 if result is None:
