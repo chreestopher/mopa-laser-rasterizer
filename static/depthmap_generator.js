@@ -520,7 +520,7 @@ function createSwatchControls() {
     name.className = "color-name";
     name.textContent = swatch.name;
     const square = document.createElement("button");
-    square.className = "color-square selected";
+    square.className = "color-square";
     square.type = "button";
     square.style.backgroundColor = swatch.hex;
     const hex = document.createElement("span");
@@ -528,10 +528,12 @@ function createSwatchControls() {
     hex.textContent = swatch.hex;
     card.append(name, square, hex);
     const update = (rerender = true) => {
-      square.classList.toggle("selected", !swatch.enabled);
-      square.setAttribute("aria-pressed", String(!swatch.enabled));
-      square.setAttribute("aria-label", `${swatch.enabled ? "Exclude" : "Include"} ${swatch.name} from color-guided depth`);
-      square.title = swatch.enabled ? `Click to exclude ${swatch.name}` : `Click to include ${swatch.name}`;
+      const paletteSelected = Boolean(savedDepthPaletteSelect.value);
+      square.classList.toggle("selected", paletteSelected && !swatch.enabled);
+      square.setAttribute("aria-pressed", String(paletteSelected && !swatch.enabled));
+      square.setAttribute("aria-disabled", String(!paletteSelected));
+      square.setAttribute("aria-label", paletteSelected ? `${swatch.enabled ? "Exclude" : "Include"} ${swatch.name} from color-guided depth` : `${swatch.name}; choose a Depth Palette to enable this swatch`);
+      square.title = paletteSelected ? (swatch.enabled ? `Click to exclude ${swatch.name}` : `Click to include ${swatch.name}`) : `${swatch.name} is available after choosing a Depth Palette`;
       if (rerender && rawDepth) renderAdjustedDepth();
     };
     square.addEventListener("click", () => {
@@ -570,6 +572,7 @@ async function loadSavedDepthPalettes() {
 
 function selectDepthPalette() {
   const palette = savedDepthPalettes.find(item => item.palette_id === savedDepthPaletteSelect.value);
+  colorGuidancePanel.classList.toggle("awaiting-depth-palette", !palette);
   depthGuidanceTools.hidden = !palette;
   depthPaletteRequired.hidden = Boolean(palette);
   if (!palette) {
