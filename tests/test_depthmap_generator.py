@@ -91,6 +91,10 @@ class DepthMapGeneratorCoverageTests(unittest.TestCase):
         self.assertIn("const depthDirectionLabel = value =>", vault)
         self.assertIn("depth < 50 ? 'farther' : 'closer'", vault)
         self.assertIn("if (depth === 50) return 'Neutral'", vault)
+        self.assertIn('class="rename-button depth-palette-save"', vault)
+        self.assertIn('class="settings-toggle depth-palette-toggle"', vault)
+        self.assertIn("event.target.matches('.depth-palette-toggle')", vault)
+        self.assertNotIn("<summary>Swatch depth settings</summary>", vault)
 
 
 if __name__ == "__main__":
