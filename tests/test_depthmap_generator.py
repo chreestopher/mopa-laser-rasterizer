@@ -85,6 +85,9 @@ class DepthMapGeneratorCoverageTests(unittest.TestCase):
         self.assertLess(hatch_position, depth_position)
         self.assertLess(depth_position - hatch_position, 180)
         self.assertEqual(vault.count('id="new_depth_palette"'), 1)
+        self.assertIn("PALETTE &amp; MATERIAL SETTINGS CONSOLE", vault)
+        self.assertIn("DEPTH PALETTE", vault)
+        self.assertNotIn("DEPTH PALETTES CONSOLE", vault)
 
 
 if __name__ == "__main__":
