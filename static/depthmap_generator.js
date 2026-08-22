@@ -10,6 +10,7 @@ const uploadStatus = document.querySelector("#depth_status");
 const uploadError = document.querySelector("#depth_error");
 const processingStatus = document.querySelector("#depth_processing_status");
 const processingError = document.querySelector("#depth_processing_error");
+const processingPanel = document.querySelector("#depth_processing_panel");
 const workspace = document.querySelector("#depth_workspace");
 const sourceCanvas = document.querySelector("#depth_source_canvas");
 const sourcePreview = document.querySelector("#depth_source_preview");
@@ -89,6 +90,7 @@ async function acceptFile(file) {
   sourcePreview.hidden = false;
   generateButton.disabled = false;
   resetButton.disabled = false;
+  processingPanel.hidden = false;
   workspace.hidden = false;
   colorGuidancePanel.hidden = false;
   setUploadStatus(`${file.name} loaded successfully.`);
@@ -513,6 +515,7 @@ function reset() {
   sourceUrl = null;
   input.value = "";
   sourcePreview.hidden = true;
+  processingPanel.hidden = true;
   workspace.hidden = true;
   colorGuidancePanel.hidden = true;
   resetButton.disabled = true;
