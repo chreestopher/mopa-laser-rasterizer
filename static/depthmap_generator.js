@@ -24,7 +24,6 @@ const brushSizeValue = document.querySelector("#depth_brush_size_value");
 const brushDepthControl = document.querySelector("#depth_brush_depth");
 const brushDepthValue = document.querySelector("#depth_brush_depth_value");
 const brushDepthPreview = document.querySelector("#depth_brush_preview");
-const brushGrayValue = document.querySelector("#depth_brush_gray_value");
 const clearPaintButton = document.querySelector("#depth_clear_paint");
 
 let sourceFile = null;
@@ -247,8 +246,8 @@ function updateBrushDepthPreview() {
   const proximity = depth / 100;
   const encodedDepth = invertControl.checked ? 1 - proximity : proximity;
   const gray = Math.round(encodedDepth * 255);
-  brushDepthValue.value = depth === 0 ? "Farther" : depth === 100 ? "Closer" : `${depth}% closer`;
-  brushGrayValue.value = `${gray} / 255`;
+  const formattedDepth = Number.isInteger(depth) ? depth.toFixed(0) : depth.toFixed(1);
+  brushDepthValue.value = depth === 0 ? "Farther" : depth === 100 ? "Closer" : `${formattedDepth}% closer`;
   brushDepthPreview.style.backgroundColor = `rgb(${gray}, ${gray}, ${gray})`;
   brushDepthPreview.setAttribute("aria-label", `Brush preview: ${brushSizeControl.value} pixel diameter, grayscale ${gray} out of 255, ${brushDepthValue.value}`);
 }
