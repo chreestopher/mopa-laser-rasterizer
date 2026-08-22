@@ -126,7 +126,14 @@
     const depthPaletteNotice = document.getElementById('depth_palette_notice');
     const defaultDepthSwatches = JSON.parse(document.getElementById('vault_depth_palette_data').textContent);
     let savedDepthPalettes = [];
-    const depthEntryHtml = entry => `<div class="hatch-planner-grid depth-palette-entry" data-depth-hex="${esc(entry.hex)}"><label><input class="depth-entry-enabled" type="checkbox" ${entry.enabled !== false ? 'checked' : ''}> <span class="entry-palette-swatch" style="background:${esc(entry.hex)}"></span> ${esc(entry.name)}</label><label>Depth: <output class="depth-entry-depth-value">${esc(entry.depth)}% closer</output><input class="depth-entry-depth" type="range" min="0" max="100" step="0.1" value="${esc(entry.depth)}"></label><label>Influence: <output class="depth-entry-influence-value">${esc(entry.influence)}%</output><input class="depth-entry-influence" type="range" min="0" max="100" step="1" value="${esc(entry.influence)}"></label></div>`;
+    const depthDirectionLabel = value => {
+      const depth = Number(value);
+      if (depth === 50) return 'Neutral';
+      const amount = Math.abs(depth - 50) * 2;
+      const formatted = Number.isInteger(amount) ? amount.toFixed(0) : amount.toFixed(1);
+      return `${formatted}% ${depth < 50 ? 'farther' : 'closer'}`;
+    };
+    const depthEntryHtml = entry => `<div class="hatch-planner-grid depth-palette-entry" data-depth-hex="${esc(entry.hex)}"><label><input class="depth-entry-enabled" type="checkbox" ${entry.enabled !== false ? 'checked' : ''}> <span class="entry-palette-swatch" style="background:${esc(entry.hex)}"></span> ${esc(entry.name)}</label><label>Depth: <output class="depth-entry-depth-value">${esc(depthDirectionLabel(entry.depth))}</output><input class="depth-entry-depth" type="range" min="0" max="100" step="0.1" value="${esc(entry.depth)}"></label><label>Influence: <output class="depth-entry-influence-value">${esc(entry.influence)}%</output><input class="depth-entry-influence" type="range" min="0" max="100" step="1" value="${esc(entry.influence)}"></label></div>`;
     const renderDepthPalettes = () => {
       depthPaletteList.innerHTML = savedDepthPalettes.length ? `<p class="meta">Depth Palettes</p>${savedDepthPalettes.map(palette => `<section class="settings-accordion depth-palette-card" data-depth-palette-id="${esc(palette.palette_id)}"><div class="settings-library-head"><span class="meta">Swatches: ${esc((palette.entries || []).length)}<span class="library-intent-badge">DEPTH PALETTE</span></span><div class="rename"><input class="library-name-input depth-palette-name" value="${esc(palette.name)}" aria-label="Depth Palette name"></div><div class="library-actions"><button class="depth-palette-save" type="button">Save</button><button class="delete depth-palette-delete" type="button">Delete</button></div></div><details><summary>Swatch depth settings</summary><div class="settings-accordion-content">${(palette.entries || []).map(depthEntryHtml).join('')}</div></details></section>`).join('')}` : '<p class="empty">No saved Depth Palettes yet. Use New Depth Palette above to create one.</p>';
     };
@@ -149,7 +156,7 @@
     depthPaletteList.addEventListener('input', event => {
       const entry = event.target.closest('.depth-palette-entry');
       if (!entry) return;
-      if (event.target.matches('.depth-entry-depth')) entry.querySelector('.depth-entry-depth-value').value = `${event.target.value}% closer`;
+      if (event.target.matches('.depth-entry-depth')) entry.querySelector('.depth-entry-depth-value').value = depthDirectionLabel(event.target.value);
       if (event.target.matches('.depth-entry-influence')) entry.querySelector('.depth-entry-influence-value').value = `${event.target.value}%`;
     });
     depthPaletteList.addEventListener('click', async event => {

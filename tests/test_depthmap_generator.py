@@ -88,6 +88,9 @@ class DepthMapGeneratorCoverageTests(unittest.TestCase):
         self.assertIn("PALETTE &amp; MATERIAL SETTINGS CONSOLE", vault)
         self.assertIn("DEPTH PALETTE", vault)
         self.assertNotIn("DEPTH PALETTES CONSOLE", vault)
+        self.assertIn("const depthDirectionLabel = value =>", vault)
+        self.assertIn("depth < 50 ? 'farther' : 'closer'", vault)
+        self.assertIn("if (depth === 50) return 'Neutral'", vault)
 
 
 if __name__ == "__main__":
