@@ -15,6 +15,8 @@ const workspace = document.querySelector("#depth_workspace");
 const sourceCanvas = document.querySelector("#depth_source_canvas");
 const sourcePreview = document.querySelector("#depth_source_preview");
 const mapCanvas = document.querySelector("#depth_map_canvas");
+const basePreview = document.querySelector("#depth_base_preview");
+const basePreviewCanvas = document.querySelector("#depth_base_preview_canvas");
 const reliefCanvas = document.querySelector("#depth_relief_canvas");
 const legendCanvas = document.querySelector("#depth_legend_canvas");
 const nearControl = document.querySelector("#depth_near");
@@ -287,7 +289,38 @@ function requestedDimension(control, fallback) {
   return Number.isFinite(value) ? Math.min(8192, Math.max(32, value)) : fallback;
 }
 
+function syncOutputAspect(changedDimension) {
+  if (!depthWidth || !depthHeight) return;
+  const aspectRatio = depthWidth / depthHeight;
+  if (changedDimension === "height") {
+    let height = requestedDimension(outputHeightControl, depthHeight);
+    let width = Math.round(height * aspectRatio);
+    if (width > 8192) {
+      width = 8192;
+      height = Math.max(32, Math.round(width / aspectRatio));
+    } else if (width < 32) {
+      width = 32;
+      height = Math.min(8192, Math.round(width / aspectRatio));
+    }
+    outputWidthControl.value = width;
+    outputHeightControl.value = height;
+    return;
+  }
+  let width = requestedDimension(outputWidthControl, depthWidth);
+  let height = Math.round(width / aspectRatio);
+  if (height > 8192) {
+    height = 8192;
+    width = Math.max(32, Math.round(height * aspectRatio));
+  } else if (height < 32) {
+    height = 32;
+    width = Math.min(8192, Math.round(height * aspectRatio));
+  }
+  outputWidthControl.value = width;
+  outputHeightControl.value = height;
+}
+
 function buildOutputCanvas() {
+  syncOutputAspect("width");
   outputWidth = requestedDimension(outputWidthControl, depthWidth);
   outputHeight = requestedDimension(outputHeightControl, depthHeight);
   outputWidthControl.value = outputWidth;
@@ -399,6 +432,20 @@ function drawGrayscale() {
     imageData.data[offset + 3] = 255;
   }
   context.putImageData(imageData, 0, 0);
+  drawBasePreview();
+}
+
+function drawBasePreview() {
+  if (!outputWidth || !outputHeight) return;
+  const maximumSide = 1024;
+  const scale = Math.min(1, maximumSide / Math.max(outputWidth, outputHeight));
+  basePreviewCanvas.width = Math.max(1, Math.round(outputWidth * scale));
+  basePreviewCanvas.height = Math.max(1, Math.round(outputHeight * scale));
+  const context = basePreviewCanvas.getContext("2d");
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(mapCanvas, 0, 0, basePreviewCanvas.width, basePreviewCanvas.height);
+  basePreview.hidden = false;
 }
 
 function drawRelief() {
@@ -515,6 +562,9 @@ function reset() {
   sourceUrl = null;
   input.value = "";
   sourcePreview.hidden = true;
+  basePreview.hidden = true;
+  basePreviewCanvas.width = 0;
+  basePreviewCanvas.height = 0;
   processingPanel.hidden = true;
   workspace.hidden = true;
   colorGuidancePanel.hidden = true;
@@ -630,7 +680,10 @@ guidanceFeatherControl.addEventListener("input", () => {
   if (rawDepth) renderAdjustedDepth();
 });
 savedDepthPaletteSelect.addEventListener("change", selectDepthPalette);
-for (const control of [outputWidthControl, outputHeightControl]) control.addEventListener("change", renderAdjustedDepth);
+outputWidthControl.addEventListener("input", () => syncOutputAspect("width"));
+outputHeightControl.addEventListener("input", () => syncOutputAspect("height"));
+outputWidthControl.addEventListener("change", renderAdjustedDepth);
+outputHeightControl.addEventListener("change", renderAdjustedDepth);
 brushSizeControl.addEventListener("input", updateBrushSizePreview);
 brushDepthControl.addEventListener("input", updateBrushDepthPreview);
 clearPaintButton.addEventListener("click", clearPaintedDepth);

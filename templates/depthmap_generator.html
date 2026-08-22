@@ -79,10 +79,11 @@
 
     <section id="depth_processing_panel" class="panel" hidden>
       <h2>Generate depth map</h2>
-      <div class="actions"><button id="depth_generate" class="button" type="button" disabled>Generate depth map</button></div>
+      <div class="actions"><button id="depth_generate" class="button" type="button" disabled>Initialize Depthmap</button></div>
       <progress id="depth_progress" class="progress" max="100" value="0" hidden></progress>
       <p id="depth_processing_status" class="status-label" role="status" aria-live="polite">Depth processing has not started.</p>
       <p id="depth_processing_error" class="error" role="alert" hidden></p>
+      <div id="depth_base_preview" class="preview-card upload-source-preview" hidden><h3>Depthmap base preview</h3><canvas id="depth_base_preview_canvas" aria-label="Read-only depthmap base preview"></canvas></div>
     </section>
 
     <section id="color_guidance_panel" class="panel awaiting-depth-palette" hidden>
@@ -102,7 +103,7 @@
         <div>
           <h3>Final canvas size</h3>
           <div class="dimensions"><label for="depth_output_width">Width (px)<input id="depth_output_width" type="number" min="32" max="8192" step="1"></label><label for="depth_output_height">Height (px)<input id="depth_output_height" type="number" min="32" max="8192" step="1"></label></div>
-          <p class="fine-print">The depth image keeps its proportions and is centered. Extra canvas area is extended with the farthest depth so it shares one continuous background value.</p>
+          <p class="fine-print">Width and height are linked to the initialized depth map's aspect ratio. Editing either dimension automatically recalculates the other.</p>
         </div>
         <div>
           <h3>Paint depth</h3>
