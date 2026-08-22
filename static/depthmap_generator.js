@@ -180,7 +180,7 @@ function drawGrayscale() {
   mapCanvas.width = outputWidth;
   mapCanvas.height = outputHeight;
   const context = mapCanvas.getContext("2d");
-  const imageData = context.createImageData(depthWidth, depthHeight);
+  const imageData = context.createImageData(outputWidth, outputHeight);
   for (let index = 0; index < outputDepth.length; index += 1) {
     const gray = Math.round(outputDepth[index] * 255);
     const offset = index * 4;
@@ -196,7 +196,7 @@ function drawRelief() {
   reliefCanvas.width = outputWidth;
   reliefCanvas.height = outputHeight;
   const context = reliefCanvas.getContext("2d");
-  const imageData = context.createImageData(depthWidth, depthHeight);
+  const imageData = context.createImageData(outputWidth, outputHeight);
   const light = [-.45, -.55, .7];
   for (let y = 0; y < outputHeight; y += 1) {
     for (let x = 0; x < outputWidth; x += 1) {

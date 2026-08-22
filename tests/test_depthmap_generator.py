@@ -27,6 +27,8 @@ class DepthMapGeneratorCoverageTests(unittest.TestCase):
         self.assertIn('id="depth_output_height"', page)
         self.assertIn("outputDepth.fill(farthest)", script)
         self.assertIn("Math.min(outputWidth / depthWidth, outputHeight / depthHeight)", script)
+        self.assertEqual(script.count("createImageData(outputWidth, outputHeight)"), 2)
+        self.assertNotIn("createImageData(depthWidth, depthHeight)", script)
 
 
 if __name__ == "__main__":
