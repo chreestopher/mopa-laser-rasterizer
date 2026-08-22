@@ -289,6 +289,30 @@ def all_xml_entries(root):
     return [(material, entry) for material in root.findall("Material") for entry in material.findall("Entry")]
 
 
+def validate_unique_entry_descriptions(root):
+    """Require one case-insensitive swatch description per material."""
+    for material in root.findall("Material"):
+        material_name = str(material.attrib.get("name", "") or "").strip() or "(unnamed material)"
+        seen = {}
+        duplicates = set()
+        for entry in material.findall("Entry"):
+            description = str(entry.attrib.get("Desc", "") or "").strip()
+            if not description:
+                continue
+            key = description.casefold()
+            if key in seen:
+                duplicates.add(seen[key])
+            else:
+                seen[key] = description
+        if duplicates:
+            names = ", ".join(sorted(duplicates, key=str.casefold))
+            raise ValueError(
+                f"Material '{material_name}' contains duplicate swatch name(s): {names}. "
+                "Each material may contain only one setting per swatch name. "
+                "Duplicate names are allowed only when generating a coupon from multiple libraries."
+            )
+
+
 def setting_value(value):
     if isinstance(value, bool):
         return "1" if value else "0"
@@ -415,6 +439,7 @@ def mutate_library(user_id, library_id, callback):
         download_user_material_library(library, temp_path)
         tree = ET.parse(temp_path)
         callback(tree.getroot())
+        validate_unique_entry_descriptions(tree.getroot())
         tree.write(temp_path, encoding="utf-8", xml_declaration=True)
         summary = library_entries(temp_path, include_settings=True)
         update_user_material_library_file(user_id, library_id, temp_path, summary)
@@ -424,7 +449,7 @@ def mutate_library(user_id, library_id, callback):
             os.remove(temp_path)
 
 
-def selected_settings_library(user_id, selections, material_name):
+def selected_settings_library(user_id, selections, material_name, allow_cross_library_duplicates=False):
     """Build a valid LightBurn library containing only account-owned selections."""
     if not isinstance(selections, list) or not selections or len(selections) > 500:
         raise ValueError("Select between 1 and 500 Material Library settings.")
@@ -444,6 +469,7 @@ def selected_settings_library(user_id, selections, material_name):
 
     target_root = ET.Element("LightBurnLibrary")
     target_material = ET.SubElement(target_root, "Material", {"name": material_name})
+    selected_name_sources = {}
     temp_paths = []
     try:
         for library_id, entry_ids in requested.items():
@@ -458,7 +484,20 @@ def selected_settings_library(user_id, selections, material_name):
             for entry_id in sorted(entry_ids):
                 if entry_id >= len(entries):
                     raise ValueError("One of the selected settings no longer exists.")
-                target_material.append(deepcopy(entries[entry_id][1]))
+                selected_entry = entries[entry_id][1]
+                description = str(selected_entry.attrib.get("Desc", "") or "").strip()
+                description_key = description.casefold()
+                if description_key and description_key in selected_name_sources:
+                    first_library_id = selected_name_sources[description_key]
+                    if not allow_cross_library_duplicates or first_library_id == library_id:
+                        raise ValueError(
+                            f"Duplicate swatch name '{description}' is not allowed. "
+                            "Coupon generation permits duplicate names only when the settings "
+                            "come from different Material Libraries."
+                        )
+                elif description_key:
+                    selected_name_sources[description_key] = library_id
+                target_material.append(deepcopy(selected_entry))
         if not target_material.findall("Entry"):
             raise ValueError("Select at least one Material Library setting.")
         return target_root
@@ -589,7 +628,14 @@ def selected_material_library_settings():
     payload = request.get_json(silent=True) or {}
     action = str(payload.get("action", "")).strip()
     try:
-        root = selected_settings_library(user_id, payload.get("selections"), payload.get("material_name"))
+        root = selected_settings_library(
+            user_id,
+            payload.get("selections"),
+            payload.get("material_name"),
+            allow_cross_library_duplicates=action == "coupon",
+        )
+        if action != "coupon":
+            validate_unique_entry_descriptions(root)
         with tempfile.NamedTemporaryFile(suffix=".clb", delete=False) as temp_file:
             output_path = temp_file.name
         try:
@@ -661,6 +707,7 @@ def preview_material_libraries():
                 temp_path = temp_file.name
             temp_paths.append(temp_path)
             file.save(temp_path)
+            validate_unique_entry_descriptions(ET.parse(temp_path).getroot())
             summary = library_entries(temp_path)
             if not summary["entry_count"]:
                 raise ValueError(f"{filename} contains no LightBurn Material Library entries.")
@@ -784,6 +831,7 @@ def material_libraries():
                 try:
                     file.save(temp_path)
                     filtered_material_library(temp_path, filtered_path, selected_materials)
+                    validate_unique_entry_descriptions(ET.parse(filtered_path).getroot())
                     summary = library_entries(filtered_path)
                     if not summary["entry_count"]:
                         raise ValueError(f"{filename} contains no selected Material Library entries.")

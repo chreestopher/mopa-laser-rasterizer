@@ -1,10 +1,50 @@
 import unittest
 from xml.etree import ElementTree as ET
 
-from routes.account import apply_entry_update, apply_hatch_plan, material_coupon_project
+from routes.account import (
+    apply_entry_update,
+    apply_hatch_plan,
+    material_coupon_project,
+    validate_unique_entry_descriptions,
+)
 
 
 class MaterialCouponTests(unittest.TestCase):
+    def test_duplicate_swatch_names_are_rejected_within_one_material(self):
+        library = ET.fromstring("""
+            <LightBurnLibrary><Material name="steel">
+              <Entry Desc="Dark-Orange"><CutSetting type="Scan"/></Entry>
+              <Entry Desc=" dark-orange "><CutSetting type="Scan"/></Entry>
+            </Material></LightBurnLibrary>
+        """)
+
+        with self.assertRaisesRegex(ValueError, "duplicate swatch name.*Dark-Orange"):
+            validate_unique_entry_descriptions(library)
+
+    def test_same_swatch_name_is_allowed_in_different_materials(self):
+        library = ET.fromstring("""
+            <LightBurnLibrary>
+              <Material name="steel"><Entry Desc="Blue"><CutSetting type="Scan"/></Entry></Material>
+              <Material name="aluminum"><Entry Desc="blue"><CutSetting type="Scan"/></Entry></Material>
+            </LightBurnLibrary>
+        """)
+
+        validate_unique_entry_descriptions(library)
+
+    def test_coupon_allows_duplicate_names_from_multiple_libraries(self):
+        library = ET.fromstring("""
+            <LightBurnLibrary><Material name="combined coupon">
+              <Entry Desc="Blue"><CutSetting type="Scan"><speed Value="500"/></CutSetting></Entry>
+              <Entry Desc="Blue"><CutSetting type="Scan"><speed Value="900"/></CutSetting></Entry>
+            </Material></LightBurnLibrary>
+        """)
+
+        project = material_coupon_project(library)
+
+        self.assertEqual(["Blue", "Blue"], [
+            layer.find("name").attrib["Value"] for layer in project.findall("CutSetting")[1:]
+        ])
+
     def test_hatch_plan_preserves_base_settings_and_offset_mode(self):
         library = ET.fromstring("""
             <LightBurnLibrary><Material name="steel">

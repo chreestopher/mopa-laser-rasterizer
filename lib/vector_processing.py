@@ -399,6 +399,35 @@ def parse_material_settings(
         for color_hex, metadata in TARGET_COLORS.items()
         if metadata[2].casefold() in {str(color).strip().casefold() for color in limit_colors}
     }
+    settings_by_target = {}
+    for item in matching_settings:
+        labels = (getattr(item, "entryDesc", ""), getattr(item, "name", ""))
+        target = next(
+            (selected_targets.get(str(label or "").strip().casefold())
+             for label in labels
+             if str(label or "").strip().casefold() in selected_targets),
+            None,
+        )
+        if target is None:
+            continue
+        target_hex, target_metadata = target
+        settings_by_target.setdefault(target_hex, []).append(
+            str(getattr(item, "entryDesc", "") or getattr(item, "name", "") or target_metadata[2]).strip()
+        )
+    target_names_by_hex = {
+        color_hex: metadata[2] for color_hex, metadata in selected_targets.values()
+    }
+    duplicate_targets = [
+        target_names_by_hex[target_hex]
+        for target_hex, names in settings_by_target.items()
+        if len(names) > 1
+    ]
+    if duplicate_targets:
+        names = ", ".join(sorted(duplicate_targets, key=str.casefold))
+        raise ValueError(
+            f"Material '{material_name}' contains duplicate swatch name(s): {names}. "
+            "Each material may contain only one setting per swatch name."
+        )
     for item in matching_settings:
         # LightBurn stores both an Entry description and a cut-setting name.
         # Accept either as the library-side label, then make the editable
