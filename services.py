@@ -334,6 +334,69 @@ def delete_user_material_library(user_id, library_id):
     return True
 
 
+def list_user_depth_palettes(user_id):
+    """Return account-owned depth palettes stored directly in DynamoDB."""
+    table = account_table()
+    if not table or not user_id:
+        return []
+    try:
+        response = table.query(
+            KeyConditionExpression=Key("pk").eq(f"USER#{user_id}") & Key("sk").begins_with("DEPTHPALETTE#"),
+            ScanIndexForward=False,
+        )
+    except ClientError as error:
+        raise RuntimeError("Could not load saved Depth Palettes.") from error
+    return [_json_values(item) for item in response.get("Items", [])]
+
+
+def get_user_depth_palette(user_id, palette_id):
+    table = account_table()
+    if not table or not user_id or not palette_id:
+        return None
+    try:
+        item = table.get_item(
+            Key={"pk": f"USER#{user_id}", "sk": f"DEPTHPALETTE#{palette_id}"}
+        ).get("Item")
+    except ClientError as error:
+        raise RuntimeError("Could not load the saved Depth Palette.") from error
+    return _json_values(item) if item else None
+
+
+def save_user_depth_palette(user_id, name, entries, palette_id=None):
+    table = account_table()
+    if not table:
+        raise RuntimeError("Account Depth Palette storage is not configured.")
+    if not user_id:
+        raise ValueError("An authenticated account is required.")
+    palette_id = palette_id or str(uuid.uuid4())
+    existing = get_user_depth_palette(user_id, palette_id) if palette_id else None
+    item = {
+        "pk": f"USER#{user_id}",
+        "sk": f"DEPTHPALETTE#{palette_id}",
+        "palette_id": palette_id,
+        "name": str(name).strip()[:160],
+        "entries": _dynamodb_values(entries),
+        "created_at": (existing or {}).get("created_at", int(time.time())),
+        "updated_at": int(time.time()),
+    }
+    try:
+        table.put_item(Item=item)
+    except ClientError as error:
+        raise RuntimeError("Could not save the Depth Palette.") from error
+    return _json_values(item)
+
+
+def delete_user_depth_palette(user_id, palette_id):
+    table = account_table()
+    if not table or not get_user_depth_palette(user_id, palette_id):
+        return False
+    try:
+        table.delete_item(Key={"pk": f"USER#{user_id}", "sk": f"DEPTHPALETTE#{palette_id}"})
+    except ClientError as error:
+        raise RuntimeError("Could not delete the Depth Palette.") from error
+    return True
+
+
 def list_user_holographic_recipes(user_id):
     table = account_table()
     if not table or not user_id:

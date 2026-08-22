@@ -140,4 +140,8 @@ def holographic_etching():
 
 @routes.route("/material-libraries")
 def material_library_manager():
-    return render_template("material_libraries.html")
+    depth_palette = [
+        {"name": name, "hex": color_hex}
+        for color_hex, name in LIGHTBURN_PALETTE_NAMES.items()
+    ]
+    return render_template("material_libraries.html", depth_palette=depth_palette)

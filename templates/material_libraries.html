@@ -77,6 +77,13 @@
         <div id="holographic_recipe_list"></div>
         <div id="holographic_recipe_notice" class="notice" role="status"></div>
       </section>
+      <section class="panel vault-terminal recipe-console" aria-labelledby="depth_palette_heading">
+        <div class="settings-toolbar"><strong id="depth_palette_heading">DEPTH PALETTES CONSOLE</strong></div>
+        <p class="meta">Depth Palettes map Rasterizer swatches to artificial Farther-to-Closer depth and perspective influence. They are saved as account data and do not require a LightBurn file.</p>
+        <button id="depth_palette_create" type="button">New Depth Palette</button>
+        <div id="depth_palette_list"></div>
+        <div id="depth_palette_notice" class="notice" role="status"></div>
+      </section>
     </div>
     <div id="selection_modal" class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="selection_modal_title" hidden>
       <section class="settings-window selection-popup-window">
@@ -114,12 +121,62 @@
       </section>
     </div>
   </main>
+  <script id="vault_depth_palette_data" type="application/json">{{ depth_palette|tojson }}</script>
   <script>
     const notice = document.getElementById('notice');
     const say = (message, error=false) => { notice.textContent = message; notice.classList.toggle('error', error); };
     const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     const holographicRecipeList = document.getElementById('holographic_recipe_list');
     const holographicRecipeNotice = document.getElementById('holographic_recipe_notice');
+    const depthPaletteList = document.getElementById('depth_palette_list');
+    const depthPaletteNotice = document.getElementById('depth_palette_notice');
+    const defaultDepthSwatches = JSON.parse(document.getElementById('vault_depth_palette_data').textContent);
+    let savedDepthPalettes = [];
+    const depthEntryHtml = entry => `<div class="hatch-planner-grid depth-palette-entry" data-depth-hex="${esc(entry.hex)}"><label><input class="depth-entry-enabled" type="checkbox" ${entry.enabled !== false ? 'checked' : ''}> <span class="entry-palette-swatch" style="background:${esc(entry.hex)}"></span> ${esc(entry.name)}</label><label>Depth: <output class="depth-entry-depth-value">${esc(entry.depth)}% closer</output><input class="depth-entry-depth" type="range" min="0" max="100" step="0.1" value="${esc(entry.depth)}"></label><label>Influence: <output class="depth-entry-influence-value">${esc(entry.influence)}%</output><input class="depth-entry-influence" type="range" min="0" max="100" step="1" value="${esc(entry.influence)}"></label></div>`;
+    const renderDepthPalettes = () => {
+      depthPaletteList.innerHTML = savedDepthPalettes.length ? savedDepthPalettes.map(palette => `<section class="settings-accordion depth-palette-card" data-depth-palette-id="${esc(palette.palette_id)}"><div class="settings-library-head"><div class="rename"><input class="library-name-input depth-palette-name" value="${esc(palette.name)}" aria-label="Depth Palette name"></div><div class="library-actions"><button class="depth-palette-save" type="button">Save</button><button class="delete depth-palette-delete" type="button">Delete</button></div></div><details><summary>Swatch depth settings</summary><div class="settings-accordion-content">${(palette.entries || []).map(depthEntryHtml).join('')}</div></details></section>`).join('') : '<p class="empty">No saved Depth Palettes yet.</p>';
+    };
+    const loadDepthPalettes = async () => {
+      const response = await fetch('/account/depth-palettes', {credentials:'same-origin'});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Could not load Depth Palettes.');
+      savedDepthPalettes = data.palettes || [];
+      renderDepthPalettes();
+    };
+    document.getElementById('depth_palette_create').addEventListener('click', async () => {
+      const name = prompt('Name this new Depth Palette:', 'My Depth Palette');
+      if (!name?.trim()) return;
+      const entries = defaultDepthSwatches.map(swatch => ({...swatch, enabled:true, depth:50, influence:0}));
+      const response = await fetch('/account/depth-palettes', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:name.trim(), entries})});
+      const data = await response.json();
+      depthPaletteNotice.textContent = response.ok ? 'Depth Palette created.' : (data.message || 'Could not create Depth Palette.');
+      if (response.ok) await loadDepthPalettes();
+    });
+    depthPaletteList.addEventListener('input', event => {
+      const entry = event.target.closest('.depth-palette-entry');
+      if (!entry) return;
+      if (event.target.matches('.depth-entry-depth')) entry.querySelector('.depth-entry-depth-value').value = `${event.target.value}% closer`;
+      if (event.target.matches('.depth-entry-influence')) entry.querySelector('.depth-entry-influence-value').value = `${event.target.value}%`;
+    });
+    depthPaletteList.addEventListener('click', async event => {
+      const card = event.target.closest('.depth-palette-card');
+      if (!card) return;
+      const paletteId = card.dataset.depthPaletteId;
+      if (event.target.matches('.depth-palette-delete')) {
+        if (!confirm('Delete this saved Depth Palette?')) return;
+        const response = await fetch(`/account/depth-palettes/${encodeURIComponent(paletteId)}`, {method:'DELETE', credentials:'same-origin'});
+        const data = await response.json();
+        depthPaletteNotice.textContent = response.ok ? 'Depth Palette removed.' : (data.message || 'Could not delete Depth Palette.');
+        if (response.ok) await loadDepthPalettes();
+        return;
+      }
+      if (!event.target.matches('.depth-palette-save')) return;
+      const entries = Array.from(card.querySelectorAll('.depth-palette-entry')).map(row => ({hex:row.dataset.depthHex, enabled:row.querySelector('.depth-entry-enabled').checked, depth:Number(row.querySelector('.depth-entry-depth').value), influence:Number(row.querySelector('.depth-entry-influence').value)}));
+      const response = await fetch(`/account/depth-palettes/${encodeURIComponent(paletteId)}`, {method:'PUT', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:card.querySelector('.depth-palette-name').value.trim(), entries})});
+      const data = await response.json();
+      depthPaletteNotice.textContent = response.ok ? 'Depth Palette saved.' : (data.message || 'Could not save Depth Palette.');
+      if (response.ok) await loadDepthPalettes();
+    });
     const loadHolographicRecipes = async () => {
       const response = await fetch('/account/holographic-recipes', {credentials:'same-origin'});
       const data = await response.json();
@@ -582,7 +639,7 @@
       hatchModal.hidden = true; say('Hatch Palette created from the selected base setting.'); await load(); await showSettingsWorkspace(data.library.library_id);
     });
     const machineChromeAuthStatus = window.machineChrome && window.machineChrome.authStatus;
-    (machineChromeAuthStatus || Promise.resolve({state:'unknown', signed_in:false})).then(data => { document.getElementById(data.signed_in ? 'manager' : 'sign_in_panel').hidden = false; if (data.signed_in) { load().then(() => showSettingsWorkspace()).catch(error => say(error.message, true)); loadHolographicRecipes().catch(error => { holographicRecipeNotice.textContent = error.message; }); } }).catch(() => { document.getElementById('sign_in_panel').hidden = false; });
+    (machineChromeAuthStatus || Promise.resolve({state:'unknown', signed_in:false})).then(data => { document.getElementById(data.signed_in ? 'manager' : 'sign_in_panel').hidden = false; if (data.signed_in) { load().then(() => showSettingsWorkspace()).catch(error => say(error.message, true)); loadHolographicRecipes().catch(error => { holographicRecipeNotice.textContent = error.message; }); loadDepthPalettes().catch(error => { depthPaletteNotice.textContent = error.message; }); } }).catch(() => { document.getElementById('sign_in_panel').hidden = false; });
   </script>
 </body>
 </html>

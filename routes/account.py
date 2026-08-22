@@ -21,18 +21,22 @@ from services import (
     ABSTRACT_FILTER_NAMES,
     LIGHTBURN_PALETTE_NAMES,
     delete_user_material_library,
+    delete_user_depth_palette,
     delete_user_holographic_recipe,
     download_user_holographic_recipe,
     download_user_material_library,
     get_user_material_library,
+    get_user_depth_palette,
     get_user_holographic_recipe,
     list_user_holographic_recipes,
     list_user_material_libraries,
+    list_user_depth_palettes,
     get_user_preferences,
     get_user_job_history,
     normalize_dimension,
     save_user_preferences,
     save_user_material_library,
+    save_user_depth_palette,
     save_user_holographic_recipe,
     rename_user_material_library,
     update_user_material_library_file,
@@ -44,6 +48,42 @@ from . import routes
 def authenticated_user_id():
     """Return the ALB-provided Cognito subject for this trusted backend hop."""
     return request.headers.get("x-amzn-oidc-identity", "").strip() or None
+
+
+def clean_depth_palette(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("Depth Palette data must be an object.")
+    name = str(payload.get("name", "")).strip()
+    if not name or len(name) > 160:
+        raise ValueError("Depth Palette names must be between 1 and 160 characters.")
+    entries = payload.get("entries")
+    if not isinstance(entries, list):
+        raise ValueError("Depth Palette entries must be a list.")
+    official = {color.upper(): swatch for color, swatch in LIGHTBURN_PALETTE_NAMES.items()}
+    cleaned = []
+    seen = set()
+    for entry in entries[:len(official)]:
+        if not isinstance(entry, dict):
+            continue
+        color_hex = str(entry.get("hex", "")).upper()
+        if color_hex not in official or color_hex in seen:
+            continue
+        seen.add(color_hex)
+        try:
+            depth = max(0.0, min(100.0, float(entry.get("depth", 50))))
+            influence = max(0.0, min(100.0, float(entry.get("influence", 0))))
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"Depth settings for {official[color_hex]} are invalid.") from error
+        cleaned.append({
+            "hex": color_hex,
+            "name": official[color_hex],
+            "depth": depth,
+            "influence": influence,
+            "enabled": entry.get("enabled") is not False,
+        })
+    if not cleaned:
+        raise ValueError("Keep at least one Rasterizer swatch in the Depth Palette.")
+    return name, cleaned
 
 
 def clean_preferences(payload):
@@ -884,6 +924,41 @@ def plan_material_library_hatches(library_id):
         )
         return jsonify({"status": "ok", "summary": summary})
     except (RuntimeError, OSError, ValueError, ET.ParseError) as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+
+@routes.route("/account/depth-palettes", methods=["GET", "POST"])
+def depth_palettes():
+    user_id = authenticated_user_id()
+    if not user_id:
+        return jsonify({"status": "error", "message": "Sign in to use saved Depth Palettes."}), 401
+    try:
+        if request.method == "POST":
+            name, entries = clean_depth_palette(request.get_json(silent=True) or {})
+            palette = save_user_depth_palette(user_id, name, entries)
+            return jsonify({"status": "ok", "palette": palette}), 201
+        return jsonify({"status": "ok", "palettes": list_user_depth_palettes(user_id)})
+    except (RuntimeError, ValueError) as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+
+@routes.route("/account/depth-palettes/<palette_id>", methods=["GET", "PUT", "DELETE"])
+def depth_palette_detail(palette_id):
+    user_id = authenticated_user_id()
+    if not user_id:
+        return jsonify({"status": "error", "message": "Sign in to manage Depth Palettes."}), 401
+    try:
+        palette = get_user_depth_palette(user_id, palette_id)
+        if not palette:
+            return jsonify({"status": "error", "message": "That Depth Palette no longer exists."}), 404
+        if request.method == "DELETE":
+            delete_user_depth_palette(user_id, palette_id)
+            return jsonify({"status": "ok"})
+        if request.method == "PUT":
+            name, entries = clean_depth_palette(request.get_json(silent=True) or {})
+            palette = save_user_depth_palette(user_id, name, entries, palette_id=palette_id)
+        return jsonify({"status": "ok", "palette": palette})
+    except (RuntimeError, ValueError) as error:
         return jsonify({"status": "error", "message": str(error)}), 400
 
 

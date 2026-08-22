@@ -31,8 +31,11 @@ const guidanceFeatherControl = document.querySelector("#depth_guidance_feather")
 const guidanceFeatherValue = document.querySelector("#depth_guidance_feather_value");
 const guidanceStatus = document.querySelector("#depth_guidance_status");
 const resetGuidanceButton = document.querySelector("#depth_reset_guidance");
+const depthPalettePicker = document.querySelector("#depth_palette_picker");
+const savedDepthPaletteSelect = document.querySelector("#saved_depth_palette");
 const depthPalette = JSON.parse(document.querySelector("#depth_palette_data").textContent);
 const paletteState = depthPalette.map(swatch => ({...swatch, rgb:hexToRgb(swatch.hex), enabled:true, depth:50, influence:0}));
+let savedDepthPalettes = [];
 
 let sourceFile = null;
 let sourceUrl = null;
@@ -508,7 +511,7 @@ function createSwatchControls() {
   for (const [index, swatch] of paletteState.entries()) {
     const card = document.createElement("article");
     card.className = "depth-swatch";
-    card.innerHTML = `<div class="depth-swatch-title"><input class="swatch-enabled" type="checkbox" checked aria-label="Enable ${swatch.name} color guidance"><span class="depth-swatch-color" style="background:${swatch.hex}"></span><span class="depth-swatch-name">${swatch.name}</span></div><label>Artificial depth <output class="swatch-depth-output">50% closer <span class="swatch-depth-preview"></span></output></label><input class="swatch-depth" type="range" min="0" max="100" step="0.1" value="50"><div class="guidance-scale"><span>Farther</span><span>Closer</span></div><label>Influence <output class="swatch-influence-output">0%</output></label><input class="swatch-influence" type="range" min="0" max="100" step="1" value="0"><div class="guidance-scale"><span>Perspective</span><span>Assigned depth</span></div>`;
+    card.innerHTML = `<div class="depth-swatch-title"><input class="swatch-enabled" type="checkbox" checked aria-label="Enable ${swatch.name} color guidance"><span class="depth-swatch-color" style="background:${swatch.hex}" title="Source color"></span><span class="swatch-depth-preview" title="Assigned depth"></span><span class="depth-swatch-name">${swatch.name}</span></div><label class="depth-setting-control">Artificial depth <output class="swatch-depth-output">50% closer</output></label><input class="swatch-depth depth-setting-control" type="range" min="0" max="100" step="0.1" value="50"><div class="guidance-scale depth-setting-control"><span>Farther</span><span>Closer</span></div><label class="depth-setting-control">Influence <output class="swatch-influence-output">0%</output></label><input class="swatch-influence depth-setting-control" type="range" min="0" max="100" step="1" value="0"><div class="guidance-scale depth-setting-control"><span>Perspective</span><span>Assigned depth</span></div>`;
     const enabled = card.querySelector(".swatch-enabled");
     const depth = card.querySelector(".swatch-depth");
     const influence = card.querySelector(".swatch-influence");
@@ -521,7 +524,7 @@ function createSwatchControls() {
       swatch.influence = Number(influence.value);
       const encoded = invertControl.checked ? 1 - swatch.depth / 100 : swatch.depth / 100;
       const gray = Math.round(encoded * 255);
-      depthOutput.firstChild.textContent = swatch.depth === 0 ? "Farther " : swatch.depth === 100 ? "Closer " : `${swatch.depth}% closer `;
+      depthOutput.value = swatch.depth === 0 ? "Farther" : swatch.depth === 100 ? "Closer" : `${swatch.depth}% closer`;
       influenceOutput.value = `${swatch.influence}%`;
       preview.style.backgroundColor = `rgb(${gray},${gray},${gray})`;
       card.style.opacity = swatch.enabled ? "1" : ".5";
@@ -533,6 +536,37 @@ function createSwatchControls() {
     swatch.update = update;
     swatchGrid.appendChild(card);
   }
+}
+
+async function loadSavedDepthPalettes() {
+  const auth = await (window.machineChrome?.authStatus || Promise.resolve({signed_in:false}));
+  if (!auth.signed_in) return;
+  const response = await fetch("/account/depth-palettes", {credentials:"same-origin"});
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || "Could not load saved Depth Palettes.");
+  savedDepthPalettes = data.palettes || [];
+  const manualOption = new Option("Manual unsaved settings", "");
+  savedDepthPaletteSelect.replaceChildren(manualOption);
+  for (const palette of savedDepthPalettes) {
+    savedDepthPaletteSelect.add(new Option(palette.name || "Depth Palette", palette.palette_id));
+  }
+  depthPalettePicker.hidden = false;
+}
+
+function selectDepthPalette() {
+  const palette = savedDepthPalettes.find(item => item.palette_id === savedDepthPaletteSelect.value);
+  colorGuidancePanel.classList.toggle("using-saved-depth-palette", Boolean(palette));
+  resetGuidanceButton.hidden = Boolean(palette);
+  if (!palette) return;
+  const entries = new Map((palette.entries || []).map(entry => [String(entry.hex).toUpperCase(), entry]));
+  for (const swatch of paletteState) {
+    const entry = entries.get(swatch.hex.toUpperCase());
+    swatch.controls.enabled.checked = entry?.enabled !== false && Boolean(entry);
+    swatch.controls.depth.value = entry?.depth ?? 50;
+    swatch.controls.influence.value = entry?.influence ?? 0;
+    swatch.update(false);
+  }
+  if (rawDepth) renderAdjustedDepth();
 }
 
 function resetColorGuidance() {
@@ -567,6 +601,7 @@ guidanceFeatherControl.addEventListener("input", () => {
   if (rawDepth) renderAdjustedDepth();
 });
 resetGuidanceButton.addEventListener("click", resetColorGuidance);
+savedDepthPaletteSelect.addEventListener("change", selectDepthPalette);
 for (const control of [outputWidthControl, outputHeightControl]) control.addEventListener("change", renderAdjustedDepth);
 brushSizeControl.addEventListener("input", updateBrushSizePreview);
 brushDepthControl.addEventListener("input", updateBrushDepthPreview);
@@ -588,3 +623,4 @@ drawLegend();
 updateBrushDepthPreview();
 updateBrushSizePreview();
 createSwatchControls();
+loadSavedDepthPalettes().catch(cause => setStatus(cause.message, true));
