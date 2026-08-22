@@ -725,10 +725,14 @@ guidanceFeatherControl.addEventListener("input", () => {
   if (rawDepth) renderAdjustedDepth();
 });
 savedDepthPaletteSelect.addEventListener("change", selectDepthPalette);
-outputWidthControl.addEventListener("input", () => syncOutputAspect("width"));
-outputHeightControl.addEventListener("input", () => syncOutputAspect("height"));
-outputWidthControl.addEventListener("change", renderAdjustedDepth);
-outputHeightControl.addEventListener("change", renderAdjustedDepth);
+outputWidthControl.addEventListener("change", () => {
+  syncOutputAspect("width");
+  renderAdjustedDepth();
+});
+outputHeightControl.addEventListener("change", () => {
+  syncOutputAspect("height");
+  renderAdjustedDepth();
+});
 borderPaddingControl.addEventListener("change", renderAdjustedDepth);
 perimeterDepthControl.addEventListener("input", () => {
   perimeterDepthOverride = Number(perimeterDepthControl.value) / 100;
