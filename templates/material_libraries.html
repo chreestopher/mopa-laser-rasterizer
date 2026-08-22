@@ -126,6 +126,11 @@
     const depthPaletteNotice = document.getElementById('depth_palette_notice');
     const defaultDepthSwatches = JSON.parse(document.getElementById('vault_depth_palette_data').textContent);
     let savedDepthPalettes = [];
+    const depthPaletteResponse = async (response, fallback) => {
+      const text = await response.text();
+      try { return JSON.parse(text); }
+      catch { return {message:`${fallback} (HTTP ${response.status}).`}; }
+    };
     const depthDirectionLabel = value => {
       const depth = Number(value);
       if (depth === 50) return 'Neutral';
@@ -139,7 +144,7 @@
     };
     const loadDepthPalettes = async () => {
       const response = await fetch('/account/depth-palettes', {credentials:'same-origin'});
-      const data = await response.json();
+      const data = await depthPaletteResponse(response, 'Could not load Depth Palettes');
       if (!response.ok) throw new Error(data.message || 'Could not load Depth Palettes.');
       savedDepthPalettes = data.palettes || [];
       renderDepthPalettes();
@@ -149,7 +154,7 @@
       if (!name?.trim()) return;
       const entries = defaultDepthSwatches.map(swatch => ({...swatch, enabled:true, depth:50, influence:0}));
       const response = await fetch('/account/depth-palettes', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:name.trim(), entries})});
-      const data = await response.json();
+      const data = await depthPaletteResponse(response, 'Could not create Depth Palette');
       depthPaletteNotice.textContent = response.ok ? 'Depth Palette created.' : (data.message || 'Could not create Depth Palette.');
       if (response.ok) await loadDepthPalettes();
     });
@@ -173,7 +178,7 @@
       if (event.target.matches('.depth-palette-delete')) {
         if (!confirm('Delete this saved Depth Palette?')) return;
         const response = await fetch(`/account/depth-palettes/${encodeURIComponent(paletteId)}`, {method:'DELETE', credentials:'same-origin'});
-        const data = await response.json();
+        const data = await depthPaletteResponse(response, 'Could not delete Depth Palette');
         depthPaletteNotice.textContent = response.ok ? 'Depth Palette removed.' : (data.message || 'Could not delete Depth Palette.');
         if (response.ok) await loadDepthPalettes();
         return;
@@ -181,7 +186,7 @@
       if (!event.target.matches('.depth-palette-save')) return;
       const entries = Array.from(card.querySelectorAll('.depth-palette-entry')).map(row => ({hex:row.dataset.depthHex, enabled:row.querySelector('.depth-entry-enabled').checked, depth:Number(row.querySelector('.depth-entry-depth').value), influence:Number(row.querySelector('.depth-entry-influence').value)}));
       const response = await fetch(`/account/depth-palettes/${encodeURIComponent(paletteId)}`, {method:'PUT', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:card.querySelector('.depth-palette-name').value.trim(), entries})});
-      const data = await response.json();
+      const data = await depthPaletteResponse(response, 'Could not save Depth Palette');
       depthPaletteNotice.textContent = response.ok ? 'Depth Palette saved.' : (data.message || 'Could not save Depth Palette.');
       if (response.ok) await loadDepthPalettes();
     });

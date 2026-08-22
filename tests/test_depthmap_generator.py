@@ -95,7 +95,12 @@ class DepthMapGeneratorCoverageTests(unittest.TestCase):
         self.assertIn('<button class="rename-button depth-palette-save" type="button">Save</button>', vault)
         self.assertIn('class="settings-toggle depth-palette-toggle"', vault)
         self.assertIn("event.target.matches('.depth-palette-toggle')", vault)
+        self.assertIn("const depthPaletteResponse = async (response, fallback) =>", vault)
+        self.assertIn("depthPaletteResponse(response, 'Could not save Depth Palette')", vault)
         self.assertNotIn("<summary>Swatch depth settings</summary>", vault)
+
+        services = (ROOT / "services.py").read_text(encoding="utf-8")
+        self.assertIn("table.put_item(Item=_dynamodb_values(item))", services)
 
 
 if __name__ == "__main__":

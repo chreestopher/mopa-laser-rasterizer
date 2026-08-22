@@ -380,8 +380,12 @@ def save_user_depth_palette(user_id, name, entries, palette_id=None):
         "updated_at": int(time.time()),
     }
     try:
-        table.put_item(Item=item)
-    except ClientError as error:
+        # Existing DynamoDB numeric values are converted to ordinary Python
+        # numbers when read for JSON responses. Normalize the complete item on
+        # every write so an existing Decimal timestamp cannot return as a float
+        # and trigger boto3's unsupported-float serializer error on updates.
+        table.put_item(Item=_dynamodb_values(item))
+    except (ClientError, TypeError, ValueError) as error:
         raise RuntimeError("Could not save the Depth Palette.") from error
     return _json_values(item)
 
