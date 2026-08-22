@@ -1,12 +1,23 @@
-.git
-.gitignore
-.env*
-**/.env*
-__pycache__
-*.pyc
-.vscode
-.github
-README.md
-*.md
-.DS_Store
-uploads/
+# Exclude everything by default. Explicitly include only production runtime files.
+*
+
+!requirements.txt
+!app.py
+!services.py
+!worker.py
+
+!lib/
+!lib/**
+!routes/
+!routes/**
+!static/
+!static/**
+!templates/
+!templates/**
+
+# Development artifacts nested inside runtime directories remain excluded.
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+lib/run_filter_matrix.sh
+static/*_backup.lbrn2
