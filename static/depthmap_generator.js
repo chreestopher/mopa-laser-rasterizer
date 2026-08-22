@@ -25,6 +25,14 @@ const brushDepthControl = document.querySelector("#depth_brush_depth");
 const brushDepthValue = document.querySelector("#depth_brush_depth_value");
 const brushDepthPreview = document.querySelector("#depth_brush_preview");
 const clearPaintButton = document.querySelector("#depth_clear_paint");
+const colorGuidancePanel = document.querySelector("#color_guidance_panel");
+const swatchGrid = document.querySelector("#depth_swatch_grid");
+const guidanceFeatherControl = document.querySelector("#depth_guidance_feather");
+const guidanceFeatherValue = document.querySelector("#depth_guidance_feather_value");
+const guidanceStatus = document.querySelector("#depth_guidance_status");
+const resetGuidanceButton = document.querySelector("#depth_reset_guidance");
+const depthPalette = JSON.parse(document.querySelector("#depth_palette_data").textContent);
+const paletteState = depthPalette.map(swatch => ({...swatch, rgb:hexToRgb(swatch.hex), enabled:true, depth:50, influence:0}));
 
 let sourceFile = null;
 let sourceUrl = null;
@@ -33,6 +41,8 @@ let rawDepth = null;
 let depthWidth = 0;
 let depthHeight = 0;
 let adjustedDepth = null;
+let guidedDepth = null;
+let colorMatchMap = null;
 let outputDepth = null;
 let outputWidth = 0;
 let outputHeight = 0;
@@ -66,6 +76,7 @@ async function acceptFile(file) {
   generateButton.disabled = false;
   resetButton.disabled = false;
   workspace.hidden = false;
+  colorGuidancePanel.hidden = false;
   setStatus(`${file.name} is ready. Depth processing has not started.`);
   drawLegend();
 }
@@ -120,6 +131,7 @@ async function generateDepth() {
     depthHeight = dims[dims.length - 2];
     depthWidth = dims[dims.length - 1];
     rawDepth = Float32Array.from(tensor.data);
+    createColorMatchMap();
     outputWidthControl.value = depthWidth;
     outputHeightControl.value = depthHeight;
     renderAdjustedDepth();
@@ -152,10 +164,105 @@ function renderAdjustedDepth() {
     value = Math.pow(value, 1 / gamma);
     adjustedDepth[index] = invertControl.checked ? 1 - value : value;
   }
+  applyColorGuidance();
   buildOutputCanvas();
   drawGrayscale();
   drawRelief();
   drawLegend();
+}
+
+function hexToRgb(hex) {
+  const value = hex.replace("#", "");
+  const expanded = value.length === 3 ? value.split("").map(character => character + character).join("") : value;
+  const number = Number.parseInt(expanded, 16);
+  return [(number >> 16) & 255, (number >> 8) & 255, number & 255];
+}
+
+function createColorMatchMap() {
+  const matchingCanvas = document.createElement("canvas");
+  matchingCanvas.width = depthWidth;
+  matchingCanvas.height = depthHeight;
+  const context = matchingCanvas.getContext("2d", {willReadFrequently:true});
+  context.drawImage(sourceCanvas, 0, 0, depthWidth, depthHeight);
+  const pixels = context.getImageData(0, 0, depthWidth, depthHeight).data;
+  colorMatchMap = new Int16Array(depthWidth * depthHeight);
+  colorMatchMap.fill(-1);
+  for (let index = 0; index < colorMatchMap.length; index += 1) {
+    const offset = index * 4;
+    if (pixels[offset + 3] < 16) continue;
+    let closestIndex = 0;
+    let closestDistance = Infinity;
+    for (let paletteIndex = 0; paletteIndex < paletteState.length; paletteIndex += 1) {
+      const [red, green, blue] = paletteState[paletteIndex].rgb;
+      const redDelta = pixels[offset] - red;
+      const greenDelta = pixels[offset + 1] - green;
+      const blueDelta = pixels[offset + 2] - blue;
+      const distance = redDelta * redDelta + greenDelta * greenDelta + blueDelta * blueDelta;
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestIndex = paletteIndex;
+      }
+    }
+    colorMatchMap[index] = closestIndex;
+  }
+}
+
+function applyColorGuidance() {
+  guidedDepth = Float32Array.from(adjustedDepth);
+  if (!colorMatchMap) return;
+  const targetWeight = new Float32Array(adjustedDepth.length);
+  const influence = new Float32Array(adjustedDepth.length);
+  let activeSwatches = 0;
+  for (const swatch of paletteState) if (swatch.enabled && swatch.influence > 0) activeSwatches += 1;
+  guidanceStatus.textContent = activeSwatches
+    ? `${activeSwatches} swatch${activeSwatches === 1 ? "" : "es"} currently influence depth.`
+    : "All swatches currently follow perspective depth.";
+  if (!activeSwatches) return;
+  for (let index = 0; index < colorMatchMap.length; index += 1) {
+    const paletteIndex = colorMatchMap[index];
+    if (paletteIndex < 0) continue;
+    const swatch = paletteState[paletteIndex];
+    if (!swatch.enabled || swatch.influence <= 0) continue;
+    const weight = swatch.influence / 100;
+    influence[index] = weight;
+    const target = invertControl.checked ? 1 - swatch.depth / 100 : swatch.depth / 100;
+    targetWeight[index] = target * weight;
+  }
+  const radius = Number(guidanceFeatherControl.value);
+  const blendedInfluence = radius ? boxBlur(influence, depthWidth, depthHeight, radius) : influence;
+  const blendedTarget = radius ? boxBlur(targetWeight, depthWidth, depthHeight, radius) : targetWeight;
+  for (let index = 0; index < guidedDepth.length; index += 1) {
+    const weight = Math.min(1, blendedInfluence[index]);
+    if (weight <= 0) continue;
+    const target = blendedTarget[index] / weight;
+    guidedDepth[index] = adjustedDepth[index] * (1 - weight) + target * weight;
+  }
+}
+
+function boxBlur(source, width, height, radius) {
+  const horizontal = new Float32Array(source.length);
+  const output = new Float32Array(source.length);
+  for (let y = 0; y < height; y += 1) {
+    let sum = 0;
+    for (let x = -radius; x <= radius; x += 1) sum += source[y * width + Math.min(width - 1, Math.max(0, x))];
+    for (let x = 0; x < width; x += 1) {
+      horizontal[y * width + x] = sum / (radius * 2 + 1);
+      const removeX = Math.max(0, x - radius);
+      const addX = Math.min(width - 1, x + radius + 1);
+      sum += source[y * width + addX] - source[y * width + removeX];
+    }
+  }
+  for (let x = 0; x < width; x += 1) {
+    let sum = 0;
+    for (let y = -radius; y <= radius; y += 1) sum += horizontal[Math.min(height - 1, Math.max(0, y)) * width + x];
+    for (let y = 0; y < height; y += 1) {
+      output[y * width + x] = sum / (radius * 2 + 1);
+      const removeY = Math.max(0, y - radius);
+      const addY = Math.min(height - 1, y + radius + 1);
+      sum += horizontal[addY * width + x] - horizontal[removeY * width + x];
+    }
+  }
+  return output;
 }
 
 function requestedDimension(control, fallback) {
@@ -185,7 +292,7 @@ function buildOutputCanvas() {
     const sourceY = Math.min(depthHeight - 1, Math.floor(y * depthHeight / contentHeight));
     for (let x = 0; x < contentWidth; x += 1) {
       const sourceX = Math.min(depthWidth - 1, Math.floor(x * depthWidth / contentWidth));
-      outputDepth[(y + offsetY) * outputWidth + x + offsetX] = adjustedDepth[sourceY * depthWidth + sourceX];
+      outputDepth[(y + offsetY) * outputWidth + x + offsetX] = guidedDepth[sourceY * depthWidth + sourceX];
     }
   }
   for (let index = 0; index < outputLength; index += 1) {
@@ -386,14 +493,58 @@ function crc32(bytes) {
 
 function reset() {
   sourceFile = null;
-  rawDepth = adjustedDepth = outputDepth = paintedDepth = null;
+  rawDepth = adjustedDepth = guidedDepth = outputDepth = paintedDepth = colorMatchMap = null;
   if (sourceUrl) URL.revokeObjectURL(sourceUrl);
   sourceUrl = null;
   input.value = "";
   workspace.hidden = true;
+  colorGuidancePanel.hidden = true;
   resetButton.disabled = true;
   generateButton.disabled = true;
   setStatus("Waiting for an image.");
+}
+
+function createSwatchControls() {
+  for (const [index, swatch] of paletteState.entries()) {
+    const card = document.createElement("article");
+    card.className = "depth-swatch";
+    card.innerHTML = `<div class="depth-swatch-title"><input class="swatch-enabled" type="checkbox" checked aria-label="Enable ${swatch.name} color guidance"><span class="depth-swatch-color" style="background:${swatch.hex}"></span><span class="depth-swatch-name">${swatch.name}</span></div><label>Artificial depth <output class="swatch-depth-output">50% closer <span class="swatch-depth-preview"></span></output></label><input class="swatch-depth" type="range" min="0" max="100" step="0.1" value="50"><div class="guidance-scale"><span>Farther</span><span>Closer</span></div><label>Influence <output class="swatch-influence-output">0%</output></label><input class="swatch-influence" type="range" min="0" max="100" step="1" value="0"><div class="guidance-scale"><span>Perspective</span><span>Assigned depth</span></div>`;
+    const enabled = card.querySelector(".swatch-enabled");
+    const depth = card.querySelector(".swatch-depth");
+    const influence = card.querySelector(".swatch-influence");
+    const depthOutput = card.querySelector(".swatch-depth-output");
+    const influenceOutput = card.querySelector(".swatch-influence-output");
+    const preview = card.querySelector(".swatch-depth-preview");
+    const update = (rerender = true) => {
+      swatch.enabled = enabled.checked;
+      swatch.depth = Number(depth.value);
+      swatch.influence = Number(influence.value);
+      const encoded = invertControl.checked ? 1 - swatch.depth / 100 : swatch.depth / 100;
+      const gray = Math.round(encoded * 255);
+      depthOutput.firstChild.textContent = swatch.depth === 0 ? "Farther " : swatch.depth === 100 ? "Closer " : `${swatch.depth}% closer `;
+      influenceOutput.value = `${swatch.influence}%`;
+      preview.style.backgroundColor = `rgb(${gray},${gray},${gray})`;
+      card.style.opacity = swatch.enabled ? "1" : ".5";
+      if (rerender && rawDepth) renderAdjustedDepth();
+    };
+    for (const control of [enabled, depth, influence]) control.addEventListener("input", () => update(true));
+    update(false);
+    swatch.controls = {enabled, depth, influence};
+    swatch.update = update;
+    swatchGrid.appendChild(card);
+  }
+}
+
+function resetColorGuidance() {
+  for (const swatch of paletteState) {
+    swatch.controls.enabled.checked = true;
+    swatch.controls.depth.value = 50;
+    swatch.controls.influence.value = 0;
+    swatch.update(false);
+  }
+  guidanceFeatherControl.value = 2;
+  guidanceFeatherValue.value = "2 px";
+  if (rawDepth) renderAdjustedDepth();
 }
 
 input.addEventListener("change", () => acceptFile(input.files[0]).catch(cause => setStatus(cause.message, true)));
@@ -408,8 +559,14 @@ for (const control of [nearControl, farControl, gammaControl, invertControl]) co
   document.querySelector("#depth_far_value").value = `${farControl.value}%`;
   document.querySelector("#depth_gamma_value").value = (Number(gammaControl.value) / 100).toFixed(2);
   updateBrushDepthPreview();
+  if (control === invertControl) for (const swatch of paletteState) swatch.update(false);
   renderAdjustedDepth();
 });
+guidanceFeatherControl.addEventListener("input", () => {
+  guidanceFeatherValue.value = `${guidanceFeatherControl.value} px`;
+  if (rawDepth) renderAdjustedDepth();
+});
+resetGuidanceButton.addEventListener("click", resetColorGuidance);
 for (const control of [outputWidthControl, outputHeightControl]) control.addEventListener("change", renderAdjustedDepth);
 brushSizeControl.addEventListener("input", updateBrushSizePreview);
 brushDepthControl.addEventListener("input", updateBrushDepthPreview);
@@ -430,3 +587,4 @@ document.querySelector("#depth_export_16").addEventListener("click", () => expor
 drawLegend();
 updateBrushDepthPreview();
 updateBrushSizePreview();
+createSwatchControls();

@@ -52,6 +52,7 @@
     body.light-machine #depth_input::-webkit-file-upload-button {color:#171815;border-color:#69756e;background:linear-gradient(#e1e4df,#aeb6af);box-shadow:inset 0 1px rgba(255,255,255,.8),0 3px 0 #737a74}
     #depth_map_canvas.is-editable {cursor:crosshair;touch-action:none;user-select:none}
     .brush-depth-display{display:grid;place-items:center;min-height:82px;margin-top:8px}.brush-depth-swatch{display:block;width:18px;height:18px;border:3px solid #8f957f;border-radius:50%;background:#000;box-shadow:inset 0 0 0 2px rgba(255,255,255,.18),0 2px 6px #000;transition:width .08s linear,height .08s linear,background-color .08s linear}body.light-machine .brush-depth-swatch{border-color:#6e746a;box-shadow:inset 0 0 0 2px rgba(255,255,255,.6),0 2px 5px #777}
+    .guidance-header{display:flex;align-items:start;justify-content:space-between;gap:16px;flex-wrap:wrap}.guidance-header h2{margin:0}.swatch-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:18px}.depth-swatch{min-width:0;padding:14px;border:1px solid #4c5948;border-radius:8px;background:#111510}.depth-swatch-title{display:grid;grid-template-columns:auto 28px minmax(0,1fr);align-items:center;gap:9px;margin-bottom:10px}.depth-swatch-color{width:28px;height:28px;border:2px solid #9ba89f;border-radius:50%;box-shadow:0 2px 4px #000}.depth-swatch-name{overflow:hidden;font:700 .82rem "Courier New",monospace;text-overflow:ellipsis;white-space:nowrap}.depth-swatch label{display:flex;justify-content:space-between;gap:8px;margin-top:8px;font-size:.82rem}.depth-swatch input[type=range]{width:100%;accent-color:var(--green)}.guidance-scale{display:flex;justify-content:space-between;color:#aaa991;font-size:.72rem}.guidance-tools{display:grid;grid-template-columns:minmax(220px,1fr) auto;align-items:end;gap:14px;margin-top:16px}.guidance-empty{color:#c5c7b5}.swatch-depth-preview{display:inline-block;width:20px;height:20px;margin-left:5px;border:2px solid #8f957f;border-radius:50%;vertical-align:middle}body.light-machine .depth-swatch{border-color:#858780;background:#d9dbd4}body.light-machine .guidance-scale,body.light-machine .guidance-empty{color:#343730}@media(max-width:760px){.swatch-grid{grid-template-columns:minmax(0,1fr)}.guidance-tools{grid-template-columns:minmax(0,1fr)}}
   </style>
   <link rel="stylesheet" href="/static/machine_chrome.css?v=3">
 </head>
@@ -73,6 +74,12 @@
       <progress id="depth_progress" class="progress" max="100" value="0" hidden></progress>
       <p id="depth_status" class="status-label" role="status" aria-live="polite">Waiting for an image.</p>
       <p id="depth_error" class="error" role="alert" hidden></p>
+    </section>
+
+    <section id="color_guidance_panel" class="panel" hidden>
+      <div class="guidance-header"><div><p class="eyebrow">Optional interpretation layer</p><h2>Color-Guided Depth</h2><p>Assign artificial depth to Rasterizer swatches. Influence controls whether each matched color follows the AI perspective estimate or moves toward its assigned depth.</p></div><button id="depth_reset_guidance" class="button secondary" type="button">Reset color guidance</button></div>
+      <div class="guidance-tools"><div class="control"><label for="depth_guidance_feather">Boundary feathering <output id="depth_guidance_feather_value">2 px</output></label><input id="depth_guidance_feather" type="range" min="0" max="20" step="1" value="2"><div class="guidance-scale"><span>Sharper</span><span>Smoother</span></div></div><p id="depth_guidance_status" class="guidance-empty">All swatches currently follow perspective depth.</p></div>
+      <div id="depth_swatch_grid" class="swatch-grid"></div>
     </section>
 
     <section id="depth_workspace" class="panel workspace" hidden>
@@ -107,6 +114,7 @@
 
     <aside class="panel note"><strong>Important limitation:</strong> a single photograph cannot provide measured physical depth. The model infers relative depth from visual cues and can misread reflections, transparency, shadows, abstract artwork, or unfamiliar objects. Always inspect and edit the result before using it for relief engraving. The uploaded image is processed locally; the browser downloads the AI model from Hugging Face when first used.</aside>
   </main>
+  <script id="depth_palette_data" type="application/json">{{ depth_palette|tojson }}</script>
   <script type="module" src="/static/depthmap_generator.js?v=1"></script>
 </body>
 </html>
