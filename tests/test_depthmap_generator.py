@@ -70,6 +70,13 @@ class DepthMapGeneratorCoverageTests(unittest.TestCase):
         self.assertIn("if (!savedDepthPaletteSelect.value) return", script)
         self.assertIn('square.setAttribute("aria-disabled", String(!paletteSelected))', script)
         self.assertIn('paletteSelected && !swatch.enabled', script)
+        self.assertIn("awaiting-depth-palette", page)
+        self.assertIn('classList.toggle("awaiting-depth-palette", !palette)', script)
+        self.assertIn("guidedDepth[index] = adjustedDepth[index] * (1 - weight) + target * weight", script)
+        self.assertIn("const farthest = invertControl.checked ? 1 : 0", script)
+        self.assertIn("Math.min(outputWidth / depthWidth, outputHeight / depthHeight)", script)
+        self.assertEqual(script.count("createImageData(outputWidth, outputHeight)"), 2)
+        self.assertNotIn("createImageData(depthWidth, depthHeight)", script)
 
     def test_material_vault_places_depth_palette_creation_with_hatch_palette(self):
         vault = (ROOT / "templates" / "material_libraries.html").read_text(encoding="utf-8")
@@ -78,13 +85,6 @@ class DepthMapGeneratorCoverageTests(unittest.TestCase):
         self.assertLess(hatch_position, depth_position)
         self.assertLess(depth_position - hatch_position, 180)
         self.assertEqual(vault.count('id="new_depth_palette"'), 1)
-        self.assertIn("awaiting-depth-palette", page)
-        self.assertIn('classList.toggle("awaiting-depth-palette", !palette)', script)
-        self.assertIn("guidedDepth[index] = adjustedDepth[index] * (1 - weight) + target * weight", script)
-        self.assertIn("const farthest = invertControl.checked ? 1 : 0", script)
-        self.assertIn("Math.min(outputWidth / depthWidth, outputHeight / depthHeight)", script)
-        self.assertEqual(script.count("createImageData(outputWidth, outputHeight)"), 2)
-        self.assertNotIn("createImageData(depthWidth, depthHeight)", script)
 
 
 if __name__ == "__main__":
