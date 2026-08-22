@@ -31,6 +31,7 @@ class DepthMapGeneratorCoverageTests(unittest.TestCase):
         self.assertLess(page.index('id="depth_source_preview"'), page.index('id="depth_workspace"'))
         self.assertEqual(page.count('id="depth_generate"'), 1)
         self.assertLess(page.index('id="depth_swatch_grid"'), page.index('id="depth_generate"'))
+        self.assertLess(page.index('id="depth_generate"'), page.index('id="depth_progress"'))
         self.assertLess(page.index('id="depth_generate"'), page.index('id="depth_workspace"'))
         self.assertIn("#depth_input::file-selector-button", page)
         self.assertIn("#depth_input::-webkit-file-upload-button", page)

@@ -72,7 +72,6 @@
         <div><h2>Choose an image</h2><p>Drop a PNG, JPEG, WebP, BMP, or TIFF here, or select one from your device.</p><input id="depth_input" type="file" accept="image/png,image/jpeg,image/webp,image/bmp,image/tiff"></div>
       </div>
       <div class="actions"><button id="depth_reset" class="button secondary" type="button" disabled>Reset</button></div>
-      <progress id="depth_progress" class="progress" max="100" value="0" hidden></progress>
       <p id="depth_status" class="status-label" role="status" aria-live="polite">Waiting for an image.</p>
       <p id="depth_error" class="error" role="alert" hidden></p>
       <div id="depth_source_preview" class="preview-card upload-source-preview" hidden><h3>Source image</h3><canvas id="depth_source_canvas"></canvas></div>
@@ -84,6 +83,7 @@
       <div id="depth_guidance_tools" class="guidance-tools" hidden><div class="control"><label for="depth_guidance_feather">Boundary feathering <output id="depth_guidance_feather_value">2 px</output></label><input id="depth_guidance_feather" type="range" min="0" max="20" step="1" value="2"><div class="guidance-scale"><span>Sharper</span><span>Smoother</span></div></div><p id="depth_guidance_status" class="guidance-empty">All swatches currently follow perspective depth.</p></div>
       <div id="depth_swatch_grid" class="color-grid"></div>
       <div class="actions"><button id="depth_generate" class="button" type="button" disabled>Generate depth map</button></div>
+      <progress id="depth_progress" class="progress" max="100" value="0" hidden></progress>
     </section>
 
     <section id="depth_workspace" class="panel workspace" hidden>
