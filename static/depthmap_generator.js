@@ -19,6 +19,9 @@ const gammaControl = document.querySelector("#depth_gamma");
 const invertControl = document.querySelector("#depth_invert");
 const outputWidthControl = document.querySelector("#depth_output_width");
 const outputHeightControl = document.querySelector("#depth_output_height");
+const brushSizeControl = document.querySelector("#depth_brush_size");
+const brushSizeValue = document.querySelector("#depth_brush_size_value");
+const clearPaintButton = document.querySelector("#depth_clear_paint");
 
 let sourceFile = null;
 let sourceUrl = null;
@@ -30,6 +33,9 @@ let adjustedDepth = null;
 let outputDepth = null;
 let outputWidth = 0;
 let outputHeight = 0;
+let farPaintMask = null;
+let paintingFarDepth = false;
+let lastPaintPoint = null;
 
 function setStatus(message, isError = false) {
   status.textContent = message;
@@ -165,7 +171,9 @@ function buildOutputCanvas() {
   const offsetX = Math.floor((outputWidth - contentWidth) / 2);
   const offsetY = Math.floor((outputHeight - contentHeight) / 2);
   const farthest = invertControl.checked ? 1 : 0;
-  outputDepth = new Float32Array(outputWidth * outputHeight);
+  const outputLength = outputWidth * outputHeight;
+  if (!farPaintMask || farPaintMask.length !== outputLength) farPaintMask = new Uint8Array(outputLength);
+  outputDepth = new Float32Array(outputLength);
   outputDepth.fill(farthest);
   for (let y = 0; y < contentHeight; y += 1) {
     const sourceY = Math.min(depthHeight - 1, Math.floor(y * depthHeight / contentHeight));
@@ -174,6 +182,54 @@ function buildOutputCanvas() {
       outputDepth[(y + offsetY) * outputWidth + x + offsetX] = adjustedDepth[sourceY * depthWidth + sourceX];
     }
   }
+  for (let index = 0; index < outputLength; index += 1) {
+    if (farPaintMask[index]) outputDepth[index] = farthest;
+  }
+}
+
+function paintFarDepth(event) {
+  if (!outputDepth || !paintingFarDepth) return;
+  const bounds = mapCanvas.getBoundingClientRect();
+  const centerX = (event.clientX - bounds.left) * outputWidth / bounds.width;
+  const centerY = (event.clientY - bounds.top) * outputHeight / bounds.height;
+  const radius = Number(brushSizeControl.value) / 2;
+  const distance = lastPaintPoint ? Math.hypot(centerX - lastPaintPoint.x, centerY - lastPaintPoint.y) : 0;
+  const steps = Math.max(1, Math.ceil(distance / Math.max(1, radius / 2)));
+  for (let step = 1; step <= steps; step += 1) {
+    const amount = step / steps;
+    const brushX = lastPaintPoint ? lastPaintPoint.x + (centerX - lastPaintPoint.x) * amount : centerX;
+    const brushY = lastPaintPoint ? lastPaintPoint.y + (centerY - lastPaintPoint.y) * amount : centerY;
+    paintFarDepthCircle(brushX, brushY, radius);
+  }
+  lastPaintPoint = {x:centerX, y:centerY};
+  drawGrayscale();
+  drawRelief();
+}
+
+function paintFarDepthCircle(centerX, centerY, radius) {
+  const minimumX = Math.max(0, Math.floor(centerX - radius));
+  const maximumX = Math.min(outputWidth - 1, Math.ceil(centerX + radius));
+  const minimumY = Math.max(0, Math.floor(centerY - radius));
+  const maximumY = Math.min(outputHeight - 1, Math.ceil(centerY + radius));
+  const radiusSquared = radius * radius;
+  const farthest = invertControl.checked ? 1 : 0;
+  for (let y = minimumY; y <= maximumY; y += 1) {
+    for (let x = minimumX; x <= maximumX; x += 1) {
+      const deltaX = x + .5 - centerX;
+      const deltaY = y + .5 - centerY;
+      if (deltaX * deltaX + deltaY * deltaY > radiusSquared) continue;
+      const index = y * outputWidth + x;
+      farPaintMask[index] = 1;
+      outputDepth[index] = farthest;
+    }
+  }
+}
+
+function clearPaintedDepth() {
+  if (!farPaintMask) return;
+  farPaintMask.fill(0);
+  renderAdjustedDepth();
+  setStatus("Painted depth edits cleared.");
 }
 
 function drawGrayscale() {
@@ -301,7 +357,7 @@ function crc32(bytes) {
 
 function reset() {
   sourceFile = null;
-  rawDepth = adjustedDepth = outputDepth = null;
+  rawDepth = adjustedDepth = outputDepth = farPaintMask = null;
   if (sourceUrl) URL.revokeObjectURL(sourceUrl);
   sourceUrl = null;
   input.value = "";
@@ -325,6 +381,19 @@ for (const control of [nearControl, farControl, gammaControl, invertControl]) co
   renderAdjustedDepth();
 });
 for (const control of [outputWidthControl, outputHeightControl]) control.addEventListener("change", renderAdjustedDepth);
+brushSizeControl.addEventListener("input", () => { brushSizeValue.value = `${brushSizeControl.value} px`; });
+clearPaintButton.addEventListener("click", clearPaintedDepth);
+mapCanvas.addEventListener("pointerdown", event => {
+  if (!outputDepth) return;
+  paintingFarDepth = true;
+  lastPaintPoint = null;
+  mapCanvas.setPointerCapture(event.pointerId);
+  paintFarDepth(event);
+});
+mapCanvas.addEventListener("pointermove", paintFarDepth);
+for (const eventName of ["pointerup", "pointercancel", "lostpointercapture"]) {
+  mapCanvas.addEventListener(eventName, () => { paintingFarDepth = false; lastPaintPoint = null; });
+}
 document.querySelector("#depth_export_8").addEventListener("click", export8Bit);
 document.querySelector("#depth_export_16").addEventListener("click", () => export16Bit().catch(cause => setStatus(cause.message, true)));
 drawLegend();

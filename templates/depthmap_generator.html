@@ -50,6 +50,7 @@
     body.light-machine #depth_input {color:#171815;border-color:#777974;background:#dedfd9;box-shadow:inset 0 1px 5px #999}
     body.light-machine #depth_input::file-selector-button,
     body.light-machine #depth_input::-webkit-file-upload-button {color:#171815;border-color:#69756e;background:linear-gradient(#e1e4df,#aeb6af);box-shadow:inset 0 1px rgba(255,255,255,.8),0 3px 0 #737a74}
+    #depth_map_canvas.is-editable {cursor:crosshair;touch-action:none;user-select:none}
   </style>
   <link rel="stylesheet" href="/static/machine_chrome.css?v=3">
 </head>
@@ -85,12 +86,18 @@
           <div class="dimensions"><label for="depth_output_width">Width (px)<input id="depth_output_width" type="number" min="32" max="8192" step="1"></label><label for="depth_output_height">Height (px)<input id="depth_output_height" type="number" min="32" max="8192" step="1"></label></div>
           <p class="fine-print">The depth image keeps its proportions and is centered. Extra canvas area is extended with the farthest depth so it shares one continuous background value.</p>
         </div>
+        <div>
+          <h3>Paint far depth</h3>
+          <div class="control"><label for="depth_brush_size">Brush diameter <output id="depth_brush_size_value">20 px</output></label><input id="depth_brush_size" type="range" min="1" max="200" value="20"></div>
+          <p class="fine-print">Click or drag directly on the grayscale depth preview to replace unwanted areas with the farthest depth value.</p>
+          <button id="depth_clear_paint" class="button secondary" type="button">Clear painted edits</button>
+        </div>
         <div class="actions"><button id="depth_export_8" class="button" type="button">Download 8-bit PNG</button><button id="depth_export_16" class="button secondary" type="button">Download 16-bit PNG</button></div>
         <p class="fine-print">An 8-bit image contains 256 gray levels. The 16-bit export contains 65,536 levels and preserves smoother gradients for compatible downstream software.</p>
       </div>
       <div class="previews">
         <div class="preview-card"><h3>Source image</h3><canvas id="depth_source_canvas"></canvas></div>
-        <div class="preview-card"><h3>Grayscale depth</h3><canvas id="depth_map_canvas"></canvas></div>
+        <div class="preview-card"><h3>Grayscale depth - drag to paint far depth</h3><canvas id="depth_map_canvas" class="is-editable" aria-label="Editable grayscale depth map"></canvas></div>
         <div class="preview-card"><h3>Relief projection</h3><canvas id="depth_relief_canvas"></canvas></div>
         <div class="preview-card"><h3>Depth convention</h3><canvas id="depth_legend_canvas" width="640" height="360"></canvas></div>
       </div>
