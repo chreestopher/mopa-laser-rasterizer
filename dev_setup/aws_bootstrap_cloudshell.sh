@@ -6,6 +6,7 @@ REGION="${AWS_REGION:-us-east-2}"
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 BUCKET_NAME="${S3_BUCKET_NAME:-mopa-laser-rasterizer-artifacts-${ACCOUNT_ID}}"
 TABLE_NAME="${DYNAMODB_TABLE_NAME:-mopa-laser-rasterizer-users}"
+ECR_REPOSITORY="${ECR_REPOSITORY:-mopa-laser-rasterizer}"
 ROLE_NAME="${EC2_ROLE_NAME:-mopa-laser-rasterizer-ec2}"
 PROFILE_NAME="${EC2_PROFILE_NAME:-mopa-laser-rasterizer-ec2}"
 
@@ -50,8 +51,22 @@ if ! aws dynamodb describe-table --table-name "$TABLE_NAME" --region "$REGION" >
   aws dynamodb wait table-exists --table-name "$TABLE_NAME" --region "$REGION"
 fi
 
-TRUST_FILE="$(mktemp)"; POLICY_FILE="$(mktemp)"
-trap 'rm -f "$TRUST_FILE" "$POLICY_FILE"' EXIT
+echo "Configuring private ECR repository: $ECR_REPOSITORY"
+if ! aws ecr describe-repositories --region "$REGION" --repository-names "$ECR_REPOSITORY" >/dev/null 2>&1; then
+  aws ecr create-repository --region "$REGION" \
+    --repository-name "$ECR_REPOSITORY" \
+    --image-tag-mutability IMMUTABLE \
+    --image-scanning-configuration scanOnPush=true \
+    --encryption-configuration encryptionType=AES256 >/dev/null
+fi
+
+TRUST_FILE="$(mktemp)"; POLICY_FILE="$(mktemp)"; ECR_LIFECYCLE_FILE="$(mktemp)"
+trap 'rm -f "$TRUST_FILE" "$POLICY_FILE" "$ECR_LIFECYCLE_FILE"' EXIT
+printf '%s' '{"rules":[{"rulePriority":1,"description":"Keep the newest 20 application images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":20},"action":{"type":"expire"}}]}' > "$ECR_LIFECYCLE_FILE"
+aws ecr put-lifecycle-policy --region "$REGION" \
+  --repository-name "$ECR_REPOSITORY" \
+  --lifecycle-policy-text "file://${ECR_LIFECYCLE_FILE}" >/dev/null
+
 printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}' > "$TRUST_FILE"
 if ! aws iam get-role --role-name "$ROLE_NAME" >/dev/null 2>&1; then
   aws iam create-role --role-name "$ROLE_NAME" --assume-role-policy-document "file://${TRUST_FILE}" >/dev/null
@@ -60,6 +75,8 @@ cat > "$POLICY_FILE" <<JSON
 {"Version":"2012-10-17","Statement":[
 {"Effect":"Allow","Action":"s3:ListBucket","Resource":"arn:aws:s3:::${BUCKET_NAME}"},
 {"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:PutObjectTagging","s3:DeleteObject"],"Resource":"arn:aws:s3:::${BUCKET_NAME}/*"},
+{"Effect":"Allow","Action":"ecr:GetAuthorizationToken","Resource":"*"},
+{"Effect":"Allow","Action":["ecr:BatchCheckLayerAvailability","ecr:BatchGetImage","ecr:GetDownloadUrlForLayer"],"Resource":"arn:aws:ecr:${REGION}:${ACCOUNT_ID}:repository/${ECR_REPOSITORY}"},
 {"Effect":"Allow","Action":["dynamodb:BatchGetItem","dynamodb:BatchWriteItem","dynamodb:DeleteItem","dynamodb:DescribeTable","dynamodb:GetItem","dynamodb:PutItem","dynamodb:Query","dynamodb:UpdateItem"],"Resource":"arn:aws:dynamodb:${REGION}:${ACCOUNT_ID}:table/${TABLE_NAME}"}]}
 JSON
 aws iam put-role-policy --role-name "$ROLE_NAME" --policy-name MopaRasterizerAccountData --policy-document "file://${POLICY_FILE}"
@@ -120,7 +137,7 @@ if [ "$CONFIGURE_EDGE" = "1" ]; then
   fi
 
   ACTION_FILE="$(mktemp)"; LOGOUT_FILE="$(mktemp)"; LOGIN_FILE="$(mktemp)"
-  trap 'rm -f "$TRUST_FILE" "$POLICY_FILE" "$ACTION_FILE" "$LOGOUT_FILE" "$LOGIN_FILE"' EXIT
+  trap 'rm -f "$TRUST_FILE" "$POLICY_FILE" "$ECR_LIFECYCLE_FILE" "$ACTION_FILE" "$LOGOUT_FILE" "$LOGIN_FILE"' EXIT
   cat > "$ACTION_FILE" <<JSON
 [{"Type":"authenticate-cognito","Order":1,"AuthenticateCognitoConfig":{"UserPoolArn":"arn:aws:cognito-idp:${REGION}:${ACCOUNT_ID}:userpool/${COGNITO_POOL_ID}","UserPoolClientId":"${COGNITO_CLIENT_ID}","UserPoolClientSecret":"${COGNITO_CLIENT_SECRET}","UserPoolDomain":"${COGNITO_USER_POOL_DOMAIN_PREFIX}","OnUnauthenticatedRequest":"allow","Scope":"openid email profile","SessionCookieName":"AWSELBAuthSessionCookie","SessionTimeout":604800}},{"Type":"forward","Order":2,"ForwardConfig":{"TargetGroups":[{"TargetGroupArn":"${TARGET_GROUP_ARN}","Weight":1}]}}]
 JSON
@@ -158,4 +175,5 @@ fi
 
 echo
 echo "Bootstrap complete. Attach instance profile '$PROFILE_NAME' to the replacement EC2 instance."
-printf 'AWS_REGION=%s\nS3_BUCKET_NAME=%s\nDYNAMODB_TABLE_NAME=%s\n' "$REGION" "$BUCKET_NAME" "$TABLE_NAME"
+printf 'AWS_REGION=%s\nS3_BUCKET_NAME=%s\nDYNAMODB_TABLE_NAME=%s\nECR_REPOSITORY_URI=%s.dkr.ecr.%s.amazonaws.com/%s\n' \
+  "$REGION" "$BUCKET_NAME" "$TABLE_NAME" "$ACCOUNT_ID" "$REGION" "$ECR_REPOSITORY"

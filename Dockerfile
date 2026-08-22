@@ -19,8 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir -r requirements.txt
 
-# Keep the image independently runnable. In the AWS host-mounted deployment,
-# Kubernetes overlays /app with the checked-out repository at runtime.
+# Copy only the production runtime files allowed by .dockerignore.
 COPY . /app/
 
 # Expose port 8000

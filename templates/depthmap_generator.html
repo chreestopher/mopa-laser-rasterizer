@@ -124,7 +124,8 @@
           <h3>Final canvas size</h3>
           <div class="dimensions"><label for="depth_output_width">Width (px)<input id="depth_output_width" type="number" min="32" max="8192" step="1"></label><label for="depth_output_height">Height (px)<input id="depth_output_height" type="number" min="32" max="8192" step="1"></label></div>
           <div class="dimensions single"><label for="depth_border_padding">Far-depth border on every side (px)<input id="depth_border_padding" type="number" min="0" max="2048" step="1" value="0"></label></div>
-          <p class="fine-print">Width and height are linked artwork dimensions. Editing either dimension automatically recalculates the other. Border padding adds the farthest depth around all four sides, increasing each exported dimension by twice the padding value.</p>
+          <div class="control"><label for="depth_perimeter_depth">Perimeter padding depth <output id="depth_perimeter_depth_value">Lowest point</output></label><input id="depth_perimeter_depth" type="range" min="0" max="100" step="0.1" value="0"><div class="dimensions" aria-hidden="true"><span>Farther</span><span style="text-align:right">Closer</span></div></div>
+          <p class="fine-print">Width and height are linked artwork dimensions. Editing either dimension automatically recalculates the other. Border padding initially extends the image's lowest existing height around all four sides. Moving Perimeter Padding Depth overrides that automatic value.</p>
         </div>
         <div>
           <h3>Paint depth</h3>
@@ -146,6 +147,6 @@
     <aside class="panel note"><strong>Important limitation:</strong> a single photograph cannot provide measured physical depth. The model infers relative depth from visual cues and can misread reflections, transparency, shadows, abstract artwork, or unfamiliar objects. Always inspect and edit the result before using it for relief engraving. The uploaded image is processed locally; the browser downloads the AI model from Hugging Face when first used.</aside>
   </main>
   <script id="depth_palette_data" type="application/json">{{ depth_palette|tojson }}</script>
-  <script type="module" src="/static/depthmap_generator.js?v=1"></script>
+  <script type="module" src="/static/depthmap_generator.js?v=2"></script>
 </body>
 </html>

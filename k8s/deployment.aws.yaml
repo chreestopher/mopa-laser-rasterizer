@@ -16,11 +16,8 @@ spec:
       labels:
         app: mopa-laser-rasterizer
     spec:
-      # hostPath is local to a Kubernetes node. Label exactly the EC2 node that
-      # contains /home/ubuntu/mopa-laser-rasterizer so every replica mounts the
-      # same checked-out repository rather than a node-local copy.
-      nodeSelector:
-        mopa-laser-rasterizer-host: "true"
+      imagePullSecrets:
+      - name: ecr-registry
       # --- NEW: This blocks the Flask container until Redis is fully running ---
       initContainers:
       - name: wait-for-redis
@@ -80,16 +77,8 @@ spec:
             memory: "4096Mi"
             cpu: "500m"
         volumeMounts:
-        - name: application-source
-          mountPath: /app
-          readOnly: false
         - name: job-scratch
           mountPath: /tmp/uploads
       volumes:
-      # This is a bind mount of the EC2 host checkout, not a copy into the pod.
-      - name: application-source
-        hostPath:
-          path: /home/ubuntu/mopa-laser-rasterizer
-          type: Directory
       - name: job-scratch
         emptyDir: {}

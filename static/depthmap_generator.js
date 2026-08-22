@@ -26,6 +26,8 @@ const invertControl = document.querySelector("#depth_invert");
 const outputWidthControl = document.querySelector("#depth_output_width");
 const outputHeightControl = document.querySelector("#depth_output_height");
 const borderPaddingControl = document.querySelector("#depth_border_padding");
+const perimeterDepthControl = document.querySelector("#depth_perimeter_depth");
+const perimeterDepthValue = document.querySelector("#depth_perimeter_depth_value");
 const brushSizeControl = document.querySelector("#depth_brush_size");
 const brushSizeValue = document.querySelector("#depth_brush_size_value");
 const brushDepthControl = document.querySelector("#depth_brush_depth");
@@ -58,6 +60,7 @@ let outputDepth = null;
 let outputWidth = 0;
 let outputHeight = 0;
 let paintedDepth = null;
+let perimeterDepthOverride = null;
 let paintingFarDepth = false;
 let lastPaintPoint = null;
 
@@ -86,6 +89,8 @@ async function acceptFile(file) {
     return;
   }
   sourceFile = file;
+  perimeterDepthOverride = null;
+  perimeterDepthValue.value = "Lowest point";
   if (sourceUrl) URL.revokeObjectURL(sourceUrl);
   sourceUrl = URL.createObjectURL(file);
   const image = await loadImage(sourceUrl);
@@ -320,6 +325,33 @@ function syncOutputAspect(changedDimension) {
   outputHeightControl.value = height;
 }
 
+function lowestImageHeight(depthValues) {
+  let lowestHeight = invertControl.checked ? -Infinity : Infinity;
+  for (const value of depthValues) {
+    if (!Number.isFinite(value)) continue;
+    if (invertControl.checked) {
+      if (value > lowestHeight) lowestHeight = value;
+    } else if (value < lowestHeight) {
+      lowestHeight = value;
+    }
+  }
+  return Number.isFinite(lowestHeight) ? lowestHeight : (invertControl.checked ? 1 : 0);
+}
+
+function encodedDepthToProximity(encodedDepth) {
+  return invertControl.checked ? 1 - encodedDepth : encodedDepth;
+}
+
+function proximityDepthLabel(proximity) {
+  const percentage = Math.max(0, Math.min(100, proximity * 100));
+  if (percentage === 0) return "Farther";
+  if (percentage === 50) return "Neutral";
+  if (percentage === 100) return "Closer";
+  const distanceFromNeutral = Math.abs(percentage - 50) * 2;
+  const formatted = Number.isInteger(distanceFromNeutral) ? distanceFromNeutral.toFixed(0) : distanceFromNeutral.toFixed(1);
+  return `${formatted}% ${percentage < 50 ? "farther" : "closer"}`;
+}
+
 function buildOutputCanvas() {
   syncOutputAspect("width");
   const artworkWidth = requestedDimension(outputWidthControl, depthWidth);
@@ -335,14 +367,21 @@ function buildOutputCanvas() {
   const contentHeight = Math.max(1, Math.round(depthHeight * scale));
   const offsetX = borderPadding + Math.floor((artworkWidth - contentWidth) / 2);
   const offsetY = borderPadding + Math.floor((artworkHeight - contentHeight) / 2);
-  const farthest = invertControl.checked ? 1 : 0;
+  const lowestDepth = lowestImageHeight(guidedDepth);
+  const automaticProximity = encodedDepthToProximity(lowestDepth);
+  const perimeterProximity = perimeterDepthOverride === null ? automaticProximity : perimeterDepthOverride;
+  const perimeterDepth = invertControl.checked ? 1 - perimeterProximity : perimeterProximity;
+  if (perimeterDepthOverride === null) perimeterDepthControl.value = (automaticProximity * 100).toFixed(1);
+  perimeterDepthValue.value = perimeterDepthOverride === null
+    ? `Lowest point (${proximityDepthLabel(automaticProximity)})`
+    : proximityDepthLabel(perimeterProximity);
   const outputLength = outputWidth * outputHeight;
   if (!paintedDepth || paintedDepth.length !== outputLength) {
     paintedDepth = new Float32Array(outputLength);
     paintedDepth.fill(Number.NaN);
   }
   outputDepth = new Float32Array(outputLength);
-  outputDepth.fill(farthest);
+  outputDepth.fill(perimeterDepth);
   for (let y = 0; y < contentHeight; y += 1) {
     const sourceY = Math.min(depthHeight - 1, Math.floor(y * depthHeight / contentHeight));
     for (let x = 0; x < contentWidth; x += 1) {
@@ -562,6 +601,7 @@ function crc32(bytes) {
 
 function reset() {
   sourceFile = null;
+  perimeterDepthOverride = null;
   rawDepth = adjustedDepth = guidedDepth = outputDepth = paintedDepth = colorMatchMap = null;
   if (sourceUrl) URL.revokeObjectURL(sourceUrl);
   sourceUrl = null;
@@ -690,6 +730,10 @@ outputHeightControl.addEventListener("input", () => syncOutputAspect("height"));
 outputWidthControl.addEventListener("change", renderAdjustedDepth);
 outputHeightControl.addEventListener("change", renderAdjustedDepth);
 borderPaddingControl.addEventListener("change", renderAdjustedDepth);
+perimeterDepthControl.addEventListener("input", () => {
+  perimeterDepthOverride = Number(perimeterDepthControl.value) / 100;
+  renderAdjustedDepth();
+});
 brushSizeControl.addEventListener("input", updateBrushSizePreview);
 brushDepthControl.addEventListener("input", updateBrushDepthPreview);
 clearPaintButton.addEventListener("click", clearPaintedDepth);

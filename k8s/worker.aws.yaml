@@ -9,7 +9,7 @@ spec:
   replicas: 1
   progressDeadlineSeconds: 7500
   strategy:
-    type: Recreate
+    type: RollingUpdate
   selector:
     matchLabels:
       app: mopa-laser-raster-worker
@@ -19,8 +19,8 @@ spec:
         app: mopa-laser-raster-worker
     spec:
       terminationGracePeriodSeconds: 7200
-      nodeSelector:
-        mopa-laser-rasterizer-host: "true"
+      imagePullSecrets:
+      - name: ecr-registry
       initContainers:
       - name: wait-for-redis
         image: alpine:latest
@@ -59,15 +59,8 @@ spec:
             memory: "4096Mi"
             cpu: "1000m"
         volumeMounts:
-        - name: application-source
-          mountPath: /app
-          readOnly: false
         - name: job-scratch
           mountPath: /tmp/uploads
       volumes:
-      - name: application-source
-        hostPath:
-          path: /home/ubuntu/mopa-laser-rasterizer
-          type: Directory
       - name: job-scratch
         emptyDir: {}

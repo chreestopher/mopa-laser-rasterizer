@@ -75,43 +75,28 @@ Example:
 .\deploy-k8s.ps1 -ImageName mopa-laser-rasterizer -ImageTag local -KubeConfigPath /etc/rancher/k3s/k3s.yaml
 ```
 
-### AWS host-mounted source workflow
+### AWS private-ECR workflow
 
-The AWS deployment bind-mounts the repository checkout on its selected EC2
-node at `/app`. Source files are therefore read directly from the host; they
-are not copied into a pod volume. Before applying the deployment, label the
-one node that contains `/home/ubuntu/mopa-laser-rasterizer`:
-
-```bash
-kubectl label node <node-name> mopa-laser-rasterizer-host=true
-```
-
-Set `HOST_APP_PATH` in `.env.local` to the absolute path of that checkout (or
-use the provided default in `.env.example`). After pulling code on that EC2
-host, restart the deployment-no image build is needed for source-only changes:
+Production images are built from the repository, pushed to private ECR, and
+run without a source-code `hostPath`. This allows web and worker pods to run
+on any authorized cluster node. Authenticate the AWS CLI and run:
 
 ```bash
-cd /home/ubuntu/mopa-laser-rasterizer
-git pull
-kubectl rollout restart deployment/mopa-laser-rasterizer -n default
-kubectl rollout status deployment/mopa-laser-rasterizer -n default
+chmod +x dev_setup/deploy_ecr.sh
+./dev_setup/deploy_ecr.sh
 ```
 
-`hostPath` is node-local storage. Do not add the label to more than one node
-unless each node has the same repository path and checkout. The image remains
-the source of Python and OS dependencies, so rebuild it when dependencies or
-the Dockerfile change.
+The optional first argument overrides the automatically generated immutable
+tag:
 
-Then apply from WSL:
 ```bash
-wsl -e sh -lc 'cd projectdir && ./sync-env.sh && kubectl apply -k k8s/'
+./dev_setup/deploy_ecr.sh release-2026-08-22
 ```
 
-Then update your deployment to use that tag and restart it:
-```bash
-kubectl set image deployment/mopa-laser-rasterizer mopa-laser-rasterizer=mopa-laser-rasterizer:local
-kubectl rollout restart deployment.mopa-laser-rasterizer
-```
+The script deploys the same image to the web and dedicated raster-worker
+deployments. It also refreshes the short-lived `ecr-registry` pull secret.
+Install the AWS ECR kubelet credential provider when nodes must join and pull
+images independently of a recent deployment.
 
 ### 2. Deploy to Kubernetes
 
