@@ -25,6 +25,7 @@ const gammaControl = document.querySelector("#depth_gamma");
 const invertControl = document.querySelector("#depth_invert");
 const outputWidthControl = document.querySelector("#depth_output_width");
 const outputHeightControl = document.querySelector("#depth_output_height");
+const borderPaddingControl = document.querySelector("#depth_border_padding");
 const brushSizeControl = document.querySelector("#depth_brush_size");
 const brushSizeValue = document.querySelector("#depth_brush_size_value");
 const brushDepthControl = document.querySelector("#depth_brush_depth");
@@ -321,15 +322,19 @@ function syncOutputAspect(changedDimension) {
 
 function buildOutputCanvas() {
   syncOutputAspect("width");
-  outputWidth = requestedDimension(outputWidthControl, depthWidth);
-  outputHeight = requestedDimension(outputHeightControl, depthHeight);
-  outputWidthControl.value = outputWidth;
-  outputHeightControl.value = outputHeight;
-  const scale = Math.min(outputWidth / depthWidth, outputHeight / depthHeight);
+  const artworkWidth = requestedDimension(outputWidthControl, depthWidth);
+  const artworkHeight = requestedDimension(outputHeightControl, depthHeight);
+  const requestedPadding = Math.max(0, Math.min(2048, Math.round(Number(borderPaddingControl.value)) || 0));
+  const maximumPadding = Math.max(0, Math.floor((8192 - Math.max(artworkWidth, artworkHeight)) / 2));
+  const borderPadding = Math.min(requestedPadding, maximumPadding);
+  borderPaddingControl.value = borderPadding;
+  outputWidth = artworkWidth + borderPadding * 2;
+  outputHeight = artworkHeight + borderPadding * 2;
+  const scale = Math.min(artworkWidth / depthWidth, artworkHeight / depthHeight);
   const contentWidth = Math.max(1, Math.round(depthWidth * scale));
   const contentHeight = Math.max(1, Math.round(depthHeight * scale));
-  const offsetX = Math.floor((outputWidth - contentWidth) / 2);
-  const offsetY = Math.floor((outputHeight - contentHeight) / 2);
+  const offsetX = borderPadding + Math.floor((artworkWidth - contentWidth) / 2);
+  const offsetY = borderPadding + Math.floor((artworkHeight - contentHeight) / 2);
   const farthest = invertControl.checked ? 1 : 0;
   const outputLength = outputWidth * outputHeight;
   if (!paintedDepth || paintedDepth.length !== outputLength) {
@@ -684,6 +689,7 @@ outputWidthControl.addEventListener("input", () => syncOutputAspect("width"));
 outputHeightControl.addEventListener("input", () => syncOutputAspect("height"));
 outputWidthControl.addEventListener("change", renderAdjustedDepth);
 outputHeightControl.addEventListener("change", renderAdjustedDepth);
+borderPaddingControl.addEventListener("change", renderAdjustedDepth);
 brushSizeControl.addEventListener("input", updateBrushSizePreview);
 brushDepthControl.addEventListener("input", updateBrushDepthPreview);
 clearPaintButton.addEventListener("click", clearPaintedDepth);
