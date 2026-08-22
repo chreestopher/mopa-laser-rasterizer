@@ -21,6 +21,10 @@ const outputWidthControl = document.querySelector("#depth_output_width");
 const outputHeightControl = document.querySelector("#depth_output_height");
 const brushSizeControl = document.querySelector("#depth_brush_size");
 const brushSizeValue = document.querySelector("#depth_brush_size_value");
+const brushDepthControl = document.querySelector("#depth_brush_depth");
+const brushDepthValue = document.querySelector("#depth_brush_depth_value");
+const brushDepthPreview = document.querySelector("#depth_brush_preview");
+const brushGrayValue = document.querySelector("#depth_brush_gray_value");
 const clearPaintButton = document.querySelector("#depth_clear_paint");
 
 let sourceFile = null;
@@ -33,7 +37,7 @@ let adjustedDepth = null;
 let outputDepth = null;
 let outputWidth = 0;
 let outputHeight = 0;
-let farPaintMask = null;
+let paintedDepth = null;
 let paintingFarDepth = false;
 let lastPaintPoint = null;
 
@@ -172,7 +176,10 @@ function buildOutputCanvas() {
   const offsetY = Math.floor((outputHeight - contentHeight) / 2);
   const farthest = invertControl.checked ? 1 : 0;
   const outputLength = outputWidth * outputHeight;
-  if (!farPaintMask || farPaintMask.length !== outputLength) farPaintMask = new Uint8Array(outputLength);
+  if (!paintedDepth || paintedDepth.length !== outputLength) {
+    paintedDepth = new Float32Array(outputLength);
+    paintedDepth.fill(Number.NaN);
+  }
   outputDepth = new Float32Array(outputLength);
   outputDepth.fill(farthest);
   for (let y = 0; y < contentHeight; y += 1) {
@@ -183,7 +190,9 @@ function buildOutputCanvas() {
     }
   }
   for (let index = 0; index < outputLength; index += 1) {
-    if (farPaintMask[index]) outputDepth[index] = farthest;
+    if (!Number.isNaN(paintedDepth[index])) {
+      outputDepth[index] = invertControl.checked ? 1 - paintedDepth[index] : paintedDepth[index];
+    }
   }
 }
 
@@ -212,24 +221,36 @@ function paintFarDepthCircle(centerX, centerY, radius) {
   const minimumY = Math.max(0, Math.floor(centerY - radius));
   const maximumY = Math.min(outputHeight - 1, Math.ceil(centerY + radius));
   const radiusSquared = radius * radius;
-  const farthest = invertControl.checked ? 1 : 0;
+  const proximity = Number(brushDepthControl.value) / 100;
+  const encodedDepth = invertControl.checked ? 1 - proximity : proximity;
   for (let y = minimumY; y <= maximumY; y += 1) {
     for (let x = minimumX; x <= maximumX; x += 1) {
       const deltaX = x + .5 - centerX;
       const deltaY = y + .5 - centerY;
       if (deltaX * deltaX + deltaY * deltaY > radiusSquared) continue;
       const index = y * outputWidth + x;
-      farPaintMask[index] = 1;
-      outputDepth[index] = farthest;
+      paintedDepth[index] = proximity;
+      outputDepth[index] = encodedDepth;
     }
   }
 }
 
 function clearPaintedDepth() {
-  if (!farPaintMask) return;
-  farPaintMask.fill(0);
+  if (!paintedDepth) return;
+  paintedDepth.fill(Number.NaN);
   renderAdjustedDepth();
   setStatus("Painted depth edits cleared.");
+}
+
+function updateBrushDepthPreview() {
+  const depth = Number(brushDepthControl.value);
+  const proximity = depth / 100;
+  const encodedDepth = invertControl.checked ? 1 - proximity : proximity;
+  const gray = Math.round(encodedDepth * 255);
+  brushDepthValue.value = depth === 0 ? "Farther" : depth === 100 ? "Closer" : `${depth}% closer`;
+  brushGrayValue.value = `${gray} / 255`;
+  brushDepthPreview.style.backgroundColor = `rgb(${gray}, ${gray}, ${gray})`;
+  brushDepthPreview.setAttribute("aria-label", `Brush grayscale preview: ${gray} out of 255, ${brushDepthValue.value}`);
 }
 
 function drawGrayscale() {
@@ -357,7 +378,7 @@ function crc32(bytes) {
 
 function reset() {
   sourceFile = null;
-  rawDepth = adjustedDepth = outputDepth = farPaintMask = null;
+  rawDepth = adjustedDepth = outputDepth = paintedDepth = null;
   if (sourceUrl) URL.revokeObjectURL(sourceUrl);
   sourceUrl = null;
   input.value = "";
@@ -378,10 +399,12 @@ for (const control of [nearControl, farControl, gammaControl, invertControl]) co
   document.querySelector("#depth_near_value").value = `${nearControl.value}%`;
   document.querySelector("#depth_far_value").value = `${farControl.value}%`;
   document.querySelector("#depth_gamma_value").value = (Number(gammaControl.value) / 100).toFixed(2);
+  updateBrushDepthPreview();
   renderAdjustedDepth();
 });
 for (const control of [outputWidthControl, outputHeightControl]) control.addEventListener("change", renderAdjustedDepth);
 brushSizeControl.addEventListener("input", () => { brushSizeValue.value = `${brushSizeControl.value} px`; });
+brushDepthControl.addEventListener("input", updateBrushDepthPreview);
 clearPaintButton.addEventListener("click", clearPaintedDepth);
 mapCanvas.addEventListener("pointerdown", event => {
   if (!outputDepth) return;
@@ -397,3 +420,4 @@ for (const eventName of ["pointerup", "pointercancel", "lostpointercapture"]) {
 document.querySelector("#depth_export_8").addEventListener("click", export8Bit);
 document.querySelector("#depth_export_16").addEventListener("click", () => export16Bit().catch(cause => setStatus(cause.message, true)));
 drawLegend();
+updateBrushDepthPreview();
