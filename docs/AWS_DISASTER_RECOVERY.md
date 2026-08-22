@@ -8,14 +8,15 @@ This documents the production shape of MOPA Laser Rasterizer and the order to re
 | --- | --- |
 | Region | `us-east-2` |
 | Public domain | `mopa-laser-rasterizer.com` and `www.mopa-laser-rasterizer.com` |
-| Compute | One Ubuntu EC2 host, K3s, node label `mopa-laser-rasterizer-host=true` |
+| Compute | Ubuntu EC2 hosts running K3s; web and worker pods use the same ECR image and may run on any suitable node |
 | App networking | NodePort `30080` to container port `8000` |
 | Public edge | Internet-facing Application Load Balancer with ACM TLS termination |
 | Artifacts | Private S3 bucket `mopa-laser-rasterizer-artifacts-<account-id>`; jobs expire after 7 days, saved Material Libraries persist |
 | Account data | DynamoDB `mopa-laser-rasterizer-users`, on-demand; string keys `pk` and `sk` |
+| Container images | Private ECR repository `mopa-laser-rasterizer` in `us-east-2`; immutable tags, scan-on-push, newest 20 images retained |
 | Sign-in | Cognito Hosted UI, authenticated at the ALB |
 
-The application mounts `/home/ubuntu/mopa-laser-rasterizer` from the EC2 host into `/app`. Application code changes therefore deploy with `git pull` and `sh dev_setup/restart_rollout.sh`; only dependency or Dockerfile changes require rebuilding/importing the local image.
+The application runs entirely from an immutable image in ECR. `/tmp/uploads` is pod-local scratch space; job inputs and outputs move through S3. A deployment must build and push a new image even for source-only changes.
 
 ## 1. Restore account-level resources
 
@@ -31,8 +32,9 @@ The script safely repeats and configures:
 - A private, AES-256 encrypted S3 bucket.
 - Seven-day lifecycle rules for guest and signed-in job artifacts, including incomplete-multipart abort after one day.
 - DynamoDB in `PAY_PER_REQUEST` mode, primary key `pk` plus sort key `sk`.
+- A private, AES-256 encrypted ECR repository with immutable tags, scan-on-push, and a newest-20-images lifecycle policy.
 - IAM role and instance profile `mopa-laser-rasterizer-ec2`.
-- Least-privilege S3 and DynamoDB access used by the app.
+- Least-privilege S3, DynamoDB, and ECR-pull access used by the app and K3s nodes.
 
 Saved Material Libraries are deliberately outside the lifecycle filters, so they persist until explicitly deleted. Signed-in job uploads are tagged `mopa-retention=job`; guest job files remain under the `jobs/` prefix.
 
@@ -52,12 +54,9 @@ On the EC2 host:
 ```bash
 curl -sfL https://get.k3s.io | sh -
 sudo systemctl enable --now k3s
-sudo kubectl label node "$(hostname)" mopa-laser-rasterizer-host=true --overwrite
 cd /home/ubuntu
 git clone https://github.com/chreestopher/mopa-laser-rasterizer.git
 cd mopa-laser-rasterizer
-sudo docker build -t mopa-laser-rasterizer:com .
-sudo docker save mopa-laser-rasterizer:com | sudo k3s ctr -n k8s.io images import -
 ```
 
 Generate the new session secret and deploy the workload:
@@ -69,9 +68,13 @@ sudo kubectl create secret generic mopa-rasterizer-session \
 sudo kubectl apply -f k8s/redis.statefulset.yaml
 sudo kubectl apply -f k8s/redis.service.yml
 sudo kubectl apply -f k8s/service.aws.yaml
-sudo kubectl apply -f k8s/deployment.aws.yaml
-sudo kubectl rollout status deployment/mopa-laser-rasterizer -n default
+chmod +x dev_setup/deploy_ecr.sh
+./dev_setup/deploy_ecr.sh
 ```
+
+`deploy_ecr.sh` creates the repository if necessary, applies its lifecycle policy, builds and pushes a unique immutable image, refreshes the `ecr-registry` Kubernetes pull secret, applies both workload manifests, and waits for the web and worker rollouts.
+
+The pull secret contains a short-lived ECR authorization token and is refreshed by every deployment. For replacement nodes that must start pods without a recent deployment, configure the AWS ECR kubelet credential provider on every K3s node. The EC2 instance profile created by the bootstrap script includes the required read-only ECR actions. Do not store ECR passwords in this repository.
 
 Before applying `deployment.aws.yaml`, set its S3 bucket, DynamoDB table, Cognito domain/client ID, and public URL for the recovered environment. These are identifiers, not secret values.
 
@@ -103,6 +106,14 @@ curl -I https://mopa-laser-rasterizer.com/
 ```
 
 Confirm the ALB target is healthy, guests receive three daily jobs, `/login` reaches Cognito, sign-out works, and a signed-in job writes S3 objects below `users/<cognito-sub>/jobs/<task-id>/`.
+
+Confirm both workloads use the same ECR image and that each node can pull it:
+
+```bash
+sudo kubectl get deployment mopa-laser-rasterizer mopa-laser-raster-worker \
+  -n default -o=jsonpath='{range .items[*]}{.metadata.name}{" -> "}{.spec.template.spec.containers[0].image}{"\n"}{end}'
+sudo kubectl get pods -n default -o wide
+```
 
 To inspect the durable job record from a pod:
 
