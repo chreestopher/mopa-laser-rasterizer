@@ -17,6 +17,8 @@ const nearControl = document.querySelector("#depth_near");
 const farControl = document.querySelector("#depth_far");
 const gammaControl = document.querySelector("#depth_gamma");
 const invertControl = document.querySelector("#depth_invert");
+const outputWidthControl = document.querySelector("#depth_output_width");
+const outputHeightControl = document.querySelector("#depth_output_height");
 
 let sourceFile = null;
 let sourceUrl = null;
@@ -25,6 +27,9 @@ let rawDepth = null;
 let depthWidth = 0;
 let depthHeight = 0;
 let adjustedDepth = null;
+let outputDepth = null;
+let outputWidth = 0;
+let outputHeight = 0;
 
 function setStatus(message, isError = false) {
   status.textContent = message;
@@ -106,6 +111,8 @@ async function generateDepth() {
     depthHeight = dims[dims.length - 2];
     depthWidth = dims[dims.length - 1];
     rawDepth = Float32Array.from(tensor.data);
+    outputWidthControl.value = depthWidth;
+    outputHeightControl.value = depthHeight;
     renderAdjustedDepth();
     setStatus(`Depth map generated at ${depthWidth} × ${depthHeight}. Adjust and export the result.`);
   } catch (cause) {
@@ -136,18 +143,46 @@ function renderAdjustedDepth() {
     value = Math.pow(value, 1 / gamma);
     adjustedDepth[index] = invertControl.checked ? 1 - value : value;
   }
+  buildOutputCanvas();
   drawGrayscale();
   drawRelief();
   drawLegend();
 }
 
+function requestedDimension(control, fallback) {
+  const value = Math.round(Number(control.value));
+  return Number.isFinite(value) ? Math.min(8192, Math.max(32, value)) : fallback;
+}
+
+function buildOutputCanvas() {
+  outputWidth = requestedDimension(outputWidthControl, depthWidth);
+  outputHeight = requestedDimension(outputHeightControl, depthHeight);
+  outputWidthControl.value = outputWidth;
+  outputHeightControl.value = outputHeight;
+  const scale = Math.min(outputWidth / depthWidth, outputHeight / depthHeight);
+  const contentWidth = Math.max(1, Math.round(depthWidth * scale));
+  const contentHeight = Math.max(1, Math.round(depthHeight * scale));
+  const offsetX = Math.floor((outputWidth - contentWidth) / 2);
+  const offsetY = Math.floor((outputHeight - contentHeight) / 2);
+  const farthest = invertControl.checked ? 1 : 0;
+  outputDepth = new Float32Array(outputWidth * outputHeight);
+  outputDepth.fill(farthest);
+  for (let y = 0; y < contentHeight; y += 1) {
+    const sourceY = Math.min(depthHeight - 1, Math.floor(y * depthHeight / contentHeight));
+    for (let x = 0; x < contentWidth; x += 1) {
+      const sourceX = Math.min(depthWidth - 1, Math.floor(x * depthWidth / contentWidth));
+      outputDepth[(y + offsetY) * outputWidth + x + offsetX] = adjustedDepth[sourceY * depthWidth + sourceX];
+    }
+  }
+}
+
 function drawGrayscale() {
-  mapCanvas.width = depthWidth;
-  mapCanvas.height = depthHeight;
+  mapCanvas.width = outputWidth;
+  mapCanvas.height = outputHeight;
   const context = mapCanvas.getContext("2d");
   const imageData = context.createImageData(depthWidth, depthHeight);
-  for (let index = 0; index < adjustedDepth.length; index += 1) {
-    const gray = Math.round(adjustedDepth[index] * 255);
+  for (let index = 0; index < outputDepth.length; index += 1) {
+    const gray = Math.round(outputDepth[index] * 255);
     const offset = index * 4;
     imageData.data[offset] = gray;
     imageData.data[offset + 1] = gray;
@@ -158,23 +193,23 @@ function drawGrayscale() {
 }
 
 function drawRelief() {
-  reliefCanvas.width = depthWidth;
-  reliefCanvas.height = depthHeight;
+  reliefCanvas.width = outputWidth;
+  reliefCanvas.height = outputHeight;
   const context = reliefCanvas.getContext("2d");
   const imageData = context.createImageData(depthWidth, depthHeight);
   const light = [-.45, -.55, .7];
-  for (let y = 0; y < depthHeight; y += 1) {
-    for (let x = 0; x < depthWidth; x += 1) {
-      const index = y * depthWidth + x;
-      const left = adjustedDepth[y * depthWidth + Math.max(0, x - 1)];
-      const right = adjustedDepth[y * depthWidth + Math.min(depthWidth - 1, x + 1)];
-      const up = adjustedDepth[Math.max(0, y - 1) * depthWidth + x];
-      const down = adjustedDepth[Math.min(depthHeight - 1, y + 1) * depthWidth + x];
+  for (let y = 0; y < outputHeight; y += 1) {
+    for (let x = 0; x < outputWidth; x += 1) {
+      const index = y * outputWidth + x;
+      const left = outputDepth[y * outputWidth + Math.max(0, x - 1)];
+      const right = outputDepth[y * outputWidth + Math.min(outputWidth - 1, x + 1)];
+      const up = outputDepth[Math.max(0, y - 1) * outputWidth + x];
+      const down = outputDepth[Math.min(outputHeight - 1, y + 1) * outputWidth + x];
       const nx = (left - right) * 4;
       const ny = (up - down) * 4;
       const length = Math.hypot(nx, ny, 1);
       const shade = Math.max(0, (nx * light[0] + ny * light[1] + light[2]) / length);
-      const value = Math.round((.18 + shade * .65 + adjustedDepth[index] * .17) * 255);
+      const value = Math.round((.18 + shade * .65 + outputDepth[index] * .17) * 255);
       const offset = index * 4;
       imageData.data[offset] = Math.round(value * .78);
       imageData.data[offset + 1] = Math.round(value * .9);
@@ -218,12 +253,12 @@ function export8Bit() {
 
 async function export16Bit() {
   if (!adjustedDepth) return;
-  const scanlines = new Uint8Array((depthWidth * 2 + 1) * depthHeight);
-  for (let y = 0; y < depthHeight; y += 1) {
-    const row = y * (depthWidth * 2 + 1);
+  const scanlines = new Uint8Array((outputWidth * 2 + 1) * outputHeight);
+  for (let y = 0; y < outputHeight; y += 1) {
+    const row = y * (outputWidth * 2 + 1);
     scanlines[row] = 0;
-    for (let x = 0; x < depthWidth; x += 1) {
-      const value = Math.round(adjustedDepth[y * depthWidth + x] * 65535);
+    for (let x = 0; x < outputWidth; x += 1) {
+      const value = Math.round(outputDepth[y * outputWidth + x] * 65535);
       scanlines[row + 1 + x * 2] = value >>> 8;
       scanlines[row + 2 + x * 2] = value & 255;
     }
@@ -232,8 +267,8 @@ async function export16Bit() {
   const signature = Uint8Array.from([137,80,78,71,13,10,26,10]);
   const ihdr = new Uint8Array(13);
   const view = new DataView(ihdr.buffer);
-  view.setUint32(0, depthWidth);
-  view.setUint32(4, depthHeight);
+  view.setUint32(0, outputWidth);
+  view.setUint32(4, outputHeight);
   ihdr.set([16,0,0,0,0], 8);
   downloadBlob(new Blob([signature, pngChunk("IHDR", ihdr), pngChunk("IDAT", compressed), pngChunk("IEND", new Uint8Array())], {type:"image/png"}), "depth-16bit");
 }
@@ -266,7 +301,7 @@ function crc32(bytes) {
 
 function reset() {
   sourceFile = null;
-  rawDepth = adjustedDepth = null;
+  rawDepth = adjustedDepth = outputDepth = null;
   if (sourceUrl) URL.revokeObjectURL(sourceUrl);
   sourceUrl = null;
   input.value = "";
@@ -289,6 +324,7 @@ for (const control of [nearControl, farControl, gammaControl, invertControl]) co
   document.querySelector("#depth_gamma_value").value = (Number(gammaControl.value) / 100).toFixed(2);
   renderAdjustedDepth();
 });
+for (const control of [outputWidthControl, outputHeightControl]) control.addEventListener("change", renderAdjustedDepth);
 document.querySelector("#depth_export_8").addEventListener("click", export8Bit);
 document.querySelector("#depth_export_16").addEventListener("click", () => export16Bit().catch(cause => setStatus(cause.message, true)));
 drawLegend();

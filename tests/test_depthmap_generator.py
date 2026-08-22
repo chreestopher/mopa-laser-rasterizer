@@ -23,6 +23,10 @@ class DepthMapGeneratorCoverageTests(unittest.TestCase):
         self.assertIn('options.device = "webgpu"', script)
         self.assertIn('CompressionStream("deflate")', script)
         self.assertIn('Download 16-bit PNG', page)
+        self.assertIn('id="depth_output_width"', page)
+        self.assertIn('id="depth_output_height"', page)
+        self.assertIn("outputDepth.fill(farthest)", script)
+        self.assertIn("Math.min(outputWidth / depthWidth, outputHeight / depthHeight)", script)
 
 
 if __name__ == "__main__":
