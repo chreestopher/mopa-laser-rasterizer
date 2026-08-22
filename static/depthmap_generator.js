@@ -6,8 +6,10 @@ const dropZone = document.querySelector("#depth_drop_zone");
 const generateButton = document.querySelector("#depth_generate");
 const resetButton = document.querySelector("#depth_reset");
 const progress = document.querySelector("#depth_progress");
-const status = document.querySelector("#depth_status");
-const error = document.querySelector("#depth_error");
+const uploadStatus = document.querySelector("#depth_status");
+const uploadError = document.querySelector("#depth_error");
+const processingStatus = document.querySelector("#depth_processing_status");
+const processingError = document.querySelector("#depth_processing_error");
 const workspace = document.querySelector("#depth_workspace");
 const sourceCanvas = document.querySelector("#depth_source_canvas");
 const sourcePreview = document.querySelector("#depth_source_preview");
@@ -55,10 +57,16 @@ let paintedDepth = null;
 let paintingFarDepth = false;
 let lastPaintPoint = null;
 
-function setStatus(message, isError = false) {
-  status.textContent = message;
-  error.hidden = !isError;
-  error.textContent = isError ? message : "";
+function setUploadStatus(message, isError = false) {
+  uploadStatus.textContent = message;
+  uploadError.hidden = !isError;
+  uploadError.textContent = isError ? message : "";
+}
+
+function setProcessingStatus(message, isError = false) {
+  processingStatus.textContent = message;
+  processingError.hidden = !isError;
+  processingError.textContent = isError ? message : "";
 }
 
 function setBusy(busy) {
@@ -70,7 +78,7 @@ function setBusy(busy) {
 
 async function acceptFile(file) {
   if (!file || !file.type.startsWith("image/")) {
-    setStatus("Choose a supported image file.", true);
+    setUploadStatus("Choose a supported image file.", true);
     return;
   }
   sourceFile = file;
@@ -83,7 +91,8 @@ async function acceptFile(file) {
   resetButton.disabled = false;
   workspace.hidden = false;
   colorGuidancePanel.hidden = false;
-  setStatus(`${file.name} is ready. Depth processing has not started.`);
+  setUploadStatus(`${file.name} loaded successfully.`);
+  setProcessingStatus("Ready to generate a depth map.");
   drawLegend();
 }
 
@@ -104,12 +113,12 @@ function drawContainedImage(canvas, image) {
 
 async function loadEstimator() {
   if (estimator) return estimator;
-  setStatus("Loading the client-side depth model. The first download may take several minutes.");
+  setProcessingStatus("Loading the client-side depth model. The first download may take several minutes.");
   const { pipeline, env } = await import(TRANSFORMERS_URL);
   env.allowLocalModels = false;
   const progress_callback = event => {
     if (typeof event.progress === "number") progress.value = Math.round(event.progress);
-    if (event.status === "progress" && event.file) status.textContent = `Downloading model: ${event.file}`;
+    if (event.status === "progress" && event.file) processingStatus.textContent = `Downloading model: ${event.file}`;
   };
   const options = { progress_callback };
   if ("gpu" in navigator) options.device = "webgpu";
@@ -117,7 +126,7 @@ async function loadEstimator() {
     estimator = await pipeline("depth-estimation", MODEL_ID, options);
   } catch (webGpuError) {
     if (options.device !== "webgpu") throw webGpuError;
-    setStatus("WebGPU was unavailable. Loading the compatible browser CPU version.");
+    setProcessingStatus("WebGPU was unavailable. Loading the compatible browser CPU version.");
     delete options.device;
     estimator = await pipeline("depth-estimation", MODEL_ID, options);
   }
@@ -129,7 +138,7 @@ async function generateDepth() {
   setBusy(true);
   try {
     const model = await loadEstimator();
-    setStatus("Analyzing perspective and estimating relative depth...");
+    setProcessingStatus("Analyzing perspective and estimating relative depth...");
     progress.removeAttribute("value");
     const result = await model(sourceUrl);
     const tensor = result.predicted_depth;
@@ -141,10 +150,10 @@ async function generateDepth() {
     outputWidthControl.value = depthWidth;
     outputHeightControl.value = depthHeight;
     renderAdjustedDepth();
-    setStatus(`Depth map generated at ${depthWidth} × ${depthHeight}. Adjust and export the result.`);
+    setProcessingStatus(`Depth map generated at ${depthWidth} × ${depthHeight}. Adjust and export the result.`);
   } catch (cause) {
     console.error(cause);
-    setStatus(`Depth generation failed: ${cause.message || cause}`, true);
+    setProcessingStatus(`Depth generation failed: ${cause.message || cause}`, true);
   } finally {
     setBusy(false);
   }
@@ -351,7 +360,7 @@ function clearPaintedDepth() {
   if (!paintedDepth) return;
   paintedDepth.fill(Number.NaN);
   renderAdjustedDepth();
-  setStatus("Painted depth edits cleared.");
+  setProcessingStatus("Painted depth edits cleared.");
 }
 
 function updateBrushDepthPreview() {
@@ -508,7 +517,8 @@ function reset() {
   colorGuidancePanel.hidden = true;
   resetButton.disabled = true;
   generateButton.disabled = true;
-  setStatus("Waiting for an image.");
+  setUploadStatus("Waiting for an image.");
+  setProcessingStatus("Depth processing has not started.");
 }
 
 function createSwatchControls() {
@@ -597,12 +607,12 @@ function selectDepthPalette() {
 }
 
 
-input.addEventListener("change", () => acceptFile(input.files[0]).catch(cause => setStatus(cause.message, true)));
+input.addEventListener("change", () => acceptFile(input.files[0]).catch(cause => setUploadStatus(cause.message, true)));
 generateButton.addEventListener("click", generateDepth);
 resetButton.addEventListener("click", reset);
 for (const eventName of ["dragenter", "dragover"]) dropZone.addEventListener(eventName, event => { event.preventDefault(); dropZone.classList.add("is-dragging"); });
 for (const eventName of ["dragleave", "drop"]) dropZone.addEventListener(eventName, event => { event.preventDefault(); dropZone.classList.remove("is-dragging"); });
-dropZone.addEventListener("drop", event => acceptFile(event.dataTransfer.files[0]).catch(cause => setStatus(cause.message, true)));
+dropZone.addEventListener("drop", event => acceptFile(event.dataTransfer.files[0]).catch(cause => setUploadStatus(cause.message, true)));
 for (const control of [nearControl, farControl, gammaControl, invertControl]) control.addEventListener("input", () => {
   if (Number(nearControl.value) >= Number(farControl.value)) nearControl.value = Math.max(0, Number(farControl.value) - 5);
   document.querySelector("#depth_near_value").value = `${nearControl.value}%`;
@@ -633,9 +643,9 @@ for (const eventName of ["pointerup", "pointercancel", "lostpointercapture"]) {
   mapCanvas.addEventListener(eventName, () => { paintingFarDepth = false; lastPaintPoint = null; });
 }
 document.querySelector("#depth_export_8").addEventListener("click", export8Bit);
-document.querySelector("#depth_export_16").addEventListener("click", () => export16Bit().catch(cause => setStatus(cause.message, true)));
+document.querySelector("#depth_export_16").addEventListener("click", () => export16Bit().catch(cause => setProcessingStatus(cause.message, true)));
 drawLegend();
 updateBrushDepthPreview();
 updateBrushSizePreview();
 createSwatchControls();
-loadSavedDepthPalettes().catch(cause => setStatus(cause.message, true));
+loadSavedDepthPalettes().catch(cause => setProcessingStatus(cause.message, true));
