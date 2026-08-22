@@ -6,7 +6,25 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DepthMapGeneratorCoverageTests(unittest.TestCase):
-    def test_unlisted_depthmap_page_uses_client_side_inference(self):
+    def test_experimental_laboratories_hub_links_both_machine_shell_labs(self):
+        home = (ROOT / "routes" / "home.py").read_text(encoding="utf-8")
+        chrome = (ROOT / "templates" / "_machine_chrome.html").read_text(encoding="utf-8")
+        hub = (ROOT / "templates" / "experimental_laboratories.html").read_text(encoding="utf-8")
+        holographic = (ROOT / "templates" / "holographic_etching.html").read_text(encoding="utf-8")
+        depthmap = (ROOT / "templates" / "depthmap_generator.html").read_text(encoding="utf-8")
+
+        self.assertIn('@routes.route("/experimental-laboratories")', home)
+        self.assertIn('>Experimental Laboratories</a>', chrome)
+        self.assertNotIn('>Holographic Lab</a>', chrome)
+        self.assertIn("machine_chrome('experimental'", hub)
+        self.assertIn('href="/holographic-etching"', hub)
+        self.assertIn('href="/depthmap-generator"', hub)
+        self.assertIn("Holographic Etching Lab", hub)
+        self.assertIn("Depthmap/Relief Engraving Lab", hub)
+        self.assertIn("machine_chrome('experimental'", holographic)
+        self.assertIn("machine_chrome('experimental'", depthmap)
+
+    def test_published_depthmap_page_uses_client_side_inference(self):
         home = (ROOT / "routes" / "home.py").read_text(encoding="utf-8")
         docs = (ROOT / "routes" / "docs.py").read_text(encoding="utf-8")
         chrome = (ROOT / "templates" / "_machine_chrome.html").read_text(encoding="utf-8")
@@ -16,9 +34,9 @@ class DepthMapGeneratorCoverageTests(unittest.TestCase):
         self.assertIn('@routes.route("/depthmap-generator")', home)
         self.assertIn('"depthmap_generator.html"', home)
         self.assertIn("depth_palette=depth_palette", home)
-        self.assertNotIn('"/depthmap-generator"', docs)
-        self.assertNotIn('href="/depthmap-generator"', chrome)
-        self.assertIn('content="noindex,nofollow"', page)
+        self.assertIn('"/depthmap-generator"', docs)
+        self.assertIn('href="/experimental-laboratories"', chrome)
+        self.assertNotIn('content="noindex,nofollow"', page)
         self.assertIn("Desktop browser recommended:", page)
         self.assertIn("source images larger than 500 × 500 pixels", page)
         self.assertIn("may enter a reload loop", page)

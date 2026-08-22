@@ -65,9 +65,18 @@ def founding_sponsors():
     )
 
 
+@routes.route("/experimental-laboratories")
+def experimental_laboratories():
+    """Introduce the application's experimental engraving workspaces."""
+    return render_template(
+        "experimental_laboratories.html",
+        canonical=f"{_public_url()}/experimental-laboratories",
+    )
+
+
 @routes.route("/depthmap-generator")
 def depthmap_generator():
-    """Unlisted, client-side experimental depth-map workspace."""
+    """Client-side experimental depth-map workspace."""
     depth_palette = [
         {"name": name, "hex": color_hex}
         for color_hex, name in LIGHTBURN_PALETTE_NAMES.items()
