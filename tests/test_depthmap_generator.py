@@ -70,6 +70,14 @@ class DepthMapGeneratorCoverageTests(unittest.TestCase):
         self.assertIn("if (!savedDepthPaletteSelect.value) return", script)
         self.assertIn('square.setAttribute("aria-disabled", String(!paletteSelected))', script)
         self.assertIn('paletteSelected && !swatch.enabled', script)
+
+    def test_material_vault_places_depth_palette_creation_with_hatch_palette(self):
+        vault = (ROOT / "templates" / "material_libraries.html").read_text(encoding="utf-8")
+        hatch_position = vault.index('id="new_hatch_palette"')
+        depth_position = vault.index('id="new_depth_palette"')
+        self.assertLess(hatch_position, depth_position)
+        self.assertLess(depth_position - hatch_position, 180)
+        self.assertEqual(vault.count('id="new_depth_palette"'), 1)
         self.assertIn("awaiting-depth-palette", page)
         self.assertIn('classList.toggle("awaiting-depth-palette", !palette)', script)
         self.assertIn("guidedDepth[index] = adjustedDepth[index] * (1 - weight) + target * weight", script)
