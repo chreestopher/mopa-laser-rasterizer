@@ -493,7 +493,7 @@ def save_color_discovery_to_material_vault():
     if auth_failure:
         return auth_failure
     if not user_id:
-        return jsonify({"status": "error", "message": "Sign in to save discovered colors to the Material Vault."}), 401
+        return jsonify({"status": "error", "message": "Sign in to save discovered colors to the Palette Vault."}), 401
     temp_path = None
     try:
         session = _load_session(str(request.form.get("session_id", "")))

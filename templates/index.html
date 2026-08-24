@@ -562,7 +562,6 @@
           <option value="abstract_mosaic">Staggered Mosaic</option>
           <option value="abstract_crystal">Crystal Tessellation</option>
           <option value="abstract_ripple">Topographic Ripple</option>
-          <option value="abstract_centerline">Centerline Drawing</option>
           <option value="abstract_glitch">Digital Glitch</option>
           <option value="abstract_deep_fryer">Deep Fryer</option>
           <option value="abstract_shattered">Shattered</option>
@@ -633,13 +632,6 @@
         description: 'Sends concentric rings outward like topographic contours or water ripples. Amplitude sets the push of each ring, Frequency sets how closely the rings sit together, Phase rolls the pattern forward, and Center X and Y move the ripple source left/right and up/down.',
         controls: [['amplitude', 3, -30, 30, .5], ['frequency', .18, .01, 1, .01],
           ['phase', 0, 0, 6.283, .05], ['center_x', .5, 0, 1, .01], ['center_y', .5, 0, 1, .01]]
-      },
-      centerline: {
-        description: 'Turns the dark ink, shadows, and outlines already hiding in your image into centered black line art, then wraps each centerline in a tiny closed ribbon so there are no open paths. It ignores bright color boundaries, so a red edge does not become a line unless it is dark enough to read like ink. Dark Threshold decides how dark a pixel must be, Contrast separates ink from nearby tones, Blur quiets grain, Gap Closure reconnects tiny breaks, Line Simplification smooths the routes, Min Branch Length removes little fuzzy offshoots, and Stroke Width sets how wide each closed line ribbon becomes.',
-        controls: [['dark_threshold', 145, 20, 245, 1], ['contrast', 1.15, .3, 3, .05],
-          ['blur', 1, 0, 5, .25], ['gap_closure', 1, 0, 3, 1],
-          ['line_simplification', .35, 0, 3, .05], ['min_branch_length', 8, 0, 80, 1],
-          ['stroke_width', .35, .05, 4, .05]]
       },
       glitch: {
         description: 'Slices the image into coordinated digital stutters, echoes, and Fibonacci-inspired shifts. Slice Height controls band thickness, Fragment Width controls chunk length, Shift Amount controls the jump, Echo Count and Spacing control repeated copies, Density chooses how much participates, Fibonacci Stride changes the rhythm, Vertical Jitter adds wobble, and Seed rolls a new repeatable glitch.',
@@ -1334,7 +1326,6 @@
       colorInput.value = selectedNames.join(', ');
       colorNameOverrides.value = JSON.stringify(overrides);
       colorNameOverrides.dispatchEvent(new Event('change', { bubbles: true }));
-      updateHolographicSwatchReadout(JSON.parse(document.getElementById('abstract_filter_parameters').value || '{}'));
     }
 
     paletteCards.forEach(card => {

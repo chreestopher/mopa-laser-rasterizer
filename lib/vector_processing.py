@@ -11,7 +11,7 @@ import svgwrite
 import potrace
 import xml.etree.ElementTree as ET
 from collections import defaultdict
-from shapely.geometry import Polygon, box, Point, MultiPoint, LineString, MultiLineString, GeometryCollection
+from shapely.geometry import Polygon, box, Point, MultiPoint, LineString, GeometryCollection
 from shapely.ops import unary_union, voronoi_diagram, transform
 from shapely.affinity import scale, affine_transform
 from shapely.validation import make_valid
@@ -834,81 +834,6 @@ def classify_raster_pixels(
     return pixel_boxes_by_color
 
 
-def boxes_to_centerlines(boxes, settings):
-    """Reduce a raster color region to open, one-pixel-wide medial-axis paths."""
-    if not boxes:
-        return MultiLineString([])
-    min_x = math.floor(min(item.bounds[0] for item in boxes))
-    min_y = math.floor(min(item.bounds[1] for item in boxes))
-    max_x = math.ceil(max(item.bounds[2] for item in boxes))
-    max_y = math.ceil(max(item.bounds[3] for item in boxes))
-    mask = np.zeros((max_y - min_y + 2, max_x - min_x + 2), dtype=np.uint8)
-    for item in boxes:
-        x, y = int(item.bounds[0]) - min_x + 1, int(item.bounds[1]) - min_y + 1
-        mask[y, x] = 255
-
-    # Morphological skeletonization uses only core OpenCV and converges to a
-    # true one-pixel center axis without requiring opencv-contrib/ximgproc.
-    skeleton = np.zeros_like(mask)
-    working = mask.copy()
-    element = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
-    while cv2.countNonZero(working):
-        eroded = cv2.erode(working, element)
-        opened = cv2.dilate(eroded, element)
-        skeleton = cv2.bitwise_or(skeleton, cv2.subtract(working, opened))
-        working = eroded
-
-    pixels = {(int(x), int(y)) for y, x in np.argwhere(skeleton > 0)}
-    if not pixels:
-        return MultiLineString([])
-    offsets = ((-1, -1), (0, -1), (1, -1), (-1, 0),
-               (1, 0), (-1, 1), (0, 1), (1, 1))
-    neighbors = {p: {q for dx, dy in offsets if (q := (p[0] + dx, p[1] + dy)) in pixels}
-                 for p in pixels}
-    visited = set()
-    lines = []
-
-    def edge(a, b):
-        return tuple(sorted((a, b)))
-
-    def follow(start, nxt):
-        path = [start, nxt]
-        visited.add(edge(start, nxt))
-        previous, current = start, nxt
-        while len(neighbors[current]) == 2:
-            candidates = [p for p in neighbors[current] if p != previous]
-            if not candidates or edge(current, candidates[0]) in visited:
-                break
-            previous, current = current, candidates[0]
-            path.append(current)
-            visited.add(edge(previous, current))
-        return path
-
-    endpoints = [p for p in pixels if len(neighbors[p]) != 2]
-    for start in endpoints:
-        for nxt in neighbors[start]:
-            if edge(start, nxt) not in visited:
-                lines.append(follow(start, nxt))
-    # Closed loops have no endpoint/junction, so collect their remaining edge.
-    for start in pixels:
-        for nxt in neighbors[start]:
-            if edge(start, nxt) not in visited:
-                lines.append(follow(start, nxt))
-
-    tolerance = _number(settings.get("line_simplification"), .35, 0, 10)
-    minimum = _number(settings.get("min_branch_length"), 2, 0, 1000)
-    result = []
-    for points in lines:
-        if len(points) < 2:
-            continue
-        line = LineString([(x + min_x - .5, y + min_y - .5) for x, y in points])
-        if tolerance:
-            line = line.simplify(tolerance, preserve_topology=False)
-        if line.length >= minimum and len(line.coords) >= 2:
-            result.append(line)
-    return MultiLineString(result) if result else MultiLineString([])
-
-
 def retain_dominant_foreground(pixel_boxes_by_color, img, settings):
     """Keep the largest connected non-background subject for powder-coat art."""
     rgb = np.asarray(img.convert("RGB"), dtype=np.float32)
@@ -1054,14 +979,6 @@ def process_color_geometry(
             f"[{context}] Step {step}/6 {state}: {operation}; "
             f"batch objects {object_count}/{input_count} source objects."
         )
-
-    if filter_name == "centerline":
-        stage(1, "centerline tracing", "START", count=input_count)
-        result = ABSTRACT_FILTER_MODULES["centerline"].process_boxes(
-            boxes, settings, boxes_to_centerlines
-        )
-        stage(6, "centerline tracing and topology output", "DONE", geometry=result)
-        return result
 
     stage(1, "same-color pixel union", "START", count=input_count)
     welded_layer = unary_union(boxes)
@@ -2000,7 +1917,6 @@ def raster_to_puzzle_and_lightburn(
         printLogMessage(
             "Krasnow Color Grating: prepared source luminance for per-patch line angles."
         )
-    centerline_mode = filter_name == "centerline"
     transparent_mode = (
         (image_preset == "bw_dither_photograph"
          and bool(filter_parameters.get("transparent", False)))
@@ -2014,9 +1930,7 @@ def raster_to_puzzle_and_lightburn(
     filter_preserves_source_black = bool(
         getattr(filter_module, "PRESERVE_SOURCE_BLACK", False)
     )
-    preserve_source_black = (
-        centerline_mode or transparent_mode or filter_preserves_source_black
-    )
+    preserve_source_black = transparent_mode or filter_preserves_source_black
     transparent_rgb_values = None
     if image_preset == "bw_dither_photograph" and transparent_mode:
         # ``Image.quantize(colors=2)`` produces two exact source colors. Pick
@@ -2039,62 +1953,32 @@ def raster_to_puzzle_and_lightburn(
     # 4. Convert pixels into color geometry buckets
     # =========================================================================
 
-    if centerline_mode:
-        # Quantized filled color regions cannot produce faithful line art.
-        # Select dark source-image outlines first, then trace them only on the
-        # user's black LightBurn layer.
-        printLogMessage(
-            f"[Centerline source extraction 1/2] START: preparing "
-            f"{width * height}/{width * height} source pixels."
+    printLogMessage(
+        f"[Pixel classification 1/1] START: classifying "
+        f"{width * height}/{width * height} pixels into color-layer batches."
+    )
+    pixel_boxes_by_color = classify_raster_pixels(
+        img=img,
+        target_colors=TARGET_COLORS,
+        black_hex=black_hex,
+        ignore_background_hex=ignore_background_hex,
+        include_black=(preserve_source_black and not krasnow_mode),
+        transparent=transparent_mode,
+        transparent_rgb_values=transparent_rgb_values,
+        light_threshold=_number(
+            filter_parameters.get(
+                "light_threshold",
+                128 if image_preset == "bw_dither_photograph" else 225
+            ),
+            225, 128, 255
         )
-        source_img = prepare_raster_image(
-            raster_image_path=raster_image_path,
-            new_height=new_height,
-            new_width=new_width,
-            quantize_colors=None,
-        )
-        printLogMessage(
-            f"[Centerline source extraction 1/2] DONE: prepared "
-            f"{source_img.width * source_img.height}/{source_img.width * source_img.height} pixels."
-        )
-        printLogMessage("[Centerline source extraction 2/2] START: locating dark line-art pixels.")
-        pixel_boxes_by_color = {
-            black_hex: ABSTRACT_FILTER_MODULES["centerline"].line_art_boxes(
-                source_img, filter_parameters
-            )
-        }
-        centerline_count = sum(len(boxes) for boxes in pixel_boxes_by_color.values())
-        printLogMessage(
-            f"[Centerline source extraction 2/2] DONE: produced "
-            f"{centerline_count}/{centerline_count} line-art source objects."
-        )
-    else:
-        printLogMessage(
-            f"[Pixel classification 1/1] START: classifying "
-            f"{width * height}/{width * height} pixels into color-layer batches."
-        )
-        pixel_boxes_by_color = classify_raster_pixels(
-            img=img,
-            target_colors=TARGET_COLORS,
-            black_hex=black_hex,
-            ignore_background_hex=ignore_background_hex,
-            include_black=(preserve_source_black and not krasnow_mode),
-            transparent=transparent_mode,
-            transparent_rgb_values=transparent_rgb_values,
-            light_threshold=_number(
-                filter_parameters.get(
-                    "light_threshold",
-                    128 if image_preset == "bw_dither_photograph" else 225
-                ),
-                225, 128, 255
-            )
-        )
-        classified_count = sum(len(boxes) for boxes in pixel_boxes_by_color.values())
-        printLogMessage(
-            f"[Pixel classification 1/1] DONE: classified {width * height}/{width * height} "
-            f"pixels into {len(pixel_boxes_by_color)} layer batches containing "
-            f"{classified_count} geometry objects."
-        )
+    )
+    classified_count = sum(len(boxes) for boxes in pixel_boxes_by_color.values())
+    printLogMessage(
+        f"[Pixel classification 1/1] DONE: classified {width * height}/{width * height} "
+        f"pixels into {len(pixel_boxes_by_color)} layer batches containing "
+        f"{classified_count} geometry objects."
+    )
 
     # =========================================================================
     # 5. Process every colored layer
@@ -2148,8 +2032,6 @@ def raster_to_puzzle_and_lightburn(
             filter_parameters=filter_parameters,
         )
 
-    elif centerline_mode:
-        printLogMessage("Centerline Drawing: exporting dark source-image outlines as thin closed black ribbons.")
     elif transparent_mode:
         printLogMessage(
             "Transparent mode: light source areas remain transparent; no black canvas added."

@@ -1,9 +1,9 @@
-from . import centerline, crystal, deep_fryer, glitch, krasnow_grating, mosaic, ripple, shattered, shear, spiral, voronoi, wave
+from . import crystal, deep_fryer, glitch, krasnow_grating, mosaic, ripple, shattered, shear, spiral, voronoi, wave
 
 MODULES={
     "wave":wave,"voronoi":voronoi,"shear":shear,"spiral":spiral,
     "mosaic":mosaic,"crystal":crystal,"ripple":ripple,
-    "centerline":centerline,"glitch":glitch,"shattered":shattered,
+    "glitch":glitch,"shattered":shattered,
     "deep_fryer":deep_fryer,"krasnow_grating":krasnow_grating,
 }
 ALIASES={"tessellation":"crystal","triangles":"crystal","topographic":"ripple","xenoglyph":"shattered","alien":"shattered"}

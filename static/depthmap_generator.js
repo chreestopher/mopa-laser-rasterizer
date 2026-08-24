@@ -674,7 +674,7 @@ async function loadSavedDepthPalettes() {
   depthPalettePicker.hidden = false;
   depthPaletteRequired.innerHTML = savedDepthPalettes.length
     ? 'Color-guided depth is optional. Choose a saved Depth Palette to enable its swatches.'
-    : 'Color-guided depth is optional. Create a Depth Palette in <a class="vault-depth-link" href="/material-libraries">Material Vault</a> to map colors to artificial depth and perspective influence.';
+    : 'Color-guided depth is optional. Create a Depth Palette in <a class="vault-depth-link" href="/material-libraries">Palette Vault</a> to map colors to artificial depth and perspective influence.';
 }
 
 function selectDepthPalette() {

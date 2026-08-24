@@ -1,6 +1,9 @@
 # Exclude everything by default. Explicitly include only production runtime files.
 *
 
+# Never copy workstation or deployment environment files into an image.
+.env*
+
 !requirements.txt
 !app.py
 !services.py

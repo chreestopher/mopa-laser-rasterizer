@@ -43,7 +43,7 @@ from services import (
     list_guest_material_libraries,
     redis_client,
     record_user_job,
-    record_setting_usage,
+    record_setting_usage_async,
     remember_guest_material_library,
     resolve_material_setting_usage,
     save_user_material_library,
@@ -314,12 +314,10 @@ def start_task():
                             input_keys=[key for key in (image_key, material_key) if key])
         except RuntimeError as error:
             return jsonify({"status": "error", "message": str(error)}), 503
-    try:
-        record_setting_usage(task_id, resolved_settings, usage_library)
-    except RuntimeError as error:
-        # Usage reporting is deliberately non-blocking for both account and
-        # guest processing. The raster job remains fully usable.
-        current_app.logger.warning("Could not record Material Library usage for %s: %s", task_id, error)
+    # Anonymous aggregate telemetry can require several DynamoDB updates per
+    # resolved swatch. Keep it off the upload response path so it cannot delay
+    # queueing or trigger the ALB request timeout.
+    record_setting_usage_async(task_id, resolved_settings, usage_library)
     add_history_entry(history_session, task_id, base_name, submitted_preset, submitted_filter,
                       material_name, run_parameters)
     history_files = get_accessible_history_entries(
@@ -448,7 +446,15 @@ def task_status(task_id):
             durable_job = None
         status = (durable_job or {}).get("status") or "pending"
     queue = None
-    if status == "pending":
+    # SQS is authoritative once its queue URL is configured. Redis queue
+    # positions only describe the legacy list and would be misleading while a
+    # Fargate task is waiting to start.
+    fargate_dispatch = (
+        os.environ.get("FARGATE_DISPATCH_VIA_S3", "").strip().lower()
+        in ("1", "true", "yes", "on")
+        or bool(os.environ.get("SQS_QUEUE_URL", "").strip())
+    )
+    if status == "pending" and not fargate_dispatch:
         queue = raster_queue_position(task_id)
         if queue:
             position_key = f"task:{task_id}:queue-position"

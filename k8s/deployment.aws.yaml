@@ -22,6 +22,7 @@ spec:
       initContainers:
       - name: wait-for-redis
         image: alpine:latest
+        imagePullPolicy: IfNotPresent
         command: ["sh", "-c", "until nc -zvw1 redis-service 6379; do echo waiting for redis; sleep 2; done;"]
       
       containers:
@@ -34,16 +35,18 @@ spec:
         - name: REDIS_PORT
           value: "6379"
         - name: AWS_REGION
-          value: "us-east-2"
+          value: "__AWS_REGION__"
         - name: S3_BUCKET_NAME
-          value: "mopa-laser-rasterizer-artifacts-401716294893"
+          value: "__S3_BUCKET_NAME__"
         - name: DYNAMODB_TABLE_NAME
-          value: "mopa-laser-rasterizer-users"
+          value: "__DYNAMODB_TABLE_NAME__"
         - name: UPLOAD_FOLDER
           value: "/tmp/uploads"
         - name: DAILY_JOB_LIMIT
           value: "3"
         - name: RASTER_JOB_QUEUE_ENABLED
+          value: "true"
+        - name: FARGATE_DISPATCH_VIA_S3
           value: "true"
         - name: SESSION_COOKIE_SECURE
           value: "true"
@@ -57,12 +60,22 @@ spec:
             secretKeyRef:
               name: mopa-rasterizer-session
               key: secret
+        # Default-deny administrator identity. The Secret is created outside
+        # source control by dev_setup/configure-k3s-admin.sh.
+        - name: ADMIN_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: mopa-rasterizer-admin
+              key: ADMIN_EMAIL
+              optional: true
+        - name: COGNITO_POOL_ID
+          value: "__COGNITO_POOL_ID__"
         # Fill COGNITO_CLIENT_ID with the non-secret app-client ID created for
         # the ALB.  It is used only to build Cognito's hosted-UI logout URL.
         - name: COGNITO_DOMAIN
-          value: "mopa-laser-rasterizer-401716294893.auth.us-east-2.amazoncognito.com"
+          value: "__COGNITO_DOMAIN__"
         - name: COGNITO_CLIENT_ID
-          value: "69gif0iuklqcn0lldtn4sdtvat"
+          value: "__COGNITO_CLIENT_ID__"
         - name: PUBLIC_APP_URL
           value: "https://www.mopa-laser-rasterizer.com"
         ports:

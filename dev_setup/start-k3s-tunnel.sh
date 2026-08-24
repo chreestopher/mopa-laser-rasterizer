@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+source "$SCRIPT_DIR/load-aws-env.sh"
 REGION="${AWS_REGION:-us-east-2}"
-INSTANCE_ID="${K3S_INSTANCE_ID:-i-04cf2c7d175cba101}"
+INSTANCE_ID="${K3S_INSTANCE_ID:-}"
 SSH_USER="${K3S_SSH_USER:-ubuntu}"
-SSH_KEY="${K3S_SSH_KEY:-$HOME/.ssh/actual-key.pem}"
+SSH_KEY="${K3S_SSH_KEY:-}"
 LOCAL_PORT="${K3S_LOCAL_PORT:-16443}"
 KUBECONFIG_PATH="${KUBECONFIG:-$HOME/.kube/mopa-rasterizer-production.yaml}"
 
+if [ -z "$INSTANCE_ID" ] || [ -z "$SSH_KEY" ]; then
+  echo "K3S_INSTANCE_ID and K3S_SSH_KEY are required in .env.aws or the shell environment." >&2
+  exit 2
+fi
 if [ ! -f "$SSH_KEY" ]; then
   echo "SSH key not found: $SSH_KEY" >&2
   exit 1

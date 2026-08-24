@@ -20,7 +20,7 @@ fi
 
 if [[ ! -d "$WINDOWS_AWS_DIR" ]]; then
   echo "Windows AWS configuration was not found at $WINDOWS_AWS_DIR." >&2
-  echo "Run 'aws configure' or 'aws configure sso' inside WSL." >&2
+  echo "Run 'aws configure sso --profile mopa-admin' inside WSL." >&2
   exit 1
 fi
 
@@ -36,4 +36,7 @@ echo
 aws --version
 echo "WSL now uses the AWS configuration at $WINDOWS_AWS_DIR."
 echo "Verifying the active AWS identity..."
-aws sts get-caller-identity
+echo "Authenticate the deployment profile with:"
+echo "  aws sso login --profile mopa-admin --use-device-code"
+echo "Then verify it with:"
+echo "  aws sts get-caller-identity --profile mopa-admin"

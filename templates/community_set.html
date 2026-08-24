@@ -34,7 +34,7 @@
     {% else %}
     <div class="member-gate">
       <h3>Member access required</h3>
-      <p>{% if auth_state == 'reauth_required' %}Your account session needs to be reconnected before you can open the shared settings collection.{% else %}Sign in or create an account to search the Comunity Set of laser settings. Membership also provides your personal Material Vault, reusable preferences, and account-based job history.{% endif %}</p>
+      <p>{% if auth_state == 'reauth_required' %}Your account session needs to be reconnected before you can open the shared settings collection.{% else %}Sign in or create an account to search the Comunity Set of laser settings. Membership also provides your personal Palette Vault, reusable preferences, and account-based job history.{% endif %}</p>
       <a href="/login">{% if auth_state == 'reauth_required' %}Reconnect account{% else %}Sign in or sign up{% endif %}</a>
     </div>
     {% endif %}

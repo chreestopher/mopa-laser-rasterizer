@@ -169,9 +169,9 @@
       </select>
       <span class="form-note">This uses the same saved libraries as Rasterizer.</span>
     </label>
-    <p id="calibration_vault_note" class="form-note" hidden>New uploads are added to your <a href="/material-libraries">Material Vault</a> for reuse.</p>
+    <p id="calibration_vault_note" class="form-note" hidden>New uploads are added to your <a href="/material-libraries">Palette Vault</a> for reuse.</p>
     <label>Material name<input id="calibration_material" name="material" list="calibration_material_suggestions" value="stainless - steel" required><datalist id="calibration_material_suggestions"></datalist></label>
-    <label>Setting Description<div class="calibration-description-autocomplete"><input id="calibration_setting_description" name="setting_description" value="holographic-etching" autocomplete="off" placeholder="Type or choose a palette color" role="combobox" aria-autocomplete="list" aria-controls="calibration_setting_suggestions" aria-expanded="false" required><div id="calibration_setting_suggestions" class="calibration-description-menu" role="listbox" hidden></div></div><span class="form-note">Type to filter the Rasterizer palette, choose a swatch, or edit the color name directly to match your Material Library Description.</span></label>
+    <label>Material Library Entry Description<div class="calibration-description-autocomplete"><input id="calibration_setting_description" name="setting_description" value="holographic-etching" autocomplete="off" placeholder="Type or choose a palette color" role="combobox" aria-autocomplete="list" aria-controls="calibration_setting_suggestions" aria-expanded="false" required><div id="calibration_setting_suggestions" class="calibration-description-menu" role="listbox" hidden></div></div><span class="form-note">Type to filter the Rasterizer palette, choose a swatch, or edit the color name directly to match the Description of a Material Library entry.</span></label>
     <label>Cut mode<select name="cut_mode"><option value="setting" selected>Setting</option><option value="line">Line</option><option value="fill">Fill</option><option value="offset-fill">Offset Fill</option></select><span class="form-note">Setting preserves the selected Material Library operation type. Other choices override every generated calibration swatch layer.</span></label>
     <label>Laser source<input name="laser_source" placeholder="Example: JPT M7 100 W MOPA"></label>
     <label>Lens field of view (mm)<input name="lens_field_mm" type="number" value="110" min="1" max="1000" step="1" required></label>
@@ -250,7 +250,7 @@
       <select id="saved_artwork_library" name="saved_material_library_id"><option value="">Choose an account library…</option></select>
       <span class="form-note">Choose the Material Library used to create this recipe.</span>
     </label>
-    <p id="artwork_vault_note" class="form-note" hidden>New uploads are added to your <a href="/material-libraries">Material Vault</a> for reuse.</p>
+    <p id="artwork_vault_note" class="form-note" hidden>New uploads are added to your <a href="/material-libraries">Palette Vault</a> for reuse.</p>
     <label>Maximum processing dimension, pixels<input name="max_dimension" type="number" value="96" min="8" max="1600" step="1"><span class="form-note">Start at 64–96. The 1600-pixel limit is for serious experiments, and detailed artwork can still create a very large LightBurn file.</span></label>
     <label>Physical pixel size, mm<input name="pixel_mm" type="number" value=".5" min=".0625" max="5" step=".0625"><span class="form-note">This sets each grating patch’s width and height.</span></label>
     <label>Cut mode<select name="cut_mode"><option value="setting" selected>Setting</option><option value="line">Line</option><option value="fill">Fill</option><option value="offset-fill">Offset Fill</option></select><span class="form-note">Setting preserves the operation type from the selected holographic Material Library setting. Other choices override the generated holographic layers.</span></label>
@@ -726,7 +726,7 @@
       const results = document.getElementById('calibration_results');
       const button = form.querySelector('button[type="submit"]');
       if (operatorSignedIn && !savedCalibrationLibrary.value && !calibrationMaterialSettings.files.length) {
-        results.textContent = 'Upload a LightBurn Material Library file or choose one from your Material Vault.';
+        results.textContent = 'Upload a LightBurn Material Library file or choose one from your Palette Vault.';
         return;
       }
       if (!operatorSignedIn && !selectedGuestLibraryAvailable(guestCalibrationLibrarySource, calibrationMaterialSettings)) {
@@ -1044,7 +1044,7 @@
         return;
       }
       if (operatorSignedIn && !savedArtworkLibrary.value && !artworkMaterialSettings.files.length) {
-        results.textContent = 'Upload the LightBurn Material Library used by this recipe or choose it from your Material Vault.';
+        results.textContent = 'Upload the LightBurn Material Library used by this recipe or choose it from your Palette Vault.';
         return;
       }
       if (!operatorSignedIn && !selectedGuestLibraryAvailable(guestArtworkLibrarySource, artworkMaterialSettings)) {

@@ -11,20 +11,25 @@ spec:
     kind: Deployment
     name: mopa-laser-rasterizer
   minReplicas: 2
-  maxReplicas: 10
+  # Four web pods provide up to sixteen Gunicorn threads without allowing a
+  # short submission burst to fill this two-node cluster with new containers.
+  maxReplicas: 4
   metrics:
   - type: Resource
     resource:
       name: cpu
       target:
-        type: Utilization
-        averageUtilization: 70
+        # Use an absolute target instead of a percentage of the deliberately
+        # small CPU request. With a 100m request, the former 70% target treated
+        # only 70m as overload and caused a 2 -> 3 -> 6 -> 9 replica storm.
+        type: AverageValue
+        averageValue: 200m
   - type: Resource
     resource:
       name: memory
       target:
-        type: Utilization
-        averageUtilization: 80
+        type: AverageValue
+        averageValue: 384Mi
   behavior:
     scaleDown:
       stabilizationWindowSeconds: 300
@@ -33,12 +38,12 @@ spec:
         value: 50
         periodSeconds: 60
     scaleUp:
-      stabilizationWindowSeconds: 0
+      # Require sustained pressure before adding capacity. Raster job
+      # submission and pod initialization both create short CPU spikes that
+      # should not trigger repeated doubling.
+      stabilizationWindowSeconds: 60
       policies:
-      - type: Percent
-        value: 100
-        periodSeconds: 15
       - type: Pods
-        value: 2
+        value: 1
         periodSeconds: 60
       selectPolicy: Max

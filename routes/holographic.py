@@ -28,6 +28,7 @@ from services import (
     get_user_material_library,
     get_user_holographic_recipe,
     redis_client,
+    store_and_enqueue_job,
     raster_queue_position,
     record_user_job,
     remember_guest_material_library,
@@ -93,7 +94,7 @@ def _guest_profile_url(filename, user_id):
 
 def _resolve_material_library(task_id, uploaded_library, saved_library_id, history_session,
                               material_name="", guest_library_id=""):
-    """Use the Rasterizer's shared guest cache and account Material Vault."""
+    """Use the Rasterizer's shared guest cache and account Palette Vault."""
     upload_folder = current_app.config["UPLOAD_FOLDER"]
     user_id = request.headers.get("x-amzn-oidc-identity", "").strip()
     history_session = (valid_history_session(history_session)
@@ -132,7 +133,7 @@ def _resolve_material_library(task_id, uploaded_library, saved_library_id, histo
 
     if guest_library_id:
         if user_id:
-            raise PermissionError("Choose a Material Vault library for an authenticated workflow.")
+            raise PermissionError("Choose a Palette Vault library for an authenticated workflow.")
         cached = select_guest_material_library(history_session, guest_library_id)
         if not cached:
             raise FileNotFoundError("That browser-session Material Library is no longer available.")
@@ -1030,7 +1031,7 @@ def calibration_grid():
     description = str(request.form.get("setting_description", "")).strip()
     laser_source = str(request.form.get("laser_source", "")).strip()
     if not material or not description:
-        return jsonify({"status": "error", "message": "Provide the material name and setting Description."}), 400
+        return jsonify({"status": "error", "message": "Provide the material name and Material Library entry Description."}), 400
     try:
         columns = max(2, min(6, int(request.form.get("columns", 4))))
         rows = max(2, min(6, int(request.form.get("rows", 4))))
@@ -1552,7 +1553,7 @@ def build_holographic_artwork():
         redis_client.set(f"task:{artwork_task_id}:status", "pending", ex=HISTORY_TTL_SECONDS)
         redis_client.rpush(f"task:{artwork_task_id}:log", "Holographic Artwork job queued for a dedicated worker.")
         redis_client.expire(f"task:{artwork_task_id}:log", HISTORY_TTL_SECONDS)
-        redis_client.lpush(RASTER_JOB_QUEUE, json.dumps(payload, separators=(",", ":")))
+        store_and_enqueue_job(payload)
     except PermissionError as error:
         return fail(error, 401)
     except FileNotFoundError as error:
@@ -1598,7 +1599,16 @@ def holographic_artwork_status(task_id):
         result = {}
     if status == "completed" and not result.get("lightburn_url"):
         status = "processing"
-    queue = raster_queue_position(task_id) if status == "pending" else None
+    fargate_dispatch = (
+        os.environ.get("FARGATE_DISPATCH_VIA_S3", "").strip().lower()
+        in ("1", "true", "yes", "on")
+        or bool(os.environ.get("SQS_QUEUE_URL", "").strip())
+    )
+    queue = (
+        raster_queue_position(task_id)
+        if status == "pending" and not fargate_dispatch
+        else None
+    )
     return jsonify({"status": status, "logs": logs, "log_count": log_count, "queue": queue, **result})
 
 

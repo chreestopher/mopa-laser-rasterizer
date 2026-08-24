@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Material Library Vault · MOPA Laser Rasterizer</title>
+  <title>Palette Vault · MOPA Laser Rasterizer</title>
   <style>
     :root { --case:#1a1d1a; --panel:#252a25; --ink:#d9d6be; --green:#8df06c; --amber:#efb94f; --red:#e76554; --control-top:#66766d; --control-base:#34443e; --control-edge:#9ba89f; --control-shadow:#18221e; }
     * { box-sizing:border-box; }
@@ -56,7 +56,7 @@
 <body>
   <main class="machine">
     {{ machine_chrome('materials', 'LASER PARAMETERIZATION CONSOLE · SERIES 79', false, '', 'compact') }}
-    <section id="sign_in_panel" class="panel" hidden><p>Sign in to open your personal Material Library Vault.</p><a href="/login">Initialize secure operator access →</a></section>
+    <section id="sign_in_panel" class="panel" hidden><p>Sign in to open your personal Palette Vault.</p><a href="/login">Initialize secure operator access →</a></section>
     <div id="manager" hidden>
       <section class="panel vault-terminal">
         <div id="settings_workspace" class="settings-workspace"><div class="settings-toolbar"><strong id="settings_modal_title">PALETTE &amp; MATERIAL SETTINGS CONSOLE</strong></div><details id="vault_controls" class="settings-accordion"><summary>LOAD OR BUILD A PALETTE OR SETTINGS LIBRARY</summary><div class="settings-accordion-content"><label for="libraries">Load one or more LightBurn Material Library files</label><input id="libraries" type="file" accept=".clb,.lbmat,.lbrn" multiple><button id="scan" type="button">Import</button><button id="new_library" type="button">New Settings Library</button><button id="new_hatch_palette" type="button">New Hatch Palette</button><button id="new_depth_palette" type="button">New Depth Palette</button><p class="meta">Color Palettes and Hatch Palettes use LightBurn files. Depth Palettes are saved directly to your account without a LightBurn file.</p><div id="import_plan" class="import-plan" hidden></div><button id="import" type="button" hidden>Import selected materials</button></div></details><div class="selection-actions"><span id="selected_count" class="meta">Selected settings: 0</span><span><a href="/docs/material-coupon-generator">Coupon generator help</a> <button id="selected_actions" type="button" disabled>Selected actions</button></span></div><div id="settings_modal_body" class="settings-body"></div><div id="depth_palette_list"></div></div>

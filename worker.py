@@ -1,5 +1,6 @@
 """Dedicated Redis-backed raster worker for Kubernetes deployments."""
 
+import argparse
 import json
 import os
 import signal
@@ -13,6 +14,7 @@ from redis.exceptions import TimeoutError as RedisTimeoutError
 from services import (
     HISTORY_TTL_SECONDS,
     RASTER_JOB_PROCESSING_QUEUE,
+    RASTER_JOB_PAYLOAD_PREFIX,
     RASTER_JOB_QUEUE,
     download_task_artifact,
     long_running_script,
@@ -211,9 +213,13 @@ def run_job(raw_payload, upload_folder):
     material_path = os.path.join(upload_folder, f"{task_id}_material_{material_name}")
     os.makedirs(upload_folder, exist_ok=True)
     redis_client.rpush(f"task:{task_id}:log", "Dedicated raster worker claimed the job.")
+    redis_client.rpush(f"task:{task_id}:log", "Downloading the source image from durable storage.")
     download_task_artifact(payload["image_key"], image_path)
+    redis_client.rpush(f"task:{task_id}:log", "Source image download complete.")
     if not svg_only:
+        redis_client.rpush(f"task:{task_id}:log", "Downloading the selected Material Library.")
         download_task_artifact(payload["material_key"], material_path)
+        redis_client.rpush(f"task:{task_id}:log", "Material Library download complete.")
     long_running_script(
         task_id,
         payload.get("data") or {},
@@ -290,10 +296,73 @@ def run_holographic_artwork_job(payload, upload_folder):
     redis_client.expire(log_key, HISTORY_TTL_SECONDS)
 
 
-def main():
+def process_owned_job(raw_payload, task_id, upload_folder):
+    """Run and acknowledge one job whose lease is already owned by this process."""
+    heartbeat_stop = threading.Event()
+    heartbeat = threading.Thread(
+        target=maintain_lease,
+        args=(task_id, heartbeat_stop),
+        name=f"lease-{task_id}",
+        daemon=True,
+    )
+    heartbeat.start()
+    succeeded = True
+    try:
+        run_job(raw_payload, upload_folder)
+    except Exception as error:
+        succeeded = False
+        print(f"[Raster-Worker] Job {task_id} failed: {error}", flush=True)
+        record_job_failure(task_id, error)
+    finally:
+        heartbeat_stop.set()
+        heartbeat.join(timeout=HEARTBEAT_SECONDS + 1)
+        if not acknowledge_job(raw_payload, task_id):
+            print(
+                f"[Raster-Worker] Did not acknowledge {task_id}: lease ownership was lost.",
+                flush=True,
+            )
+    return succeeded
+
+
+def run_task_by_id(task_id, upload_folder):
+    """Process exactly one persisted job envelope and return a process exit code."""
+    if redis_client.get(f"task:{task_id}:status") == "completed":
+        print(f"[Raster-Worker] Task {task_id} is already complete; nothing to do.", flush=True)
+        return 0
+    raw_payload = redis_client.get(f"{RASTER_JOB_PAYLOAD_PREFIX}{task_id}")
+    if raw_payload is None:
+        print(f"[Raster-Worker] No persisted payload exists for task {task_id}.", flush=True)
+        return 2
+    if payload_task_id(raw_payload) != task_id:
+        print(f"[Raster-Worker] Persisted payload does not match task {task_id}.", flush=True)
+        return 2
+    if not redis_client.set(lease_key(task_id), WORKER_ID, nx=True, ex=LEASE_SECONDS):
+        print(f"[Raster-Worker] Task {task_id} is already owned by another worker.", flush=True)
+        return 3
+
+    # Move the canonical envelope into processing state. Removing both possible
+    # old entries also makes an SQS retry idempotent after a stopped Fargate task.
+    pipeline = redis_client.pipeline()
+    pipeline.lrem(RASTER_JOB_QUEUE, 0, raw_payload)
+    pipeline.lrem(RASTER_JOB_PROCESSING_QUEUE, 0, raw_payload)
+    pipeline.rpush(RASTER_JOB_PROCESSING_QUEUE, raw_payload)
+    pipeline.execute()
+    print(f"[Raster-Worker] Running one-shot task {task_id}.", flush=True)
+    return 0 if process_owned_job(raw_payload, task_id, upload_folder) else 1
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Run raster jobs from Redis.")
+    parser.add_argument(
+        "--task-id",
+        help="Process exactly one persisted task envelope and exit (for ECS/Fargate).",
+    )
+    args = parser.parse_args(argv)
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
     upload_folder = os.environ.get("UPLOAD_FOLDER", "/tmp/uploads")
+    if args.task_id:
+        return run_task_by_id(str(args.task_id), upload_folder)
     last_recovery = 0.0
     print("[Raster-Worker] Waiting for jobs.", flush=True)
     while not stop_requested:
@@ -338,29 +407,10 @@ def main():
             redis_client.lrem(RASTER_JOB_PROCESSING_QUEUE, 1, raw_payload)
             print(f"[Raster-Worker] Skipped duplicate live job {task_id}.", flush=True)
             continue
-        heartbeat_stop = threading.Event()
-        heartbeat = threading.Thread(
-            target=maintain_lease,
-            args=(task_id, heartbeat_stop),
-            name=f"lease-{task_id}",
-            daemon=True,
-        )
-        heartbeat.start()
-        try:
-            run_job(raw_payload, upload_folder)
-        except Exception as error:
-            print(f"[Raster-Worker] Job {task_id or '(unknown)'} failed: {error}", flush=True)
-            record_job_failure(task_id, error)
-        finally:
-            heartbeat_stop.set()
-            heartbeat.join(timeout=HEARTBEAT_SECONDS + 1)
-            if not acknowledge_job(raw_payload, task_id):
-                print(
-                    f"[Raster-Worker] Did not acknowledge {task_id}: lease ownership was lost.",
-                    flush=True,
-                )
+        process_owned_job(raw_payload, task_id, upload_folder)
     print("[Raster-Worker] Shutdown complete.", flush=True)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

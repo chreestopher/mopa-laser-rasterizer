@@ -14,7 +14,7 @@ The application prepares artwork and project files; it does not control a laser 
 - Editable palette selection and Material Library description matching
 - Cartoon, Color Photo, and dithered Black and White Photo presets
 - Abstract vector filters with configurable controls
-- Material Vault for importing, editing, combining, and exporting saved libraries
+- Palette Vault for importing, editing, combining, and exporting saved libraries
 - Hatch Palettes that clone a base Fill or Offset Fill setting across LightBurn swatches and plan per-layer hatch angles and line intervals
 - Labeled LightBurn material-coupon generation
 - Color Discovery calibration, photo analysis, and recipe saving
@@ -26,7 +26,7 @@ The application prepares artwork and project files; it does not control a laser 
 ## Rasterizer workflow
 
 1. Develop and verify color settings on the actual machine, lens, material, finish, and focus arrangement.
-2. Store the settings in a LightBurn Material Library. Setting descriptions should match Rasterizer palette names; palette labels can also be edited in the UI to match an existing library.
+2. Store the settings in a LightBurn Material Library. Material Library entry Descriptions should match Rasterizer palette names; palette labels can also be edited in the UI to match an existing library.
 3. Upload artwork and optionally select or upload the Material Library.
 4. Choose the material, processing dimensions, physical pixel size, palette, and image preset.
 5. Build the project and download the SVG or `.lbrn2` output.

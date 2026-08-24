@@ -7,6 +7,9 @@ ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 BUCKET_NAME="${S3_BUCKET_NAME:-mopa-laser-rasterizer-artifacts-${ACCOUNT_ID}}"
 TABLE_NAME="${DYNAMODB_TABLE_NAME:-mopa-laser-rasterizer-users}"
 ECR_REPOSITORY="${ECR_REPOSITORY:-mopa-laser-rasterizer}"
+SQS_QUEUE_NAME="${SQS_QUEUE_NAME:-mopa-laser-raster-jobs}"
+SQS_DLQ_NAME="${SQS_DLQ_NAME:-mopa-laser-raster-jobs-dlq}"
+SQS_MAX_RECEIVE_COUNT="${SQS_MAX_RECEIVE_COUNT:-3}"
 ROLE_NAME="${EC2_ROLE_NAME:-mopa-laser-rasterizer-ec2}"
 PROFILE_NAME="${EC2_PROFILE_NAME:-mopa-laser-rasterizer-ec2}"
 
@@ -61,11 +64,49 @@ if ! aws ecr describe-repositories --region "$REGION" --repository-names "$ECR_R
 fi
 
 TRUST_FILE="$(mktemp)"; POLICY_FILE="$(mktemp)"; ECR_LIFECYCLE_FILE="$(mktemp)"
-trap 'rm -f "$TRUST_FILE" "$POLICY_FILE" "$ECR_LIFECYCLE_FILE"' EXIT
+SQS_ATTRIBUTES_FILE="$(mktemp)"; SQS_DLQ_ATTRIBUTES_FILE="$(mktemp)"
+trap 'rm -f "$TRUST_FILE" "$POLICY_FILE" "$ECR_LIFECYCLE_FILE" "$SQS_ATTRIBUTES_FILE" "$SQS_DLQ_ATTRIBUTES_FILE"' EXIT
 printf '%s' '{"rules":[{"rulePriority":1,"description":"Keep the newest 20 application images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":20},"action":{"type":"expire"}}]}' > "$ECR_LIFECYCLE_FILE"
 aws ecr put-lifecycle-policy --region "$REGION" \
   --repository-name "$ECR_REPOSITORY" \
   --lifecycle-policy-text "file://${ECR_LIFECYCLE_FILE}" >/dev/null
+
+ensure_queue_url() {
+  queue_name="$1"
+  queue_url="$(aws sqs get-queue-url --region "$REGION" \
+    --queue-name "$queue_name" --query QueueUrl --output text 2>/dev/null || true)"
+  if [ -z "$queue_url" ] || [ "$queue_url" = "None" ]; then
+    queue_url="$(aws sqs create-queue --region "$REGION" \
+      --queue-name "$queue_name" --query QueueUrl --output text)"
+  fi
+  printf '%s' "$queue_url"
+}
+
+echo "Configuring SQS dead-letter queue: $SQS_DLQ_NAME"
+SQS_DLQ_URL="$(ensure_queue_url "$SQS_DLQ_NAME")"
+SQS_DLQ_ARN="$(aws sqs get-queue-attributes --region "$REGION" \
+  --queue-url "$SQS_DLQ_URL" --attribute-names QueueArn \
+  --query 'Attributes.QueueArn' --output text)"
+aws sqs set-queue-attributes --region "$REGION" --queue-url "$SQS_DLQ_URL" \
+  --attributes SqsManagedSseEnabled=true,MessageRetentionPeriod=1209600
+aws sqs tag-queue --region "$REGION" --queue-url "$SQS_DLQ_URL" \
+  --tags application=mopa-laser-rasterizer,workload=raster-worker,purpose=dead-letter
+
+echo "Configuring SQS raster job queue: $SQS_QUEUE_NAME"
+SQS_QUEUE_URL="$(ensure_queue_url "$SQS_QUEUE_NAME")"
+SQS_QUEUE_ARN="$(aws sqs get-queue-attributes --region "$REGION" \
+  --queue-url "$SQS_QUEUE_URL" --attribute-names QueueArn \
+  --query 'Attributes.QueueArn' --output text)"
+printf '{"SqsManagedSseEnabled":"true","VisibilityTimeout":"7200","MessageRetentionPeriod":"604800","ReceiveMessageWaitTimeSeconds":"20","RedrivePolicy":"{\\"deadLetterTargetArn\\":\\"%s\\",\\"maxReceiveCount\\":\\"%s\\"}"}' \
+  "$SQS_DLQ_ARN" "$SQS_MAX_RECEIVE_COUNT" > "$SQS_ATTRIBUTES_FILE"
+printf '{"SqsManagedSseEnabled":"true","MessageRetentionPeriod":"1209600","RedriveAllowPolicy":"{\\"redrivePermission\\":\\"byQueue\\",\\"sourceQueueArns\\":[\\"%s\\"]}"}' \
+  "$SQS_QUEUE_ARN" > "$SQS_DLQ_ATTRIBUTES_FILE"
+aws sqs set-queue-attributes --region "$REGION" --queue-url "$SQS_QUEUE_URL" \
+  --attributes "file://${SQS_ATTRIBUTES_FILE}"
+aws sqs set-queue-attributes --region "$REGION" --queue-url "$SQS_DLQ_URL" \
+  --attributes "file://${SQS_DLQ_ATTRIBUTES_FILE}"
+aws sqs tag-queue --region "$REGION" --queue-url "$SQS_QUEUE_URL" \
+  --tags application=mopa-laser-rasterizer,workload=raster-worker,purpose=jobs
 
 printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}' > "$TRUST_FILE"
 if ! aws iam get-role --role-name "$ROLE_NAME" >/dev/null 2>&1; then
@@ -77,7 +118,9 @@ cat > "$POLICY_FILE" <<JSON
 {"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:PutObjectTagging","s3:DeleteObject"],"Resource":"arn:aws:s3:::${BUCKET_NAME}/*"},
 {"Effect":"Allow","Action":"ecr:GetAuthorizationToken","Resource":"*"},
 {"Effect":"Allow","Action":["ecr:BatchCheckLayerAvailability","ecr:BatchGetImage","ecr:GetDownloadUrlForLayer"],"Resource":"arn:aws:ecr:${REGION}:${ACCOUNT_ID}:repository/${ECR_REPOSITORY}"},
-{"Effect":"Allow","Action":["dynamodb:BatchGetItem","dynamodb:BatchWriteItem","dynamodb:DeleteItem","dynamodb:DescribeTable","dynamodb:GetItem","dynamodb:PutItem","dynamodb:Query","dynamodb:UpdateItem"],"Resource":"arn:aws:dynamodb:${REGION}:${ACCOUNT_ID}:table/${TABLE_NAME}"}]}
+{"Effect":"Allow","Action":["dynamodb:BatchGetItem","dynamodb:BatchWriteItem","dynamodb:DeleteItem","dynamodb:DescribeTable","dynamodb:GetItem","dynamodb:PutItem","dynamodb:Query","dynamodb:UpdateItem"],"Resource":"arn:aws:dynamodb:${REGION}:${ACCOUNT_ID}:table/${TABLE_NAME}"},
+{"Effect":"Allow","Action":["sqs:GetQueueAttributes","sqs:GetQueueUrl","sqs:SendMessage"],"Resource":"${SQS_QUEUE_ARN}"},
+{"Effect":"Allow","Action":"cognito-idp:ListUsers","Resource":"arn:aws:cognito-idp:${REGION}:${ACCOUNT_ID}:userpool/${COGNITO_POOL_ID:-*}"}]}
 JSON
 aws iam put-role-policy --role-name "$ROLE_NAME" --policy-name MopaRasterizerAccountData --policy-document "file://${POLICY_FILE}"
 if ! aws iam get-instance-profile --instance-profile-name "$PROFILE_NAME" >/dev/null 2>&1; then
@@ -137,7 +180,7 @@ if [ "$CONFIGURE_EDGE" = "1" ]; then
   fi
 
   ACTION_FILE="$(mktemp)"; LOGOUT_FILE="$(mktemp)"; LOGIN_FILE="$(mktemp)"
-  trap 'rm -f "$TRUST_FILE" "$POLICY_FILE" "$ECR_LIFECYCLE_FILE" "$ACTION_FILE" "$LOGOUT_FILE" "$LOGIN_FILE"' EXIT
+  trap 'rm -f "$TRUST_FILE" "$POLICY_FILE" "$ECR_LIFECYCLE_FILE" "$SQS_ATTRIBUTES_FILE" "$SQS_DLQ_ATTRIBUTES_FILE" "$ACTION_FILE" "$LOGOUT_FILE" "$LOGIN_FILE"' EXIT
   cat > "$ACTION_FILE" <<JSON
 [{"Type":"authenticate-cognito","Order":1,"AuthenticateCognitoConfig":{"UserPoolArn":"arn:aws:cognito-idp:${REGION}:${ACCOUNT_ID}:userpool/${COGNITO_POOL_ID}","UserPoolClientId":"${COGNITO_CLIENT_ID}","UserPoolClientSecret":"${COGNITO_CLIENT_SECRET}","UserPoolDomain":"${COGNITO_USER_POOL_DOMAIN_PREFIX}","OnUnauthenticatedRequest":"allow","Scope":"openid email profile","SessionCookieName":"AWSELBAuthSessionCookie","SessionTimeout":604800}},{"Type":"forward","Order":2,"ForwardConfig":{"TargetGroups":[{"TargetGroupArn":"${TARGET_GROUP_ARN}","Weight":1}]}}]
 JSON
@@ -175,5 +218,7 @@ fi
 
 echo
 echo "Bootstrap complete. Attach instance profile '$PROFILE_NAME' to the replacement EC2 instance."
-printf 'AWS_REGION=%s\nS3_BUCKET_NAME=%s\nDYNAMODB_TABLE_NAME=%s\nECR_REPOSITORY_URI=%s.dkr.ecr.%s.amazonaws.com/%s\n' \
-  "$REGION" "$BUCKET_NAME" "$TABLE_NAME" "$ACCOUNT_ID" "$REGION" "$ECR_REPOSITORY"
+printf 'AWS_REGION=%s\nS3_BUCKET_NAME=%s\nDYNAMODB_TABLE_NAME=%s\nECR_REPOSITORY_URI=%s.dkr.ecr.%s.amazonaws.com/%s\nSQS_QUEUE_NAME=%s\nSQS_QUEUE_URL=%s\nSQS_QUEUE_ARN=%s\nSQS_DLQ_NAME=%s\nSQS_DLQ_URL=%s\nSQS_DLQ_ARN=%s\n' \
+  "$REGION" "$BUCKET_NAME" "$TABLE_NAME" "$ACCOUNT_ID" "$REGION" "$ECR_REPOSITORY" \
+  "$SQS_QUEUE_NAME" "$SQS_QUEUE_URL" "$SQS_QUEUE_ARN" \
+  "$SQS_DLQ_NAME" "$SQS_DLQ_URL" "$SQS_DLQ_ARN"

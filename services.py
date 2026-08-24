@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlencode
 
 import boto3
+from botocore.config import Config
 import redis
 from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key
@@ -25,14 +26,59 @@ from lib.lightburn import Lightburn
 
 
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-2").strip()
-redis_client = redis.Redis(
-    host=os.environ.get("REDIS_HOST", "localhost"),
-    port=int(os.environ.get("REDIS_PORT", 6379)),
-    decode_responses=True,
+
+
+def _environment_flag(name, default="false"):
+    return os.environ.get(name, default).strip().lower() in ("1", "true", "yes", "on")
+
+
+def create_redis_client():
+    """Create a Redis client usable by local, Kubernetes, and ECS workloads."""
+    redis_url = os.environ.get("REDIS_URL", "").strip()
+    common_options = {
+        "decode_responses": True,
+        "socket_connect_timeout": int(os.environ.get("REDIS_CONNECT_TIMEOUT_SECONDS", "5")),
+        "socket_timeout": int(os.environ.get("REDIS_SOCKET_TIMEOUT_SECONDS", "10")),
+        "health_check_interval": int(os.environ.get("REDIS_HEALTH_CHECK_SECONDS", "30")),
+    }
+    if redis_url:
+        return redis.Redis.from_url(redis_url, **common_options)
+
+    password = os.environ.get("REDIS_PASSWORD", "")
+    username = os.environ.get("REDIS_USERNAME", "")
+    return redis.Redis(
+        host=os.environ.get("REDIS_HOST", "localhost"),
+        port=int(os.environ.get("REDIS_PORT", 6379)),
+        ssl=_environment_flag("REDIS_SSL"),
+        password=password or None,
+        username=username or None,
+        **common_options,
+    )
+
+
+redis_client = create_redis_client()
+s3_client = boto3.client(
+    "s3",
+    region_name=AWS_REGION,
+    config=Config(
+        connect_timeout=10,
+        read_timeout=60,
+        retries={"max_attempts": 3, "mode": "standard"},
+    ),
 )
-s3_client = boto3.client("s3", region_name=AWS_REGION)
+sqs_client = boto3.client(
+    "sqs",
+    region_name=AWS_REGION,
+    config=Config(
+        connect_timeout=5,
+        read_timeout=10,
+        retries={"max_attempts": 3, "mode": "standard"},
+    ),
+)
 S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME", "").strip()
 DYNAMODB_TABLE_NAME = os.environ.get("DYNAMODB_TABLE_NAME", "").strip()
+SQS_QUEUE_URL = os.environ.get("SQS_QUEUE_URL", "").strip()
+FARGATE_DISPATCH_VIA_S3 = _environment_flag("FARGATE_DISPATCH_VIA_S3")
 LIGHTBURN_PALETTE_NAMES = {
     "#B4B4B4": "Light-Gray", "#000000": "Black", "#0000FF": "Blue",
     "#FF0000": "Red", "#00E000": "Green", "#D0D000": "Yellow",
@@ -47,12 +93,13 @@ LIGHTBURN_PALETTE_NAMES = {
 }
 ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
-    "crystal", "ripple", "centerline", "glitch", "shattered", "deep_fryer",
+    "crystal", "ripple", "glitch", "shattered", "deep_fryer",
     "krasnow_grating",
 }
 ABSTRACT_PRESET_PREFIX = "abstract_"
 RASTER_JOB_QUEUE = "rasterizer:jobs"
 RASTER_JOB_PROCESSING_QUEUE = "rasterizer:jobs:processing"
+RASTER_JOB_PAYLOAD_PREFIX = "rasterizer:job-payload:"
 HISTORY_SESSION_RE = re.compile(r"^[a-f0-9-]{32,36}$")
 HISTORY_TTL_SECONDS = 7 * 24 * 60 * 60
 GUEST_MATERIAL_LIBRARY_LIMIT = 12
@@ -131,7 +178,7 @@ def resolve_material_setting_usage(material_settings_path, material_name, select
     chosen.update({names["#000000"].casefold(), names["#B4B4B4"].casefold()})
     requested_material = str(material_name or "").strip().casefold()
     matched = {}
-    for setting in LightBurn().parse_material_library(material_settings_path):
+    for setting in Lightburn().parse_material_library(material_settings_path):
         if str(getattr(setting, "materialName", "") or "").strip().casefold() != requested_material:
             continue
         labels = {
@@ -220,6 +267,34 @@ def record_setting_usage(task_id, resolved_settings, library=None):
                 )
     except Exception as error:
         raise RuntimeError("Could not record Material Library setting usage.") from error
+
+
+def record_setting_usage_async(task_id, resolved_settings, library=None):
+    """Record optional aggregate telemetry without delaying job submission.
+
+    A palette can resolve dozens of swatches, and each swatch updates several
+    aggregate dimensions. Those remote DynamoDB writes must never sit inside
+    the user-facing /upload request or delay queueing the raster job.
+    """
+    if not resolved_settings:
+        return None
+
+    def record_in_background():
+        try:
+            record_setting_usage(task_id, resolved_settings, library)
+        except RuntimeError as error:
+            print(
+                f"Could not record Material Library usage for {task_id}: {error}",
+                flush=True,
+            )
+
+    usage_thread = threading.Thread(
+        target=record_in_background,
+        name=f"setting-usage-{task_id}",
+        daemon=True,
+    )
+    usage_thread.start()
+    return usage_thread
 
 
 def get_user_preferences(user_id):
@@ -849,6 +924,7 @@ def get_user_job_history(user_id, limit=100):
     except ClientError as error:
         raise RuntimeError("Could not load account job history.") from error
     entries = []
+    retention_cutoff = int(time.time()) - HISTORY_TTL_SECONDS
     for item in response.get("Items", []):
         entry = _json_values(item)
         task_id = entry.get("task_id")
@@ -857,13 +933,142 @@ def get_user_job_history(user_id, limit=100):
         stored_status = redis_client.get(f"task:{task_id}:status")
         durable_status = entry.get("status", "pending")
         # Keep account history consistent with S3 lifecycle/manual cleanup,
-        # just as the guest history panel already does.
-        if not stored_status and not task_artifacts_exist(task_id):
-            continue
+        # just as the guest history panel already does. Jobs older than the
+        # retention window are known to have expired and need no remote S3
+        # request. Only an unusual recent row missing Redis status needs an
+        # S3 existence check, using the already-known owner prefix directly.
+        if not stored_status:
+            if int(entry.get("created_at") or 0) <= retention_cutoff:
+                continue
+            if not task_artifacts_exist(task_id, user_id=user_id):
+                continue
         entry["status"] = stored_status or durable_status
         entry.update(job_history_links(entry))
         entries.append(entry)
     return entries
+
+
+def record_admin_job(payload):
+    """Record a global seven-day operational index without artwork or secrets."""
+    table = account_table()
+    if not table:
+        return
+    task_id = str(payload.get("task_id") or "")
+    if not task_id:
+        return
+    created_at = int(time.time())
+    data = payload.get("data") or {}
+    item = {
+        "pk": "ADMIN#JOBS",
+        "sk": f"JOB#{created_at:010d}#{task_id}",
+        "task_id": task_id,
+        "created_at": created_at,
+        "user_id": str(payload.get("user_id") or "guest"),
+        "source_name": str(payload.get("image_name") or "")[:255],
+        "material_name": str(data.get("material") or "")[:160],
+        "image_preset": str(data.get("image_preset") or "")[:100],
+        "status": "pending",
+    }
+    try:
+        table.put_item(Item=item)
+    except ClientError as error:
+        raise RuntimeError("Could not record the administrative job index.") from error
+
+
+def list_admin_jobs(days=7):
+    """Return indexed jobs and live pre-index jobs, newest first."""
+    table = account_table()
+    cutoff = int(time.time()) - max(1, int(days)) * 86400
+    jobs_by_id = {}
+    if table:
+        try:
+            response = table.query(
+                KeyConditionExpression=Key("pk").eq("ADMIN#JOBS") &
+                Key("sk").gte(f"JOB#{cutoff:010d}"),
+                ScanIndexForward=False,
+            )
+        except ClientError as error:
+            raise RuntimeError("Could not load the administrative job index.") from error
+        for raw in response.get("Items", []):
+            job = _json_values(raw)
+            if job.get("task_id"):
+                jobs_by_id[job["task_id"]] = job
+
+    # Backfill the current seven-day window from browser/account history lists
+    # created before the global admin index existed. Access-token keys share
+    # the prefix but are strings, so inspect list keys only.
+    for history_key in redis_client.scan_iter(match="history:*"):
+        if history_key.endswith(":access") or redis_client.type(history_key) != "list":
+            continue
+        for raw_entry in redis_client.lrange(history_key, 0, -1):
+            try:
+                entry = json.loads(raw_entry)
+            except (TypeError, json.JSONDecodeError):
+                continue
+            task_id = str(entry.get("task_id") or "")
+            created_at = int(entry.get("created_at") or 0)
+            if not task_id or created_at < cutoff or task_id in jobs_by_id:
+                continue
+            binding = _job_access_binding(task_id)
+            operator = binding[1] if binding and binding[0] == "account" else "guest"
+            jobs_by_id[task_id] = {
+                "task_id": task_id, "created_at": created_at,
+                "user_id": operator,
+                "source_name": str(entry.get("source_name") or "")[:255],
+                "material_name": str(entry.get("material_name") or "")[:160],
+                "image_preset": str(entry.get("image_preset") or "")[:100],
+                "status": "pending",
+            }
+
+    for queue_name, queue_state in (
+        (RASTER_JOB_QUEUE, "pending"),
+        (RASTER_JOB_PROCESSING_QUEUE, "processing"),
+    ):
+        for raw_payload in redis_client.lrange(queue_name, 0, -1):
+            try:
+                payload = json.loads(raw_payload)
+            except (TypeError, json.JSONDecodeError):
+                continue
+            task_id = str(payload.get("task_id") or "")
+            if not task_id or task_id in jobs_by_id:
+                continue
+            data = payload.get("data") or {}
+            jobs_by_id[task_id] = {
+                "task_id": task_id, "created_at": 0,
+                "user_id": str(payload.get("user_id") or "guest"),
+                "source_name": str(payload.get("image_name") or "")[:255],
+                "material_name": str(data.get("material") or "")[:160],
+                "image_preset": str(data.get("image_preset") or "")[:100],
+                "status": queue_state,
+            }
+    jobs = []
+    for job in jobs_by_id.values():
+        task_id = job["task_id"]
+        job["status"] = redis_client.get(f"task:{task_id}:status") or job.get("status", "pending")
+        job["queued"] = raster_queue_position(task_id) is not None
+        jobs.append(job)
+    return sorted(jobs, key=lambda item: int(item.get("created_at") or 0), reverse=True)
+
+
+def delete_queued_admin_job(task_id):
+    """Remove only a waiting job; running jobs require a separate workflow."""
+    task_id = str(task_id or "")
+    removed = 0
+    for raw_payload in redis_client.lrange(RASTER_JOB_QUEUE, 0, -1):
+        try:
+            matches = str(json.loads(raw_payload).get("task_id") or "") == task_id
+        except (TypeError, json.JSONDecodeError):
+            matches = False
+        if matches:
+            removed += redis_client.lrem(RASTER_JOB_QUEUE, 0, raw_payload)
+    if not removed:
+        return False
+    message = "Removed from the waiting queue by an administrator."
+    redis_client.set(f"task:{task_id}:status", "failed", ex=HISTORY_TTL_SECONDS)
+    redis_client.rpush(f"task:{task_id}:log", message)
+    redis_client.expire(f"task:{task_id}:log", HISTORY_TTL_SECONDS)
+    update_user_job(task_id, "failed", error_message=message)
+    return True
 
 
 def get_job_owner(task_id):
@@ -1041,18 +1246,23 @@ def job_access_allowed(task_id, user_id=None, browser_session=None):
     user_id = str(user_id or "").strip()
     browser_session = valid_history_session(browser_session)
 
-    # Durable account ownership is authoritative even if the Redis binding has
-    # expired or disagrees. An account job must never fall back to guest access.
+    binding = _job_access_binding(task_id)
+    if binding:
+        kind, expected_identity = binding
+        if kind == "account":
+            # This server-issued binding is written when the account job is
+            # accepted and expires with its Redis history. Avoid a DynamoDB
+            # owner read for every row rendered immediately after submission.
+            return bool(user_id) and hmac.compare_digest(expected_identity, user_id)
+
+    # Durable ownership remains authoritative when the binding is absent or
+    # claims guest access. An account job must never fall back to guest access.
     owner_id = get_job_owner(task_id)
     if owner_id:
         return bool(user_id) and hmac.compare_digest(str(owner_id), user_id)
-
-    binding = _job_access_binding(task_id)
     if not binding:
         return False
-    kind, expected_identity = binding
-    if kind == "account":
-        return bool(user_id) and hmac.compare_digest(expected_identity, user_id)
+    _kind, expected_identity = binding
     return bool(browser_session) and hmac.compare_digest(expected_identity, browser_session)
 
 
@@ -1312,7 +1522,7 @@ def find_task_artifact(task_id, extension=None, user_id=None):
     return sorted(keys)[0] if keys else None
 
 
-def task_artifacts_exist(task_id):
+def task_artifacts_exist(task_id, user_id=None):
     """Return whether a task still has any durable S3 object.
 
     On an S3 error, preserve history rather than incorrectly hiding a job due
@@ -1324,7 +1534,7 @@ def task_artifacts_exist(task_id):
     try:
         response = s3_client.list_objects_v2(
             Bucket=S3_BUCKET_NAME,
-            Prefix=_task_artifact_prefix(task_id),
+            Prefix=_task_artifact_prefix(task_id, user_id=user_id),
             MaxKeys=1,
         )
         return bool(response.get("Contents"))
@@ -1458,6 +1668,35 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
         redis_client.expire(f"task:{task_id}:access", HISTORY_TTL_SECONDS)
 
 
+def store_and_enqueue_job(payload):
+    """Persist a task-addressable envelope, then publish its task ID."""
+    task_id = str(payload["task_id"])
+    raw_payload = json.dumps(payload, separators=(",", ":"))
+    pipeline = redis_client.pipeline()
+    pipeline.set(
+        f"{RASTER_JOB_PAYLOAD_PREFIX}{task_id}", raw_payload, ex=HISTORY_TTL_SECONDS
+    )
+    if not SQS_QUEUE_URL and not FARGATE_DISPATCH_VIA_S3:
+        pipeline.lpush(RASTER_JOB_QUEUE, raw_payload)
+    pipeline.execute()
+    if FARGATE_DISPATCH_VIA_S3:
+        try:
+            s3_client.put_object(
+                Bucket=S3_BUCKET_NAME,
+                Key=f"jobs/{task_id}/dispatch.ready",
+                Body=b"",
+                ContentType="application/x-mopa-raster-dispatch",
+            )
+        except Exception as error:
+            raise RuntimeError("Could not publish the raster task through S3") from error
+    elif SQS_QUEUE_URL:
+        try:
+            sqs_client.send_message(QueueUrl=SQS_QUEUE_URL, MessageBody=task_id)
+        except Exception as error:
+            raise RuntimeError("Could not publish the raster task to SQS") from error
+    return raw_payload
+
+
 def enqueue_raster_job(task_id, data, image_key, material_key, output_name,
                        image_name, material_name, user_id=None):
     """Place a portable raster job on Redis for the dedicated worker pod."""
@@ -1474,8 +1713,17 @@ def enqueue_raster_job(task_id, data, image_key, material_key, output_name,
         "material_name": secure_artifact_name(material_name, "materials.clb"),
         "user_id": user_id,
     }
-    redis_client.lpush(RASTER_JOB_QUEUE, json.dumps(payload, separators=(",", ":")))
-    redis_client.rpush(f"task:{task_id}:log", "Job queued for a dedicated raster worker.")
+    try:
+        record_admin_job(payload)
+    except RuntimeError as error:
+        # Administrative indexing must never prevent an otherwise valid job
+        # from reaching a worker.
+        print(f"[Task {task_id}] Could not update admin job index: {error}", flush=True)
+    store_and_enqueue_job(payload)
+    redis_client.rpush(
+        f"task:{task_id}:log",
+        "Job accepted. Starting a raster worker...",
+    )
 
 
 def raster_queue_position(task_id):

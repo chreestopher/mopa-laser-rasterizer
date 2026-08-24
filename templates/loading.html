@@ -111,6 +111,21 @@
         margin-right: 8px;
         user-select: none;
     }
+    .worker-starting-dots {
+        display: inline-flex;
+        width: 1.8em;
+        margin-left: .08em;
+    }
+    .worker-starting-dots span {
+        opacity: .18;
+        animation: worker-starting-dot 1.2s ease-in-out infinite;
+    }
+    .worker-starting-dots span:nth-child(2) { animation-delay: .2s; }
+    .worker-starting-dots span:nth-child(3) { animation-delay: .4s; }
+    @keyframes worker-starting-dot {
+        0%, 20%, 100% { opacity: .18; transform: translateY(0); }
+        45% { opacity: 1; transform: translateY(-.12em); }
+    }
     .files-panel {
         position: relative;
         flex: 1 1 0;
@@ -322,7 +337,10 @@
     .status-lamps[data-status="failed"] .status-lamp { --lamp-color:#e54d42; }
     .status-lamps[data-status="failed"] .status-lamp::before { animation:none; opacity:1; filter:none; }
     .status-lamps[data-status="failed"] .mopa-lamp::before { background:#e54d42; }
-    @media (prefers-reduced-motion: reduce) { .status-lamp::before { animation:none; } }
+    @media (prefers-reduced-motion: reduce) {
+        .status-lamp::before, .worker-starting-dots span { animation:none; }
+        .worker-starting-dots span { opacity:1; }
+    }
     @media (max-width: 700px) {
         .console-status-line { grid-template-columns:1fr; gap:7px; padding:0; }
         .console-subtitle { grid-column:1; grid-row:1; }
@@ -378,12 +396,14 @@
         <main class="machine-workspace">
         <div class="terminal-box" id="terminal">
             <ul class="log-list" id="log-container">
-                <li class="log-item"><span class="log-prefix">$</span>Connecting to script pipeline...</li>
+                <li class="log-item" id="worker-starting-indicator" role="status" aria-live="polite">
+                    <span class="log-prefix">$</span>Starting a raster worker<span class="worker-starting-dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span>
+                </li>
             </ul>
         </div>
         <section class="files-panel" aria-labelledby="files-heading">
             <div class="files-header">
-                <h2 id="files-heading">$ processed_files --last 99</h2>
+                <h2 id="files-heading">$ processed_files --last 7 days</h2>
                 <a href="/?history_session={{ history_session }}" class="another-button">New Image</a>
             </div>
             <ul id="download-list" class="download-list">
@@ -391,7 +411,7 @@
                 <li class="file-item" data-task-id="{{ file.task_id }}" data-created-at="{{ file.created_at or 0 }}" tabindex="0">
                     <div class="file-summary"><span class="file-time" data-created-at="{{ file.created_at }}"></span><span class="source-name">{{ file.source_name }}</span></div>
                     <div class="file-menu">
-                        <div class="file-menu-details"><span><strong>Style:</strong> <span class="file-meta">{{ file.image_preset|replace('_', ' ') }}{% if file.abstract_filter and file.abstract_filter != 'none' %} · {{ file.abstract_filter|replace('_', ' ') }}{% endif %}</span></span>{% if file.material_name %}<span><strong>Material:</strong> {{ file.material_name }}</span>{% endif %}<span><strong>Status:</strong> <span class="file-status">[{{ file.status }}]</span></span></div>
+                        <div class="file-menu-details"><span><strong>Style:</strong> <span class="file-meta">{{ file.image_preset|replace('_', ' ') }}{% if file.abstract_filter and file.abstract_filter != 'none' %} · {{ file.abstract_filter|replace('_', ' ') }}{% endif %}</span></span>{% if file.material_name %}<span><strong>Material:</strong> {{ file.material_name }}</span>{% endif %}<span><strong>Status:</strong> <span class="file-status">[{{ 'starting worker' if file.status == 'pending' else file.status }}]</span></span></div>
                         <div class="file-run-parameters">
                             {% set parameters = file.run_parameters or {} %}
                             {% if parameters.job_type == 'holographic_artwork' %}<span><strong>Recipe:</strong> {{ parameters.recipe_name }}</span><span><strong>Pixel size:</strong> {{ parameters.pixel_size_mm }} mm</span><span><strong>Maximum processing size:</strong> {{ parameters.processing_width_px }} px</span><span><strong>Cut mode:</strong> {{ parameters.cut_mode|replace('-', ' ') }}</span>{% elif parameters %}<span><strong>Pixel size:</strong> {{ parameters.pixel_size_mm }} mm</span><span><strong>Processing:</strong> {{ parameters.processing_width_px }} × {{ parameters.processing_height_px }} px</span><span><strong>Colors:</strong> {{ parameters.colors|join(', ') or 'all available' }}</span>{% for key, value in (parameters.filter_parameters or {}).items() %}<span><strong>{{ key|replace('_', ' ') }}:</strong> {{ value }}</span>{% endfor %}{% else %}<span>Detailed parameters were not recorded for this older run.</span>{% endif %}
@@ -408,7 +428,7 @@
                 <li class="file-item" data-task-id="{{ task_id }}" data-created-at="0" tabindex="0">
                     <div class="file-summary"><span class="file-time">now</span><span class="source-name">{{ current_source_name }}</span></div>
                     <div class="file-menu">
-                        <div class="file-menu-details"><span><strong>Style:</strong> <span class="file-meta">{{ current_image_preset|replace('_', ' ') }}{% if current_abstract_filter and current_abstract_filter != 'none' %} · {{ current_abstract_filter|replace('_', ' ') }}{% endif %}</span></span>{% if current_material_name %}<span><strong>Material:</strong> {{ current_material_name }}</span>{% endif %}<span><strong>Status:</strong> <span class="file-status">[pending]</span></span></div>
+                        <div class="file-menu-details"><span><strong>Style:</strong> <span class="file-meta">{{ current_image_preset|replace('_', ' ') }}{% if current_abstract_filter and current_abstract_filter != 'none' %} · {{ current_abstract_filter|replace('_', ' ') }}{% endif %}</span></span>{% if current_material_name %}<span><strong>Material:</strong> {{ current_material_name }}</span>{% endif %}<span><strong>Status:</strong> <span class="file-status">[starting worker]</span></span></div>
                         <div class="file-actions">
                         <a class="download-button disabled" href="/download/{{ task_id }}">SVG</a>
                         {% if not current_svg_only %}<a class="download-button disabled" href="/download-lbrn2/{{ task_id }}">LBRN2</a>{% endif %}
@@ -440,6 +460,7 @@ if (historySession) sessionStorage.setItem('mopa-history-session', historySessio
 const logContainer = document.getElementById("log-container");
 const terminalBox = document.getElementById("terminal");
 const statusLamps = document.getElementById('status-lamps');
+const workerStartingIndicator = document.getElementById('worker-starting-indicator');
 
 let logIndex = 0;
 let activeLogTaskId = taskId;
@@ -453,6 +474,10 @@ function escapeHtml(value) {
     const span = document.createElement('span');
     span.textContent = value;
     return span.innerHTML;
+}
+
+function displayJobStatus(status) {
+    return status === 'pending' ? 'starting worker' : (status || 'starting worker');
 }
 
 function readableParameterName(name) {
@@ -492,7 +517,7 @@ function fileRowHtml(file) {
     const timestamp = file.created_at
       ? new Date(file.created_at * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'})
       : '';
-    const status = escapeHtml(file.status || 'pending');
+    const status = escapeHtml(displayJobStatus(file.status));
     const parameters = fileParametersHtml(file.run_parameters);
     const reuseUrl = escapeHtml(file.reuse_url || '/');
     const reuseLabel = escapeHtml(file.reuse_label || 'Reuse Settings');
@@ -728,7 +753,7 @@ function updateTaskFileRow(selectedTaskId, status) {
     const row = downloadList.querySelector(`[data-task-id="${selectedTaskId}"]`);
     if (!row) return;
     const statusElement = row.querySelector('.file-status');
-    if (statusElement) statusElement.textContent = `[${status}]`;
+    if (statusElement) statusElement.textContent = `[${displayJobStatus(status)}]`;
     row.querySelectorAll('.download-button').forEach(button => {
         button.classList.toggle('disabled', status !== 'completed');
     });
@@ -741,7 +766,10 @@ function updateCurrentFileRow(status) {
 function updateStatusLamps(status) {
     const normalized = status === 'completed' || status === 'failed' ? status : 'processing';
     statusLamps.dataset.status = normalized;
-    statusLamps.setAttribute('aria-label', normalized === 'completed'
+    if (workerStartingIndicator) workerStartingIndicator.hidden = status !== 'pending';
+    statusLamps.setAttribute('aria-label', status === 'pending'
+        ? 'Starting raster worker'
+        : normalized === 'completed'
         ? 'Processing complete'
         : normalized === 'failed' ? 'Processing failed' : 'Processing in progress');
 }

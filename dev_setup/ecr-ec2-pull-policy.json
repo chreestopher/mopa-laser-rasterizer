@@ -13,7 +13,7 @@
         "ecr:BatchGetImage",
         "ecr:GetDownloadUrlForLayer"
       ],
-      "Resource": "arn:aws:ecr:us-east-2:401716294893:repository/mopa-laser-rasterizer"
+      "Resource": "arn:aws:ecr:us-east-2:123456789012:repository/mopa-laser-rasterizer"
     }
   ]
 }
