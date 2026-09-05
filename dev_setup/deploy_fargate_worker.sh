@@ -74,6 +74,8 @@ parameters=(
   "DynamoDbTableName=$DYNAMODB_TABLE_NAME"
   "Cpu=${FARGATE_CPU:-1024}"
   "Memory=${FARGATE_MEMORY:-4096}"
+  "WorkerProcesses=${FARGATE_WORKER_PROCESSES:-1}"
+  "SourceBlackComponents=${FARGATE_SOURCE_BLACK_COMPONENTS:-false}"
   "AssignPublicIp=${FARGATE_ASSIGN_PUBLIC_IP:-DISABLED}"
 )
 

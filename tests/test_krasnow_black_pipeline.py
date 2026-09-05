@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 from shapely.geometry import box
+from shapely.ops import unary_union
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,6 +29,202 @@ def test_krasnow_uses_source_faithful_vector_defaults():
         "simplification_factor": 0.0,
         "smoothing_radius": 0.001,
     }
+
+
+def test_krasnow_cell_shape_defaults_to_legacy_square():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+    assert krasnow.DEFAULTS["cell_shape"] == "square"
+    assert krasnow._cell_shape({}) == "square"
+    assert krasnow._cell_shape({"cell_shape": "unsupported"}) == "square"
+
+
+def test_krasnow_non_square_cells_tessellate_without_gaps_or_overlaps():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+    bounds = (0, 0, 8, 6)
+    canvas = box(*bounds)
+
+    for cell_shape in ("hexagon", "triangle", "diamond", "puzzle_piece"):
+        cells = krasnow._tessellated_cells(bounds, 1, cell_shape)
+        clipped = [polygon.intersection(canvas) for _, polygon in cells]
+        covered = unary_union(clipped)
+
+        assert canvas.symmetric_difference(covered).area < 1e-8
+        assert sum(polygon.area for polygon in clipped) - covered.area < 1e-8
+
+
+def test_krasnow_non_square_cell_generation_is_deterministic():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+
+    for cell_shape in ("hexagon", "triangle", "diamond"):
+        first = krasnow._tessellated_cells((0, 0, 4, 3), .4, cell_shape)
+        second = krasnow._tessellated_cells((0, 0, 4, 3), .4, cell_shape)
+        assert [(key, polygon.wkb) for key, polygon in first] == [
+            (key, polygon.wkb) for key, polygon in second
+        ]
+
+
+def test_krasnow_skull_cells_have_deliberate_external_and_internal_gaps():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+    bounds = (0, 0, 4, 3)
+    canvas = box(*bounds)
+    cells = krasnow._tessellated_cells(bounds, 1, "skull")
+    clipped = [polygon.intersection(canvas) for _, polygon in cells]
+    covered = unary_union(clipped)
+
+    assert covered.area < canvas.area * .75
+    assert all(polygon.is_valid for polygon in clipped)
+    assert any(len(polygon.interiors) >= 3 for _, polygon in cells)
+
+
+def test_krasnow_skull_cell_generation_is_deterministic():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+    first = krasnow._tessellated_cells((0, 0, 4, 3), .8, "skull")
+    second = krasnow._tessellated_cells((0, 0, 4, 3), .8, "skull")
+    assert [(key, polygon.wkb) for key, polygon in first] == [
+        (key, polygon.wkb) for key, polygon in second
+    ]
+
+
+def test_krasnow_skull_rows_are_staggered_and_do_not_overlap():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+    cells = dict(krasnow._tessellated_cells((0, 0, 4, 4), 1, "skull"))
+    first = cells[(0, 0)]
+    staggered = cells[(1, 0)]
+
+    assert abs(staggered.centroid.x - first.centroid.x - .5) < 1e-9
+    assert abs(staggered.centroid.y - first.centroid.y - .8) < 1e-9
+    assert first.intersection(staggered).area < 1e-12
+    assert first.distance(staggered) > 0
+
+
+def test_krasnow_fun_icon_cells_are_valid_deterministic_and_nonoverlapping():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+    shapes = (
+        "heart", "space_invader", "ghost", "bat", "alien_head",
+        "paw_print", "fish_scale",
+    )
+
+    for cell_shape in shapes:
+        first = krasnow._tessellated_cells((0, 0, 4, 4), 1, cell_shape)
+        second = krasnow._tessellated_cells((0, 0, 4, 4), 1, cell_shape)
+        cells = dict(first)
+        same_row = cells[(0, 0)]
+        next_column = cells[(0, 1)]
+        next_row = cells[(1, 0)]
+
+        assert [(key, polygon.wkb) for key, polygon in first] == [
+            (key, polygon.wkb) for key, polygon in second
+        ]
+        assert all(polygon.is_valid for _, polygon in first)
+        assert same_row.intersection(next_column).area < 1e-12
+        assert same_row.intersection(next_row).area < 1e-12
+
+
+def test_krasnow_explicit_square_matches_implicit_legacy_default():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+    processed_layers = {"#0000FF": box(0, 0, 2, 2)}
+    target_colors = {"#0000FF": (240, 1, "Blue")}
+    settings = {
+        "_canvas_bounds": (0, 0, 2, 2),
+        "_scale_factor": 1,
+        "patch_size_mm": 1,
+        "line_spacing_mm": .25,
+        "angle_min": 0,
+        "angle_max": 0,
+    }
+
+    implicit = krasnow.remap_layers(processed_layers, target_colors, settings)
+    explicit = krasnow.remap_layers(
+        processed_layers,
+        target_colors,
+        {**settings, "cell_shape": "square"},
+    )
+
+    assert implicit.keys() == explicit.keys()
+    assert all(implicit[key].wkb == explicit[key].wkb for key in implicit)
+
+
+def test_krasnow_each_cell_shape_stays_inside_source_geometry():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+    source = box(.2, .15, 2.7, 2.4)
+    target_colors = {"#0000FF": (240, 1, "Blue")}
+
+    for cell_shape in (
+        "square", "hexagon", "triangle", "diamond", "skull", "heart",
+        "space_invader", "ghost", "bat", "alien_head", "paw_print",
+        "fish_scale", "puzzle_piece",
+    ):
+        remapped = krasnow.remap_layers(
+            {"#0000FF": source},
+            target_colors,
+            {
+                "_canvas_bounds": (0, 0, 3, 3),
+                "_scale_factor": 1,
+                "cell_shape": cell_shape,
+                "patch_size_mm": .6,
+                "line_spacing_mm": .15,
+                "angle_min": 25,
+                "angle_max": 25,
+            },
+        )
+        assert remapped["#0000FF"].difference(source).length < 1e-8
+
+
+def test_serverless_krasnow_form_exposes_tessellating_cell_shapes():
+    page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+    assert "selects:[['cell_shape','square'" in page
+    assert "['hexagon','Hexagon']" in page
+    assert "['triangle','Triangle']" in page
+    assert "['diamond','Diamond / Rhombus']" in page
+    assert "['skull','Skull']" in page
+    assert "['heart','Heart']" in page
+    assert "['space_invader','Space Invader']" in page
+    assert "['ghost','Ghost']" in page
+    assert "['bat','Bat']" in page
+    assert "['alien_head','Alien Head']" in page
+    assert "['paw_print','Paw Print']" in page
+    assert "['fish_scale','Fish Scale']" in page
+    assert "['puzzle_piece','Puzzle Piece']" in page
+
+
+def test_krasnow_equal_hue_spacing_limits_preserve_legacy_spacing():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+    settings = {
+        "line_spacing_mm": 0.2,
+        "hue_line_spacing_minimum_mm": 0.06,
+        "hue_line_spacing_maximum_mm": 0.06,
+    }
+
+    assert krasnow._line_spacing_for_color("#FF0000", settings, 2) == 0.03
+    assert krasnow._line_spacing_for_color("#0000FF", settings, 2) == 0.03
+
+
+def test_krasnow_hue_spacing_follows_wavelength_order():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+    settings = {
+        "hue_line_spacing_minimum_mm": 0.04,
+        "hue_line_spacing_maximum_mm": 0.08,
+    }
+
+    violet = krasnow._line_spacing_for_color("#8000FF", settings, 1)
+    blue = krasnow._line_spacing_for_color("#0000FF", settings, 1)
+    green = krasnow._line_spacing_for_color("#00FF00", settings, 1)
+    red = krasnow._line_spacing_for_color("#FF0000", settings, 1)
+
+    assert violet < blue < green < red
+    assert red == 0.08
+
+
+def test_krasnow_neutral_colors_use_general_line_spacing():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+    settings = {
+        "line_spacing_mm": 0.125,
+        "hue_line_spacing_minimum_mm": 0.04,
+        "hue_line_spacing_maximum_mm": 0.08,
+        "saturation_cutoff": 0.2,
+    }
+
+    assert krasnow._line_spacing_for_color("#CCCCCC", settings, 5) == 0.025
 
 
 def test_krasnow_does_not_build_gratings_from_black_geometry():
@@ -80,6 +277,39 @@ def test_krasnow_cross_layer_mapping_reports_internal_progress():
     assert any("[Krasnow mapping 3/3] DONE" in message for message in messages)
 
 
+def test_krasnow_prunes_empty_space_between_disconnected_components():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+    messages = []
+    components = [box(0, 0, 1, 1), box(9, 9, 10, 10)]
+    settings = {
+        "_canvas_bounds": (0, 0, 10, 10),
+        "_scale_factor": 1,
+        "_progress_logger": messages.append,
+        "patch_size_mm": 1,
+        "line_spacing_mm": 0.25,
+        "angle_min": 0,
+        "angle_max": 0,
+    }
+    target_colors = {"#0000FF": (240, 1, "Blue")}
+
+    remapped = krasnow.remap_layers(
+        processed_layers={"#0000FF": unary_union(components)},
+        target_colors=target_colors,
+        settings=settings,
+    )
+    independently_remapped = [
+        krasnow.remap_layers(
+            processed_layers={"#0000FF": component},
+            target_colors=target_colors,
+            settings={key: value for key, value in settings.items() if key != "_progress_logger"},
+        )["#0000FF"]
+        for component in components
+    ]
+
+    assert any("planned 2 candidate patches" in message for message in messages)
+    assert remapped["#0000FF"].equals(unary_union(independently_remapped))
+
+
 def test_krasnow_black_mask_replaces_only_the_black_layer():
     blue = box(0, 0, 1, 1).boundary
     old_black = box(10, 10, 11, 11)
@@ -94,6 +324,70 @@ def test_krasnow_black_mask_replaces_only_the_black_layer():
 
     assert replaced["#0000FF"] is blue
     assert replaced["#000000"].equals(box(0, 0, 1, 1))
+
+
+def test_krasnow_grating_wins_uses_only_pre_reserved_black_pixels():
+    grating = box(1, 0, 2, 1).boundary
+    source = Image.new("RGB", (3, 1))
+    source.putdata([(0, 0, 0), (0, 72, 84), (255, 255, 255)])
+
+    replaced = vector_processing.replace_krasnow_black_layer(
+        {"#0000FF": grating},
+        "#000000",
+        source,
+        grating_wins=True,
+        reserved_black_mask=np.array([[True, False, False]], dtype=bool),
+    )
+
+    assert replaced["#0000FF"] is grating
+    assert replaced["#000000"].equals(box(0, 0, 1, 1))
+
+
+def test_krasnow_legacy_black_mask_remains_available_for_rollback():
+    source = Image.new("RGB", (3, 1))
+    source.putdata([(0, 0, 0), (0, 72, 84), (255, 255, 255)])
+
+    replaced = vector_processing.replace_krasnow_black_layer(
+        {},
+        "#000000",
+        source,
+        grating_wins=False,
+    )
+
+    assert replaced["#000000"].equals(box(0, 0, 2, 1))
+
+
+def test_krasnow_favor_black_job_control_selects_legacy_mask(monkeypatch):
+    monkeypatch.setenv("RASTER_KRASNOW_GRATING_WINS", "true")
+
+    assert vector_processing.krasnow_grating_wins_enabled({"favor_black": 0}) is True
+    assert vector_processing.krasnow_grating_wins_enabled({"favor_black": 1}) is False
+
+
+def test_krasnow_older_jobs_keep_environment_default(monkeypatch):
+    monkeypatch.setenv("RASTER_KRASNOW_GRATING_WINS", "true")
+    assert vector_processing.krasnow_grating_wins_enabled({}) is True
+
+    monkeypatch.setenv("RASTER_KRASNOW_GRATING_WINS", "false")
+    assert vector_processing.krasnow_grating_wins_enabled({}) is False
+
+
+def test_serverless_krasnow_form_exposes_favor_black_unchecked():
+    page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+    assert "toggles:[['favor_black',false]]" in page
+
+
+def test_krasnow_grating_wins_rejects_a_misaligned_reserved_mask():
+    source = Image.new("RGB", (3, 1))
+
+    with np.testing.assert_raises_regex(ValueError, "does not match"):
+        vector_processing.replace_krasnow_black_layer(
+            {},
+            "#000000",
+            source,
+            grating_wins=True,
+            reserved_black_mask=np.zeros((2, 3), dtype=bool),
+        )
 
 
 def test_krasnow_black_cutoff_is_strictly_below_lightburn_teal():

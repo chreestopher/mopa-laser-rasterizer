@@ -10,6 +10,7 @@ from datetime import datetime
 
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
+from job_runtime import RedisJobRuntime
 
 from services import (
     HISTORY_TTL_SECONDS,
@@ -18,6 +19,8 @@ from services import (
     RASTER_JOB_QUEUE,
     download_task_artifact,
     long_running_script,
+    job_runtime,
+    sync_job_runtime,
     redis_client,
     secure_artifact_name,
     update_user_job,
@@ -178,27 +181,16 @@ def acknowledge_job(raw_payload, task_id):
 
 def record_job_failure(task_id, error):
     """Persist a terminal failure without letting a Redis blip kill the worker."""
+    message = f"Raster worker failed: {error}"
     try:
         update_user_job(task_id, "failed", error_message=str(error))
     except Exception as durable_error:
         print(f"[Raster-Worker] Could not persist durable failure for {task_id}: {durable_error}", flush=True)
-    for attempt in range(1, 4):
-        try:
-            pipeline = redis_client.pipeline()
-            pipeline.set(
-                f"task:{task_id}:status", "failed", ex=HISTORY_TTL_SECONDS
-            )
-            pipeline.rpush(f"task:{task_id}:log", f"Raster worker failed: {error}")
-            pipeline.expire(f"task:{task_id}:log", HISTORY_TTL_SECONDS)
-            pipeline.execute()
-            return
-        except (RedisTimeoutError, RedisConnectionError) as redis_error:
-            print(
-                f"[Raster-Worker] Could not persist failure for {task_id} "
-                f"(attempt {attempt}/3): {redis_error}",
-                flush=True,
-            )
-            time.sleep(1)
+    try:
+        job_runtime.append_log(task_id, f"ERROR: {message}")
+    except Exception as log_error:
+        print(f"[Raster-Worker] Could not persist failure log for {task_id}: {log_error}", flush=True)
+    job_runtime.set_status(task_id, "failed", error=message)
 
 
 def run_job(raw_payload, upload_folder):
@@ -212,14 +204,14 @@ def run_job(raw_payload, upload_folder):
     image_path = os.path.join(upload_folder, f"{task_id}_{image_name}")
     material_path = os.path.join(upload_folder, f"{task_id}_material_{material_name}")
     os.makedirs(upload_folder, exist_ok=True)
-    redis_client.rpush(f"task:{task_id}:log", "Dedicated raster worker claimed the job.")
-    redis_client.rpush(f"task:{task_id}:log", "Downloading the source image from durable storage.")
+    job_runtime.append_log(task_id, "Dedicated raster worker claimed the job.")
+    job_runtime.append_log(task_id, "Downloading the source image from durable storage.")
     download_task_artifact(payload["image_key"], image_path)
-    redis_client.rpush(f"task:{task_id}:log", "Source image download complete.")
+    job_runtime.append_log(task_id, "Source image download complete.")
     if not svg_only:
-        redis_client.rpush(f"task:{task_id}:log", "Downloading the selected Material Library.")
+        job_runtime.append_log(task_id, "Downloading the selected Material Library.")
         download_task_artifact(payload["material_key"], material_path)
-        redis_client.rpush(f"task:{task_id}:log", "Material Library download complete.")
+        job_runtime.append_log(task_id, "Material Library download complete.")
     long_running_script(
         task_id,
         payload.get("data") or {},
@@ -228,6 +220,10 @@ def run_job(raw_payload, upload_folder):
         upload_folder,
         payload.get("user_id"),
         payload.get("output_name"),
+        guest_job=payload.get("guest_job") is True,
+        guest_quota_visitor=str(payload.get("guest_quota_visitor") or ""),
+        guest_quota_day=str(payload.get("guest_quota_day") or ""),
+        guest_daily_job_limit=int(payload.get("guest_daily_job_limit") or 0),
     )
 
 
@@ -237,13 +233,12 @@ def run_holographic_artwork_job(payload, upload_folder):
     from routes.holographic import _build_holographic_exports
 
     task_id = str(payload["task_id"])
-    log_key = f"task:{task_id}:log"
     def progress(message):
         line = f"[{datetime.now().strftime('%H:%M:%S')}] {message}"
         print(f"[Task {task_id}] {line}", flush=True)
-        redis_client.rpush(log_key, line)
+        job_runtime.append_log(task_id, line)
 
-    redis_client.set(f"task:{task_id}:status", "processing", ex=HISTORY_TTL_SECONDS)
+    job_runtime.set_status(task_id, "processing")
     progress("Dedicated worker claimed the Holographic Artwork job.")
     names = {
         "artwork": secure_artifact_name(payload.get("artwork_name"), "artwork.png"),
@@ -255,31 +250,33 @@ def run_holographic_artwork_job(payload, upload_folder):
     progress("[Input download 1/3] START: downloading artwork.")
     download_task_artifact(payload["artwork_key"], paths["artwork"])
     progress("[Input download 1/3] DONE: downloaded artwork.")
-    progress("[Input download 2/3] START: downloading Holographic Recipe.")
+    progress("[Input download 2/3] START: downloading Holographic Palette.")
     download_task_artifact(payload["recipe_key"], paths["recipe"])
-    progress("[Input download 2/3] DONE: downloaded Holographic Recipe.")
+    progress("[Input download 2/3] DONE: downloaded Holographic Palette.")
     progress("[Input download 3/3] START: downloading Material Library.")
     download_task_artifact(payload["material_key"], paths["material"])
     progress("[Input download 3/3] DONE: downloaded Material Library.")
     progress(f"Building calibrated holographic grating layers; cut mode {payload.get('cut_mode', 'setting')}.")
     with open(paths["artwork"], "rb") as artwork_stream, open(paths["recipe"], encoding="utf-8") as recipe_file:
         artwork = FileStorage(stream=artwork_stream, filename=names["artwork"])
-        svg_name, lbrn_name, metadata_name, width, height, rectangle_count = _build_holographic_exports(
+        svg_name, lbrn_name, width, height, rectangle_count = _build_holographic_exports(
             upload_folder, artwork, recipe_file, paths["material"],
             int(payload.get("max_dimension", 96)), float(payload.get("pixel_mm", .5)),
             preserve_black_outlines=bool(payload.get("preserve_black_outlines")), task_id=task_id,
             cut_mode=str(payload.get("cut_mode", "setting")),
-            progress=progress,
+            progress=progress, store_artifacts=False,
+            selected_recipe_indexes=payload.get("selected_recipe_indexes"),
+            embedded_material_name=payload.get("embedded_material_name"),
+            embedded_black_setting_name=payload.get("embedded_black_setting_name"),
         )
     result = {
         "source_width": width, "source_height": height, "rectangle_count": rectangle_count,
         "svg_url": f"/holographic-etching/download/{svg_name}",
         "lightburn_url": f"/holographic-etching/download/{lbrn_name}",
-        "metadata_url": f"/holographic-etching/download/{metadata_name}",
     }
-    output_names = (svg_name, lbrn_name, metadata_name)
+    output_names = (svg_name, lbrn_name)
     output_keys = []
-    progress("[Durable output upload 1/1] START: registering 3/3 outputs with job history.")
+    progress("[Durable output upload 1/1] START: registering 2/2 outputs with job history.")
     for output_name in output_names:
         output_key = upload_task_artifact(
             task_id, os.path.join(upload_folder, output_name), category="outputs",
@@ -287,13 +284,12 @@ def run_holographic_artwork_job(payload, upload_folder):
         )
         if output_key:
             output_keys.append(output_key)
-    progress(f"[Durable output upload 1/1] DONE: registered {len(output_keys)}/3 outputs with job history.")
+    progress(f"[Durable output upload 1/1] DONE: registered {len(output_keys)}/2 outputs with job history.")
     update_user_job(task_id, "completed", output_keys=output_keys)
-    redis_client.set(f"holographic-artwork-result:{task_id}", json.dumps(result), ex=HISTORY_TTL_SECONDS)
-    redis_client.set(f"task:{task_id}:status", "completed", ex=HISTORY_TTL_SECONDS)
-    redis_client.expire(f"task:{task_id}:access", HISTORY_TTL_SECONDS)
+    if isinstance(job_runtime, RedisJobRuntime):
+        redis_client.set(f"holographic-artwork-result:{task_id}", json.dumps(result), ex=HISTORY_TTL_SECONDS)
+    job_runtime.set_status(task_id, "completed")
     progress(f"Holographic Artwork complete: {rectangle_count}/{rectangle_count} vector rectangles ready.")
-    redis_client.expire(log_key, HISTORY_TTL_SECONDS)
 
 
 def process_owned_job(raw_payload, task_id, upload_folder):
@@ -326,29 +322,64 @@ def process_owned_job(raw_payload, task_id, upload_folder):
 
 def run_task_by_id(task_id, upload_folder):
     """Process exactly one persisted job envelope and return a process exit code."""
-    if redis_client.get(f"task:{task_id}:status") == "completed":
-        print(f"[Raster-Worker] Task {task_id} is already complete; nothing to do.", flush=True)
+    runtime = sync_job_runtime(redis_client)
+    if isinstance(runtime, RedisJobRuntime):
+        if redis_client.get(f"task:{task_id}:status") == "completed":
+            print(f"[Raster-Worker] Task {task_id} is already complete; nothing to do.", flush=True)
+            return 0
+        raw_payload = redis_client.get(f"{RASTER_JOB_PAYLOAD_PREFIX}{task_id}")
+        if raw_payload is None or payload_task_id(raw_payload) != task_id:
+            print(f"[Raster-Worker] No valid persisted payload exists for task {task_id}.", flush=True)
+            return 2
+        if not redis_client.set(lease_key(task_id), WORKER_ID, nx=True, ex=LEASE_SECONDS):
+            print(f"[Raster-Worker] Task {task_id} is already owned by another worker.", flush=True)
+            return 3
+        pipeline = redis_client.pipeline()
+        pipeline.lrem(RASTER_JOB_QUEUE, 0, raw_payload)
+        pipeline.lrem(RASTER_JOB_PROCESSING_QUEUE, 0, raw_payload)
+        pipeline.rpush(RASTER_JOB_PROCESSING_QUEUE, raw_payload)
+        pipeline.execute()
+        print(f"[Raster-Worker] Running one-shot task {task_id}.", flush=True)
+        return 0 if process_owned_job(raw_payload, task_id, upload_folder) else 1
+    durable_status = str(runtime.status(task_id) or "").lower()
+    if durable_status in {"completed", "failed", "cancelled"}:
+        print(
+            f"[Raster-Worker] Task {task_id} is already {durable_status}; nothing to do.",
+            flush=True,
+        )
         return 0
-    raw_payload = redis_client.get(f"{RASTER_JOB_PAYLOAD_PREFIX}{task_id}")
-    if raw_payload is None:
+    payload = runtime.payload(task_id)
+    if payload is None:
         print(f"[Raster-Worker] No persisted payload exists for task {task_id}.", flush=True)
         return 2
-    if payload_task_id(raw_payload) != task_id:
+    if str(payload.get("task_id", "")) != task_id:
         print(f"[Raster-Worker] Persisted payload does not match task {task_id}.", flush=True)
         return 2
-    if not redis_client.set(lease_key(task_id), WORKER_ID, nx=True, ex=LEASE_SECONDS):
+    if not runtime.acquire_lease(task_id, WORKER_ID, LEASE_SECONDS):
         print(f"[Raster-Worker] Task {task_id} is already owned by another worker.", flush=True)
         return 3
 
-    # Move the canonical envelope into processing state. Removing both possible
-    # old entries also makes an SQS retry idempotent after a stopped Fargate task.
-    pipeline = redis_client.pipeline()
-    pipeline.lrem(RASTER_JOB_QUEUE, 0, raw_payload)
-    pipeline.lrem(RASTER_JOB_PROCESSING_QUEUE, 0, raw_payload)
-    pipeline.rpush(RASTER_JOB_PROCESSING_QUEUE, raw_payload)
-    pipeline.execute()
     print(f"[Raster-Worker] Running one-shot task {task_id}.", flush=True)
-    return 0 if process_owned_job(raw_payload, task_id, upload_folder) else 1
+    heartbeat_stop = threading.Event()
+    def refresh_runtime_lease():
+        while not heartbeat_stop.wait(HEARTBEAT_SECONDS):
+            if not runtime.refresh_lease(task_id, WORKER_ID, LEASE_SECONDS):
+                print(f"[Raster-Worker] Lost lease ownership for job {task_id}.", flush=True)
+                return
+    heartbeat = threading.Thread(target=refresh_runtime_lease, daemon=True)
+    heartbeat.start()
+    succeeded = True
+    try:
+        run_job(json.dumps(payload, separators=(",", ":"), default=str), upload_folder)
+    except Exception as error:
+        succeeded = False
+        print(f"[Raster-Worker] Job {task_id} failed: {error}", flush=True)
+        record_job_failure(task_id, error)
+    finally:
+        heartbeat_stop.set()
+        heartbeat.join(timeout=HEARTBEAT_SECONDS + 1)
+        runtime.release_lease(task_id, WORKER_ID)
+    return 0 if succeeded else 1
 
 
 def main(argv=None):

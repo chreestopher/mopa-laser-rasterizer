@@ -34,7 +34,7 @@
     {% else %}
     <div class="member-gate">
       <h3>Member access required</h3>
-      <p>{% if auth_state == 'reauth_required' %}Your account session needs to be reconnected before you can open the shared settings collection.{% else %}Sign in or create an account to search the Comunity Set of laser settings. Membership also provides your personal Palette Vault, reusable preferences, and account-based job history.{% endif %}</p>
+      <p>{% if auth_state == 'reauth_required' %}Your account session needs to be reconnected before you can open the shared settings collection.{% else %}Sign in or create an account to search the Comunity Set of laser settings. Membership also provides your personal Swatch Palette Vault, reusable preferences, and account-based job history.{% endif %}</p>
       <a href="/login">{% if auth_state == 'reauth_required' %}Reconnect account{% else %}Sign in or sign up{% endif %}</a>
     </div>
     {% endif %}
@@ -49,8 +49,14 @@
     const valueFor = value => value == null || value === '' ? '-' : typeof value === 'object' ? JSON.stringify(value) : String(value);
     const render = rows => {
       const parameterSet = new Set(rows.flatMap(row => Object.keys(row.settings || {})));
-      const parameters = [...preferredParameters.filter(key => parameterSet.delete(key)), ...[...parameterSet].sort((a,b) => a.localeCompare(b))];
-      const headers = ['Laser Model / Source','Lens','Material','Color','Operation',...parameters.map(labelFor),'Notes'];
+      const discoveredParameters = [...preferredParameters.filter(key => parameterSet.delete(key)), ...[...parameterSet].sort((a,b) => a.localeCompare(b))];
+      const crossHatchIndex = discoveredParameters.findIndex(key => String(key).toLowerCase() === 'crosshatch');
+      const parametersThroughCrossHatch = crossHatchIndex >= 0 ? discoveredParameters.slice(0,crossHatchIndex + 1) : discoveredParameters;
+      const typeParameter = discoveredParameters.find(key => String(key).toLowerCase() === 'type');
+      const parameters = typeParameter && !parametersThroughCrossHatch.includes(typeParameter)
+        ? [...parametersThroughCrossHatch,typeParameter]
+        : parametersThroughCrossHatch;
+      const headers = ['Laser Model / Source','Lens','Material','Color','Operation',...parameters.map(labelFor)];
       const thead = document.createElement('thead');
       const headerRow = document.createElement('tr');
       headers.forEach(label => { const th=document.createElement('th'); th.textContent=label; headerRow.append(th); });
@@ -65,7 +71,6 @@
         const colorName=document.createElement('span'); colorName.textContent=valueFor(row.color); color.append(swatch,colorName); tr.append(color);
         const operation=document.createElement('td'); operation.textContent=valueFor(row.operation); tr.append(operation);
         parameters.forEach(key => { const td=document.createElement('td'); td.textContent=valueFor(row.settings?.[key]); tr.append(td); });
-        const notes=document.createElement('td'); notes.className='notes-cell'; notes.textContent=valueFor(row.notes); tr.append(notes);
         tbody.append(tr);
       });
       table.replaceChildren(thead,tbody);

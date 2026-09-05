@@ -9,7 +9,7 @@ Usage:
   ./dev_setup/clear_laser_community.sh --confirm [--table TABLE] [--region REGION]
 
 The script only deletes items whose partition key begins with LASER_COMMUNITY.
-Private user Palette Vault records are not selected.
+Private user Swatch Palette Vault records are not selected.
 EOF
 }
 
@@ -85,4 +85,4 @@ while [[ "$offset" -lt "$record_count" ]]; do
   offset=$((offset + 25))
 done
 
-echo "Comunity Set development data removed. Private Palette Vault records were not touched."
+echo "Comunity Set development data removed. Private Swatch Palette Vault records were not touched."

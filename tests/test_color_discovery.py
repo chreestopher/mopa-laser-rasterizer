@@ -43,7 +43,15 @@ class ColorDiscoveryCoverageTests(unittest.TestCase):
 
     def test_grid_rejects_duplicate_axes_and_caps_layer_count(self):
         self.assertIn("x_parameter == y_parameter", self.source)
-        self.assertIn("rows * columns > 29", self.source)
+        self.assertIn("rows * columns <= maximum_cells", self.source)
+
+    def test_grid_derives_rows_and_columns_from_cell_size(self):
+        self.assertNotIn('name="columns"', self.template)
+        self.assertNotIn('name="rows"', self.template)
+        self.assertNotIn('name="cell_size_mm"', self.template)
+        self.assertIn('gap_mm = 0.0', self.source)
+        self.assertIn('rows, columns, cell_size_mm = _automatic_grid_layout', self.source)
+        self.assertIn('Calculated cell size (mm)', self.template)
 
     def test_manual_frequency_default_is_valid_and_inactive_sources_are_disabled(self):
         self.assertIn('name="manual_frequency" type="number" value="100000" min="1" step="1"', self.template)
@@ -56,10 +64,10 @@ class ColorDiscoveryCoverageTests(unittest.TestCase):
         self.assertIn('name="grid_length_mm"', self.template)
         self.assertIn('total_width_mm = _number(request.form.get("grid_width_mm")', self.source)
         self.assertIn('total_length_mm = _number(request.form.get("grid_length_mm")', self.source)
-        self.assertIn('"cell_width_mm": cell_width_mm', self.source)
-        self.assertIn('"cell_height_mm": cell_height_mm', self.source)
-        self.assertIn("matrix_width, matrix_height = total_width_mm, total_length_mm", self.source)
-        self.assertIn("Row labels extend beyond it.", self.template)
+        self.assertIn('"cell_width_mm": cell_size_mm', self.source)
+        self.assertIn('"cell_height_mm": cell_size_mm', self.source)
+        self.assertIn("matrix_width = columns * cell_size_mm", self.source)
+        self.assertIn("Maximum width available for test cells.", self.template)
 
     def test_saved_setting_picker_renders_palette_swatches(self):
         self.assertIn("lightburn_palette=", self.source)
@@ -70,6 +78,14 @@ class ColorDiscoveryCoverageTests(unittest.TestCase):
 
     def test_grid_has_no_full_project_outline(self):
         self.assertNotIn("lightburn.Square(total_width_mm, total_length_mm", self.source)
+
+    def test_grid_uses_metadata_and_only_a_centered_grid_id_label(self):
+        self.assertNotIn('"Discovery labels"', self.source)
+        self.assertIn('grid_label = f"COLOR GRID {grid_id[:8]}"', self.source)
+        self.assertIn('(matrix_width - estimated_label_width_mm) / 2', self.source)
+        self.assertIn('"top_label_band_mm": top_mm', self.source)
+        self.assertIn('"right_label_band_mm": 0', self.source)
+        self.assertIn('label.type = "Scan"', self.source)
 
     def test_page_uses_shared_machine_facade_geometry(self):
         self.assertIn('<body class="machine-facade">', self.template)

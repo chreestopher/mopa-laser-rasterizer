@@ -1,0 +1,505 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Account and capability-authorized API with a private static frontend for MOPA serverless staging.
+
+Parameters:
+  ArtifactBucketName: {Type: String}
+  RuntimeTableName: {Type: String}
+  QueueUrl: {Type: String}
+  QueueArn: {Type: String}
+  LambdaCodeBucket: {Type: String}
+  LambdaCodeKey: {Type: String}
+  CognitoUserPoolId: {Type: String}
+  CognitoDomain: {Type: String}
+  AdminEmail:
+    Type: String
+    NoEcho: true
+    Default: ""
+  StagingHostname:
+    Type: String
+    Default: ""
+  CloudFrontCertificateArn:
+    Type: String
+    Default: ""
+
+Conditions:
+  HasCustomDomain: !And
+    - !Not [!Equals [!Ref StagingHostname, ""]]
+    - !Not [!Equals [!Ref CloudFrontCertificateArn, ""]]
+
+Resources:
+  ApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: StagingJobApi
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [s3:DeleteObject, s3:GetObject, s3:PutObject, s3:PutObjectTagging]
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::${ArtifactBucketName}/jobs/*
+                  - !Sub arn:${AWS::Partition}:s3:::${ArtifactBucketName}/users/*/jobs/*
+                  - !Sub arn:${AWS::Partition}:s3:::${ArtifactBucketName}/users/*/materials/*
+                  - !Sub arn:${AWS::Partition}:s3:::${ArtifactBucketName}/users/*/holographic-recipes/*
+                  - !Sub arn:${AWS::Partition}:s3:::${ArtifactBucketName}/users/*/holographic-calibrations/*
+                  - !Sub arn:${AWS::Partition}:s3:::${ArtifactBucketName}/users/*/color-discovery/*
+                  - !Sub arn:${AWS::Partition}:s3:::${ArtifactBucketName}/users/*/exports/*
+                  - !Sub arn:${AWS::Partition}:s3:::${ArtifactBucketName}/imports/*
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub arn:${AWS::Partition}:s3:::${ArtifactBucketName}
+                Condition:
+                  StringLike:
+                    s3:prefix: [jobs/*, users/*/jobs/*]
+              - Effect: Allow
+                Action: [dynamodb:BatchWriteItem, dynamodb:DeleteItem, dynamodb:GetItem, dynamodb:PutItem, dynamodb:Query, dynamodb:UpdateItem]
+                Resource: !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RuntimeTableName}
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !Ref QueueArn
+              - Effect: Allow
+                Action: cognito-idp:ListUsers
+                Resource: !Sub arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${CognitoUserPoolId}
+
+  ApiFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: mopa-rasterizer-serverless-staging-api
+      Runtime: python3.13
+      Handler: handler.handler
+      Role: !GetAtt ApiRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Architectures: [arm64]
+      Code: {S3Bucket: !Ref LambdaCodeBucket, S3Key: !Ref LambdaCodeKey}
+      Environment:
+        Variables:
+          S3_BUCKET_NAME: !Ref ArtifactBucketName
+          JOB_RUNTIME_TABLE_NAME: !Ref RuntimeTableName
+          SQS_QUEUE_URL: !Ref QueueUrl
+          JOB_TTL_SECONDS: "604800"
+          GUEST_JOB_SECONDS: "86400"
+          GUEST_DAILY_JOB_LIMIT: "5"
+          ADMIN_EMAIL: !Ref AdminEmail
+          COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
+
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ApiFunction}
+      RetentionInDays: 14
+
+  DistributionOac:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: mopa-rasterizer-serverless-staging
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  StaticSecurityHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: mopa-rasterizer-serverless-staging-security
+        Comment: Browser security policy for the serverless staging frontend
+        SecurityHeadersConfig:
+          ContentTypeOptions:
+            Override: true
+          FrameOptions:
+            FrameOption: DENY
+            Override: true
+          ReferrerPolicy:
+            ReferrerPolicy: strict-origin-when-cross-origin
+            Override: true
+          StrictTransportSecurity:
+            AccessControlMaxAgeSec: 31536000
+            IncludeSubdomains: false
+            Preload: false
+            Override: true
+        CustomHeadersConfig:
+          Items:
+            - Header: Permissions-Policy
+              Value: accelerometer=(), autoplay=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()
+              Override: true
+            - Header: Content-Security-Policy-Report-Only
+              Value: "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self' https://*.amazoncognito.com; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.amazonaws.com; connect-src 'self' https://*.execute-api.us-east-2.amazonaws.com https://*.amazonaws.com https://*.amazoncognito.com https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co; font-src 'self' data:; worker-src 'self' blob:; media-src 'self' blob:; manifest-src 'self'"
+              Override: true
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: MOPA Rasterizer serverless staging
+        DefaultRootObject: index.html
+        HttpVersion: http2and3
+        PriceClass: PriceClass_100
+        Aliases: !If [HasCustomDomain, [!Ref StagingHostname], !Ref "AWS::NoValue"]
+        ViewerCertificate: !If
+          - HasCustomDomain
+          - AcmCertificateArn: !Ref CloudFrontCertificateArn
+            MinimumProtocolVersion: TLSv1.2_2021
+            SslSupportMethod: sni-only
+          - CloudFrontDefaultCertificate: true
+        Origins:
+          - Id: staging-static
+            DomainName: !Sub ${ArtifactBucketName}.s3.${AWS::Region}.amazonaws.com
+            OriginPath: /web
+            OriginAccessControlId: !Ref DistributionOac
+            S3OriginConfig: {OriginAccessIdentity: ""}
+        DefaultCacheBehavior:
+          TargetOriginId: staging-static
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD, OPTIONS]
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          ResponseHeadersPolicyId: !Ref StaticSecurityHeadersPolicy
+
+  StaticBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ArtifactBucketName
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: CloudFrontReadStagingWeb
+            Effect: Allow
+            Principal: {Service: cloudfront.amazonaws.com}
+            Action: s3:GetObject
+            Resource: !Sub arn:${AWS::Partition}:s3:::${ArtifactBucketName}/web/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${Distribution}
+
+  StagingAppClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: mopa-rasterizer-serverless-staging
+      UserPoolId: !Ref CognitoUserPoolId
+      GenerateSecret: false
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email]
+      SupportedIdentityProviders: [COGNITO]
+      CallbackURLs:
+        - !If [HasCustomDomain, !Sub "https://${StagingHostname}/", !Sub "https://${Distribution.DomainName}/"]
+      LogoutURLs:
+        - !If [HasCustomDomain, !Sub "https://${StagingHostname}/", !Sub "https://${Distribution.DomainName}/"]
+      PreventUserExistenceErrors: ENABLED
+      EnableTokenRevocation: true
+
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: mopa-rasterizer-serverless-staging
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins:
+          - !If [HasCustomDomain, !Sub "https://${StagingHostname}", !Sub "https://${Distribution.DomainName}"]
+        AllowHeaders: [authorization, content-type, x-guest-capability]
+        AllowMethods: [DELETE, GET, OPTIONS, PATCH, POST, PUT]
+        MaxAge: 300
+
+  ApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ApiFunction.Arn
+      PayloadFormatVersion: "2.0"
+      TimeoutInMillis: 30000
+
+  JwtAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      ApiId: !Ref HttpApi
+      AuthorizerType: JWT
+      Name: staging-cognito
+      IdentitySource: [$request.header.Authorization]
+      JwtConfiguration:
+        Audience: [!Ref StagingAppClient]
+        Issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPoolId}
+
+  GuestConfigRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: GET /guest/config
+      AuthorizationType: NONE
+      Target: !Sub integrations/${ApiIntegration}
+  GuestUploadRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: POST /guest/uploads
+      AuthorizationType: NONE
+      Target: !Sub integrations/${ApiIntegration}
+  GuestHolographicCalibrationUploadRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "POST /guest/holographic/calibration-uploads", AuthorizationType: NONE, Target: !Sub "integrations/${ApiIntegration}"}
+  GuestHolographicCalibrationRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "POST /guest/holographic/calibrations/{task_id}", AuthorizationType: NONE, Target: !Sub "integrations/${ApiIntegration}"}
+  GuestColorDiscoveryUploadRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "POST /guest/color-discovery/uploads", AuthorizationType: NONE, Target: !Sub "integrations/${ApiIntegration}"}
+  GuestColorDiscoveryGridRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "POST /guest/color-discovery/grids/{task_id}", AuthorizationType: NONE, Target: !Sub "integrations/${ApiIntegration}"}
+  GuestColorDiscoveryGridGetRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "GET /guest/color-discovery/grids/{task_id}", AuthorizationType: NONE, Target: !Sub "integrations/${ApiIntegration}"}
+  GuestColorDiscoveryRefineRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "POST /guest/color-discovery/grids/{task_id}/refine", AuthorizationType: NONE, Target: !Sub "integrations/${ApiIntegration}"}
+  GuestSubmitRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: POST /guest/jobs/{task_id}/submit
+      AuthorizationType: NONE
+      Target: !Sub integrations/${ApiIntegration}
+  GuestStatusRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: GET /guest/jobs/{task_id}
+      AuthorizationType: NONE
+      Target: !Sub integrations/${ApiIntegration}
+
+  UploadRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: POST /uploads
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub integrations/${ApiIntegration}
+  SubmitRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: POST /jobs/{task_id}/submit
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub integrations/${ApiIntegration}
+  StatusRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: GET /jobs/{task_id}
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub integrations/${ApiIntegration}
+  AccountResourcesRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: GET /account/resources
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub integrations/${ApiIntegration}
+  AccountJobsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: GET /account/jobs
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub integrations/${ApiIntegration}
+  GetAccountPreferencesRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "GET /account/preferences", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  PutAccountPreferencesRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "PUT /account/preferences", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  PatchAccountPreferencesRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "PATCH /account/preferences", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  CommunitySettingsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: GET /community-set/settings
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub integrations/${ApiIntegration}
+  PublishCommunityPaletteRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: POST /account/community-set
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub integrations/${ApiIntegration}
+  AccountJobRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: GET /account/jobs/{task_id}
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub integrations/${ApiIntegration}
+  DeleteAccountJobRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: DELETE /account/jobs/{task_id}
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub integrations/${ApiIntegration}
+  AdminJobsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "GET /admin/jobs", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  AdminJobRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "GET /admin/jobs/{task_id}", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  DeleteAdminJobRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "DELETE /admin/jobs/{task_id}", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  CancelAdminJobRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "POST /admin/jobs/{task_id}/cancel", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  AdminUsersRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "GET /admin/users", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  CreateDepthPaletteRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "POST /account/depth-palettes", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  UpdateDepthPaletteRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "PUT /account/depth-palettes/{item_id}", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  DeleteDepthPaletteRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "DELETE /account/depth-palettes/{item_id}", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  UpdateMaterialLibraryRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "PATCH /account/material-libraries/{item_id}", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  DeleteMaterialLibraryRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "DELETE /account/material-libraries/{item_id}", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  UpdateMaterialLibraryEntryRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "PATCH /account/material-libraries/{item_id}/entries/{entry_id}", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  SelectedMaterialSettingsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "POST /account/material-libraries/selected-settings", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  GetColorDiscoveryGridRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "GET /color-discovery/grids/{grid_id}", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  ListColorDiscoveryGridsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "GET /color-discovery/grids", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  DeleteHolographicRecipeRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "DELETE /account/holographic-recipes/{item_id}", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  GetHolographicRecipeRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "GET /account/holographic-recipes/{item_id}", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  UpdateHolographicRecipeRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "PUT /account/holographic-recipes/{item_id}", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  CreateImportRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "POST /account/imports", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  FinalizeImportRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "POST /account/imports/{item_id}/finalize", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+
+  HolographicUploadRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: POST /holographic/uploads
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub integrations/${ApiIntegration}
+  HolographicCalibrationRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: POST /holographic/calibrations
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub integrations/${ApiIntegration}
+  HolographicCalibrationUploadRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "POST /holographic/calibration-uploads", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  HolographicUploadedCalibrationRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "POST /holographic/calibrations/{task_id}", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  ColorDiscoveryUploadRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "POST /color-discovery/uploads", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  ColorDiscoveryUploadedGridRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "POST /color-discovery/grids/{task_id}", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  ColorDiscoveryGridRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: POST /color-discovery/grids
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub integrations/${ApiIntegration}
+  SaveDiscoveredColorPaletteRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: POST /account/color-palettes/discovered
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub integrations/${ApiIntegration}
+  SaveMeasuredHolographicRecipeRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: POST /account/holographic-recipes/measured
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub integrations/${ApiIntegration}
+  HolographicSubmitRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: POST /holographic/jobs/{task_id}/submit
+      AuthorizationType: JWT
+      AuthorizerId: !Ref JwtAuthorizer
+      Target: !Sub integrations/${ApiIntegration}
+
+  DefaultStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: $default
+      AutoDeploy: true
+      DefaultRouteSettings: {ThrottlingBurstLimit: 10, ThrottlingRateLimit: 5}
+
+  ApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ApiFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*
+
+Outputs:
+  ApiUrl: {Value: !GetAtt HttpApi.ApiEndpoint}
+  CloudFrontUrl: {Value: !Sub "https://${Distribution.DomainName}/"}
+  CloudFrontDomainName: {Value: !GetAtt Distribution.DomainName}
+  DistributionId: {Value: !Ref Distribution}
+  CognitoClientId: {Value: !Ref StagingAppClient}
+  PublicUrl:
+    Value: !If [HasCustomDomain, !Sub "https://${StagingHostname}/", !Sub "https://${Distribution.DomainName}/"]

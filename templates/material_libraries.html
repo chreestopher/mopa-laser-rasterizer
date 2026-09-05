@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Palette Vault · MOPA Laser Rasterizer</title>
+  <title>Swatch Palette Vault · MOPA Laser Rasterizer</title>
   <style>
     :root { --case:#1a1d1a; --panel:#252a25; --ink:#d9d6be; --green:#8df06c; --amber:#efb94f; --red:#e76554; --control-top:#66766d; --control-base:#34443e; --control-edge:#9ba89f; --control-shadow:#18221e; }
     * { box-sizing:border-box; }
@@ -56,22 +56,22 @@
 <body>
   <main class="machine">
     {{ machine_chrome('materials', 'LASER PARAMETERIZATION CONSOLE · SERIES 79', false, '', 'compact') }}
-    <section id="sign_in_panel" class="panel" hidden><p>Sign in to open your personal Palette Vault.</p><a href="/login">Initialize secure operator access →</a></section>
+    <section id="sign_in_panel" class="panel" hidden><p>Sign in to open your personal Swatch Palette Vault.</p><a href="/login">Initialize secure operator access →</a></section>
     <div id="manager" hidden>
       <section class="panel vault-terminal">
         <div id="settings_workspace" class="settings-workspace"><div class="settings-toolbar"><strong id="settings_modal_title">PALETTE &amp; MATERIAL SETTINGS CONSOLE</strong></div><details id="vault_controls" class="settings-accordion"><summary>LOAD OR BUILD A PALETTE OR SETTINGS LIBRARY</summary><div class="settings-accordion-content"><label for="libraries">Load one or more LightBurn Material Library files</label><input id="libraries" type="file" accept=".clb,.lbmat,.lbrn" multiple><button id="scan" type="button">Import</button><button id="new_library" type="button">New Settings Library</button><button id="new_hatch_palette" type="button">New Hatch Palette</button><button id="new_depth_palette" type="button">New Depth Palette</button><p class="meta">Color Palettes and Hatch Palettes use LightBurn files. Depth Palettes are saved directly to your account without a LightBurn file.</p><div id="import_plan" class="import-plan" hidden></div><button id="import" type="button" hidden>Import selected materials</button></div></details><div class="selection-actions"><span id="selected_count" class="meta">Selected settings: 0</span><span><a href="/docs/material-coupon-generator">Coupon generator help</a> <button id="selected_actions" type="button" disabled>Selected actions</button></span></div><div id="settings_modal_body" class="settings-body"></div><div id="depth_palette_list"></div></div>
         <div id="notice" class="notice" role="status"></div>
       </section>
       <section class="panel vault-terminal recipe-console" aria-labelledby="holographic_recipe_heading">
-        <div class="settings-toolbar"><strong id="holographic_recipe_heading">HOLOGRAPHIC RECIPES CONSOLE</strong></div>
-        <p class="meta">Store reusable Etching Recipe JSON files separately from LightBurn Material Libraries.</p>
+        <div class="settings-toolbar"><strong id="holographic_recipe_heading">HOLOGRAPHIC PALETTES</strong></div>
+        <p class="meta">Store reusable Holographic Palettes and their measured holographic swatches separately from ordinary LightBurn Material Libraries.</p>
         <details id="holographic_recipe_controls" class="settings-accordion">
-          <summary>LOAD OR BUILD A RECIPE</summary>
+          <summary>IMPORT OR BUILD A HOLOGRAPHIC PALETTE</summary>
           <div class="settings-accordion-content">
-            <label for="holographic_recipe_upload">Load a Holographic Etching Recipe</label>
+            <label for="holographic_recipe_upload">Load a Holographic Palette</label>
             <input id="holographic_recipe_upload" type="file" accept=".json,application/json">
-            <button id="holographic_recipe_import" type="button">Import Recipe</button>
-            <button id="holographic_recipe_build" type="button">Build Recipe in Etching Lab</button>
+            <button id="holographic_recipe_import" type="button">Import Holographic Palette</button>
+            <button id="holographic_recipe_build" type="button">Build Palette in Etching Lab</button>
           </div>
         </details>
         <div id="holographic_recipe_list"></div>
@@ -193,33 +193,33 @@
     const loadHolographicRecipes = async () => {
       const response = await fetch('/account/holographic-recipes', {credentials:'same-origin'});
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Could not load Holographic Recipes.');
+      if (!response.ok) throw new Error(data.message || 'Could not load Holographic Palettes.');
       const recipes = data.recipes || [];
-      holographicRecipeList.innerHTML = recipes.length ? recipes.map(recipe => `<section class="settings-accordion" data-recipe-id="${esc(recipe.recipe_id)}"><div class="settings-library-head"><div class="recipe-metadata"><span class="meta">Recipes: ${esc(recipe.metadata?.recipe_count || 0)}</span>${recipe.metadata?.material ? `<span class="meta">Material: ${esc(recipe.metadata.material)}</span>` : ''}</div><div class="rename"><strong>${esc(recipe.name)}</strong></div><div class="library-actions recipe-actions"><button class="delete holographic-recipe-delete" type="button">Delete</button></div></div></section>`).join('') : '<p class="empty">No saved Holographic Recipes yet.</p>';
+      holographicRecipeList.innerHTML = recipes.length ? recipes.map(recipe => `<section class="settings-accordion" data-recipe-id="${esc(recipe.recipe_id)}"><div class="settings-library-head"><div class="recipe-metadata"><span class="meta">Swatches: ${esc(recipe.metadata?.recipe_count || 0)}</span>${recipe.metadata?.material ? `<span class="meta">Material: ${esc(recipe.metadata.material)}</span>` : ''}</div><div class="rename"><strong>${esc(recipe.name)}</strong></div><div class="library-actions recipe-actions"><button class="delete holographic-recipe-delete" type="button">Delete</button></div></div></section>`).join('') : '<p class="empty">No saved Holographic Palettes yet.</p>';
     };
     document.getElementById('holographic_recipe_build').addEventListener('click', () => {
       window.location.assign('/holographic-etching');
     });
     document.getElementById('holographic_recipe_import').addEventListener('click', async () => {
       const input = document.getElementById('holographic_recipe_upload');
-      if (!input.files.length) { holographicRecipeNotice.textContent = 'Choose an Etching Recipe JSON file first.'; return; }
+      if (!input.files.length) { holographicRecipeNotice.textContent = 'Choose a Holographic Palette JSON file first.'; return; }
       const body = new FormData(); body.append('recipe', input.files[0]);
       const response = await fetch('/account/holographic-recipes', {method:'POST', credentials:'same-origin', body});
       const responseText = await response.text();
       let data;
       try { data = JSON.parse(responseText); }
-      catch { data = {message:`Recipe import failed (HTTP ${response.status}); the server returned an HTML error page.`}; }
-      holographicRecipeNotice.textContent = response.ok ? 'Holographic Recipe saved.' : (data.message || 'Could not save recipe.');
+      catch { data = {message:`Holographic Palette import failed (HTTP ${response.status}); the server returned an HTML error page.`}; }
+      holographicRecipeNotice.textContent = response.ok ? 'Holographic Palette saved.' : (data.message || 'Could not save Holographic Palette.');
       if (response.ok) { input.value = ''; await loadHolographicRecipes(); }
     });
     holographicRecipeList.addEventListener('click', async event => {
       const button = event.target.closest('.holographic-recipe-delete');
       if (!button) return;
       const card = button.closest('[data-recipe-id]');
-      if (!confirm('Delete this saved Holographic Recipe?')) return;
+      if (!confirm('Delete this saved Holographic Palette?')) return;
       const response = await fetch(`/account/holographic-recipes/${encodeURIComponent(card.dataset.recipeId)}`, {method:'DELETE', credentials:'same-origin'});
       const data = await response.json();
-      holographicRecipeNotice.textContent = response.ok ? 'Holographic Recipe removed.' : (data.message || 'Could not delete recipe.');
+      holographicRecipeNotice.textContent = response.ok ? 'Holographic Palette removed.' : (data.message || 'Could not delete Holographic Palette.');
       if (response.ok) await loadHolographicRecipes();
     });
     const selectedSettings = new Map();

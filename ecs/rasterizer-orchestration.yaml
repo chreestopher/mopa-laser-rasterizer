@@ -2,6 +2,12 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: SQS-to-Fargate orchestration for one-shot MOPA rasterizer jobs.
 
 Parameters:
+  PipeName:
+    Type: String
+    Default: mopa-rasterizer-jobs-to-fargate
+  StateMachineName:
+    Type: String
+    Default: mopa-rasterizer-fargate-job
   ClusterName:
     Type: String
   TaskDefinitionArn:
@@ -63,7 +69,7 @@ Resources:
   WorkerWorkflow:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: mopa-rasterizer-fargate-job
+      StateMachineName: !Ref StateMachineName
       StateMachineType: STANDARD
       RoleArn: !GetAtt WorkflowRole.Arn
       Definition:
@@ -75,7 +81,21 @@ Resources:
             Parameters:
               event.$: States.StringToJson($[0].body)
               spot_attempt: 1
-            Next: SplitDispatchKey
+            Next: DetectMessageShape
+          DetectMessageShape:
+            Type: Choice
+            Choices:
+              - Variable: $.event.task_id
+                IsPresent: true
+                Next: SetDirectTaskId
+            Default: SplitDispatchKey
+          SetDirectTaskId:
+            Type: Pass
+            Parameters:
+              message:
+                task_id.$: $.event.task_id
+              spot_attempt.$: $.spot_attempt
+            Next: RunSpotWorker
           SplitDispatchKey:
             Type: Pass
             Parameters:
@@ -212,15 +232,12 @@ Resources:
   RasterQueuePipe:
     Type: AWS::Pipes::Pipe
     Properties:
-      Name: mopa-rasterizer-jobs-to-fargate
+      Name: !Ref PipeName
       Description: Start one completion-aware Fargate workflow per raster task ID.
       DesiredState: RUNNING
       RoleArn: !GetAtt PipeRole.Arn
       Source: !Ref SqsQueueArn
       SourceParameters:
-        FilterCriteria:
-          Filters:
-            - Pattern: '{"body":{"Records":{"eventName":["ObjectCreated:Put"]}}}'
         SqsQueueParameters:
           BatchSize: 1
           MaximumBatchingWindowInSeconds: 0

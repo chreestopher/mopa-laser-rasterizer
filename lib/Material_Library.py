@@ -23,7 +23,8 @@ def main(argv=None):
     if len(argv) < 10:
         raise SystemExit(
             "Usage: Material_Library.py INPUT OUTPUT PIXEL_MM WIDTH HEIGHT "
-            "MATERIAL_LIBRARY MATERIAL COLORS PRESET FILTER [FILTER_JSON] [PALETTE_NAMES_JSON]"
+            "MATERIAL_LIBRARY MATERIAL COLORS PRESET FILTER [FILTER_JSON] [PALETTE_NAMES_JSON] "
+            "[SVG_ONLY] [COLOR_MATCHING_JSON] [VALIDATE_ONLY]"
         )
 
     (input_file, output_file, square_mm, new_width, new_height,
@@ -32,7 +33,14 @@ def main(argv=None):
     new_height = new_height.strip() or "0"
     filter_parameters = {}
     color_name_overrides = {}
+    color_matching = {}
     svg_only = len(argv) > 12 and argv[12].strip().lower() in ("true", "1", "yes", "on")
+    # Accept the former argv[13]=validate-only layout for compatibility while
+    # reserving argv[13] for the new, independent color-matching object.
+    legacy_validate_arg = len(argv) > 13 and argv[13].strip().lower() in ("true", "1", "yes", "on")
+    validate_only = legacy_validate_arg or (
+        len(argv) > 14 and argv[14].strip().lower() in ("true", "1", "yes", "on")
+    )
     if len(argv) > 10 and argv[10].strip():
         try:
             filter_parameters = json.loads(argv[10])
@@ -47,6 +55,13 @@ def main(argv=None):
                 raise ValueError("palette names must be a JSON object")
         except (json.JSONDecodeError, ValueError) as error:
             raise SystemExit(f"Invalid palette names: {error}")
+    if len(argv) > 13 and argv[13].strip() and not legacy_validate_arg:
+        try:
+            color_matching = json.loads(argv[13])
+            if not isinstance(color_matching, dict):
+                raise ValueError("color matching settings must be a JSON object")
+        except (json.JSONDecodeError, ValueError) as error:
+            raise SystemExit(f"Invalid color matching settings: {error}")
 
     if image_preset.startswith("abstract_"):
         abstract_filter = image_preset.removeprefix("abstract_")
@@ -118,6 +133,23 @@ def main(argv=None):
         if name in filter_parameters:
             vector_settings[name] = filter_parameters[name]
 
+    if validate_only:
+        # Exercise the same image decoding, dimension handling, palette setup,
+        # Material Library parsing, and filter-setting validation as a real run,
+        # but stop before expensive geometry construction. Guest quota is claimed
+        # only after this exits successfully.
+        vector_processing.prepare_raster_image(
+            raster_image_path=input_file,
+            new_height=new_height,
+            new_width=new_width,
+            quantize_colors=vector_settings["quantize_colors"],
+            target_colors=target_colors,
+            color_matching=color_matching,
+        )
+        float(square_mm)
+        print("Guest input validation complete; processing may begin.", flush=True)
+        return
+
     vector_processing.raster_to_puzzle_and_lightburn(
         raster_image_path=input_file,
         output_svg_path=f"{output_file}.vector.svg",
@@ -134,6 +166,7 @@ def main(argv=None):
         image_preset=image_preset,
         abstract_filter=abstract_filter,
         filter_parameters=filter_parameters,
+        color_matching=color_matching,
         job_settings={
             "image_preset": image_preset,
             "preset_settings": vector_settings,

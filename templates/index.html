@@ -487,7 +487,7 @@
     </div>
     <div>
       <div><label for="pixel_square_mm">4. Set processing dimensions, pixel scale (mm per raster pixel):</label> </div>
-      <div><input type="number" id="pixel_square_mm" name="pixel_square_mm" value="1" min="0.0625" step="0.0625" required></div>
+      <div><input type="number" id="pixel_square_mm" name="pixel_square_mm" value="1" min="0.01" step="0.0001" required></div>
     </div>
     <div>
       <div><label for="new_width">Processing width (pixels; use 0 to calculate from height):</label> </div>
@@ -565,6 +565,9 @@
           <option value="abstract_glitch">Digital Glitch</option>
           <option value="abstract_deep_fryer">Deep Fryer</option>
           <option value="abstract_shattered">Shattered</option>
+          <option value="abstract_halftone_newsprint">Halftone Newsprint</option>
+          <option value="abstract_glyph_mosaic">Glyph Mosaic</option>
+          <option value="abstract_optical_color_mix">Optical Color Mix</option>
           <option value="abstract_krasnow_grating">Krasnow Color Grating</option>
           <option value="abstract_none">Abstract: None</option>
         </optgroup>
@@ -657,12 +660,43 @@
           ['rotation', 22, 0, 180, 1], ['break_origin_x', .5, 0, 1, .01],
           ['break_origin_y', .35, 0, 1, .01], ['seed', 1, 0, 999999, 1]]
       },
+      halftone_newsprint: {
+        description: 'Rebuilds the artwork as a shared halftone matrix. Darker areas receive larger dots, and the marks can be circles or squares. Black Only places every mark on the official Black layer for a conventional monochrome halftone; otherwise each cell uses its matching color swatch. Cell Size MM sets the physical matrix pitch; Minimum and Maximum Dot Ratio limit mark size; Tone Curve and Contrast shape the tonal response; Grid Angle rotates the matrix; Square Dots changes the circular marks to squares; Invert reverses light and dark.',
+        toggles: [['black_only', false], ['square_dots', false], ['invert', false]],
+        controls: [['cell_size_mm', .6, .2, 5, .05], ['minimum_dot_ratio', .5, 0, .8, .01],
+          ['maximum_dot_ratio', .92, .1, 1, .01], ['tone_curve', .75, .2, 5, .05],
+          ['contrast', .8, .2, 3, .05], ['grid_angle', 0, -45, 45, 1]]
+      },
+      glyph_mosaic: {
+        description: 'Rebuilds the artwork on a shared halftone-style matrix using a selectable solid glyph. Darker areas receive larger glyphs while every cell remains owned by one color swatch. Choose circles, squares, diamonds, triangles, hexagons, octagons, stars, crosses, bars, or a deterministic mixture. Glyph Rotation turns the symbols inside the rotated matrix; Seed controls the repeatable Mixed Shapes arrangement.',
+        selects: [['glyph_shape', 'diamond', [['circle', 'Circle'], ['square', 'Square'], ['diamond', 'Diamond'], ['triangle', 'Triangle'], ['hexagon', 'Hexagon'], ['octagon', 'Octagon'], ['star', 'Star'], ['cross', 'Cross'], ['bar', 'Bar'], ['mixed', 'Mixed Shapes']]]],
+        toggles: [['black_only', false], ['invert', false]],
+        controls: [['cell_size_mm', .6, .2, 1, .05], ['minimum_glyph_ratio', .48, .16, .8, .01],
+          ['maximum_glyph_ratio', .97, .94, 1, .01], ['non_black_glyph_density', 2.3, .6, 4, .05],
+          ['tone_curve', .75, .2, 1.3, .05], ['contrast', 2, 1, 3, .05],
+          ['grid_angle', -45, -90, 0, 1], ['glyph_rotation', 0, -180, 180, 1],
+          ['seed', 1, 0, 999999, 1]]
+      },
+      optical_color_mix: {
+        description: 'Keeps ordinary continuous vector geometry wherever available palette swatches adequately represent the source. Only colors that benefit from a calculated two-swatch mixture become a shared dot matrix. Turn off Keep Available Colors as Vectors to render the entire artwork with dots. Lab is the recommended model; RGB and HSV provide alternate matching behavior. Dot Pitch and Mixing Cell Dots control physical scale and ratio precision. Direct Color Preference controls how strongly the filter favors normal vectors. Hue Shift, Saturation Gain, Brightness Gamma, Dot Influence, and Neutral Bias provide approximate compensation when physical laser colors differ from their declared swatches.',
+        selects: [['mixing_model', 'lab', [['lab', 'Perceptual Lab'], ['rgb', 'Linear RGB'], ['hsv', 'Creative HSV']]]],
+        toggles: [['keep_available_colors_as_vectors', true], ['square_dots', false]],
+        controls: [['dot_pitch_mm', .35, .15, 3, .05], ['mix_cell_dots', 4, 2, 8, 1],
+          ['dot_size_ratio', .72, .2, .95, .01], ['direct_color_preference', .08, 0, 1, .01],
+          ['hue_shift', 0, -90, 90, 1], ['saturation_gain', 1, .25, 2, .05],
+          ['brightness_gamma', 1, .4, 2.5, .05], ['dot_influence', 1, .25, 4, .05],
+          ['neutral_bias', 0, -1, 1, .05], ['pattern_seed', 1, 0, 999999, 1]]
+      },
       krasnow_grating: {
-        description: 'Transforms the normally color-separated non-Black artwork into open parallel-line patches and distributes corrected grating levels across the available non-Black layers in LightBurn order. The Material Library entry matching Holographic is treated as the machine-specific 1.00 µm calibration anchor. Each output layer receives an independent copy that preserves the anchor power, frequency, pulse width, passes, and other values while scaling speed for a target pitch between approximately 0.55 and 1.55 µm. Speed Spread scales each layer\'s deviation around the anchor: 0 gives every layer the anchor speed, 1 uses the normal calculated range, and 2 doubles the variation without moving the 1.00 µm layer. With a 300 mm/s anchor and Speed Spread 1 this yields 165–465 mm/s, following Ben Krasnow\'s fixed-frequency progression. A single output layer uses the unmodified 1.00 µm anchor speed. Clones retain their original color, name, and ID and use Line mode for the generated open paths. Black keeps its source geometry and Black setting, with no synthetic canvas or punch-through.',
+        selects: [['cell_shape', 'square', [['square', 'Square'], ['hexagon', 'Hexagon'], ['triangle', 'Triangle'], ['diamond', 'Diamond / Rhombus'], ['skull', 'Skull'], ['heart', 'Heart'], ['space_invader', 'Space Invader'], ['ghost', 'Ghost'], ['bat', 'Bat'], ['alien_head', 'Alien Head'], ['paw_print', 'Paw Print'], ['fish_scale', 'Fish Scale'], ['puzzle_piece', 'Puzzle Piece']]]],
+        toggles: [['favor_black', false]],
+        description: 'Transforms the normally color-separated non-Black artwork into open parallel-line patches and distributes corrected grating levels across the available non-Black layers in LightBurn order. The Material Library entry matching Holographic is treated as the machine-specific 1.00 µm calibration anchor. Each output layer receives an independent copy that preserves the anchor power, frequency, pulse width, passes, and other values while scaling speed for a target pitch between approximately 0.55 and 1.55 µm. Speed Spread scales each layer\'s deviation around the anchor: 0 gives every layer the anchor speed, 1 uses the normal calculated range, and 2 doubles the variation without moving the 1.00 µm layer. With a 300 mm/s anchor and Speed Spread 1 this yields 165–465 mm/s, following Ben Krasnow\'s fixed-frequency progression. Hue Line Spacing Minimum and Maximum vary visible line density using an approximate wavelength ordering: violet and blue use spacing near the minimum while red uses spacing near the maximum. Purple and magenta use a continuous violet-to-red proxy because they do not have a single spectral wavelength. Equal values preserve uniform spacing, and low-saturation swatches continue to use Line Spacing. These controls affect visible hatch spacing; the calibrated microscopic diffraction pitch remains controlled by the carrier settings. A single output layer uses the unmodified 1.00 µm anchor speed. Clones retain their original color, name, and ID and use Line mode for the generated open paths. Black keeps its source geometry and Black setting, with no synthetic canvas or punch-through. Favor Black uses the broader legacy Black detection and lets Black win where it overlaps a grating; leave it unchecked to preserve grating lines and restrict Black to pixels reserved before color quantization.',
         controls: [['speed_spread', 1, 0, 2, .001], ['gradient_top', 165, 0, 255, 1], ['gradient_bottom', 90, 0, 255, 1],
           ['gradient_curve', 1, .2, 5, .05], ['hue_rotation', .13, 0, 1, .01],
           ['saturation_cutoff', .2, 0, 1, .01], ['patch_size_mm', .4, .1, 5, .05],
-          ['line_spacing_mm', .06, .01, .5, .005], ['angle_min', -90, -180, 180, 1],
+          ['line_spacing_mm', .06, .01, .5, .005],
+          ['hue_line_spacing_minimum_mm', .06, .01, .5, .001],
+          ['hue_line_spacing_maximum_mm', .06, .01, .5, .001], ['angle_min', -90, -180, 180, 1],
           ['angle_max', 90, -180, 180, 1]]
       },
       /* Retired Abstract Holographic preset.
@@ -687,7 +721,7 @@
       const values = {};
       document.querySelectorAll('#filter_controls [data-parameter]').forEach(input => {
         values[input.dataset.parameter] = input.type === 'checkbox'
-          ? input.checked
+          ? Number(input.checked)
           : (input.type === 'text' || input.tagName === 'SELECT' ? input.value : Number(input.value));
         const valueInput = input.closest('.filter-control').querySelector('.value-input');
         if (valueInput && input.type === 'range') valueInput.value = input.value;

@@ -1,4 +1,4 @@
-"""Authenticated preferences, Material Libraries, and Holographic Recipes."""
+"""Authenticated preferences, Material Libraries, and Holographic Palettes."""
 
 import os
 import tempfile
@@ -214,12 +214,12 @@ def holographic_recipe_summary(path):
 def holographic_recipes():
     user_id = authenticated_user_id()
     if not user_id:
-        return jsonify({"status": "error", "message": "Sign in to use saved Holographic Recipes."}), 401
+        return jsonify({"status": "error", "message": "Sign in to use saved Holographic Palettes."}), 401
     try:
         if request.method == "GET":
             return jsonify({"status": "ok", "recipes": [{
                 "recipe_id": recipe.get("recipe_id"),
-                "name": recipe.get("name", "Holographic Recipe"),
+                "name": recipe.get("name", "Holographic Palette"),
                 "original_name": recipe.get("original_name", ""),
                 "metadata": recipe.get("metadata", {}),
                 "created_at": recipe.get("created_at"),
@@ -249,11 +249,11 @@ def holographic_recipes():
 def holographic_recipe_detail(recipe_id):
     user_id = authenticated_user_id()
     if not user_id:
-        return jsonify({"status": "error", "message": "Sign in to manage Holographic Recipes."}), 401
+        return jsonify({"status": "error", "message": "Sign in to manage Holographic Palettes."}), 401
     try:
         recipe = get_user_holographic_recipe(user_id, recipe_id)
         if not recipe:
-            return jsonify({"status": "error", "message": "That Holographic Recipe no longer exists."}), 404
+            return jsonify({"status": "error", "message": "That Holographic Palette no longer exists."}), 404
         if request.method == "DELETE":
             delete_user_holographic_recipe(user_id, recipe_id)
             return jsonify({"status": "ok"})
@@ -555,7 +555,7 @@ def material_coupon_project(library_root, material_name="Material Library Settin
     scale_y = coupon_length_mm / native_length
 
     def transform(x, y):
-        return f"{scale_x:g} 0 0 {scale_y:g} {x * scale_x:g} {y * scale_y:g}"
+        return f"{scale_x:.12g} 0 0 {scale_y:.12g} {x * scale_x:.12g} {y * scale_y:.12g}"
 
     def fitted_text_height(text, available_width, preferred_height):
         # Arial's typical glyph width is roughly 0.6 times its height. Keep

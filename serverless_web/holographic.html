@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Holographic Etching Lab · Serverless Staging</title>
+  <style>html.staging-shell-pending{background:#363a30!important}html.staging-shell-pending body{visibility:hidden}</style>
+  <script>document.documentElement.classList.add('staging-shell-pending');setTimeout(()=>document.documentElement.classList.remove('staging-shell-pending'),3000)</script>
+  <link rel="stylesheet" href="/machine_chrome.css?v=3"><link rel="stylesheet" href="/staging-shell.css?v=1"><link rel="stylesheet" href="/staging-pages.css?v=1"><script src="/staging-shell.js?v=1" defer></script>
+  <style>
+    :root{color-scheme:dark;font:16px system-ui;background:#101419;color:#edf2f7}body{max-width:1050px;margin:35px auto;padding:0 20px}.workflow{display:grid;gap:16px}.stage{padding:18px;border:1px solid #465248;border-radius:12px;background:#171d18}.stage h2{margin-top:0}.stage-number{display:inline-grid;place-items:center;width:27px;height:27px;margin-right:8px;border-radius:50%;color:#10200e;background:#8ee474;font-weight:800}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}.form-grid label{display:grid;gap:5px}.full{grid-column:1/-1}input,select,textarea,button{font:inherit;padding:9px;border:1px solid #596474;border-radius:7px;color:inherit;background:#202833;box-sizing:border-box}input,select,textarea{width:100%}input[type=checkbox]{width:auto}button{cursor:pointer}button:disabled{opacity:.5}.actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:12px}.result{color:#b9c8b7;white-space:pre-wrap}.downloads a{display:inline-block;margin:5px 8px 5px 0;color:#8ee474}.holographic-downloads{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:12px}.holographic-download-button{display:flex!important;box-sizing:border-box;width:100%;height:60px;align-items:center;justify-content:center;overflow:hidden;padding:10px 13px;overflow-wrap:anywhere}.capture-canvas{display:block;width:100%;max-width:820px;max-height:620px;margin-top:10px;border:2px solid #60705d;border-radius:8px;touch-action:none}.recipe-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:9px;margin-top:12px}.recipe-card{display:grid;grid-template-columns:auto 1fr;gap:8px;padding:9px;border:1px solid #596474;border-radius:8px;background:#111710}.recipe-card .chip{grid-column:1/-1;height:30px;border-radius:4px}.recipe-card small{grid-column:1/-1;color:#aeb9c4}.note{color:#aeb9c4;font-size:.86rem}.outline{display:flex!important;align-items:center;gap:8px}@media(max-width:700px){.form-grid{grid-template-columns:minmax(0,1fr)}.full{grid-column:auto}}
+  </style>
+</head>
+<body>
+  <p id="notice" class="result">Loading Holographic Etching Lab…</p>
+  <section class="workflow">
+    <form id="calibrationForm" class="stage form-grid">
+      <h2 class="full"><span class="stage-number">Step 01</span>Calibration Grid Console</h2><p class="full note">For best results, sweep your most iridescent laser setting across fill intervals and engraving angles while preserving its selected LightBurn parameters.</p>
+      <label class="full">Material Library source<select id="calibrationSource"><option value="upload">Upload a new LightBurn Material Library</option></select></label>
+      <label id="calibrationUploadRow" class="full">Palette file<input id="calibrationFile" type="file" accept=".clb,.lbmat,.lbrn,application/xml,text/xml" required><span class="note">Guests must upload a new Material Library. Signed-in operators may instead choose a palette saved in Swatch Palette Vault.</span></label>
+      <label id="calibrationLibraryRow" class="full" hidden>Saved Swatch Palette<select id="calibrationLibrary"></select></label><label class="full">Setting<select id="calibrationEntry" required disabled><option value="">Choose a setting…</option></select></label>
+      <label class="full">Labels<select id="calibrationLabelEntry" disabled><option value="">Choose a setting first</option></select><span class="note">This setting engraves the calibration grid label. A setting named Labels is selected automatically when available.</span></label>
+      <label>Material name<input id="calibrationMaterial" value="stainless - steel" required></label><label>Cut mode<select id="calibrationCutMode"><option value="setting">Use stored setting</option><option value="line">Line</option><option value="fill">Fill</option><option value="offset_fill">Offset Fill</option></select></label>
+      <label>Laser source<input id="laserSource" placeholder="JPT M7 100 W MOPA"></label><label>Lens field of view (mm)<input id="lensField" type="number" value="110" min="1" max="1000"></label>
+      <label>Grid columns<input id="gridColumns" type="number" value="4" min="2" max="6"></label><label>Grid rows<input id="gridRows" type="number" value="4" min="2" max="6"></label>
+      <label>Cell size (mm)<input id="cellSize" type="number" value="12" min="4" max="30" step=".5"></label><label>Minimum fill interval (mm)<input id="intervalLow" type="number" value=".045" min=".01" max=".5" step=".001"></label>
+      <label>Maximum fill interval (mm)<input id="intervalHigh" type="number" value=".070" min=".01" max=".5" step=".001"></label><label>Extra laser-setting sweep<select id="sweepParameter"><option value="none">None</option><option value="power">Maximum power</option><option value="speed">Speed</option><option value="frequency">Frequency</option><option value="pulse_width">Pulse width</option><option value="passes">Passes</option></select></label>
+      <label>Sweep low<input id="sweepLow" type="number" value="0" step=".1"></label><label>Sweep high<input id="sweepHigh" type="number" value="0" step=".1"></label>
+      <div class="actions full"><button type="submit">Build Calibration Grid</button></div><div id="calibrationResult" class="result downloads full"></div>
+    </form>
+    <section class="stage">
+      <h2><span class="stage-number">Step 02</span>Finished Grid Capture</h2><p class="note">Laser the downloaded grid, photograph it, then align the four green corners. The numbered perspective overlay identifies the cell represented by each measured holographic swatch. The photograph stays in this browser.</p>
+      <div class="form-grid"><label>Profile name<input id="profileName" placeholder="Polished steel, 110 mm lens" required></label><label>Finished grid photograph<input id="gridPhoto" type="file" accept="image/*" required></label><label>Phone or camera<input id="captureCamera"></label><label>Camera distance (mm)<input id="captureDistance" type="number" min="1"></label><label>Viewing angle (degrees)<input id="captureAngle" type="number" min="0" max="90"></label><label>Lighting setup<input id="captureLighting"></label><label class="full">Capture notes<textarea id="captureNotes"></textarea></label></div>
+      <div class="actions"><button id="resetCorners" type="button" disabled>Reset four corners</button><button id="analyzePhoto" type="button" disabled>Measure Grid Colors</button></div><p id="captureResult" class="result"></p><canvas id="captureCanvas" class="capture-canvas" hidden></canvas>
+    </section>
+    <section class="stage">
+      <h2><span class="stage-number">Step 03</span>Holographic Swatch Measurement Console</h2><p class="note">Review sampled colors, remove weak or unwanted cells, give useful holographic swatches memorable names, then save them as a Holographic Swatch Palette.</p><div id="recipeGrid" class="recipe-grid"></div><div class="actions"><button id="saveRecipes" type="button" disabled>Save Holographic Swatch Palette</button></div><p id="recipeResult" class="result"></p>
+    </section>
+    <section class="stage">
+      <h2><span class="stage-number">Step 04</span>Create Holographic Artwork</h2>
+      <p class="note">Run a Rasterizer job using the Holographic Palette you just created. The Rasterizer will select its measured swatches and show the Holographic Etching controls in place of the normal image-style controls.</p>
+      <div class="actions"><a id="runRecipeInRasterizer" class="button" href="/">Run Rasterizer with This Holographic Palette</a></div>
+    </section>
+  </section>
+  <script type="module" src="/holographic.js?v=5"></script>
+</body></html>

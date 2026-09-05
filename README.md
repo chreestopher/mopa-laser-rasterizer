@@ -14,7 +14,7 @@ The application prepares artwork and project files; it does not control a laser 
 - Editable palette selection and Material Library description matching
 - Cartoon, Color Photo, and dithered Black and White Photo presets
 - Abstract vector filters with configurable controls
-- Palette Vault for importing, editing, combining, and exporting saved libraries
+- Swatch Palette Vault for importing, editing, combining, and exporting saved libraries
 - Hatch Palettes that clone a base Fill or Offset Fill setting across LightBurn swatches and plan per-layer hatch angles and line intervals
 - Labeled LightBurn material-coupon generation
 - Color Discovery calibration, photo analysis, and recipe saving

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Administration · Serverless Staging</title>
+  <script>document.documentElement.classList.add('staging-shell-pending');setTimeout(()=>document.documentElement.classList.remove('staging-shell-pending'),3000)</script>
+  <link rel="stylesheet" href="/machine_chrome.css?v=3">
+  <link rel="stylesheet" href="/staging-shell.css?v=1">
+  <link rel="stylesheet" href="/staging-pages.css?v=1">
+  <link rel="stylesheet" href="/admin.css?v=1">
+  <script src="/staging-shell.js?v=1" defer></script>
+</head>
+<body>
+  <h1>Administration</h1>
+  <p>Private operational visibility for serverless staging.</p>
+  <section class="admin-panel admin-protected admin-jobs-panel" aria-labelledby="admin-jobs-title" hidden>
+    <div class="admin-heading">
+      <div><p class="admin-kicker">Authorized operator</p><h2 id="admin-jobs-title">Seven-day job activity</h2></div>
+      <span id="adminEmail" class="admin-email"></span>
+    </div>
+    <div class="admin-tools">
+      <label>Task ID, filename, or operator<input id="jobFilter" type="search" autocomplete="off" placeholder="Filter recent jobs"></label>
+      <button id="refreshJobs" type="button">Refresh jobs</button>
+    </div>
+    <p id="jobNotice" role="status">Loading authorized job activity…</p>
+    <ul id="adminJobs" class="admin-jobs"></ul>
+  </section>
+  <section class="admin-panel admin-protected" aria-labelledby="admin-users-title" hidden>
+    <div class="admin-heading">
+      <div><p class="admin-kicker">Cognito directory</p><h2 id="admin-users-title">Signed-up users</h2></div>
+      <strong id="userCount" class="admin-count">—</strong>
+    </div>
+    <div id="adminUsers" class="admin-users"><p>Loading the user directory…</p></div>
+  </section>
+  <script type="module" src="/admin.js?v=1"></script>
+</body>
+</html>

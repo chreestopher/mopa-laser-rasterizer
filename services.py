@@ -23,6 +23,7 @@ import redis
 from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key
 from lib.lightburn import Lightburn
+from job_runtime import DynamoJobRuntime, RedisJobRuntime, create_job_runtime
 
 
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-2").strip()
@@ -94,7 +95,7 @@ LIGHTBURN_PALETTE_NAMES = {
 ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
     "crystal", "ripple", "glitch", "shattered", "deep_fryer",
-    "krasnow_grating",
+    "halftone_newsprint", "glyph_mosaic", "optical_color_mix", "krasnow_grating",
 }
 ABSTRACT_PRESET_PREFIX = "abstract_"
 RASTER_JOB_QUEUE = "rasterizer:jobs"
@@ -109,6 +110,14 @@ COMMUNITY_CONTRIBUTOR_SECRET = os.environ.get(
 ).encode("utf-8")
 manager = multiprocessing.Manager()
 tasks = manager.dict()
+job_runtime = create_job_runtime(redis_client, HISTORY_TTL_SECONDS, RASTER_JOB_PAYLOAD_PREFIX)
+
+
+def sync_job_runtime(client=None):
+    """Keep test/legacy Redis monkey-patches attached to the runtime adapter."""
+    if isinstance(job_runtime, RedisJobRuntime):
+        job_runtime.client = client or redis_client
+    return job_runtime
 
 
 def account_table():
@@ -486,7 +495,7 @@ def list_user_holographic_recipes(user_id):
             ScanIndexForward=False,
         )
     except ClientError as error:
-        raise RuntimeError("Could not load saved Holographic Recipes.") from error
+        raise RuntimeError("Could not load saved Holographic Palettes.") from error
     return [_json_values(item) for item in response.get("Items", [])]
 
 
@@ -497,7 +506,7 @@ def get_user_holographic_recipe(user_id, recipe_id):
     try:
         item = table.get_item(Key={"pk": f"USER#{user_id}", "sk": f"HOLORECIPE#{recipe_id}"}).get("Item")
     except ClientError as error:
-        raise RuntimeError("Could not load the saved Holographic Recipe.") from error
+        raise RuntimeError("Could not load the saved Holographic Palette.") from error
     return _json_values(item) if item else None
 
 
@@ -505,10 +514,10 @@ def save_user_holographic_recipe(user_id, local_file_path, display_name=None, me
                                  source_filename=None):
     table = account_table()
     if not table or not S3_BUCKET_NAME:
-        raise RuntimeError("Account Holographic Recipe storage is not configured.")
+        raise RuntimeError("Account Holographic Palette storage is not configured.")
     recipe_id = str(uuid.uuid4())
     filename = os.path.basename(source_filename or local_file_path)
-    name = str(display_name or os.path.splitext(filename)[0]).strip()[:160] or "Holographic Recipe"
+    name = str(display_name or os.path.splitext(filename)[0]).strip()[:160] or "Holographic Palette"
     s3_key = f"users/{user_id}/holographic-recipes/{recipe_id}/{filename}"
     try:
         s3_client.upload_file(local_file_path, S3_BUCKET_NAME, s3_key)
@@ -520,17 +529,17 @@ def save_user_holographic_recipe(user_id, local_file_path, display_name=None, me
         }
         table.put_item(Item=item)
     except ClientError as error:
-        raise RuntimeError("Could not save the Holographic Recipe to this account.") from error
+        raise RuntimeError("Could not save the Holographic Palette to this account.") from error
     return _json_values(item)
 
 
 def download_user_holographic_recipe(recipe, local_path):
     if not recipe or not recipe.get("s3_key"):
-        raise RuntimeError("Saved Holographic Recipe is unavailable.")
+        raise RuntimeError("Saved Holographic Palette is unavailable.")
     try:
         s3_client.download_file(S3_BUCKET_NAME, recipe["s3_key"], local_path)
     except ClientError as error:
-        raise RuntimeError("Could not retrieve the saved Holographic Recipe.") from error
+        raise RuntimeError("Could not retrieve the saved Holographic Palette.") from error
 
 
 def delete_user_holographic_recipe(user_id, recipe_id):
@@ -543,7 +552,7 @@ def delete_user_holographic_recipe(user_id, recipe_id):
             s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=recipe["s3_key"])
         table.delete_item(Key={"pk": f"USER#{user_id}", "sk": f"HOLORECIPE#{recipe_id}"})
     except ClientError as error:
-        raise RuntimeError("Could not delete the saved Holographic Recipe.") from error
+        raise RuntimeError("Could not delete the saved Holographic Palette.") from error
     return True
 
 
@@ -930,7 +939,7 @@ def get_user_job_history(user_id, limit=100):
         task_id = entry.get("task_id")
         if not task_id:
             continue
-        stored_status = redis_client.get(f"task:{task_id}:status")
+        stored_status = sync_job_runtime().status(task_id)
         durable_status = entry.get("status", "pending")
         # Keep account history consistent with S3 lifecycle/manual cleanup,
         # just as the guest history panel already does. Jobs older than the
@@ -1044,7 +1053,7 @@ def list_admin_jobs(days=7):
     jobs = []
     for job in jobs_by_id.values():
         task_id = job["task_id"]
-        job["status"] = redis_client.get(f"task:{task_id}:status") or job.get("status", "pending")
+        job["status"] = sync_job_runtime().status(task_id) or job.get("status", "pending")
         job["queued"] = raster_queue_position(task_id) is not None
         jobs.append(job)
     return sorted(jobs, key=lambda item: int(item.get("created_at") or 0), reverse=True)
@@ -1184,6 +1193,27 @@ def claim_history_session(history_session, browser_session):
     if not browser_session:
         raise ValueError("A valid browser session is required for job history.")
     candidate = valid_history_session(history_session) or str(uuid.uuid4())
+    runtime = sync_job_runtime()
+    if isinstance(runtime, DynamoJobRuntime):
+        for _attempt in range(2):
+            key = {"pk": f"HISTORY#{candidate}", "sk": "ACCESS"}
+            try:
+                runtime.table.put_item(
+                    Item={**key, "browser_session": browser_session,
+                          "expires_at": int(time.time()) + HISTORY_TTL_SECONDS},
+                    ConditionExpression="attribute_not_exists(pk)",
+                )
+                return candidate
+            except ClientError as error:
+                if error.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+                    raise RuntimeError("Could not create a private job-history session.") from error
+                item = runtime.table.get_item(Key=key, ConsistentRead=True).get("Item") or {}
+                if hmac.compare_digest(str(item.get("browser_session", "")), browser_session):
+                    runtime.table.update_item(Key=key, UpdateExpression="SET expires_at=:expiry",
+                                              ExpressionAttributeValues={":expiry": int(time.time()) + HISTORY_TTL_SECONDS})
+                    return candidate
+                candidate = str(uuid.uuid4())
+        raise RuntimeError("Could not create a private job-history session.")
     for _attempt in range(2):
         access_key = f"history:{candidate}:access"
         if redis_client.set(access_key, browser_session, ex=HISTORY_TTL_SECONDS, nx=True):
@@ -1201,7 +1231,14 @@ def history_access_allowed(history_session, browser_session):
     browser_session = valid_history_session(browser_session)
     if not history_session or not browser_session:
         return False
-    expected = valid_history_session(redis_client.get(f"history:{history_session}:access"))
+    runtime = sync_job_runtime()
+    if isinstance(runtime, DynamoJobRuntime):
+        item = runtime.table.get_item(
+            Key={"pk": f"HISTORY#{history_session}", "sk": "ACCESS"}
+        ).get("Item") or {}
+        expected = valid_history_session(item.get("browser_session"))
+    else:
+        expected = valid_history_session(redis_client.get(f"history:{history_session}:access"))
     return bool(expected) and hmac.compare_digest(expected, browser_session)
 
 
@@ -1218,18 +1255,11 @@ def bind_job_access(task_id, user_id=None, browser_session=None):
         if not browser_session:
             raise ValueError("A valid guest browser session is required for job ownership.")
         binding = {"kind": "guest", "value": browser_session}
-    redis_client.set(
-        f"task:{task_id}:access",
-        json.dumps(binding, separators=(",", ":")),
-        ex=HISTORY_TTL_SECONDS,
-    )
+    sync_job_runtime().bind_access(task_id, binding["kind"], binding["value"])
 
 
 def _job_access_binding(task_id):
-    try:
-        binding = json.loads(redis_client.get(f"task:{task_id}:access") or "{}")
-    except (TypeError, json.JSONDecodeError):
-        return None
+    binding = sync_job_runtime().access(task_id) or {}
     kind, value = binding.get("kind"), str(binding.get("value") or "").strip()
     if kind == "account" and value:
         return kind, value
@@ -1271,6 +1301,17 @@ def claim_daily_job(user_id):
     now = datetime.now(timezone.utc)
     day_key = now.strftime("%Y-%m-%d")
     key = f"quota:{user_id}:{day_key}"
+    runtime = sync_job_runtime()
+    if isinstance(runtime, DynamoJobRuntime):
+        expiry = int(((now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0) - datetime(1970, 1, 1, tzinfo=timezone.utc)).total_seconds())
+        result = runtime.table.update_item(
+            Key={"pk": f"QUOTA#{user_id}#{day_key}", "sk": "USAGE"},
+            UpdateExpression="SET used=if_not_exists(used,:zero)+:one, expires_at=:expiry",
+            ExpressionAttributeValues={":zero": 0, ":one": 1, ":expiry": expiry},
+            ReturnValues="UPDATED_NEW",
+        )
+        used = int(result["Attributes"]["used"])
+        return used <= DAILY_JOB_LIMIT, max(0, DAILY_JOB_LIMIT - used)
     used = redis_client.incr(key)
     if used == 1:
         next_day = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -1292,6 +1333,17 @@ def normalize_dimension(value, default=0):
 def add_history_entry(session_id, task_id, source_name, image_preset, abstract_filter, material_name,
                       run_parameters=None):
     if not session_id:
+        return
+    runtime = sync_job_runtime()
+    if isinstance(runtime, DynamoJobRuntime):
+        created_at = int(time.time())
+        runtime.table.put_item(Item=_dynamodb_values({
+            "pk": f"HISTORY#{session_id}", "sk": f"JOB#{created_at:010d}#{task_id}",
+            "task_id": task_id, "source_name": source_name,
+            "image_preset": image_preset, "abstract_filter": abstract_filter,
+            "material_name": material_name, "run_parameters": run_parameters or {},
+            "created_at": created_at, "expires_at": created_at + HISTORY_TTL_SECONDS,
+        }))
         return
     key = f"history:{session_id}"
     entry = json.dumps({
@@ -1353,11 +1405,20 @@ def job_history_links(entry):
 def get_history_entries(session_id):
     if not session_id:
         return []
+    runtime = sync_job_runtime()
+    if isinstance(runtime, DynamoJobRuntime):
+        response = runtime.table.query(
+            KeyConditionExpression=Key("pk").eq(f"HISTORY#{session_id}") & Key("sk").begins_with("JOB#"),
+            ScanIndexForward=False, Limit=99,
+        )
+        raw_entries = [_json_values(item) for item in response.get("Items", [])]
+    else:
+        raw_entries = redis_client.lrange(f"history:{session_id}", 0, 98)
     history_key = f"history:{session_id}"
     entries, stale_records = [], []
-    for raw_entry in redis_client.lrange(history_key, 0, 98):
+    for raw_entry in raw_entries:
         try:
-            entry = json.loads(raw_entry)
+            entry = raw_entry if isinstance(raw_entry, dict) else json.loads(raw_entry)
         except (TypeError, json.JSONDecodeError):
             stale_records.append(raw_entry)
             continue
@@ -1365,7 +1426,7 @@ def get_history_entries(session_id):
         if not task_id:
             stale_records.append(raw_entry)
             continue
-        stored_status = redis_client.get(f"task:{task_id}:status")
+        stored_status = runtime.status(task_id)
         # A manually purged or lifecycle-expired S3 job must not leave a dead
         # download row behind just because its browser-history record remains.
         if not stored_status and not task_artifacts_exist(task_id):
@@ -1381,7 +1442,7 @@ def get_history_entries(session_id):
         }
         history_entry.update(job_history_links(history_entry))
         entries.append(history_entry)
-    if stale_records:
+    if stale_records and isinstance(runtime, RedisJobRuntime):
         pipeline = redis_client.pipeline()
         for raw_entry in stale_records:
             pipeline.lrem(history_key, 0, raw_entry)
@@ -1418,6 +1479,19 @@ def parse_abstract_filter_parameters(raw_value):
             clean[key] = value.strip()
         elif key == "fill_mode" and value in {"from_setting", "fill", "offset_fill", "line"}:
             clean[key] = value
+        elif key == "mixing_model" and value in {"lab", "rgb", "hsv"}:
+            clean[key] = value
+        elif key == "glyph_shape" and value in {
+            "circle", "square", "diamond", "triangle", "hexagon", "octagon",
+            "star", "cross", "bar", "mixed",
+        }:
+            clean[key] = value
+        elif key == "cell_shape" and value in {
+            "square", "hexagon", "triangle", "diamond", "skull", "heart",
+            "space_invader", "ghost", "bat", "alien_head", "paw_print",
+            "fish_scale", "puzzle_piece",
+        }:
+            clean[key] = value
         elif key in {"transparent", "invert_threshold", "keep_black"} and isinstance(value, bool):
             clean[key] = value
         elif key in {"transparent", "invert_threshold", "keep_black"} and isinstance(value, str) and value.lower() in ("true", "false"):
@@ -1425,6 +1499,10 @@ def parse_abstract_filter_parameters(raw_value):
             # checkbox as text. Normalize it to the same boolean used by the
             # current JSON-producing UI.
             clean[key] = value.lower() == "true"
+        elif key in {"square_dots", "invert", "black_only", "keep_available_colors_as_vectors", "favor_black"} and isinstance(value, str) and value.lower() in ("true", "false"):
+            clean[key] = int(value.lower() == "true")
+        elif key in {"transparent", "invert_threshold", "keep_black", "square_dots", "invert", "black_only", "keep_available_colors_as_vectors", "favor_black"} and isinstance(value, bool):
+            clean[key] = int(value)
         elif isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError(f"Abstract filter setting '{key}' must be numeric")
         else:
@@ -1469,7 +1547,7 @@ def task_artifact_key(task_id, filename, category="outputs", user_id=None):
     return f"jobs/{task_id}/{category}/{filename}"
 
 
-def upload_task_artifact(task_id, local_file_path, category="outputs", user_id=None):
+def upload_task_artifact(task_id, local_file_path, category="outputs", user_id=None, guest=False):
     if not s3_artifacts_enabled():
         return None
     filename = os.path.basename(local_file_path)
@@ -1481,6 +1559,8 @@ def upload_task_artifact(task_id, local_file_path, category="outputs", user_id=N
             # targeted by a single S3 prefix rule. A lifecycle tag keeps them
             # on the same seven-day retention schedule as guest jobs.
             upload_args["ExtraArgs"] = {"Tagging": "mopa-retention=job"}
+        elif guest:
+            upload_args["ExtraArgs"] = {"Tagging": "mopa-retention=guest"}
         s3_client.upload_file(local_file_path, S3_BUCKET_NAME, key, **upload_args)
     except ClientError as error:
         raise RuntimeError(f"Could not store job artifact in S3: {error}") from error
@@ -1579,12 +1659,11 @@ def start_disk_cleanup_worker(app, interval_seconds=3600):
 
 
 def long_running_script(task_id, data, image_path, material_settings_path, upload_folder,
-                        user_id=None, output_name=None):
+                        user_id=None, output_name=None, guest_job=False,
+                        guest_quota_visitor="", guest_quota_day="",
+                        guest_daily_job_limit=0):
     try:
-        log_key, status_key = f"task:{task_id}:log", f"task:{task_id}:status"
-        redis_client.set(status_key, "processing")
-        redis_client.expire(status_key, HISTORY_TTL_SECONDS)
-        redis_client.expire(log_key, HISTORY_TTL_SECONDS)
+        job_runtime.set_status(task_id, "processing")
         image_preset = str(data.get("image_preset", "cartoon")).strip().lower()
         svg_only = str(data.get("svg_only", "false")).strip().lower() in ("true", "1", "yes", "on")
         material_name = str(data.get("material", "stainless - steel")).strip().lower()
@@ -1596,7 +1675,7 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
             image_preset = "abstract"
         if image_preset != "abstract" or abstract_filter not in ABSTRACT_FILTER_NAMES:
             abstract_filter = "none"
-        process = subprocess.Popen([
+        command = [
             "python", "-u", "lib/Material_Library.py", image_path,
             os.path.join(
                 upload_folder,
@@ -1609,8 +1688,78 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
             json.dumps(parse_abstract_filter_parameters(data.get("abstract_filter_parameters", "{}")), separators=(",", ":")),
             json.dumps(parse_color_name_overrides(data.get("color_name_overrides", "{}")), separators=(",", ":")),
             "true" if svg_only else "false",
-        ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            json.dumps({
+                "color_matching_mode": data.get("color_matching_mode", "balanced"),
+                "color_matching_hue_weight": data.get("color_matching_hue_weight", 4.0),
+                "color_matching_saturation_weight": data.get("color_matching_saturation_weight", 1.0),
+                "color_matching_lightness_weight": data.get("color_matching_lightness_weight", 1.0),
+            }, separators=(",", ":")),
+        ]
+
+        def run_process(arguments):
+            process = subprocess.Popen(
+                arguments, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            )
+            current_line, last_line = [], ""
+            while True:
+                char = process.stdout.read(1)
+                if not char and process.poll() is not None:
+                    break
+                if char:
+                    if char in ("\n", "\r"):
+                        line = "".join(current_line).strip()
+                        if line:
+                            last_line = line
+                            print(f"[Task {task_id}] {line}", flush=True)
+                            job_runtime.append_log(task_id, line)
+                        current_line = []
+                    else:
+                        current_line.append(char)
+            line = "".join(current_line).strip()
+            if line:
+                last_line = line
+                print(f"[Task {task_id}] {line}", flush=True)
+                job_runtime.append_log(task_id, line)
+            return process.wait(), last_line
+
+        if guest_job:
+            job_runtime.append_log(
+                task_id,
+                "Validating artwork, parameters, Material Library, and material before counting this guest job.",
+            )
+            validation_exit, validation_message = run_process(command + ["true"])
+            if validation_exit != 0:
+                failure_message = validation_message or "Guest input validation failed"
+                job_runtime.set_status(task_id, "failed", error=failure_message)
+                job_runtime.append_log(task_id, f"ERROR: {failure_message}")
+                return
+            quota_context_present = bool(
+                guest_quota_visitor and guest_quota_day and int(guest_daily_job_limit or 0) > 0
+            )
+            if not quota_context_present:
+                # Jobs accepted by the immediately preceding API revision were
+                # already charged at submission time. Let those in-flight jobs
+                # finish without charging or rejecting them a second time.
+                job_runtime.append_log(
+                    task_id,
+                    "Input validation passed. This pre-update guest job retains its original quota claim.",
+                )
+            elif not job_runtime.claim_guest_quota(
+                task_id, guest_quota_visitor, guest_quota_day, guest_daily_job_limit,
+            ):
+                failure_message = (
+                    f"Guest limit reached ({int(guest_daily_job_limit or 0)} validated jobs per day). "
+                    "Sign in to continue."
+                )
+                job_runtime.set_status(task_id, "failed", error=failure_message)
+                job_runtime.append_log(task_id, f"ERROR: {failure_message}")
+                return
+            else:
+                job_runtime.append_log(task_id, "Input validation passed. This guest job now counts toward today's limit.")
+
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         current_line = []
+        last_process_line = ""
         while True:
             char = process.stdout.read(1)
             if not char and process.poll() is not None:
@@ -1619,43 +1768,51 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
                 if char in ("\n", "\r"):
                     line = "".join(current_line).strip()
                     if line:
+                        last_process_line = line
                         print(f"[Task {task_id}] {line}", flush=True)
-                        redis_client.rpush(log_key, line)
+                        job_runtime.append_log(task_id, line)
                     current_line = []
                 else:
                     current_line.append(char)
         line = "".join(current_line).strip()
         if line:
+            last_process_line = line
             print(f"[Task {task_id}] {line}", flush=True)
-            redis_client.rpush(log_key, line)
+            job_runtime.append_log(task_id, line)
         exit_code = process.wait()
         if exit_code == 0:
             output_paths = glob.glob(os.path.join(upload_folder, f"output_{task_id}_*"))
             output_keys = []
             for output_path in output_paths:
                 if os.path.isfile(output_path):
-                    key = upload_task_artifact(task_id, output_path, user_id=user_id)
+                    key = upload_task_artifact(
+                        task_id, output_path, user_id=user_id, guest=guest_job,
+                    )
                     if key:
                         output_keys.append(key)
-            redis_client.set(status_key, "completed")
+            job_runtime.set_status(task_id, "completed")
             try:
                 update_user_job(task_id, "completed", output_keys=output_keys)
             except RuntimeError as status_error:
                 print(f"[Thread-{task_id}] Could not save durable completion state: {status_error}", flush=True)
         else:
-            redis_client.set(status_key, "failed")
-            failure_message = f"Rasterizer exited with code {exit_code}"
+            failure_message = last_process_line or f"Rasterizer exited with code {exit_code}"
             if exit_code in (-9, 137):
-                failure_message += " (the worker may have been killed or exceeded its memory limit)"
-            redis_client.rpush(log_key, failure_message)
+                failure_message = (
+                    f"Rasterizer exited with code {exit_code} "
+                    "(the worker may have been killed or exceeded its memory limit)"
+                )
+            job_runtime.set_status(task_id, "failed", error=failure_message)
+            job_runtime.append_log(task_id, f"ERROR: {failure_message}")
             try:
                 update_user_job(task_id, "failed", error_message=failure_message)
             except RuntimeError as status_error:
                 print(f"[Thread-{task_id}] Could not save durable failure state: {status_error}", flush=True)
     except Exception as error:
         print(f"[Thread-{task_id}] Exception: {error}", flush=True)
-        redis_client.set(f"task:{task_id}:status", "failed", ex=HISTORY_TTL_SECONDS)
-        redis_client.rpush(f"task:{task_id}:log", f"Artifact processing failed: {error}")
+        failure_message = f"Artifact processing failed: {error}"
+        job_runtime.set_status(task_id, "failed", error=failure_message)
+        job_runtime.append_log(task_id, f"ERROR: {failure_message}")
         tasks[f"{task_id}_status"] = "failed"
         tasks[f"{task_id}_error"] = str(error)
         try:
@@ -1663,22 +1820,23 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
         except RuntimeError as status_error:
             print(f"[Thread-{task_id}] Could not save durable failure state: {status_error}", flush=True)
     finally:
-        redis_client.expire(f"task:{task_id}:status", HISTORY_TTL_SECONDS)
-        redis_client.expire(f"task:{task_id}:log", HISTORY_TTL_SECONDS)
-        redis_client.expire(f"task:{task_id}:access", HISTORY_TTL_SECONDS)
+        pass
 
 
 def store_and_enqueue_job(payload):
     """Persist a task-addressable envelope, then publish its task ID."""
     task_id = str(payload["task_id"])
+    runtime = sync_job_runtime()
     raw_payload = json.dumps(payload, separators=(",", ":"))
-    pipeline = redis_client.pipeline()
-    pipeline.set(
-        f"{RASTER_JOB_PAYLOAD_PREFIX}{task_id}", raw_payload, ex=HISTORY_TTL_SECONDS
-    )
-    if not SQS_QUEUE_URL and not FARGATE_DISPATCH_VIA_S3:
-        pipeline.lpush(RASTER_JOB_QUEUE, raw_payload)
-    pipeline.execute()
+    if isinstance(runtime, RedisJobRuntime):
+        # Preserve the production Redis transaction and its established tests.
+        pipeline = redis_client.pipeline()
+        pipeline.set(f"{RASTER_JOB_PAYLOAD_PREFIX}{task_id}", raw_payload, ex=HISTORY_TTL_SECONDS)
+        if not SQS_QUEUE_URL and not FARGATE_DISPATCH_VIA_S3:
+            pipeline.lpush(RASTER_JOB_QUEUE, raw_payload)
+        pipeline.execute()
+    else:
+        runtime.put_payload(task_id, payload)
     if FARGATE_DISPATCH_VIA_S3:
         try:
             s3_client.put_object(
@@ -1691,7 +1849,14 @@ def store_and_enqueue_job(payload):
             raise RuntimeError("Could not publish the raster task through S3") from error
     elif SQS_QUEUE_URL:
         try:
-            sqs_client.send_message(QueueUrl=SQS_QUEUE_URL, MessageBody=task_id)
+            message_body = (
+                task_id if isinstance(runtime, RedisJobRuntime)
+                else json.dumps({"task_id": task_id}, separators=(",", ":"))
+            )
+            sqs_client.send_message(
+                QueueUrl=SQS_QUEUE_URL,
+                MessageBody=message_body,
+            )
         except Exception as error:
             raise RuntimeError("Could not publish the raster task to SQS") from error
     return raw_payload
@@ -1720,10 +1885,7 @@ def enqueue_raster_job(task_id, data, image_key, material_key, output_name,
         # from reaching a worker.
         print(f"[Task {task_id}] Could not update admin job index: {error}", flush=True)
     store_and_enqueue_job(payload)
-    redis_client.rpush(
-        f"task:{task_id}:log",
-        "Job accepted. Starting a raster worker...",
-    )
+    sync_job_runtime().append_log(task_id, "Job accepted. Starting a raster worker...")
 
 
 def raster_queue_position(task_id):

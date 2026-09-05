@@ -1,0 +1,18 @@
+.background-customizable{background-color:#11130f}
+.banner-customizable{padding:26px 0 20px 0;background-color:#24271f}
+.label-customizable{font-weight:700;color:#e4e3cf}
+.textDescription-customizable{padding-top:4px;padding-bottom:12px;display:block;font-size:14px;color:#bdb58f}
+.idpDescription-customizable{padding-top:8px;padding-bottom:8px;display:block;font-size:13px;color:#bdb58f}
+.inputField-customizable{width:100%;height:46px;color:#f5f1d7;background-color:#1b1e18;border:2px solid #777864}
+.inputField-customizable:focus{border-color:#7e9388;outline:2px}
+.submitButton-customizable{font-size:15px;font-weight:bold;margin:18px 0 10px 0;width:100%;height:46px;color:#edf4e9;background-color:#46584e}
+.submitButton-customizable:hover{color:#ffffff;background-color:#5c7165}
+.errorMessage-customizable{margin:10px 0 14px 0;padding:10px;font-size:13px;width:100%;background:#351816;border:1px solid #ef4338;color:#ffd9d5;box-sizing:border-box}
+.redirect-customizable{color:#efb94f}
+.legalText-customizable{color:#9da08d;font-size:11px}
+.passwordCheck-valid-customizable{color:#91aa9c}
+.passwordCheck-notValid-customizable{color:#ef6a60}
+.idpButton-customizable{height:44px;width:100%;text-align:center;margin-bottom:10px;color:#e4e3cf;background-color:#29352f;border-color:#596451}
+.idpButton-customizable:hover{color:#f5f1d7;background-color:#3c5447}
+.socialButton-customizable{height:44px;text-align:center;width:100%;margin-bottom:10px}
+.logo-customizable{max-width:78%;max-height:70%;background-color:#24271f}

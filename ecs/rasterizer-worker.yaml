@@ -2,6 +2,14 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: Fargate service for the MOPA Laser Rasterizer background worker.
 
 Parameters:
+  ClusterName:
+    Type: String
+    Default: mopa-laser-rasterizer
+    AllowedPattern: "[a-zA-Z0-9-_]+"
+  WorkerName:
+    Type: String
+    Default: mopa-laser-raster-worker
+    AllowedPattern: "[a-zA-Z0-9-_]+"
   ImageUri:
     Type: String
     Description: Immutable ECR image URI, including its tag or digest.
@@ -12,12 +20,14 @@ Parameters:
     Description: Two or more subnets that can reach Redis and the AWS APIs.
   RedisHost:
     Type: String
+    Default: ""
     Description: Private Redis or ElastiCache primary endpoint hostname.
   RedisPort:
     Type: Number
     Default: 6379
   RedisSecurityGroupId:
-    Type: AWS::EC2::SecurityGroup::Id
+    Type: String
+    Default: ""
     Description: Security group attached to Redis; this stack permits worker ingress.
   RedisSsl:
     Type: String
@@ -40,6 +50,27 @@ Parameters:
     Type: String
     Default: "4096"
     Description: Fargate task memory in MiB; must be valid for the selected CPU.
+  WorkerProcesses:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 16
+    Description: Maximum CPU workers used inside one raster or holographic task.
+  KrasnowProgress:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Emit intermediate Krasnow mapping progress logs.
+  KrasnowGratingWins:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Restrict Krasnow Black to pixels reserved before grating generation.
+  SourceBlackComponents:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Opt in to sparse source-derived Black components instead of canvas punch-through.
   AssignPublicIp:
     Type: String
     Default: DISABLED
@@ -51,12 +82,15 @@ Parameters:
 
 Conditions:
   HasRedisPassword: !Not [!Equals [!Ref RedisPasswordSecretArn, ""]]
+  HasRedis: !And
+    - !Not [!Equals [!Ref RedisHost, ""]]
+    - !Not [!Equals [!Ref RedisSecurityGroupId, ""]]
 
 Resources:
   Cluster:
     Type: AWS::ECS::Cluster
     Properties:
-      ClusterName: mopa-laser-rasterizer
+      ClusterName: !Ref ClusterName
       CapacityProviders: [FARGATE, FARGATE_SPOT]
       ClusterSettings:
         - Name: containerInsights
@@ -65,7 +99,7 @@ Resources:
   LogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: /ecs/mopa-laser-raster-worker
+      LogGroupName: !Sub /ecs/${WorkerName}
       RetentionInDays: !Ref LogRetentionDays
 
   WorkerSecurityGroup:
@@ -79,6 +113,7 @@ Resources:
 
   RedisIngressFromWorkers:
     Type: AWS::EC2::SecurityGroupIngress
+    Condition: HasRedis
     Properties:
       GroupId: !Ref RedisSecurityGroupId
       IpProtocol: tcp
@@ -137,7 +172,7 @@ Resources:
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
-      Family: mopa-laser-raster-worker
+      Family: !Ref WorkerName
       RequiresCompatibilities: [FARGATE]
       NetworkMode: awsvpc
       Cpu: !Ref Cpu
@@ -162,6 +197,12 @@ Resources:
             - {Name: REDIS_SSL, Value: !Ref RedisSsl}
             - {Name: S3_BUCKET_NAME, Value: !Ref S3BucketName}
             - {Name: DYNAMODB_TABLE_NAME, Value: !Ref DynamoDbTableName}
+            - {Name: JOB_RUNTIME_TABLE_NAME, Value: !Ref DynamoDbTableName}
+            - {Name: JOB_BACKEND, Value: !If [HasRedis, redis, aws]}
+            - {Name: RASTER_WORKER_PROCESSES, Value: !Sub "${WorkerProcesses}"}
+            - {Name: RASTER_KRASNOW_PROGRESS, Value: !Ref KrasnowProgress}
+            - {Name: RASTER_KRASNOW_GRATING_WINS, Value: !Ref KrasnowGratingWins}
+            - {Name: RASTER_SOURCE_BLACK_COMPONENTS, Value: !Ref SourceBlackComponents}
             - {Name: UPLOAD_FOLDER, Value: /tmp/uploads}
             - {Name: RASTER_JOB_LEASE_SECONDS, Value: "90"}
             - {Name: RASTER_JOB_HEARTBEAT_SECONDS, Value: "20"}

@@ -66,7 +66,7 @@ fi
 TRUST_FILE="$(mktemp)"; POLICY_FILE="$(mktemp)"; ECR_LIFECYCLE_FILE="$(mktemp)"
 SQS_ATTRIBUTES_FILE="$(mktemp)"; SQS_DLQ_ATTRIBUTES_FILE="$(mktemp)"
 trap 'rm -f "$TRUST_FILE" "$POLICY_FILE" "$ECR_LIFECYCLE_FILE" "$SQS_ATTRIBUTES_FILE" "$SQS_DLQ_ATTRIBUTES_FILE"' EXIT
-printf '%s' '{"rules":[{"rulePriority":1,"description":"Keep the newest 20 application images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":20},"action":{"type":"expire"}}]}' > "$ECR_LIFECYCLE_FILE"
+printf '%s' '{"rules":[{"rulePriority":1,"description":"Keep the newest 20 production deployment images","selection":{"tagStatus":"tagged","tagPrefixList":["deploy-"],"countType":"imageCountMoreThan","countNumber":20},"action":{"type":"expire"}},{"rulePriority":2,"description":"Keep the newest 10 production spinner images","selection":{"tagStatus":"tagged","tagPrefixList":["spinner-"],"countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}},{"rulePriority":3,"description":"Keep the newest 20 serverless staging images","selection":{"tagStatus":"tagged","tagPrefixList":["serverless-staging-"],"countType":"imageCountMoreThan","countNumber":20},"action":{"type":"expire"}},{"rulePriority":4,"description":"Expire untagged images after 7 days","selection":{"tagStatus":"untagged","countType":"sinceImagePushed","countUnit":"days","countNumber":7},"action":{"type":"expire"}}]}' > "$ECR_LIFECYCLE_FILE"
 aws ecr put-lifecycle-policy --region "$REGION" \
   --repository-name "$ECR_REPOSITORY" \
   --lifecycle-policy-text "file://${ECR_LIFECYCLE_FILE}" >/dev/null

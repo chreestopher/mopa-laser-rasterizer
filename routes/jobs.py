@@ -2,6 +2,7 @@
 
 import glob
 import json
+import math
 import os
 import threading
 import time
@@ -42,6 +43,8 @@ from services import (
     get_s3_artifact,
     list_guest_material_libraries,
     redis_client,
+    job_runtime,
+    sync_job_runtime,
     record_user_job,
     record_setting_usage_async,
     remember_guest_material_library,
@@ -81,6 +84,13 @@ def start_task():
 
     task_id = str(uuid.uuid4())
     user_data = request.form.to_dict()
+    try:
+        pixel_square_mm = float(user_data.get("pixel_square_mm") or 1)
+        if not math.isfinite(pixel_square_mm) or pixel_square_mm < .01:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({"status": "error", "message": "Pixel size must be at least 0.01 mm"}), 400
+    user_data["pixel_square_mm"] = str(pixel_square_mm)
     user_data["new_width"] = str(normalize_dimension(user_data.get("new_width")))
     user_data["new_height"] = str(normalize_dimension(user_data.get("new_height")))
     history_session = private_history_session(
@@ -269,7 +279,7 @@ def start_task():
     bind_job_access(
         task_id, user_id=user_id or None, browser_session=browser_job_session(),
     )
-    redis_client.set(f"task:{task_id}:status", "pending", ex=HISTORY_TTL_SECONDS)
+    sync_job_runtime().create(task_id, "pending", ["Waiting to start..."])
     submitted_preset = str(user_data.get("image_preset", "cartoon")).strip().lower()
     submitted_filter = (
         submitted_preset.removeprefix("abstract_")
@@ -340,8 +350,7 @@ def start_task():
                 base_name, os.path.basename(material_settings_path) if material_settings_path else "", user_id or None,
             )
         except RuntimeError as error:
-            redis_client.set(f"task:{task_id}:status", "failed", ex=HISTORY_TTL_SECONDS)
-            redis_client.rpush(f"task:{task_id}:log", f"Could not queue raster job: {error}")
+            sync_job_runtime().set_status(task_id, "failed", error=f"Could not queue raster job: {error}")
             return jsonify({"status": "error", "message": str(error)}), 503
     else:
         threading.Thread(target=long_running_script,
@@ -436,8 +445,9 @@ def task_status(task_id):
     access_error = _job_access_error(task_id)
     if access_error:
         return access_error
-    log_key, status_key = f"task:{task_id}:log", f"task:{task_id}:status"
-    status = redis_client.get(status_key)
+    log_key = f"task:{task_id}:log"
+    runtime = sync_job_runtime()
+    status = runtime.status(task_id)
     durable_job = None
     if not status:
         try:
@@ -478,8 +488,7 @@ def task_status(task_id):
         log_after = max(0, int(request.args.get("after", "0")))
     except (TypeError, ValueError):
         log_after = 0
-    log_count = redis_client.llen(log_key)
-    logs = redis_client.lrange(log_key, log_after, -1) if log_count > log_after else []
+    logs, log_count = runtime.logs(task_id, log_after)
     if not logs and durable_job and durable_job.get("error_message"):
         logs = [f"Rasterizer job failed: {durable_job['error_message']}"]
     response = jsonify({
@@ -555,8 +564,8 @@ def _rasterized_lightburn_download_name(task_id, artifact_name):
             if source_name.lower().endswith(suffix):
                 source_name = source_name[:-len(suffix)]
                 break
-    stem = os.path.splitext(os.path.basename(source_name))[0]
-    return f"{secure_filename(stem) or 'rasterized-project'}.rasterized.lbrn2"
+    original_name = secure_filename(os.path.basename(source_name)) or "rasterized-project"
+    return f"{original_name}.rasterized.lbrn2"
 
 
 @routes.route("/download/<task_id>")

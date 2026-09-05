@@ -30,6 +30,7 @@ from .account import apply_entry_update, library_entries, mutate_library
 from .holographic import (
     _calibration_base_layer,
     _exact_setting,
+    _grid_label_setting,
     _lightburn_module,
     _download_holographic_artifact,
     _ensure_holographic_artifact,
@@ -248,6 +249,14 @@ def _axis_values(parameter, low, high, count):
     return values
 
 
+def _automatic_grid_layout(width_mm, length_mm, maximum_cells=29):
+    candidates = [(rows * columns, min(width_mm / columns, length_mm / rows), rows, columns)
+                  for rows in range(2, maximum_cells + 1) for columns in range(2, maximum_cells + 1)
+                  if rows * columns <= maximum_cells]
+    _count, cell_size_mm, rows, columns = max(candidates, key=lambda item: (item[0], item[1]))
+    return rows, columns, cell_size_mm
+
+
 def _setting_from_values(lightburn, baseline, index, name, overrides):
     layer = lightburn.Layer()
     for key, value in baseline.items():
@@ -298,6 +307,7 @@ def create_color_discovery_session():
     try:
         if source_mode == "manual":
             baseline = _normalize_baseline(_manual_baseline(form))
+            label_baseline = baseline
             source_label = "Manual starting setting"
         else:
             history_session = valid_history_session(form.get("history_session")) or valid_history_session(request.cookies.get("mopa_history_session"))
@@ -308,6 +318,10 @@ def create_color_discovery_session():
             )
             setting = _exact_setting(_lightburn_module(), path, form.get("material", ""), form.get("setting_description", ""))
             baseline = _normalize_baseline(_serialize_setting(_calibration_base_layer(setting)))
+            label_setting, _label_index = _grid_label_setting(
+                _lightburn_module(), path, form.get("material", ""), setting
+            )
+            label_baseline = _normalize_baseline(_serialize_setting(label_setting))
             source_label = f"{form.get('material')} / {form.get('setting_description')}"
         target_rgb = _hex_rgb(form.get("target_color"))
     except (OSError, PermissionError, FileNotFoundError, RuntimeError, ValueError) as error:
@@ -323,7 +337,8 @@ def create_color_discovery_session():
         "target_hex": "#{:02X}{:02X}{:02X}".format(*target_rgb) if target_rgb else None,
         "machine": {"laser_source": str(form.get("laser_source", ""))[:160], "lens": str(form.get("lens", ""))[:160]},
         "material": str(form.get("material", ""))[:160], "finish": str(form.get("finish", ""))[:160],
-        "baseline": baseline, "baseline_source": source_label, "community_candidates": community,
+        "baseline": baseline, "label_baseline": label_baseline,
+        "baseline_source": source_label, "community_candidates": community,
         "grids": [], "saved_recipes": [],
     }
     _save_session(payload)
@@ -341,12 +356,10 @@ def build_color_discovery_grid():
         x_parameter, y_parameter = str(request.form.get("x_parameter", "speed")), str(request.form.get("y_parameter", "frequency"))
         if x_parameter not in PARAMETERS or y_parameter not in PARAMETERS or x_parameter == y_parameter:
             raise ValueError("Choose two different supported sweep parameters.")
-        columns = max(2, min(6, int(request.form.get("columns", 5))))
-        rows = max(2, min(6, int(request.form.get("rows", 5))))
-        if rows * columns > 29:
-            raise ValueError("A discovery grid may contain at most 29 cells.")
         total_width_mm = _number(request.form.get("grid_width_mm"), 100, 40, 500)
         total_length_mm = _number(request.form.get("grid_length_mm"), 100, 40, 500)
+        gap_mm = 0.0
+        rows, columns, cell_size_mm = _automatic_grid_layout(total_width_mm, total_length_mm)
         x_values = _axis_values(x_parameter, request.form.get("x_low"), request.form.get("x_high"), columns)
         y_values = _axis_values(y_parameter, request.form.get("y_low"), request.form.get("y_high"), rows)
         for x_value in x_values:
@@ -362,28 +375,26 @@ def build_color_discovery_grid():
     grid_id = str(uuid.uuid4())
     lightburn = _lightburn_module()
     project = lightburn.Lightburn()
-    label = _setting_from_values(lightburn, baseline, 0, "Discovery labels", {})
-    label.type = "Cut"
+    # The persisted row/column map is the source of truth during camera
+    # analysis. Only a compact grid identifier is engraved; individual rows,
+    # columns, and cells do not need labels.
+    # Cell size is exact. Any remainder in the requested matrix dimensions is
+    # intentionally left blank at the right and bottom edges.
+    matrix_width = columns * cell_size_mm + (columns - 1) * gap_mm
+    matrix_height = rows * cell_size_mm + (rows - 1) * gap_mm
+    pitch_x = pitch_y = cell_size_mm + gap_mm
+    top_mm = 4.0
+    grid_label = f"COLOR GRID {grid_id[:8]}"
+    label_height_mm = 1.2
+    estimated_label_width_mm = len(grid_label) * label_height_mm * .6
+    label_x = max(0.0, (matrix_width - estimated_label_width_mm) / 2)
+    label = _setting_from_values(
+        lightburn, session.get("label_baseline") or baseline, 0, "Grid ID", {}
+    )
+    label.type = "Scan"
     project.add_layer(label)
-    top_mm, right_mm, gap_mm = 7.0, 35.0, 1.5
-    # The operator-entered dimensions describe the actual test-cell matrix.
-    # Labels sit outside that area and must not silently consume its width or
-    # length (for example, a 75 mm grid must retain 75 mm of test cells).
-    matrix_width, matrix_height = total_width_mm, total_length_mm
-    cell_width_mm = (matrix_width - (columns - 1) * gap_mm) / columns
-    cell_height_mm = (matrix_height - (rows - 1) * gap_mm) / rows
-    if cell_width_mm < 4 or cell_height_mm < 4:
-        return jsonify({
-            "status": "error",
-            "message": "That overall size leaves cells smaller than 4 mm. Increase the grid dimensions or reduce its rows and columns.",
-        }), 400
-    pitch_x, pitch_y = cell_width_mm + gap_mm, cell_height_mm + gap_mm
-    project.add(lightburn.Text(1.2, f"COLOR DISCOVERY {grid_id[:8]}", x=.5, y=1).layer(0))
+    project.add(lightburn.Text(label_height_mm, grid_label, x=label_x, y=.7).layer(0))
     cells = []
-    for column, value in enumerate(x_values):
-        project.add(lightburn.Text(.85, f"{PARAMETERS[x_parameter]['label']} {value:g}", x=column * pitch_x, y=4).layer(0))
-    for row, value in enumerate(y_values):
-        project.add(lightburn.Text(.85, f"{PARAMETERS[y_parameter]['label']} {value:g}", x=matrix_width + 1, y=top_mm + row * pitch_y).layer(0))
     for row, y_value in enumerate(y_values):
         for column, x_value in enumerate(x_values):
             index = row * columns + column + 1
@@ -391,9 +402,9 @@ def build_color_discovery_grid():
             name = f"Discovery {index:02d} {x_parameter}={x_value:g} {y_parameter}={y_value:g}"
             layer = _setting_from_values(lightburn, baseline, index, name, overrides)
             project.add_layer(layer)
-            x = column * pitch_x + cell_width_mm / 2
-            y = top_mm + row * pitch_y + cell_height_mm / 2
-            project.add(lightburn.Square(cell_width_mm, cell_height_mm, x=x, y=y).layer(index))
+            x = column * pitch_x + cell_size_mm / 2
+            y = top_mm + row * pitch_y + cell_size_mm / 2
+            project.add(lightburn.Square(cell_size_mm, cell_size_mm, x=x, y=y).layer(index))
             complete = _serialize_setting(layer)
             cells.append({"index": index, "row": row + 1, "column": column + 1, "overrides": overrides, "setting": complete})
     upload_folder = current_app.config["UPLOAD_FOLDER"]
@@ -407,13 +418,14 @@ def build_color_discovery_grid():
     grid = {
         "grid_id": grid_id, "parent_cell": request.form.get("parent_cell") or None,
         "x_parameter": x_parameter, "y_parameter": y_parameter, "x_values": x_values, "y_values": y_values,
-        "columns": columns, "rows": rows, "cell_size_mm": min(cell_width_mm, cell_height_mm),
-        "cell_width_mm": cell_width_mm, "cell_height_mm": cell_height_mm,
+        "columns": columns, "rows": rows, "cell_size_mm": cell_size_mm,
+        "cell_width_mm": cell_size_mm, "cell_height_mm": cell_size_mm,
         "cell_gap_mm": gap_mm, "grid_width_mm": matrix_width, "grid_height_mm": matrix_height,
-        "total_width_mm": matrix_width + right_mm,
+        "requested_grid_width_mm": total_width_mm, "requested_grid_length_mm": total_length_mm,
+        "total_width_mm": matrix_width,
         "total_length_mm": top_mm + matrix_height,
         "top_label_band_mm": top_mm,
-        "right_label_band_mm": right_mm, "left_grid_margin_mm": 0,
+        "right_label_band_mm": 0, "left_grid_margin_mm": 0,
         "intervals_mm": [cell["setting"].get("interval", 0) for cell in cells],
         "angles_degrees": [cell["setting"].get("angle", 0) for cell in cells],
         "grating_recipe_signatures": [{"setting": cell["setting"], "overrides": cell["overrides"]} for cell in cells],
@@ -493,7 +505,7 @@ def save_color_discovery_to_material_vault():
     if auth_failure:
         return auth_failure
     if not user_id:
-        return jsonify({"status": "error", "message": "Sign in to save discovered colors to the Palette Vault."}), 401
+        return jsonify({"status": "error", "message": "Sign in to save discovered colors to the Swatch Palette Vault."}), 401
     temp_path = None
     try:
         session = _load_session(str(request.form.get("session_id", "")))
