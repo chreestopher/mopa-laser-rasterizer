@@ -172,6 +172,55 @@ immutable application revision is promoted to production. Never make staging
 share production queues or runtime tables, and never route production DNS to
 staging as part of an ordinary test deployment.
 
+### Serverless production promotion path
+
+The production serverless deployment is deliberately separate from both the
+legacy K3s web application and serverless staging. It reuses the existing
+retained production artifact bucket and DynamoDB account table so member Vault,
+preferences, Community Set, and Job History data do not need to be copied. It
+creates a production-only static bucket, SQS queue/DLQ, ECS cluster and task
+definition, Step Functions workflow, EventBridge Pipe, Lambda HTTP API,
+CloudFront distribution, and public Cognito app client.
+
+Production promotion does not build a container on the operator workstation.
+Set `SERVERLESS_PRODUCTION_IMAGE_URI` to the exact `@sha256:` ECR digest already
+validated in staging. This avoids a CPU-heavy local Docker build and guarantees
+that production executes the tested worker image. The application deployer runs
+worker/orchestration first and API/web second; it does not launch those steps in
+parallel or submit automatic test jobs.
+
+Before any AWS call, validate scripts and invariants locally:
+
+```bash
+bash dev_setup/validate_serverless_production_deployment.sh
+```
+
+Record the accepted Git commit and immutable image digest in the ignored
+`.env.aws`, along with the production `us-east-1` CloudFront certificate ARN.
+The deploy entry points refuse a dirty worktree, a mismatched commit, mutable
+image tags, staging-named stacks, staging data stores, and invocations without
+the explicit `--apply` argument.
+
+After explicit production-deployment authorization, create the production
+serverless endpoint without changing Route 53:
+
+```bash
+bash dev_setup/deploy_serverless_production_application.sh --apply
+```
+
+The production Cognito client accepts the temporary CloudFront hostname plus
+the apex and `www` callbacks. The generated browser configuration initially
+uses the CloudFront callback so authenticated acceptance can run before DNS
+cutover. The deployment prints that preview URL. After it passes the complete
+guest, member, administrator, queue-recovery, output, and browser smoke suite,
+set `SERVERLESS_PRODUCTION_USE_CLOUDFRONT_CALLBACK=false`, deploy the web stack
+again, and only then perform the separately authorized Route 53 cutover.
+
+None of the production serverless deployment scripts changes Route 53. Preserve
+an export of the legacy apex and `www` ALB aliases before cutover; restoring
+those aliases is the primary rollback. Keep the production serverless workers
+running long enough to finish or reconcile jobs accepted before a rollback.
+
 Deferred staging UX work after functional acceptance testing: replace the
 indeterminate submit state with visible artwork and Material Library upload
 progress, clearly label the transition from upload to job submission, and make

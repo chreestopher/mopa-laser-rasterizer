@@ -1,4 +1,6 @@
 (() => {
+  const isStagingEnvironment = location.hostname.includes("serverless-staging");
+  const environmentBadge = isStagingEnvironment ? "Staging" : "Production";
   for (const key of ["id_token", "refresh_token"]) {
     const legacyValue = sessionStorage.getItem(key);
     if (!localStorage.getItem(key) && legacyValue) localStorage.setItem(key, legacyValue);
@@ -31,15 +33,15 @@
     { href: "/docs", label: "Docs", match: path => path === "/docs" || path.startsWith("/docs/") },
   ];
   const pageHeroes = {
-    "/": ["Serverless raster processing", "MOPA Laser Rasterizer", "Turn artwork into a laser-ready color engraving project using your saved Material Libraries and palettes.", "Production-parity staging"],
+    "/": ["Serverless raster processing", "MOPA Laser Rasterizer", "Turn artwork into a laser-ready color engraving project using your saved Material Libraries and palettes.", isStagingEnvironment ? "Production-parity staging" : "Production service"],
     "/holographic.html": ["Directional engraving workflow", "Holographic Etching Lab", "Map artwork through a saved Holographic Palette and its LightBurn Material Library.", "Experimental - active development"],
     "/depthmap.html": ["Client-side monocular depth estimation", "Depth Map Generator", "Estimate relative scene depth from a single image, inspect a relief-style projection, adjust the usable range, and export grayscale depth maps for further preparation.", "Experimental - active development"],
-    "/color-lab.html": ["Controlled laser color experiments", "Color Lab", "Sweep two laser parameters at a time, measure engraved test grids, refine promising settings, and save repeatable results for your exact equipment and material.", "Experimental - staging port"],
+    "/color-lab.html": ["Controlled laser color experiments", "Color Lab", "Sweep two laser parameters at a time, measure engraved test grids, refine promising settings, and save repeatable results for your exact equipment and material.", isStagingEnvironment ? "Experimental - staging port" : "Experimental - verify all output"],
     "/experimental-laboratories": ["Workflows under active development", "Experimental Laboratories", "Explore engraving tools that extend beyond the standard Rasterizer workflow, including diffraction artwork and depth-relief preparation.", "Experimental - verify all output"],
     "/history.html": ["Retained account processing", "Job History", "Review serverless runs, processing logs, parameters, and downloads retained for the last seven days.", "Authenticated workspace"],
     "/vault.html": ["Account-owned laser parameters", "Swatch Palette Vault", "Manage Material Libraries, Color Palettes, Hatch Palettes, Depth Palettes, and Holographic Palettes.", "Authenticated workspace"],
     "/community-set": ["Anonymous shared settings", "Community Set", "Explore settings voluntarily shared by laser operators using similar machines, lenses, and materials.", "Authenticated workspace"],
-    "/admin.html": ["Private operational visibility", "Administration", "Review seven-day staging job activity, inspect retained logs, manage waiting jobs, and view the Cognito user directory.", "Authorized operator only"],
+    "/admin.html": ["Private operational visibility", "Administration", "Review seven-day job activity, inspect retained logs, manage waiting jobs, and view the Cognito user directory.", "Authorized operator only"],
   };
 
   function markActiveRoute() {
@@ -81,14 +83,14 @@
     const brand = "MOPA-LASER-RASTERIZER";
     header.innerHTML = `<a class="staging-skip" href="#main-content">Skip to content</a>
       <div class="machine-control-bay machine-control-bay--standard">
-        <div class="machine-power-toggle"><a class="${signedIn ? "auth-console authorized" : "login-link"}" href="/"><span class="auth-machine-switch${signedIn ? " is-on" : ""}" aria-hidden="true"></span><span>${signedIn ? "Operator authorized" : "Operator access, sign in"}</span></a><span class="staging-badge">Staging</span></div>
+        <div class="machine-power-toggle"><a class="${signedIn ? "auth-console authorized" : "login-link"}" href="/"><span class="auth-machine-switch${signedIn ? " is-on" : ""}" aria-hidden="true"></span><span>${signedIn ? "Operator authorized" : "Operator access, sign in"}</span></a><span class="staging-badge">${environmentBadge}</span></div>
         <div class="theme-toggle machine-theme-toggle"><label aria-label="Use light or dark theme"><span>Dark</span><input id="theme_switch" type="checkbox"><span class="toggle-track"></span><span>Light</span></label></div>
       </div>
       <div class="machine-brand-header">
-        <h1 class="machine-brand-title"><a class="machine-brand-home" href="/" aria-label="Return to serverless staging home"><span class="machine-brand-letters" aria-hidden="true">${[...brand].map(letter => `<span>${letter}</span>`).join("")}</span></a></h1>
+        <h1 class="machine-brand-title"><a class="machine-brand-home" href="/" aria-label="Return to MOPA Laser Rasterizer home"><span class="machine-brand-letters" aria-hidden="true">${[...brand].map(letter => `<span>${letter}</span>`).join("")}</span></a></h1>
         <div class="machine-status-line">
           <div class="machine-status-lamps" role="status" aria-label="MOPA laser system indicators"><span class="machine-status-lamp machine-lamp-mopa">MOPA</span><span class="machine-status-lamp machine-lamp-laser">Laser</span><span class="machine-status-lamp machine-lamp-power">Power</span></div>
-          <span class="machine-console-subtitle">SERVERLESS TEST CONSOLE · SERIES 79</span>
+          <span class="machine-console-subtitle">SERVERLESS ${isStagingEnvironment ? "TEST" : "PRODUCTION"} CONSOLE · SERIES 79</span>
         </div>
       </div>
       <nav class="machine-nav" aria-label="Primary navigation">${routes.map(route => `<span class="machine-nav-item"><a href="${route.href}" data-shell-route="${route.href}">${route.label}</a></span>`).join("")}</nav>`;

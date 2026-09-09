@@ -1,8 +1,11 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Account and capability-authorized API with a private static frontend for MOPA serverless staging.
+Description: Account and capability-authorized API with a private static frontend for MOPA Rasterizer.
 
 Parameters:
   ArtifactBucketName: {Type: String}
+  StaticBucketName:
+    Type: String
+    Description: Private bucket containing the web bundle and Lambda deployment packages.
   RuntimeTableName: {Type: String}
   QueueUrl: {Type: String}
   QueueArn: {Type: String}
@@ -17,14 +20,29 @@ Parameters:
   StagingHostname:
     Type: String
     Default: ""
+    Description: Primary public hostname. The legacy parameter name is retained for staging-stack compatibility.
+  AlternateHostname:
+    Type: String
+    Default: ""
   CloudFrontCertificateArn:
     Type: String
     Default: ""
+  DeploymentName:
+    Type: String
+    Default: mopa-rasterizer-serverless-staging
+    AllowedPattern: "[a-zA-Z0-9-_]+"
+  ApiFunctionName:
+    Type: String
+    Default: mopa-rasterizer-serverless-staging-api
+    AllowedPattern: "[a-zA-Z0-9-_]+"
 
 Conditions:
   HasCustomDomain: !And
     - !Not [!Equals [!Ref StagingHostname, ""]]
     - !Not [!Equals [!Ref CloudFrontCertificateArn, ""]]
+  HasAlternateHostname: !And
+    - !Condition HasCustomDomain
+    - !Not [!Equals [!Ref AlternateHostname, ""]]
 
 Resources:
   ApiRole:
@@ -73,7 +91,7 @@ Resources:
   ApiFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: mopa-rasterizer-serverless-staging-api
+      FunctionName: !Ref ApiFunctionName
       Runtime: python3.13
       Handler: handler.handler
       Role: !GetAtt ApiRole.Arn
@@ -102,7 +120,7 @@ Resources:
     Type: AWS::CloudFront::OriginAccessControl
     Properties:
       OriginAccessControlConfig:
-        Name: mopa-rasterizer-serverless-staging
+        Name: !Ref DeploymentName
         OriginAccessControlOriginType: s3
         SigningBehavior: always
         SigningProtocol: sigv4
@@ -111,8 +129,8 @@ Resources:
     Type: AWS::CloudFront::ResponseHeadersPolicy
     Properties:
       ResponseHeadersPolicyConfig:
-        Name: mopa-rasterizer-serverless-staging-security
-        Comment: Browser security policy for the serverless staging frontend
+        Name: !Sub ${DeploymentName}-security
+        Comment: !Sub Browser security policy for ${DeploymentName}
         SecurityHeadersConfig:
           ContentTypeOptions:
             Override: true
@@ -141,11 +159,15 @@ Resources:
     Properties:
       DistributionConfig:
         Enabled: true
-        Comment: MOPA Rasterizer serverless staging
+        Comment: !Sub MOPA Rasterizer ${DeploymentName}
         DefaultRootObject: index.html
         HttpVersion: http2and3
         PriceClass: PriceClass_100
-        Aliases: !If [HasCustomDomain, [!Ref StagingHostname], !Ref "AWS::NoValue"]
+        Aliases: !If
+          - HasCustomDomain
+          - - !Ref StagingHostname
+            - !If [HasAlternateHostname, !Ref AlternateHostname, !Ref "AWS::NoValue"]
+          - !Ref "AWS::NoValue"
         ViewerCertificate: !If
           - HasCustomDomain
           - AcmCertificateArn: !Ref CloudFrontCertificateArn
@@ -153,13 +175,13 @@ Resources:
             SslSupportMethod: sni-only
           - CloudFrontDefaultCertificate: true
         Origins:
-          - Id: staging-static
-            DomainName: !Sub ${ArtifactBucketName}.s3.${AWS::Region}.amazonaws.com
+          - Id: serverless-static
+            DomainName: !Sub ${StaticBucketName}.s3.${AWS::Region}.amazonaws.com
             OriginPath: /web
             OriginAccessControlId: !Ref DistributionOac
             S3OriginConfig: {OriginAccessIdentity: ""}
         DefaultCacheBehavior:
-          TargetOriginId: staging-static
+          TargetOriginId: serverless-static
           ViewerProtocolPolicy: redirect-to-https
           Compress: true
           AllowedMethods: [GET, HEAD, OPTIONS]
@@ -170,15 +192,15 @@ Resources:
   StaticBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
-      Bucket: !Ref ArtifactBucketName
+      Bucket: !Ref StaticBucketName
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          - Sid: CloudFrontReadStagingWeb
+          - Sid: CloudFrontReadServerlessWeb
             Effect: Allow
             Principal: {Service: cloudfront.amazonaws.com}
             Action: s3:GetObject
-            Resource: !Sub arn:${AWS::Partition}:s3:::${ArtifactBucketName}/web/*
+            Resource: !Sub arn:${AWS::Partition}:s3:::${StaticBucketName}/web/*
             Condition:
               StringEquals:
                 AWS:SourceArn: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${Distribution}
@@ -186,7 +208,7 @@ Resources:
   StagingAppClient:
     Type: AWS::Cognito::UserPoolClient
     Properties:
-      ClientName: mopa-rasterizer-serverless-staging
+      ClientName: !Ref DeploymentName
       UserPoolId: !Ref CognitoUserPoolId
       GenerateSecret: false
       AllowedOAuthFlowsUserPoolClient: true
@@ -194,20 +216,26 @@ Resources:
       AllowedOAuthScopes: [openid, email]
       SupportedIdentityProviders: [COGNITO]
       CallbackURLs:
-        - !If [HasCustomDomain, !Sub "https://${StagingHostname}/", !Sub "https://${Distribution.DomainName}/"]
+        - !Sub "https://${Distribution.DomainName}/"
+        - !If [HasCustomDomain, !Sub "https://${StagingHostname}/", !Ref "AWS::NoValue"]
+        - !If [HasAlternateHostname, !Sub "https://${AlternateHostname}/", !Ref "AWS::NoValue"]
       LogoutURLs:
-        - !If [HasCustomDomain, !Sub "https://${StagingHostname}/", !Sub "https://${Distribution.DomainName}/"]
+        - !Sub "https://${Distribution.DomainName}/"
+        - !If [HasCustomDomain, !Sub "https://${StagingHostname}/", !Ref "AWS::NoValue"]
+        - !If [HasAlternateHostname, !Sub "https://${AlternateHostname}/", !Ref "AWS::NoValue"]
       PreventUserExistenceErrors: ENABLED
       EnableTokenRevocation: true
 
   HttpApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:
-      Name: mopa-rasterizer-serverless-staging
+      Name: !Ref DeploymentName
       ProtocolType: HTTP
       CorsConfiguration:
         AllowOrigins:
-          - !If [HasCustomDomain, !Sub "https://${StagingHostname}", !Sub "https://${Distribution.DomainName}"]
+          - !Sub "https://${Distribution.DomainName}"
+          - !If [HasCustomDomain, !Sub "https://${StagingHostname}", !Ref "AWS::NoValue"]
+          - !If [HasAlternateHostname, !Sub "https://${AlternateHostname}", !Ref "AWS::NoValue"]
         AllowHeaders: [authorization, content-type, x-guest-capability]
         AllowMethods: [DELETE, GET, OPTIONS, PATCH, POST, PUT]
         MaxAge: 300
@@ -226,7 +254,7 @@ Resources:
     Properties:
       ApiId: !Ref HttpApi
       AuthorizerType: JWT
-      Name: staging-cognito
+      Name: !Sub ${DeploymentName}-cognito
       IdentitySource: [$request.header.Authorization]
       JwtConfiguration:
         Audience: [!Ref StagingAppClient]
