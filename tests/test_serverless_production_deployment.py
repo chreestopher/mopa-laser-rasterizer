@@ -71,6 +71,10 @@ def test_web_stack_supports_preview_and_both_production_hostnames():
     assert "DeploymentName:" in template
     assert "ApiFunctionName:" in template
 
+    production_script = read("dev_setup/deploy_serverless_production_web.sh")
+    assert 'CERTIFICATE_ARN="${SERVERLESS_PRODUCTION_CERTIFICATE_ARN:-}"' in production_script
+    assert 'export SERVERLESS_PRIMARY_HOSTNAME=""' in production_script
+
 
 def test_production_path_contains_no_dns_mutation():
     combined = "\n".join(
