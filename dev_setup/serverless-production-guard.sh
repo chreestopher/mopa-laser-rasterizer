@@ -2,7 +2,7 @@
 # Shared fail-closed checks for production serverless deployment entry points.
 
 serverless_production_guard() {
-  local repo_root expected_commit actual_commit dirty
+  local repo_root expected_commit actual_commit dirty untracked
   repo_root="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 
   [ -n "${SERVERLESS_PRODUCTION_RELEASE_COMMIT:-}" ] || {
@@ -16,7 +16,13 @@ serverless_production_guard() {
     return 2
   fi
   dirty="$(git -C "$repo_root" status --porcelain --untracked-files=all)"
-  if [ -n "$dirty" ]; then
+  untracked="$(git -C "$repo_root" ls-files --others --exclude-standard)"
+  # A Windows checkout inspected by WSL can report every CRLF file as changed.
+  # Keep the guard fail-closed for staged, untracked, and semantic changes while
+  # allowing line-ending-only noise that `--ignore-space-at-eol` proves harmless.
+  if [ -n "$untracked" ] || \
+     ! git -C "$repo_root" diff --cached --quiet || \
+     ! git -C "$repo_root" diff --ignore-space-at-eol --quiet; then
     echo "Refusing production deployment from a dirty worktree." >&2
     echo "$dirty" >&2
     return 2
