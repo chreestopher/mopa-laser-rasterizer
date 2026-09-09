@@ -104,6 +104,14 @@ def _glyph_mark(shape, x, y, half_size, rotation_degrees=0):
         ))
     elif shape == "bar":
         mark = box(x - half_size, y - half_size * 0.32, x + half_size, y + half_size * 0.32)
+    elif shape in {
+        "skull", "heart", "space_invader", "ghost", "bat", "alien_head",
+        "paw_print", "fish_scale", "puzzle_piece",
+    }:
+        # Import lazily so the shared glyph renderer can reuse the exact
+        # Krasnow silhouettes without introducing an import cycle.
+        from . import krasnow_grating
+        mark = krasnow_grating.solid_glyph_shape(shape, x, y, half_size * 2)
     else:
         return center.buffer(half_size, quad_segs=8)
     if rotation_degrees:
@@ -182,9 +190,49 @@ def _owner(point, prepared_layers):
     return None
 
 
+def _exclusive_layers(layer_geometries, ordered_colors, canvas):
+    """Clip layers to the canvas and give every point one deterministic owner."""
+    claimed = None
+    exclusive = {}
+    for color_hex in ordered_colors:
+        geometry = layer_geometries.get(color_hex)
+        if geometry is None or geometry.is_empty:
+            continue
+        geometry = geometry.intersection(canvas)
+        if claimed is not None and not claimed.is_empty:
+            geometry = geometry.difference(claimed)
+        if geometry.is_empty:
+            continue
+        exclusive[color_hex] = geometry
+        claimed = geometry if claimed is None else unary_union((claimed, geometry))
+    return exclusive
+
+
+def _assert_exclusive_layers(layer_geometries, tolerance=1e-9):
+    """Refuse to export glyph geometry engraved by more than one setting."""
+    nonempty = [
+        (color_hex, geometry)
+        for color_hex, geometry in layer_geometries.items()
+        if geometry is not None and not geometry.is_empty
+    ]
+    for index, (left_color, left_geometry) in enumerate(nonempty):
+        for right_color, right_geometry in nonempty[index + 1:]:
+            if not left_geometry.intersects(right_geometry):
+                continue
+            overlap_area = left_geometry.intersection(right_geometry).area
+            if overlap_area > tolerance:
+                raise ValueError(
+                    "Glyph geometry overlap validation failed: "
+                    f"{left_color} and {right_color} overlap by {overlap_area:.12g}."
+                )
+
+
 def remap_layers(processed_layers, target_colors, settings):
     """Replace source regions with non-overlapping, color-owned halftone dots."""
     black_only = number(settings.get("black_only"), 0, 0, 1) >= 0.5
+    invert_fill = number(settings.get("invert_fill"), 0, 0, 1) >= 0.5
+    if black_only and invert_fill:
+        raise ValueError("Invert Fill cannot be combined with Black Only.")
     black_hex = "#000000"
     if black_only and black_hex not in target_colors:
         raise ValueError(
@@ -207,6 +255,15 @@ def remap_layers(processed_layers, target_colors, settings):
     cell_size_mm = number(settings.get("cell_size_mm"), 0.6, 0.2, 5.0)
     cell_size = cell_size_mm / scale_factor
     angle = number(settings.get("grid_angle"), -45.0, -90, 45)
+    square_dots = number(settings.get("square_dots"), 0, 0, 1) >= 0.5
+    glyph_shape = str(settings.get("_glyph_shape") or ("square" if square_dots else "circle"))
+    staggered_row_step = None
+    if glyph_shape in {
+        "skull", "heart", "space_invader", "ghost", "bat", "alien_head",
+        "paw_print", "fish_scale",
+    }:
+        from . import krasnow_grating
+        staggered_row_step = krasnow_grating.solid_glyph_row_step(glyph_shape)
     radians = math.radians(angle)
     center_x = (min_x + max_x) / 2
     center_y = (min_y + max_y) / 2
@@ -219,8 +276,13 @@ def remap_layers(processed_layers, target_colors, settings):
     local_max_x = max(point[0] for point in local_corners)
     local_min_y = min(point[1] for point in local_corners)
     local_max_y = max(point[1] for point in local_corners)
-    column_count = max(1, math.ceil((local_max_x - local_min_x) / cell_size))
-    row_count = max(1, math.ceil((local_max_y - local_min_y) / cell_size))
+    row_step = cell_size * staggered_row_step if staggered_row_step else cell_size
+    if staggered_row_step:
+        column_count = max(1, math.ceil((local_max_x - local_min_x) / cell_size) + 2)
+        row_count = max(1, math.ceil((local_max_y - local_min_y) / row_step) + 2)
+    else:
+        column_count = max(1, math.ceil((local_max_x - local_min_x) / cell_size))
+        row_count = max(1, math.ceil((local_max_y - local_min_y) / cell_size))
     total_cells = column_count * row_count
     if total_cells > MAXIMUM_CELLS:
         raise ValueError(
@@ -235,10 +297,14 @@ def remap_layers(processed_layers, target_colors, settings):
     ordered_colors.extend(
         color_hex for color_hex in processed_layers if color_hex not in ordered_colors
     )
+    canvas = box(min_x, min_y, max_x, max_y)
+    exclusive_source_layers = _exclusive_layers(
+        processed_layers, ordered_colors, canvas
+    )
     prepared_layers = [
-        (color_hex, prep(processed_layers[color_hex]))
+        (color_hex, prep(exclusive_source_layers[color_hex]))
         for color_hex in ordered_colors
-        if not processed_layers[color_hex].is_empty
+        if color_hex in exclusive_source_layers
     ]
     if not prepared_layers:
         return {}
@@ -251,10 +317,7 @@ def remap_layers(processed_layers, target_colors, settings):
             f"{column_count} x {row_count} shared-cell matrix ({total_cells:,} cells)."
         )
 
-    canvas = box(min_x, min_y, max_x, max_y)
     tone_image = settings.get("_angle_image")
-    square_dots = number(settings.get("square_dots"), 0, 0, 1) >= 0.5
-    glyph_shape = str(settings.get("_glyph_shape") or ("square" if square_dots else "circle"))
     glyph_rotation = number(settings.get("_glyph_rotation"), 0, -180, 180)
     glyph_seed = int(number(settings.get("_glyph_seed"), 1, 0, 999999))
     mixed_shapes = ("circle", "square", "diamond", "triangle", "hexagon", "octagon", "star", "cross", "bar")
@@ -267,9 +330,17 @@ def remap_layers(processed_layers, target_colors, settings):
     last_reported_row = 0
 
     for row_index in range(row_count):
-        local_y = local_min_y + (row_index + 0.5) * cell_size
+        if staggered_row_step:
+            local_y = local_min_y - cell_size / 2 + row_index * row_step
+            row_x_offset = (row_index & 1) * cell_size / 2
+        else:
+            local_y = local_min_y + (row_index + 0.5) * cell_size
+            row_x_offset = 0
         for column_index in range(column_count):
-            local_x = local_min_x + (column_index + 0.5) * cell_size
+            if staggered_row_step:
+                local_x = local_min_x - cell_size / 2 + column_index * cell_size + row_x_offset
+            else:
+                local_x = local_min_x + (column_index + 0.5) * cell_size
             x, y = _rotate_point(
                 local_x, local_y, center_x, center_y, radians
             )
@@ -311,15 +382,35 @@ def remap_layers(processed_layers, target_colors, settings):
             )
             last_reported_row = completed_rows
 
-    output = {
+    mark_layers = {
         color_hex: unary_union(color_pieces)
         for color_hex, color_pieces in pieces.items()
         if color_pieces
     }
+    if invert_fill:
+        output = {}
+        for color_hex, source_geometry in exclusive_source_layers.items():
+            cutouts = mark_layers.get(color_hex)
+            carved = (
+                source_geometry.difference(cutouts)
+                if cutouts is not None and not cutouts.is_empty
+                else source_geometry
+            )
+            if not carved.is_empty:
+                output[color_hex] = carved
+    else:
+        output_order = [
+            color_hex for color_hex in ordered_colors if color_hex in mark_layers
+        ]
+        if black_only:
+            output_order = [black_hex]
+        output = _exclusive_layers(mark_layers, output_order, canvas)
+    _assert_exclusive_layers(output)
     if callable(logger):
         logger(
             f"{progress_name}: matrix complete with "
-            f"{sum(len(items) for items in pieces.values()):,} marks across "
+            f"{sum(len(items) for items in pieces.values()):,} "
+            f"{'cutouts' if invert_fill else 'marks'} across "
             f"{len(output)} swatch layers."
         )
     return output

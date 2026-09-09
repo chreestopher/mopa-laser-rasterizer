@@ -26,6 +26,7 @@ from abstract_filters import (
     settings as registered_filter_settings,
 )
 from abstract_filters.common import number as _number
+import geometry_styles
 
 
 SOURCE_BLACK_PROGRESS_BATCHES = 6
@@ -120,6 +121,8 @@ def build_rasterizer_project_note(
     color_matching,
     job_settings,
     target_colors,
+    geometry_style="vectors",
+    geometry_style_parameters=None,
 ):
     """Build the human-readable Notes text embedded in every Rasterizer project."""
     job_settings = dict(job_settings or {})
@@ -127,6 +130,11 @@ def build_rasterizer_project_note(
     public_filter_parameters = {
         key: value
         for key, value in dict(abstract_filter_parameters or {}).items()
+        if not str(key).startswith("_")
+    }
+    public_geometry_parameters = {
+        key: value
+        for key, value in dict(geometry_style_parameters or {}).items()
         if not str(key).startswith("_")
     }
     job_type = "Holographic" if image_preset == "holographic_artwork" else "Rasterizer"
@@ -160,6 +168,14 @@ def build_rasterizer_project_note(
         lines.extend(
             f"- {_project_note_label(key)}: {_project_note_value(value)}"
             for key, value in sorted(public_filter_parameters.items())
+        )
+    else:
+        lines.append("- None")
+    lines.extend(["", f"Geometry style: {_project_note_label(geometry_style)}", "Geometry style parameters:"])
+    if public_geometry_parameters:
+        lines.extend(
+            f"- {_project_note_label(key)}: {_project_note_value(value)}"
+            for key, value in sorted(public_geometry_parameters.items())
         )
     else:
         lines.append("- None")
@@ -285,6 +301,15 @@ def load_resized_source_black_cutoff_mask(raster_image_path, output_size):
     return np.asarray(resized_mask, dtype=np.uint8) == 255
 
 
+def load_resized_artwork_alpha_mask(raster_image_path, output_size):
+    """Return all non-fully-transparent source pixels at processing size."""
+    with Image.open(raster_image_path) as source:
+        alpha = np.asarray(source.convert("RGBA").getchannel("A"), dtype=np.uint8)
+    mask_image = Image.fromarray((alpha > 0).astype(np.uint8) * 255)
+    resized_mask = mask_image.resize(output_size, Image.Resampling.NEAREST)
+    return np.asarray(resized_mask, dtype=np.uint8) == 255
+
+
 def restore_reserved_black(quantized_img, source_black_mask):
     """Restore reserved source darkness after non-Black quantization."""
     output = np.asarray(quantized_img.convert("RGB"), dtype=np.uint8).copy()
@@ -337,42 +362,47 @@ def _mask_to_merged_geometry(mask):
     return unary_union(rectangles) if rectangles else GeometryCollection()
 
 
+def artwork_crop_geometry(width, height, crop_shape):
+    """Return the exact output boundary for a browser-applied artwork crop."""
+    crop_shape = str(crop_shape or "").strip().lower()
+    if crop_shape not in {"", "rectangle", "square", "oval", "circle", "transparency"}:
+        raise ValueError("Choose a valid artwork crop shape")
+    if crop_shape not in {"oval", "circle"}:
+        return box(0, 0, width, height)
+    if crop_shape == "circle":
+        diameter = min(width, height)
+        center_x, center_y = width / 2, height / 2
+        return Point(center_x, center_y).buffer(diameter / 2, quad_segs=128)
+    unit_circle = Point(width / 2, height / 2).buffer(1, quad_segs=128)
+    return scale(unit_circle, xfact=width / 2, yfact=height / 2, origin=(width / 2, height / 2))
+
+
 def replace_krasnow_black_layer(
     processed_layers,
     black_hex,
     source_img,
-    grating_wins=False,
     reserved_black_mask=None,
 ):
-    """Replace Krasnow Black without mutating any grating carrier geometry.
-
-    The legacy path retains the adaptive two-color Black mask exactly.  The
-    experimental grating-wins path uses the strict mask that was reserved
-    before quantization, so a pixel can never produce both a grating and
-    Black geometry.
-    """
+    """Restore reserved source Black and give it exclusive output ownership."""
     output = dict(processed_layers)
-    if grating_wins:
-        black_mask = np.asarray(reserved_black_mask, dtype=bool)
-        expected_shape = (source_img.height, source_img.width)
-        if black_mask.shape != expected_shape:
-            raise ValueError(
-                "Krasnow reserved Black mask does not match the prepared artwork dimensions."
-            )
-    else:
-        black_mask = holographic_lab_black_mask(source_img)
-    output[black_hex] = _mask_to_merged_geometry(
-        black_mask
-    )
+    black_mask = np.asarray(reserved_black_mask, dtype=bool)
+    expected_shape = (source_img.height, source_img.width)
+    if black_mask.shape != expected_shape:
+        raise ValueError(
+            "Krasnow reserved Black mask does not match the prepared artwork dimensions."
+        )
+    black_geometry = _mask_to_merged_geometry(black_mask)
+    for color_hex, geometry in list(output.items()):
+        if color_hex == black_hex or geometry.is_empty:
+            continue
+        # Geometry styles run after an abstract transform, so their open
+        # grating paths can cross back into source pixels reserved for Black.
+        # Layer ordering is not ownership: remove those path segments so a
+        # coordinate can never be engraved once by Black and again by a
+        # colored carrier.
+        output[color_hex] = geometry.difference(black_geometry)
+    output[black_hex] = black_geometry
     return output
-
-
-def krasnow_grating_wins_enabled(filter_parameters=None):
-    """Resolve per-job Favor Black, falling back for older job payloads."""
-    parameters = filter_parameters if isinstance(filter_parameters, dict) else {}
-    if "favor_black" in parameters:
-        return not str_to_bool(str(parameters["favor_black"]))
-    return str_to_bool(os.environ.get("RASTER_KRASNOW_GRATING_WINS", "false"))
 
 
 def nearest_available_swatch(r, g, b, target_colors, prefer_non_black=True):
@@ -1205,7 +1235,8 @@ def classify_raster_pixels(
     include_black=False,
     transparent=False,
     transparent_rgb_values=None,
-    light_threshold=225
+    light_threshold=225,
+    include_mask=None,
 ):
     """
     Convert raster pixels into 1x1 Shapely boxes grouped by color.
@@ -1215,6 +1246,12 @@ def classify_raster_pixels(
     """
 
     width, height = img.size
+    if include_mask is not None:
+        include_mask = np.asarray(include_mask, dtype=bool)
+        if include_mask.shape != (height, width):
+            raise ValueError(
+                "Artwork transparency mask does not match the prepared image dimensions."
+            )
 
     pixel_boxes_by_color = defaultdict(list)
 
@@ -1225,6 +1262,9 @@ def classify_raster_pixels(
     for y in range(height):
 
         for x in range(width):
+
+            if include_mask is not None and not include_mask[y, x]:
+                continue
 
             pixel_rgb = img.getpixel(
                 (x, y)
@@ -1325,10 +1365,13 @@ def reassign_small_raster_islands(
             box_by_cell[(x, y)] = item
 
     visited = set()
-    assignments = {}
     stats = dict(empty_stats)
     directions = ((-1, 0), (1, 0), (0, -1), (0, 1))
 
+    component_by_cell = {}
+    component_colors = []
+    component_areas = []
+    component_pixels = []
     for start_cell, source_color in owner_by_cell.items():
         if start_cell in visited:
             continue
@@ -1348,16 +1391,99 @@ def reassign_small_raster_islands(
                     visited.add(neighbor)
                     stack.append(neighbor)
 
-        component_area = sum(box_by_cell[cell].area for cell in component)
-        if component_area >= min_island_area:
+        for cell in component:
+            component_by_cell[cell] = len(component_colors)
+        component_colors.append(source_color)
+        component_areas.append(sum(box_by_cell[cell].area for cell in component))
+        component_pixels.append(len(component))
+
+    original_component_colors = tuple(component_colors)
+    original_component_pixels = tuple(component_pixels)
+    parents = list(range(len(component_colors)))
+    component_neighbors = [defaultdict(int) for _ in component_colors]
+
+    # Count shared sides between the original components once. The component
+    # graph is contracted below as small regions change ownership, avoiding
+    # repeated full-image connected-component scans.
+    for (x, y), component_id in component_by_cell.items():
+        for neighbor_cell in ((x + 1, y), (x, y + 1)):
+            neighbor_id = component_by_cell.get(neighbor_cell)
+            if neighbor_id is None or neighbor_id == component_id:
+                continue
+            component_neighbors[component_id][neighbor_id] += 1
+            component_neighbors[neighbor_id][component_id] += 1
+
+    def find(component_id):
+        while parents[component_id] != component_id:
+            parents[component_id] = parents[parents[component_id]]
+            component_id = parents[component_id]
+        return component_id
+
+    def normalized_neighbors(component_id):
+        component_id = find(component_id)
+        neighbors = defaultdict(int)
+        for neighbor_id, shared_side_count in component_neighbors[component_id].items():
+            neighbor_root = find(neighbor_id)
+            if neighbor_root != component_id:
+                neighbors[neighbor_root] += shared_side_count
+        component_neighbors[component_id] = neighbors
+        return neighbors
+
+    def contract(component_ids, target_color):
+        roots = sorted({find(component_id) for component_id in component_ids})
+        survivor = roots[0]
+        root_set = set(roots)
+        external_neighbors = defaultdict(int)
+        for component_id in roots:
+            for neighbor_id, shared_side_count in component_neighbors[component_id].items():
+                neighbor_root = find(neighbor_id)
+                if neighbor_root not in root_set:
+                    external_neighbors[neighbor_root] += shared_side_count
+        for component_id in roots[1:]:
+            parents[component_id] = survivor
+        component_colors[survivor] = target_color
+        component_areas[survivor] = sum(component_areas[item] for item in roots)
+        component_pixels[survivor] = sum(component_pixels[item] for item in roots)
+        component_neighbors[survivor] = external_neighbors
+        return survivor
+
+    # Process the component graph deterministically. Every neighboring-color
+    # transfer immediately contracts the source with all touching components
+    # of the chosen target color. A later transfer therefore moves the whole
+    # merged region instead of leaving behind pixels from an earlier transfer.
+    # Each such operation removes at least one graph component, so adjacent
+    # small components cannot swap colors forever or create new tiny islands.
+    pending = list(range(len(component_colors)))
+    pending_index = 0
+    while pending_index < len(pending):
+        component_id = find(pending[pending_index])
+        pending_index += 1
+
+        neighbors = normalized_neighbors(component_id)
+        same_color_neighbors = [
+            neighbor_id for neighbor_id in neighbors
+            if component_colors[neighbor_id] == component_colors[component_id]
+        ]
+        while same_color_neighbors:
+            component_id = contract(
+                [component_id, *same_color_neighbors],
+                component_colors[component_id],
+            )
+            neighbors = normalized_neighbors(component_id)
+            same_color_neighbors = [
+                neighbor_id for neighbor_id in neighbors
+                if component_colors[neighbor_id] == component_colors[component_id]
+            ]
+
+        if component_areas[component_id] >= min_island_area:
             continue
 
+        source_color = component_colors[component_id]
         shared_sides = defaultdict(int)
-        for x, y in component:
-            for dx, dy in directions:
-                neighbor_color = owner_by_cell.get((x + dx, y + dy))
-                if neighbor_color is not None and neighbor_color != source_color:
-                    shared_sides[neighbor_color] += 1
+        for neighbor_id, shared_side_count in neighbors.items():
+            neighbor_color = component_colors[neighbor_id]
+            if neighbor_color != source_color:
+                shared_sides[neighbor_color] += shared_side_count
 
         if shared_sides:
             target_color = min(
@@ -1368,28 +1494,40 @@ def reassign_small_raster_islands(
                     color,
                 ),
             )
+            target_neighbors = [
+                neighbor_id for neighbor_id in neighbors
+                if component_colors[neighbor_id] == target_color
+            ]
+            component_id = contract(
+                [component_id, *target_neighbors],
+                target_color,
+            )
             stats["neighbor_components"] += 1
+            if component_areas[component_id] < min_island_area:
+                pending.append(component_id)
         elif fallback_to_black and source_color != black_hex:
-            target_color = black_hex
+            component_colors[component_id] = black_hex
             stats["black_fallback_components"] += 1
-        elif fallback_to_black:
-            target_color = source_color
-        else:
-            target_color = None
+        elif not fallback_to_black:
+            component_colors[component_id] = None
             stats["discarded_components"] += 1
 
-        if target_color == source_color:
-            continue
-        stats["components"] += 1
-        stats["pixels"] += len(component)
-        for cell in component:
-            assignments[cell] = target_color
+    changed_components = []
+    for component_id, original_color in enumerate(original_component_colors):
+        final_color = component_colors[find(component_id)]
+        if final_color != original_color:
+            changed_components.append(component_id)
+    stats["components"] = len(changed_components)
+    stats["pixels"] = sum(
+        original_component_pixels[component_id]
+        for component_id in changed_components
+    )
 
     reassigned = defaultdict(list)
     for color_hex in ordered_colors:
         reassigned[color_hex].extend(passthrough.get(color_hex, ()))
     for cell, source_color in owner_by_cell.items():
-        target_color = assignments.get(cell, source_color)
+        target_color = component_colors[find(component_by_cell[cell])]
         if target_color is not None:
             reassigned[target_color].append(box_by_cell[cell])
 
@@ -2235,13 +2373,16 @@ def create_svg_root(
     width,
     height,
     new_width,
-    new_height
+    new_height,
+    scale_factor=1.0,
 ):
     """
     Create the root SVG element.
 
-    The SVG namespace and dimensions intentionally match the
-    original function.
+    ``width`` and ``height`` are the processed raster dimensions. Exported
+    paths are scaled into millimetres, so the SVG viewport and physical size
+    must use those same scaled dimensions rather than the optional raw form
+    inputs (one of which is commonly blank or zero).
     """
 
     root = ET.Element(
@@ -2250,19 +2391,21 @@ def create_svg_root(
         version="1.1"
     )
 
-    root.set(
-        "viewBox",
-        f"0 0 {new_width} {new_height}"
-    )
+    physical_width = float(width) * float(scale_factor)
+    physical_height = float(height) * float(scale_factor)
+    width_value = format(physical_width, ".12g")
+    height_value = format(physical_height, ".12g")
+
+    root.set("viewBox", f"0 0 {width_value} {height_value}")
 
     root.set(
         "width",
-        f"{str(width)}mm"
+        f"{width_value}mm"
     )
 
     root.set(
         "height",
-        f"{str(height)}mm"
+        f"{height_value}mm"
     )
 
     return root
@@ -2706,6 +2849,9 @@ def raster_to_puzzle_and_lightburn(
     color_matching=None,
     job_settings=None,
     export_lightburn=True,
+    geometry_style="vectors",
+    geometry_style_parameters=None,
+    crop_shape="",
 ):
     """
     Parses a raster image, applies a structural vector scale_factor,
@@ -2803,11 +2949,45 @@ def raster_to_puzzle_and_lightburn(
     filter_name, normalized_filter_parameters = normalize_abstract_settings(
         abstract_filter, filter_parameters
     )
-    krasnow_mode = filter_name == "krasnow_grating"
-    if krasnow_mode:
+    geometry_style, normalized_geometry_parameters = geometry_styles.normalize(
+        geometry_style, geometry_style_parameters, filter_name
+    )
+    routed_styles = geometry_styles.assigned_styles(
+        geometry_style, normalized_geometry_parameters
+    )
+    mixed_krasnow = (
+        geometry_style == geometry_styles.ROUTED_STYLE
+        and geometry_styles.KRASNOW_STYLE in routed_styles
+    )
+    krasnow_mode = (
+        filter_name == "krasnow_grating"
+        or geometry_style == geometry_styles.KRASNOW_STYLE
+        or mixed_krasnow
+    )
+    krasnow_parameters = (
+        geometry_styles.parameters_for_style(
+            geometry_style,
+            normalized_geometry_parameters,
+            geometry_styles.KRASNOW_STYLE,
+        )
+        if geometry_style in {
+            geometry_styles.KRASNOW_STYLE, geometry_styles.ROUTED_STYLE
+        }
+        else filter_parameters
+    )
+    krasnow_preserve_black = krasnow_mode and (mixed_krasnow or bool(_number(
+        krasnow_parameters.get("preserve_black", 1), 1, 0, 1
+    )))
+    krasnow_grate_black = krasnow_mode and not krasnow_preserve_black
+    if krasnow_preserve_black:
         printLogMessage(
             "Krasnow Color Grating: reserving below-Teal source darkness for "
-            "the later adaptive Black mask; Black will not become a grating carrier."
+            "the later Black mask; Black will not become a grating carrier."
+        )
+    elif krasnow_grate_black:
+        printLogMessage(
+            "Krasnow Color Grating: Preserve Black is off; Black will be "
+            "quantized, grated, and assigned the Holographic carrier recipe."
         )
     img = prepare_raster_image(
         raster_image_path=raster_image_path,
@@ -2821,20 +3001,38 @@ def raster_to_puzzle_and_lightburn(
             color_hex: metadata for color_hex, metadata in TARGET_COLORS.items()
             if (
                 color_hex.upper() not in NON_IMAGE_SWATCHES
-                and (not krasnow_mode or color_hex != black_hex)
+                and (not krasnow_preserve_black or color_hex != black_hex)
             )
         }),
-        prevent_palette_black=krasnow_mode,
+        prevent_palette_black=krasnow_preserve_black,
         color_matching=color_matching,
     )
 
-    if krasnow_mode:
+    if krasnow_preserve_black:
         source_black_mask = load_resized_source_black_cutoff_mask(
             raster_image_path, img.size
         )
         img = restore_reserved_black(img, source_black_mask)
 
     width, height = img.size
+    crop_shape = str(crop_shape or "").strip().lower()
+    transparency_mask = None
+    if crop_shape == "transparency":
+        transparency_mask = load_resized_artwork_alpha_mask(
+            raster_image_path, img.size
+        )
+        if not transparency_mask.any():
+            raise ValueError(
+                "Crop Transparency requires at least one non-transparent pixel."
+            )
+        crop_boundary = _mask_to_merged_geometry(transparency_mask)
+    else:
+        crop_boundary = artwork_crop_geometry(width, height, crop_shape)
+    if crop_shape:
+        printLogMessage(
+            f"Artwork crop active: preserving the applied {crop_shape} boundary "
+            "through SVG and LightBurn export."
+        )
     printLogMessage(
         f"[Raster preparation 1/1] DONE: prepared {width * height}/{width * height} "
         f"pixels at {width}x{height}."
@@ -2856,15 +3054,22 @@ def raster_to_puzzle_and_lightburn(
         printLogMessage(
             f"{filter_name}: prepared the original source colors for optical mixing."
         )
-    elif bool(getattr(filter_module, "USES_SOURCE_LUMINANCE", False)):
-        filter_parameters["_angle_image"] = prepare_raster_image(
+    if (
+        bool(getattr(filter_module, "USES_SOURCE_LUMINANCE", False))
+        or geometry_styles.uses_source_luminance(
+            geometry_style, normalized_geometry_parameters
+        )
+    ):
+        source_luminance = prepare_raster_image(
             raster_image_path=raster_image_path,
             new_height=new_height,
             new_width=new_width,
             quantize_colors=None,
         ).convert("L")
+        filter_parameters["_angle_image"] = source_luminance
+        normalized_geometry_parameters["_angle_image"] = source_luminance
         printLogMessage(
-            "Krasnow Color Grating: prepared source luminance for per-patch line angles."
+            f"Prepared source luminance for {filter_name if bool(getattr(filter_module, 'USES_SOURCE_LUMINANCE', False)) else geometry_style}."
         )
     transparent_mode = (
         (image_preset == "bw_dither_photograph"
@@ -2878,6 +3083,12 @@ def raster_to_puzzle_and_lightburn(
     )
     filter_preserves_source_black = bool(
         getattr(filter_module, "PRESERVE_SOURCE_BLACK", False)
+    ) and not krasnow_grate_black
+    filter_preserves_source_black = (
+        filter_preserves_source_black
+        or geometry_styles.preserves_source_black(
+            geometry_style, normalized_geometry_parameters
+        )
     )
     preserve_source_black = transparent_mode or filter_preserves_source_black
     source_black_requested = str_to_bool(
@@ -2940,6 +3151,8 @@ def raster_to_puzzle_and_lightburn(
         black_hex=black_hex,
         ignore_background_hex=ignore_background_hex,
         include_black=(
+            krasnow_grate_black
+            or
             (preserve_source_black and not krasnow_mode)
             or source_black_mode
             or (
@@ -2950,6 +3163,7 @@ def raster_to_puzzle_and_lightburn(
         ),
         transparent=transparent_mode,
         transparent_rgb_values=transparent_rgb_values,
+        include_mask=transparency_mask,
         light_threshold=_number(
             filter_parameters.get(
                 "light_threshold",
@@ -2991,7 +3205,11 @@ def raster_to_puzzle_and_lightburn(
         # The ordinary and source-derived Black builders consume Black
         # separately. It was included above only so it could participate in
         # the exact shared-side ownership decision.
-        if not preserve_source_black and not source_black_mode:
+        if (
+            not preserve_source_black
+            and not source_black_mode
+            and not krasnow_grate_black
+        ):
             pixel_boxes_by_color.pop(black_hex, None)
 
     # =========================================================================
@@ -3034,8 +3252,21 @@ def raster_to_puzzle_and_lightburn(
     else:
         processed_layers = processed_result
 
-    if krasnow_mode:
-        krasnow_grating_wins = krasnow_grating_wins_enabled(filter_parameters)
+    if geometry_style != geometry_styles.NORMAL_STYLE:
+        normalized_geometry_parameters.update({
+            "_canvas_bounds": (0, 0, width, height),
+            "_scale_factor": scale_factor,
+            "_progress_logger": printLogMessage,
+        })
+        processed_layers = geometry_styles.apply(
+            processed_layers,
+            TARGET_COLORS,
+            geometry_style,
+            normalized_geometry_parameters,
+            filter_name,
+        )
+
+    if krasnow_preserve_black:
         source_img = prepare_raster_image(
             raster_image_path=raster_image_path,
             new_height=new_height,
@@ -3046,19 +3277,12 @@ def raster_to_puzzle_and_lightburn(
             processed_layers,
             black_hex,
             source_img,
-            grating_wins=krasnow_grating_wins,
             reserved_black_mask=source_black_mask,
         )
-        if krasnow_grating_wins:
-            printLogMessage(
-                "Krasnow Color Grating: grating-wins Black ownership is active; "
-                "only pixels reserved before quantization remain Black."
-            )
-        else:
-            printLogMessage(
-                "Krasnow Color Grating: emitted the legacy adaptive source-derived "
-                "Black mask after building non-Black grating carriers."
-            )
+        printLogMessage(
+            "Krasnow Color Grating: preserved only the source pixels reserved "
+            "before quantization as normal Black geometry."
+        )
 
     # =========================================================================
     # 6. Build the BLACK layer around the colored geometry
@@ -3087,7 +3311,11 @@ def raster_to_puzzle_and_lightburn(
                 f"this job to the established punched-canvas pipeline: {error}"
             )
 
-    if not preserve_source_black and not source_black_active:
+    if (
+        not preserve_source_black
+        and not source_black_active
+        and not krasnow_grate_black
+    ):
         black_lightburn_geometry = build_black_canvas(
             width=width,
             height=height,
@@ -3108,9 +3336,31 @@ def raster_to_puzzle_and_lightburn(
             "Transparent mode: light source areas remain transparent; no black canvas added."
         )
     elif filter_preserves_source_black:
+        preservation_name = (
+            geometry_styles.style_label(geometry_style)
+            if geometry_styles.preserves_source_black(
+                geometry_style, normalized_geometry_parameters
+            ) else filter_name
+        )
         printLogMessage(
-            f"{filter_name}: preserving source-derived Black geometry; "
+            f"{preservation_name}: preserving source-derived Black geometry; "
             "no synthetic Black canvas or punch-through added."
+        )
+    elif krasnow_grate_black:
+        printLogMessage(
+            "Krasnow Color Grating: Black is a normal Holographic grating "
+            "carrier; no Black canvas or punch-through added."
+        )
+
+    if crop_shape:
+        processed_layers = {
+            color_hex: geometry.intersection(crop_boundary)
+            for color_hex, geometry in processed_layers.items()
+        }
+        if black_lightburn_geometry is not None:
+            black_lightburn_geometry = black_lightburn_geometry.intersection(crop_boundary)
+        printLogMessage(
+            f"Artwork crop: clipped every output layer to the {crop_shape} boundary."
         )
 
     # =========================================================================
@@ -3121,7 +3371,8 @@ def raster_to_puzzle_and_lightburn(
         width=width,
         height=height,
         new_width=new_width,
-        new_height=new_height
+        new_height=new_height,
+        scale_factor=scale_factor,
     )
 
     # =========================================================================
@@ -3135,7 +3386,11 @@ def raster_to_puzzle_and_lightburn(
         scale_factor=scale_factor,
         root=root,
         lb_project_instance=lb_project_instance,
-        punch_through_black=(not preserve_source_black and not source_black_active),
+        punch_through_black=(
+            not preserve_source_black
+            and not source_black_active
+            and not krasnow_grate_black
+        ),
         black_lightburn_geometry=black_lightburn_geometry,
         export_lightburn=export_lightburn,
     )
@@ -3158,6 +3413,8 @@ def raster_to_puzzle_and_lightburn(
         color_matching=color_matching,
         job_settings=job_settings,
         target_colors=TARGET_COLORS,
+        geometry_style=geometry_style,
+        geometry_style_parameters=normalized_geometry_parameters,
     )
 
     save_vector_output(

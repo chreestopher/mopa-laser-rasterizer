@@ -141,6 +141,10 @@ aws s3 cp "$BUILD_DIR/docs/index.html" "s3://$BUCKET/web/docs" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
 aws s3 cp "$BUILD_DIR/docs/" "s3://$BUCKET/web/docs/" --recursive --exclude index.html \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
+# Explicitly remove retired documentation routes. Recursive copy does not delete
+# objects that are no longer present in the generated documentation catalog.
+aws s3 rm "s3://$BUCKET/web/docs/glyph-mosaic-filter" \
+  --region "$REGION" --only-show-errors
 aws s3 cp "$REPO_ROOT/static/docs/" "s3://$BUCKET/web/static/docs/" --recursive \
   --region "$REGION" --cache-control no-cache --only-show-errors
 aws s3 cp "$BUILD_DIR/config.json" "s3://$BUCKET/web/config.json" \

@@ -61,11 +61,6 @@ Parameters:
     Default: "true"
     AllowedValues: ["true", "false"]
     Description: Emit intermediate Krasnow mapping progress logs.
-  KrasnowGratingWins:
-    Type: String
-    Default: "false"
-    AllowedValues: ["true", "false"]
-    Description: Restrict Krasnow Black to pixels reserved before grating generation.
   SourceBlackComponents:
     Type: String
     Default: "false"
@@ -201,7 +196,6 @@ Resources:
             - {Name: JOB_BACKEND, Value: !If [HasRedis, redis, aws]}
             - {Name: RASTER_WORKER_PROCESSES, Value: !Sub "${WorkerProcesses}"}
             - {Name: RASTER_KRASNOW_PROGRESS, Value: !Ref KrasnowProgress}
-            - {Name: RASTER_KRASNOW_GRATING_WINS, Value: !Ref KrasnowGratingWins}
             - {Name: RASTER_SOURCE_BLACK_COMPONENTS, Value: !Ref SourceBlackComponents}
             - {Name: UPLOAD_FOLDER, Value: /tmp/uploads}
             - {Name: RASTER_JOB_LEASE_SECONDS, Value: "90"}

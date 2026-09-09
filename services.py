@@ -5,6 +5,7 @@ import base64
 import glob
 import hashlib
 import hmac
+import math
 import multiprocessing
 import os
 import re
@@ -95,7 +96,7 @@ LIGHTBURN_PALETTE_NAMES = {
 ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
     "crystal", "ripple", "glitch", "shattered", "deep_fryer",
-    "halftone_newsprint", "glyph_mosaic", "optical_color_mix", "krasnow_grating",
+    "halftone_newsprint", "optical_color_mix", "krasnow_grating",
 }
 ABSTRACT_PRESET_PREFIX = "abstract_"
 RASTER_JOB_QUEUE = "rasterizer:jobs"
@@ -1376,6 +1377,8 @@ def reuse_settings_url(entry):
         "selected_color_hexes": parameters.get("selected_color_hexes", []),
         "color_name_overrides": parameters.get("color_name_overrides", {}),
         "abstract_filter_parameters": parameters.get("filter_parameters", {}),
+        "geometry_style": parameters.get("geometry_style", "vectors"),
+        "geometry_style_parameters": parameters.get("geometry_style_parameters", {}),
     }
     encoded = base64.urlsafe_b64encode(
         json.dumps(settings, separators=(",", ":")).encode("utf-8")
@@ -1483,7 +1486,9 @@ def parse_abstract_filter_parameters(raw_value):
             clean[key] = value
         elif key == "glyph_shape" and value in {
             "circle", "square", "diamond", "triangle", "hexagon", "octagon",
-            "star", "cross", "bar", "mixed",
+            "star", "cross", "bar", "skull", "heart", "space_invader",
+            "ghost", "bat", "alien_head", "paw_print", "fish_scale",
+            "puzzle_piece", "mixed",
         }:
             clean[key] = value
         elif key == "cell_shape" and value in {
@@ -1499,14 +1504,97 @@ def parse_abstract_filter_parameters(raw_value):
             # checkbox as text. Normalize it to the same boolean used by the
             # current JSON-producing UI.
             clean[key] = value.lower() == "true"
-        elif key in {"square_dots", "invert", "black_only", "keep_available_colors_as_vectors", "favor_black"} and isinstance(value, str) and value.lower() in ("true", "false"):
+        elif key in {"square_dots", "invert", "black_only", "keep_available_colors_as_vectors", "preserve_black"} and isinstance(value, str) and value.lower() in ("true", "false"):
             clean[key] = int(value.lower() == "true")
-        elif key in {"transparent", "invert_threshold", "keep_black", "square_dots", "invert", "black_only", "keep_available_colors_as_vectors", "favor_black"} and isinstance(value, bool):
+        elif key in {"transparent", "invert_threshold", "keep_black", "square_dots", "invert", "black_only", "keep_available_colors_as_vectors", "preserve_black"} and isinstance(value, bool):
             clean[key] = int(value)
         elif isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError(f"Abstract filter setting '{key}' must be numeric")
         else:
             clean[key] = value
+    return clean
+
+
+def parse_geometry_style_parameters(raw_value):
+    if not raw_value:
+        return {}
+    try:
+        parameters = json.loads(raw_value) if isinstance(raw_value, str) else raw_value
+    except (TypeError, json.JSONDecodeError) as error:
+        raise ValueError("Geometry style settings are not valid JSON") from error
+    if not isinstance(parameters, dict):
+        raise ValueError("Geometry style settings must be a small object")
+    # Compatibility with the short-lived Krasnow Geometry posterization
+    # control. Cached staging pages and persisted form snapshots can continue
+    # sending it after removal; it no longer changes processing and must not
+    # make an otherwise valid job fail.
+    parameters = dict(parameters)
+    parameters.pop("posterize_colors", None)
+    if len(parameters) > 16:
+        raise ValueError("Geometry style settings must be a small object")
+    if any(key in parameters for key in ("assignments", "glyphs", "krasnow_grating")):
+        if set(parameters) - {"assignments", "glyphs", "krasnow_grating"}:
+            raise ValueError("Geometry routing settings contain an invalid section")
+        assignments = parameters.get("assignments") or {}
+        if not isinstance(assignments, dict) or len(assignments) > 64:
+            raise ValueError("Geometry routing assignments must be a small object")
+        clean_assignments = {}
+        for color_hex, style in assignments.items():
+            color_hex = str(color_hex).strip().upper()
+            style = str(style).strip().lower()
+            if (
+                not re.fullmatch(r"#[0-9A-F]{6}", color_hex)
+                or style not in {"vectors", "glyphs", "krasnow_grating"}
+            ):
+                raise ValueError("Geometry routing contains an invalid swatch assignment")
+            clean_assignments[color_hex] = style
+        clean_assignments["#000000"] = "vectors"
+        return {
+            "assignments": clean_assignments,
+            "glyphs": parse_geometry_style_parameters(parameters.get("glyphs") or {}),
+            "krasnow_grating": parse_geometry_style_parameters(
+                parameters.get("krasnow_grating") or {}
+            ),
+        }
+    numeric = {
+        "cell_size_mm", "minimum_glyph_ratio", "maximum_glyph_ratio",
+        "non_black_glyph_density", "tone_curve", "contrast", "grid_angle",
+        "glyph_rotation", "seed", "speed_spread", "gradient_top",
+        "gradient_bottom", "gradient_curve", "hue_rotation",
+        "saturation_cutoff", "patch_size_mm", "line_spacing_mm",
+        "hue_line_spacing_minimum_mm", "hue_line_spacing_maximum_mm",
+        "angle_min", "angle_max",
+    }
+    toggles = {"invert", "invert_fill", "black_only", "preserve_black"}
+    shapes = {
+        "circle", "square", "diamond", "triangle", "hexagon", "octagon",
+        "star", "cross", "bar", "skull", "heart", "space_invader",
+        "ghost", "bat", "alien_head", "paw_print", "fish_scale",
+        "puzzle_piece", "mixed",
+    }
+    cell_shapes = {
+        "square", "hexagon", "triangle", "diamond", "skull", "heart",
+        "space_invader", "ghost", "bat", "alien_head", "paw_print",
+        "fish_scale", "puzzle_piece",
+    }
+    clean = {}
+    for key, value in parameters.items():
+        if key == "glyph_shape" and value in shapes:
+            clean[key] = value
+        elif key == "cell_shape" and value in cell_shapes:
+            clean[key] = value
+        elif key in toggles and isinstance(value, bool):
+            clean[key] = int(value)
+        elif key in toggles and isinstance(value, int) and value in {0, 1}:
+            clean[key] = value
+        elif key in toggles and isinstance(value, str) and value.lower() in {"true", "false"}:
+            clean[key] = int(value.lower() == "true")
+        elif key in numeric and not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value):
+            clean[key] = value
+        else:
+            raise ValueError(f"Geometry style setting '{key}' is invalid")
+    if clean.get("invert_fill") and clean.get("black_only"):
+        raise ValueError("Invert Fill cannot be combined with Black Only")
     return clean
 
 
@@ -1675,6 +1763,16 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
             image_preset = "abstract"
         if image_preset != "abstract" or abstract_filter not in ABSTRACT_FILTER_NAMES:
             abstract_filter = "none"
+        geometry_style = str(data.get("geometry_style", "vectors")).strip().lower()
+        if geometry_style not in {"vectors", "glyphs", "krasnow_grating", "by_swatch"}:
+            raise ValueError("Choose a valid geometry style")
+        if geometry_style in {"glyphs", "krasnow_grating", "by_swatch"} and abstract_filter in {
+            "halftone_newsprint", "optical_color_mix", "krasnow_grating",
+        }:
+            raise ValueError("This Geometry Style is not available with the selected specialized image style")
+        geometry_parameters = parse_geometry_style_parameters(
+            data.get("geometry_style_parameters", "{}")
+        )
         command = [
             "python", "-u", "lib/Material_Library.py", image_path,
             os.path.join(
@@ -1694,6 +1792,10 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
                 "color_matching_saturation_weight": data.get("color_matching_saturation_weight", 1.0),
                 "color_matching_lightness_weight": data.get("color_matching_lightness_weight", 1.0),
             }, separators=(",", ":")),
+            "false",
+            geometry_style,
+            json.dumps(geometry_parameters, separators=(",", ":")),
+            str(data.get("crop_shape", "")).strip().lower(),
         ]
 
         def run_process(arguments):
@@ -1727,7 +1829,9 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
                 task_id,
                 "Validating artwork, parameters, Material Library, and material before counting this guest job.",
             )
-            validation_exit, validation_message = run_process(command + ["true"])
+            validation_command = list(command)
+            validation_command[17] = "true"
+            validation_exit, validation_message = run_process(validation_command)
             if validation_exit != 0:
                 failure_message = validation_message or "Guest input validation failed"
                 job_runtime.set_status(task_id, "failed", error=failure_message)

@@ -11,6 +11,7 @@ export AWS_PROFILE="${DEPLOY_AWS_PROFILE:-mopa-admin}"
 FOUNDATION_STACK="${SERVERLESS_STAGING_FOUNDATION_STACK:-mopa-rasterizer-serverless-staging}"
 WORKER_STACK="${SERVERLESS_STAGING_WORKER_STACK:-mopa-rasterizer-serverless-staging-worker}"
 ORCHESTRATION_STACK="${SERVERLESS_STAGING_ORCHESTRATION_STACK:-mopa-rasterizer-serverless-staging-orchestration}"
+PIPE_NAME="${SERVERLESS_STAGING_PIPE_NAME:-mopa-rasterizer-serverless-staging-to-fargate}"
 
 # Reuse the proven production network by discovery when it is not duplicated
 # in .env.aws. Only subnet/VPC placement is shared; all staging data resources
@@ -84,6 +85,41 @@ else
   fi
 fi
 
+wait_for_pipe_state() {
+  expected="$1"
+  attempts=0
+  while [ "$attempts" -lt 60 ]; do
+    current="$(aws pipes describe-pipe --region "$REGION" --name "$PIPE_NAME" \
+      --query CurrentState --output text)"
+    [ "$current" = "$expected" ] && return 0
+    attempts=$((attempts + 1))
+    sleep 2
+  done
+  echo "Timed out waiting for EventBridge Pipe $PIPE_NAME to reach $expected." >&2
+  return 1
+}
+
+# CloudFormation deregisters the previous ECS task definition as soon as the
+# worker stack advances. Pause queue consumption until the state machine has
+# been updated to the new revision, otherwise a job submitted in that small
+# deployment window can be consumed against an inactive task definition.
+RESUME_PIPE=false
+PIPE_STATE="$(aws pipes describe-pipe --region "$REGION" --name "$PIPE_NAME" \
+  --query CurrentState --output text 2>/dev/null || true)"
+if [ "$PIPE_STATE" = "RUNNING" ] || [ "$PIPE_STATE" = "STARTING" ]; then
+  echo "Pausing staging job dispatch while worker and orchestration revisions update..."
+  aws pipes stop-pipe --region "$REGION" --name "$PIPE_NAME" >/dev/null
+  wait_for_pipe_state STOPPED
+  RESUME_PIPE=true
+fi
+deployment_exit_notice() {
+  status=$?
+  if [ "$status" -ne 0 ] && [ "$RESUME_PIPE" = true ]; then
+    echo "Deployment failed while staging dispatch is paused. The pipe remains STOPPED so queued jobs are preserved." >&2
+  fi
+}
+trap deployment_exit_notice EXIT
+
 aws cloudformation deploy --region "$REGION" --stack-name "$WORKER_STACK" \
   --template-file "$REPO_ROOT/ecs/rasterizer-worker.yaml" --capabilities CAPABILITY_IAM \
   --parameter-overrides "ClusterName=mopa-rasterizer-serverless-staging" \
@@ -95,7 +131,6 @@ aws cloudformation deploy --region "$REGION" --stack-name "$WORKER_STACK" \
     "Memory=${SERVERLESS_STAGING_FARGATE_MEMORY:-${FARGATE_MEMORY:-4096}}" \
     "WorkerProcesses=${SERVERLESS_STAGING_WORKER_PROCESSES:-${FARGATE_WORKER_PROCESSES:-2}}" \
     "KrasnowProgress=${SERVERLESS_STAGING_KRASNOW_PROGRESS:-true}" \
-    "KrasnowGratingWins=${SERVERLESS_STAGING_KRASNOW_GRATING_WINS:-true}" \
     "SourceBlackComponents=${SERVERLESS_STAGING_SOURCE_BLACK_COMPONENTS:-true}" \
     "AssignPublicIp=${FARGATE_ASSIGN_PUBLIC_IP:-DISABLED}" \
   --no-fail-on-empty-changeset
@@ -103,7 +138,7 @@ aws cloudformation deploy --region "$REGION" --stack-name "$WORKER_STACK" \
 aws cloudformation deploy --region "$REGION" --stack-name "$ORCHESTRATION_STACK" \
   --template-file "$REPO_ROOT/ecs/rasterizer-orchestration.yaml" --capabilities CAPABILITY_IAM \
   --parameter-overrides \
-    "PipeName=mopa-rasterizer-serverless-staging-to-fargate" \
+    "PipeName=$PIPE_NAME" \
     "StateMachineName=mopa-rasterizer-serverless-staging-job" \
     "ClusterName=$(output "$WORKER_STACK" ClusterName)" \
     "TaskDefinitionArn=$(output "$WORKER_STACK" TaskDefinitionArn)" \
@@ -113,8 +148,20 @@ aws cloudformation deploy --region "$REGION" --stack-name "$ORCHESTRATION_STACK"
     "TaskExecutionRoleArn=$(output "$WORKER_STACK" TaskExecutionRoleArn)" \
     "TaskRoleArn=$(output "$WORKER_STACK" TaskRoleArn)" \
     "SqsQueueArn=$QUEUE_ARN" "SqsDlqArn=$DLQ_ARN" "SqsDlqUrl=$DLQ_URL" \
+    "RuntimeTableName=$RUNTIME_TABLE" \
     "SpotWorkerAttempts=${FARGATE_SPOT_WORKER_ATTEMPTS:-2}" \
   --no-fail-on-empty-changeset
+
+if [ "$RESUME_PIPE" = true ]; then
+  PIPE_STATE="$(aws pipes describe-pipe --region "$REGION" --name "$PIPE_NAME" \
+    --query CurrentState --output text)"
+  if [ "$PIPE_STATE" != "RUNNING" ]; then
+    echo "Resuming staging job dispatch on the updated orchestration revision..."
+    aws pipes start-pipe --region "$REGION" --name "$PIPE_NAME" >/dev/null
+    wait_for_pipe_state RUNNING
+  fi
+  RESUME_PIPE=false
+fi
 
 cat <<EOF
 Serverless staging worker data plane is ready.

@@ -1,9 +1,10 @@
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 from PIL import Image
-from shapely.geometry import box
+from shapely.geometry import LineString, box
 from shapely.ops import unary_union
 
 
@@ -29,6 +30,90 @@ def test_krasnow_uses_source_faithful_vector_defaults():
         "simplification_factor": 0.0,
         "smoothing_radius": 0.001,
     }
+
+
+def test_krasnow_output_layers_use_parent_recipe_not_offset_sublayer():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+    child = SimpleNamespace(
+        speed=500,
+        frequency=60000,
+        QPulseWidth=None,
+        subLayers=[],
+    )
+    parent = SimpleNamespace(
+        index=30,
+        name="Holographic",
+        type="Offset",
+        speed=1000,
+        frequency=120000,
+        QPulseWidth=120,
+        materialName="Stainless-2",
+        entryDesc="holographic",
+        subLayers=[child],
+    )
+    project = SimpleNamespace(_layers=[parent])
+
+    krasnow.configure_output_layers(
+        project,
+        {"#0000FF": (240, 1, "Blue")},
+        {"_setting_layer_id": 30, "speed_spread": 1},
+    )
+
+    assert len(project._layers) == 1
+    output = project._layers[0]
+    assert output.index == 1
+    assert output.type == "Cut"
+    assert output.frequency == 120000
+    assert output.QPulseWidth == 120
+    assert output.speed == 1000
+    assert output.subLayers == []
+
+
+def test_krasnow_unpreserved_black_layer_uses_holographic_parent_recipe():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+    original_black = SimpleNamespace(
+        index=0,
+        name="Black",
+        type="Cut",
+        speed=250,
+        frequency=30000,
+        QPulseWidth=200,
+        minPower=18,
+        maxPower=20,
+        subLayers=[],
+    )
+    holographic = SimpleNamespace(
+        index=30,
+        name="Holographic",
+        type="Cut",
+        speed=1000,
+        frequency=120000,
+        QPulseWidth=120,
+        minPower=42,
+        maxPower=45,
+        materialName="Stainless-2",
+        entryDesc="holographic",
+        subLayers=[],
+    )
+    project = SimpleNamespace(_layers=[original_black, holographic])
+
+    krasnow.configure_output_layers(
+        project,
+        {"#000000": (0, 0, "Black")},
+        {"_setting_layer_id": 30, "preserve_black": 0},
+    )
+
+    assert len(project._layers) == 1
+    output = project._layers[0]
+    assert output is not original_black
+    assert output.index == 0
+    assert output.name == "Black"
+    assert output.type == "Cut"
+    assert output.frequency == 120000
+    assert output.QPulseWidth == 120
+    assert output.minPower == 42
+    assert output.maxPower == 45
+    assert output.subLayers == []
 
 
 def test_krasnow_cell_shape_defaults_to_legacy_square():
@@ -249,6 +334,26 @@ def test_krasnow_does_not_build_gratings_from_black_geometry():
     assert remapped == {}
 
 
+def test_krasnow_builds_gratings_from_black_when_preserve_black_is_off():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+    remapped = krasnow.remap_layers(
+        processed_layers={"#000000": box(0, 0, 2, 2)},
+        target_colors={"#000000": (0, 0, "Black")},
+        settings={
+            "preserve_black": 0,
+            "_canvas_bounds": (0, 0, 2, 2),
+            "_scale_factor": 1,
+            "patch_size_mm": 1,
+            "line_spacing_mm": 0.25,
+            "angle_min": 0,
+            "angle_max": 0,
+        },
+    )
+
+    assert set(remapped) == {"#000000"}
+    assert not remapped["#000000"].is_empty
+
+
 def test_krasnow_cross_layer_mapping_reports_internal_progress():
     krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
     messages = []
@@ -310,8 +415,10 @@ def test_krasnow_prunes_empty_space_between_disconnected_components():
     assert remapped["#0000FF"].equals(unary_union(independently_remapped))
 
 
-def test_krasnow_black_mask_replaces_only_the_black_layer():
-    blue = box(0, 0, 1, 1).boundary
+def test_krasnow_black_mask_owns_its_footprint_exclusively():
+    blue = box(0, 0, 2, 1).boundary.union(
+        LineString([(0, .5), (2, .5)])
+    )
     old_black = box(10, 10, 11, 11)
     source = Image.new("RGB", (2, 1))
     source.putdata([(0, 0, 0), (255, 255, 255)])
@@ -320,13 +427,15 @@ def test_krasnow_black_mask_replaces_only_the_black_layer():
         {"#0000FF": blue, "#000000": old_black},
         "#000000",
         source,
+        reserved_black_mask=np.array([[True, False]], dtype=bool),
     )
 
-    assert replaced["#0000FF"] is blue
     assert replaced["#000000"].equals(box(0, 0, 1, 1))
+    assert replaced["#0000FF"].intersection(replaced["#000000"]).length <= 1e-9
+    assert replaced["#0000FF"].intersection(box(1, 0, 2, 1)).length > 0
 
 
-def test_krasnow_grating_wins_uses_only_pre_reserved_black_pixels():
+def test_krasnow_preserve_black_uses_only_pre_reserved_black_pixels():
     grating = box(1, 0, 2, 1).boundary
     source = Image.new("RGB", (3, 1))
     source.putdata([(0, 0, 0), (0, 72, 84), (255, 255, 255)])
@@ -335,49 +444,21 @@ def test_krasnow_grating_wins_uses_only_pre_reserved_black_pixels():
         {"#0000FF": grating},
         "#000000",
         source,
-        grating_wins=True,
         reserved_black_mask=np.array([[True, False, False]], dtype=bool),
     )
 
-    assert replaced["#0000FF"] is grating
     assert replaced["#000000"].equals(box(0, 0, 1, 1))
+    assert replaced["#0000FF"].intersection(replaced["#000000"]).length <= 1e-9
+    assert replaced["#0000FF"].intersection(box(1, 0, 2, 1)).length > 0
 
 
-def test_krasnow_legacy_black_mask_remains_available_for_rollback():
-    source = Image.new("RGB", (3, 1))
-    source.putdata([(0, 0, 0), (0, 72, 84), (255, 255, 255)])
-
-    replaced = vector_processing.replace_krasnow_black_layer(
-        {},
-        "#000000",
-        source,
-        grating_wins=False,
-    )
-
-    assert replaced["#000000"].equals(box(0, 0, 2, 1))
-
-
-def test_krasnow_favor_black_job_control_selects_legacy_mask(monkeypatch):
-    monkeypatch.setenv("RASTER_KRASNOW_GRATING_WINS", "true")
-
-    assert vector_processing.krasnow_grating_wins_enabled({"favor_black": 0}) is True
-    assert vector_processing.krasnow_grating_wins_enabled({"favor_black": 1}) is False
-
-
-def test_krasnow_older_jobs_keep_environment_default(monkeypatch):
-    monkeypatch.setenv("RASTER_KRASNOW_GRATING_WINS", "true")
-    assert vector_processing.krasnow_grating_wins_enabled({}) is True
-
-    monkeypatch.setenv("RASTER_KRASNOW_GRATING_WINS", "false")
-    assert vector_processing.krasnow_grating_wins_enabled({}) is False
-
-
-def test_serverless_krasnow_form_exposes_favor_black_unchecked():
+def test_serverless_krasnow_form_exposes_preserve_black_checked():
     page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
-    assert "toggles:[['favor_black',false]]" in page
+    assert "toggles:[['preserve_black',true]]" in page
+    assert "favor_black" not in page
 
 
-def test_krasnow_grating_wins_rejects_a_misaligned_reserved_mask():
+def test_krasnow_preserve_black_rejects_a_misaligned_reserved_mask():
     source = Image.new("RGB", (3, 1))
 
     with np.testing.assert_raises_regex(ValueError, "does not match"):
@@ -385,7 +466,6 @@ def test_krasnow_grating_wins_rejects_a_misaligned_reserved_mask():
             {},
             "#000000",
             source,
-            grating_wins=True,
             reserved_black_mask=np.zeros((2, 3), dtype=bool),
         )
 

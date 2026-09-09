@@ -25,10 +25,10 @@ def test_cached_textual_halftone_checkbox_values_are_also_accepted():
     ) == {"square_dots": 1, "invert": 0, "black_only": 1}
 
 
-def test_krasnow_favor_black_checkbox_is_normalized_to_a_numeric_flag():
+def test_krasnow_preserve_black_checkbox_is_normalized_to_a_numeric_flag():
     assert parse_abstract_filter_parameters(
-        json.dumps({"favor_black": True})
-    ) == {"favor_black": 1}
+        json.dumps({"preserve_black": True})
+    ) == {"preserve_black": 1}
 
 
 def test_krasnow_cell_shape_accepts_only_supported_tessellations():

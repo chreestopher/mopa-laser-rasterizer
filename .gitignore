@@ -1,3 +1,5 @@
+outputs/
+scratch/
 uploads/
 k8s/deployment.local.yaml
 __pycache__/

@@ -566,7 +566,6 @@
           <option value="abstract_deep_fryer">Deep Fryer</option>
           <option value="abstract_shattered">Shattered</option>
           <option value="abstract_halftone_newsprint">Halftone Newsprint</option>
-          <option value="abstract_glyph_mosaic">Glyph Mosaic</option>
           <option value="abstract_optical_color_mix">Optical Color Mix</option>
           <option value="abstract_krasnow_grating">Krasnow Color Grating</option>
           <option value="abstract_none">Abstract: None</option>
@@ -667,16 +666,6 @@
           ['maximum_dot_ratio', .92, .1, 1, .01], ['tone_curve', .75, .2, 5, .05],
           ['contrast', .8, .2, 3, .05], ['grid_angle', 0, -45, 45, 1]]
       },
-      glyph_mosaic: {
-        description: 'Rebuilds the artwork on a shared halftone-style matrix using a selectable solid glyph. Darker areas receive larger glyphs while every cell remains owned by one color swatch. Choose circles, squares, diamonds, triangles, hexagons, octagons, stars, crosses, bars, or a deterministic mixture. Glyph Rotation turns the symbols inside the rotated matrix; Seed controls the repeatable Mixed Shapes arrangement.',
-        selects: [['glyph_shape', 'diamond', [['circle', 'Circle'], ['square', 'Square'], ['diamond', 'Diamond'], ['triangle', 'Triangle'], ['hexagon', 'Hexagon'], ['octagon', 'Octagon'], ['star', 'Star'], ['cross', 'Cross'], ['bar', 'Bar'], ['mixed', 'Mixed Shapes']]]],
-        toggles: [['black_only', false], ['invert', false]],
-        controls: [['cell_size_mm', .6, .2, 1, .05], ['minimum_glyph_ratio', .48, .16, .8, .01],
-          ['maximum_glyph_ratio', .97, .94, 1, .01], ['non_black_glyph_density', 2.3, .6, 4, .05],
-          ['tone_curve', .75, .2, 1.3, .05], ['contrast', 2, 1, 3, .05],
-          ['grid_angle', -45, -90, 0, 1], ['glyph_rotation', 0, -180, 180, 1],
-          ['seed', 1, 0, 999999, 1]]
-      },
       optical_color_mix: {
         description: 'Keeps ordinary continuous vector geometry wherever available palette swatches adequately represent the source. Only colors that benefit from a calculated two-swatch mixture become a shared dot matrix. Turn off Keep Available Colors as Vectors to render the entire artwork with dots. Lab is the recommended model; RGB and HSV provide alternate matching behavior. Dot Pitch and Mixing Cell Dots control physical scale and ratio precision. Direct Color Preference controls how strongly the filter favors normal vectors. Hue Shift, Saturation Gain, Brightness Gamma, Dot Influence, and Neutral Bias provide approximate compensation when physical laser colors differ from their declared swatches.',
         selects: [['mixing_model', 'lab', [['lab', 'Perceptual Lab'], ['rgb', 'Linear RGB'], ['hsv', 'Creative HSV']]]],
@@ -689,8 +678,8 @@
       },
       krasnow_grating: {
         selects: [['cell_shape', 'square', [['square', 'Square'], ['hexagon', 'Hexagon'], ['triangle', 'Triangle'], ['diamond', 'Diamond / Rhombus'], ['skull', 'Skull'], ['heart', 'Heart'], ['space_invader', 'Space Invader'], ['ghost', 'Ghost'], ['bat', 'Bat'], ['alien_head', 'Alien Head'], ['paw_print', 'Paw Print'], ['fish_scale', 'Fish Scale'], ['puzzle_piece', 'Puzzle Piece']]]],
-        toggles: [['favor_black', false]],
-        description: 'Transforms the normally color-separated non-Black artwork into open parallel-line patches and distributes corrected grating levels across the available non-Black layers in LightBurn order. The Material Library entry matching Holographic is treated as the machine-specific 1.00 µm calibration anchor. Each output layer receives an independent copy that preserves the anchor power, frequency, pulse width, passes, and other values while scaling speed for a target pitch between approximately 0.55 and 1.55 µm. Speed Spread scales each layer\'s deviation around the anchor: 0 gives every layer the anchor speed, 1 uses the normal calculated range, and 2 doubles the variation without moving the 1.00 µm layer. With a 300 mm/s anchor and Speed Spread 1 this yields 165–465 mm/s, following Ben Krasnow\'s fixed-frequency progression. Hue Line Spacing Minimum and Maximum vary visible line density using an approximate wavelength ordering: violet and blue use spacing near the minimum while red uses spacing near the maximum. Purple and magenta use a continuous violet-to-red proxy because they do not have a single spectral wavelength. Equal values preserve uniform spacing, and low-saturation swatches continue to use Line Spacing. These controls affect visible hatch spacing; the calibrated microscopic diffraction pitch remains controlled by the carrier settings. A single output layer uses the unmodified 1.00 µm anchor speed. Clones retain their original color, name, and ID and use Line mode for the generated open paths. Black keeps its source geometry and Black setting, with no synthetic canvas or punch-through. Favor Black uses the broader legacy Black detection and lets Black win where it overlaps a grating; leave it unchecked to preserve grating lines and restrict Black to pixels reserved before color quantization.',
+        toggles: [['preserve_black', true]],
+        description: 'Transforms the color-separated artwork into open parallel-line patches and distributes corrected grating levels across the available LightBurn layers. The Material Library entry matching Holographic is treated as the machine-specific 1.00 µm calibration anchor. Each output layer receives an independent copy that preserves the anchor power, frequency, pulse width, passes, and other values while scaling speed for a target pitch between approximately 0.55 and 1.55 µm. Speed Spread scales each layer\'s deviation around the anchor: 0 gives every layer the anchor speed, 1 uses the normal calculated range, and 2 doubles the variation without moving the 1.00 µm layer. With a 300 mm/s anchor and Speed Spread 1 this yields 165–465 mm/s, following Ben Krasnow\'s fixed-frequency progression. Hue Line Spacing Minimum and Maximum vary visible line density using an approximate wavelength ordering: violet and blue use spacing near the minimum while red uses spacing near the maximum. Purple and magenta use a continuous violet-to-red proxy because they do not have a single spectral wavelength. Equal values preserve uniform spacing, and low-saturation swatches continue to use Line Spacing. These controls affect visible hatch spacing; the calibrated microscopic diffraction pitch remains controlled by the carrier settings. Preserve Black keeps source Black as normal Black geometry with its Black laser setting. Turn it off to convert Black regions into gratings and clone the Holographic setting onto the Black LightBurn layer like every other carrier.',
         controls: [['speed_spread', 1, 0, 2, .001], ['gradient_top', 165, 0, 255, 1], ['gradient_bottom', 90, 0, 255, 1],
           ['gradient_curve', 1, .2, 5, .05], ['hue_rotation', .13, 0, 1, .01],
           ['saturation_cutoff', .2, 0, 1, .01], ['patch_size_mm', .4, .1, 5, .05],

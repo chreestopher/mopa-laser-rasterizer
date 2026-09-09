@@ -1,5 +1,9 @@
-let token = sessionStorage.getItem("id_token");
-let refreshToken = sessionStorage.getItem("refresh_token");
+let token = localStorage.getItem("id_token") || sessionStorage.getItem("id_token");
+let refreshToken = localStorage.getItem("refresh_token") || sessionStorage.getItem("refresh_token");
+if (token) localStorage.setItem("id_token", token);
+if (refreshToken) localStorage.setItem("refresh_token", refreshToken);
+sessionStorage.removeItem("id_token");
+sessionStorage.removeItem("refresh_token");
 
 function tokenExpiresSoon() {
   try {
@@ -28,14 +32,14 @@ async function start() {
     }).then(response => response.json());
     if (!result.id_token) return false;
     token = result.id_token;
-    sessionStorage.setItem("id_token", token);
+    localStorage.setItem("id_token", token);
     return true;
   }
   if (token && tokenExpiresSoon() && !await refreshSession()) {
     token = null;
     refreshToken = null;
-    sessionStorage.removeItem("id_token");
-    sessionStorage.removeItem("refresh_token");
+    localStorage.removeItem("id_token");
+    localStorage.removeItem("refresh_token");
     window.stagingShellSetAuthenticated?.(false);
   }
   async function api(path, retry = true) {

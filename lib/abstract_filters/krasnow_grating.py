@@ -40,7 +40,7 @@ PITCH_MIN_UM = .55
 PITCH_MAX_UM = 1.55
 
 DEFAULTS = {
-    "favor_black": 0,
+    "preserve_black": 1,
     "cell_shape": "square",
     "speed_spread": 1,
     "gradient_top": 165,
@@ -98,6 +98,11 @@ def _cell_shape(settings):
     return value if value in CELL_SHAPES else "square"
 
 
+def _preserve_black(settings):
+    """Keep source Black separate unless the user explicitly grates it."""
+    return number(settings.get("preserve_black"), 1, 0, 1) >= .5
+
+
 def _pitch_for_level(level, level_count):
     """Spread available carriers over Ben's approximate 0.55..1.55 um range."""
     if level_count <= 1:
@@ -137,11 +142,12 @@ def configure_output_layers(lightburn_project, target_colors, settings=None):
             "matching 'holographic'."
         )
 
-    # Offset Fill entries store their concrete laser values in child passes.
-    # The generated geometry is already a set of open paths, so copy the first
-    # concrete pass when present and convert every clone to LightBurn Line mode.
-    sublayers = getattr(source_layer, "subLayers", None) or []
-    setting_template = sublayers[0] if sublayers else source_layer
+    # The palette entry's parent CutSetting is the user-editable Holographic
+    # recipe and is therefore authoritative.  Offset child passes can omit
+    # fields such as QPulseWidth or retain stale imported values, so they must
+    # not become the template for generated grating layers.  The generated
+    # geometry is already open paths; child passes are cleared on each clone.
+    setting_template = source_layer
     reference_frequency = number(getattr(setting_template, "frequency", 0), 0)
     if reference_frequency <= 0:
         raise ValueError(
@@ -149,7 +155,7 @@ def configure_output_layers(lightburn_project, target_colors, settings=None):
         )
 
     output_layers = {}
-    grating_swatches = _grating_swatches(target_colors)
+    grating_swatches = _grating_swatches(target_colors, settings)
     for level, color_hex in enumerate(grating_swatches):
         metadata = target_colors[color_hex]
         target_pitch_um = _pitch_for_level(level, len(grating_swatches))
@@ -283,14 +289,15 @@ def _level_at_y(color_hex, y, min_y, max_y, settings, level_count):
     return min(level_count - 1, math.floor(control / 256 * level_count))
 
 
-def _grating_swatches(target_colors):
+def _grating_swatches(target_colors, settings=None):
     """Return available carriers in their native LightBurn layer order."""
+    preserve_black = _preserve_black(settings or {})
     return [
         color_hex
         for color_hex, metadata in sorted(
             target_colors.items(), key=lambda item: item[1][1]
         )
-        if str(color_hex).upper() != "#000000"
+        if not preserve_black or str(color_hex).upper() != "#000000"
     ]
 
 
@@ -538,6 +545,23 @@ _GAPPED_CELL_ROW_STEPS = {
 _UNIT_PUZZLE_PIECE = _build_unit_puzzle_piece()
 
 
+def solid_glyph_shape(shape, center_x, center_y, size):
+    """Return a reusable Krasnow icon silhouette for solid glyph renderers."""
+    shape = str(shape or "").strip().lower()
+    if shape in _GAPPED_CELL_TEMPLATES:
+        template = _GAPPED_CELL_TEMPLATES[shape]
+    elif shape == "puzzle_piece":
+        template = _UNIT_PUZZLE_PIECE
+    else:
+        raise ValueError(f"Krasnow glyph shape '{shape}' is not supported.")
+    return _template_polygon(template, center_x, center_y, size)
+
+
+def solid_glyph_row_step(shape):
+    """Return Krasnow's staggered row-spacing multiplier for an icon glyph."""
+    return _GAPPED_CELL_ROW_STEPS.get(str(shape or "").strip().lower())
+
+
 def _skull_polygon(center_x, center_y, patch_size):
     """Scale and place the reusable skull silhouette on its grid cell."""
     return affine_transform(
@@ -747,7 +771,7 @@ def _process_layer_patches(layer_plan, grating_swatches, bounds, settings,
 
 
 def remap_layers(processed_layers, target_colors, settings):
-    """Build open gratings from non-Black source layers only."""
+    """Build open gratings, optionally treating Black as a normal carrier."""
     progress = settings.get("_progress_logger")
 
     def log(message):
@@ -763,7 +787,8 @@ def remap_layers(processed_layers, target_colors, settings):
 
     bounds = tuple(number(value, 0) for value in bounds)
     min_x, min_y, max_x, max_y = bounds
-    grating_swatches = _grating_swatches(target_colors)
+    preserve_black = _preserve_black(settings)
+    grating_swatches = _grating_swatches(target_colors, settings)
     if not grating_swatches:
         return {}
 
@@ -780,7 +805,9 @@ def remap_layers(processed_layers, target_colors, settings):
     layer_plans = []
     total_patches = 0
     for source_hex, geometry in processed_layers.items():
-        if geometry.is_empty or str(source_hex).upper() == "#000000":
+        if geometry.is_empty or (
+            preserve_black and str(source_hex).upper() == "#000000"
+        ):
             continue
         if cell_shape == "square":
             candidate_indices = _candidate_patch_indices(geometry, bounds, patch_size)
@@ -794,7 +821,8 @@ def remap_layers(processed_layers, target_colors, settings):
 
     log(
         f"[Krasnow mapping 1/3] DONE: planned {total_patches} candidate "
-        f"{cell_label} across {len(layer_plans)} non-Black source layers."
+        f"{cell_label} across {len(layer_plans)} "
+        f"{'non-Black ' if preserve_black else ''}source layers."
     )
     log(
         f"[Krasnow mapping 2/3] START: clipping {cell_label} and generating "

@@ -5,6 +5,8 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 from lib.material_library_template import (
+    BLANK_PALETTE_ENTRIES,
+    BLANK_PALETTE_UTILITY_ENTRIES,
     DEFAULT_RASTERIZER_PALETTE,
     build_blank_palette_library,
     build_hatch_palette_library,
@@ -21,7 +23,7 @@ class BlankPaletteLibraryTests(unittest.TestCase):
 
         self.assertIsNotNone(names_source)
         self.assertEqual(
-            [name for name, _index in DEFAULT_RASTERIZER_PALETTE],
+            list(BLANK_PALETTE_ENTRIES),
             json.loads(names_source.group(1)),
         )
         self.assertIn('RasterizerTemplate", "UNCONFIGURED', script)
@@ -38,10 +40,14 @@ class BlankPaletteLibraryTests(unittest.TestCase):
         entries = material.findall("Entry")
 
         self.assertEqual("colors - stainless steel", material.attrib["name"])
-        self.assertEqual(30, len(entries))
+        self.assertEqual(32, len(entries))
         self.assertEqual(
-            [f"UNCONFIGURED {name}" for name, _index in DEFAULT_RASTERIZER_PALETTE],
+            [f"UNCONFIGURED {name}" for name in BLANK_PALETTE_ENTRIES],
             [entry.attrib["Desc"] for entry in entries],
+        )
+        self.assertEqual(
+            ["UNCONFIGURED Labels", "UNCONFIGURED Holographic"],
+            [entry.attrib["Desc"] for entry in entries[-len(BLANK_PALETTE_UTILITY_ENTRIES):]],
         )
         for entry in entries:
             self.assertEqual("-1.0000", entry.attrib["Thickness"])

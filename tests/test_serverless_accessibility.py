@@ -22,6 +22,18 @@ def test_rasterizer_primary_controls_have_programmatic_labels():
         assert f'for="{control_id}"' in page
 
 
+def test_rasterizer_sizing_controls_follow_artwork_upload():
+    page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+
+    artwork = page.index('id="artwork"')
+    pixel = page.index('id="pixel"')
+    width = page.index('id="width"')
+    height = page.index('id="height"')
+    output_settings = page.index('id="materialChoice"')
+
+    assert artwork < pixel < width < height < output_settings
+
+
 def test_depthmap_source_file_has_an_accessible_name():
     template = (ROOT / "templates" / "depthmap_generator.html").read_text(encoding="utf-8")
 

@@ -128,3 +128,25 @@ def test_reassignment_preserves_total_area_and_single_ownership():
     assert output_area == source_area
     assert cells[(1, 0)] == BLUE
 
+
+def test_adjacent_small_islands_cannot_swap_colors_and_survive_cleanup():
+    """Assignments must observe earlier merges instead of using a stale snapshot."""
+    assignments = {
+        (0, 0): RED,
+        (1, 0): BLUE,
+        (2, 0): GREEN,
+        (3, 0): GREEN,
+        (4, 0): GREEN,
+    }
+
+    reassigned, stats = vector_processing.reassign_small_raster_islands(
+        raster_boxes(assignments),
+        min_island_area=3,
+        color_order=(RED, BLUE, GREEN),
+        black_hex=BLACK,
+    )
+
+    # The former simultaneous implementation changed Red -> Blue and
+    # Blue -> Red from the same input snapshot, leaving two one-cell islands.
+    assert owned_cells(reassigned) == {(x, 0): GREEN for x in range(5)}
+    assert stats["pixels"] == 2

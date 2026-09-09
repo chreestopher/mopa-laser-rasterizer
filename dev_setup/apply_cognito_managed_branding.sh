@@ -19,6 +19,11 @@ fi
 PRODUCTION_CLIENT_ID="${COGNITO_PRODUCTION_CLIENT_ID:-${COGNITO_CLIENT_ID:-}}"
 STAGING_CLIENT_ID="${COGNITO_STAGING_CLIENT_ID:-${1:-}}"
 SETTINGS_FILE="${COGNITO_MANAGED_BRANDING_SETTINGS:-$ROOT_DIR/ecs/cognito-managed-login-settings.json}"
+SETTINGS_FILE_FOR_AWS="$SETTINGS_FILE"
+# Native Windows AWS CLI cannot resolve Git Bash's /c/... filesystem syntax.
+if command -v cygpath >/dev/null 2>&1; then
+  SETTINGS_FILE_FOR_AWS="$(cygpath -m "$SETTINGS_FILE")"
+fi
 
 require_value() {
   local name="$1"
@@ -63,7 +68,7 @@ apply_client_branding() {
   aws cognito-idp update-managed-login-branding "${aws_args[@]}" \
     --user-pool-id "$USER_POOL_ID" \
     --managed-login-branding-id "$branding_id" \
-    --settings "file://$SETTINGS_FILE" >/dev/null
+    --settings "file://$SETTINGS_FILE_FOR_AWS" >/dev/null
   echo "Managed login branding applied to client $client_id ($branding_id)"
 }
 

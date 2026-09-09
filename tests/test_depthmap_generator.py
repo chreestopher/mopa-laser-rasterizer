@@ -17,7 +17,7 @@ class DepthMapGeneratorCoverageTests(unittest.TestCase):
         self.assertIn('Guest access ready. Choose an image', bootstrap)
         self.assertIn('if (window.serverlessDepthGuest)', script)
         self.assertIn('all other Depthmap Lab tools remain available to guests', script)
-        self.assertIn('/depthmap_bootstrap.js?v=2', builder)
+        self.assertIn('/depthmap_bootstrap.js?v=3', builder)
         self.assertIn('/static/depthmap_generator.js?v=9', builder)
         self.assertIn('await import("/depthmap_generator.js?v=11")', bootstrap)
 

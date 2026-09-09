@@ -18,28 +18,37 @@ BUCKET="$(output ArtifactBucketName)"
 TABLE="$(output RuntimeTableName)"
 QUEUE_URL="$(output JobQueueUrl)"
 TASK_ID="${1:-$(cat /proc/sys/kernel/random/uuid)}"
-IMAGE="$REPO_ROOT/scratch/videos/Color-Guided-Material-Library-Backed/ott-heads.cover.jpg"
-MATERIAL="$REPO_ROOT/scratch/videos/Color-Guided-Material-Library-Backed/stainless-businesss-cards.clb"
-IMAGE_KEY="jobs/$TASK_ID/inputs/ott-heads.cover.jpg"
-MATERIAL_KEY="jobs/$TASK_ID/inputs/stainless-businesss-cards.clb"
+IMAGE="${SERVERLESS_STAGING_SMOKE_IMAGE:-$REPO_ROOT/test-input.png}"
+MATERIAL="${SERVERLESS_STAGING_SMOKE_MATERIAL:-$SCRIPT_DIR/serverless-staging-smoke.clb}"
+IMAGE_NAME="$(basename -- "$IMAGE")"
+MATERIAL_FILE_NAME="$(basename -- "$MATERIAL")"
+SELECTED_MATERIAL="${SERVERLESS_STAGING_SMOKE_SELECTED_MATERIAL:-}"
+if [ -z "$SELECTED_MATERIAL" ] && [ -f "$MATERIAL" ]; then
+  SELECTED_MATERIAL="$(python3 -c 'import sys, xml.etree.ElementTree as ET; root=ET.parse(sys.argv[1]).getroot(); material=root.find(".//Material"); print(material.get("name", "") if material is not None else "")' "$MATERIAL")"
+fi
+IMAGE_KEY="jobs/$TASK_ID/inputs/$IMAGE_NAME"
+MATERIAL_KEY="jobs/$TASK_ID/inputs/$MATERIAL_FILE_NAME"
 NOW="$(date +%s)"
 EXPIRES="$((NOW + 604800))"
 
 [ -f "$IMAGE" ] || { echo "Missing artwork: $IMAGE" >&2; exit 2; }
 [ -f "$MATERIAL" ] || { echo "Missing Material Library: $MATERIAL" >&2; exit 2; }
+[ -n "$SELECTED_MATERIAL" ] || { echo "Could not determine the selected Material Library material." >&2; exit 2; }
 
 aws s3 cp "$IMAGE" "s3://$BUCKET/$IMAGE_KEY" --region "$REGION" --only-show-errors
 aws s3 cp "$MATERIAL" "s3://$BUCKET/$MATERIAL_KEY" --region "$REGION" --only-show-errors
 
 export STAGING_TASK_ID="$TASK_ID" STAGING_IMAGE_KEY="$IMAGE_KEY" STAGING_MATERIAL_KEY="$MATERIAL_KEY"
 export STAGING_NOW="$NOW" STAGING_EXPIRES="$EXPIRES"
+export STAGING_IMAGE_NAME="$IMAGE_NAME" STAGING_MATERIAL_FILE_NAME="$MATERIAL_FILE_NAME"
+export STAGING_SELECTED_MATERIAL="$SELECTED_MATERIAL"
 ITEM="$(python3 -c '
 import json, os
 S=lambda value:{"S":str(value)}
 task=os.environ["STAGING_TASK_ID"]
 data={name:S(value) for name,value in {
  "pixel_square_mm":"0.125","new_width":"400","new_height":"0",
- "material":"stainless-businesss-cards","colors":"Black,Red","image_preset":"cartoon",
+ "material":os.environ["STAGING_SELECTED_MATERIAL"],"colors":"Black,Red","image_preset":"cartoon",
  "abstract_filter":"none","abstract_filter_parameters":"{}","color_name_overrides":"{}","svg_only":"false"
 }.items()}
 item={"pk":S("JOB#"+task),"sk":S("RUNTIME"),"task_id":S(task),"status":S("pending"),
@@ -47,8 +56,8 @@ item={"pk":S("JOB#"+task),"sk":S("RUNTIME"),"task_id":S(task),"status":S("pendin
  "created_at":{"N":os.environ["STAGING_NOW"]},"updated_at":{"N":os.environ["STAGING_NOW"]},
  "expires_at":{"N":os.environ["STAGING_EXPIRES"]},
  "payload":{"M":{"task_id":S(task),"image_key":S(os.environ["STAGING_IMAGE_KEY"]),
- "material_key":S(os.environ["STAGING_MATERIAL_KEY"]),"image_name":S("ott-heads.cover.jpg"),
- "material_name":S("stainless-businesss-cards.clb"),"output_name":S("output_"+task+"_ott-heads.cover.jpg"),
+ "material_key":S(os.environ["STAGING_MATERIAL_KEY"]),"image_name":S(os.environ["STAGING_IMAGE_NAME"]),
+ "material_name":S(os.environ["STAGING_MATERIAL_FILE_NAME"]),"output_name":S("output_"+task+"_"+os.environ["STAGING_IMAGE_NAME"]),
  "data":{"M":data}}}}
 print(json.dumps(item,separators=(",",":")))')"
 

@@ -16,7 +16,7 @@ source = source.replace(
     "  <script>document.documentElement.classList.add('staging-shell-pending');setTimeout(()=>document.documentElement.classList.remove('staging-shell-pending'),3000)</script>\n"
     '  <link rel="stylesheet" href="/machine_chrome.css?v=3">\n'
     '  <link rel="stylesheet" href="/staging-shell.css?v=1">\n'
-    '  <script src="/staging-shell.js?v=1" defer></script>\n'
+    '  <script src="/staging-shell.js?v=2" defer></script>\n'
     "</head>",
     1,
 )
@@ -41,6 +41,6 @@ source = source.replace("/login", "/")
 source = source.replace("{{ depth_palette|tojson }}", "[]")
 source = source.replace(
     '<script type="module" src="/static/depthmap_generator.js?v=9"></script>',
-    '<script type="module" src="/depthmap_bootstrap.js?v=2"></script>',
+    '<script type="module" src="/depthmap_bootstrap.js?v=3"></script>',
 )
 Path(sys.argv[2]).write_text(source, encoding="utf-8")

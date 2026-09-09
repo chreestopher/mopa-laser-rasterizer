@@ -1,4 +1,13 @@
 (() => {
+  for (const key of ["id_token", "refresh_token"]) {
+    const legacyValue = sessionStorage.getItem(key);
+    if (!localStorage.getItem(key) && legacyValue) localStorage.setItem(key, legacyValue);
+    sessionStorage.removeItem(key);
+  }
+  window.addEventListener("storage", event => {
+    if (event.storageArea !== localStorage || event.key !== "id_token") return;
+    if (Boolean(event.oldValue) !== Boolean(event.newValue)) location.reload();
+  });
   if (!document.querySelector('link[href^="/machine_chrome.css"]')) {
     const productionChrome = document.createElement("link");
     productionChrome.rel = "stylesheet";
@@ -66,7 +75,7 @@
     const legacyBackLink = [...document.querySelectorAll("body > p")]
       .find(element => element.textContent.includes("Serverless staging"));
     legacyBackLink?.remove();
-    const signedIn = Boolean(sessionStorage.getItem("id_token"));
+    const signedIn = Boolean(localStorage.getItem("id_token"));
     const header = document.createElement("header");
     header.className = "staging-shell";
     const brand = "MOPA-LASER-RASTERIZER";
@@ -154,11 +163,13 @@
     const account = header.querySelector(".machine-power-toggle a");
     account.addEventListener("click", async event => {
       event.preventDefault();
-      if (!sessionStorage.getItem("id_token")) {
+      if (!localStorage.getItem("id_token")) {
         await beginLogin();
         return;
       }
       updateAuthIndicator(false);
+      localStorage.removeItem("id_token");
+      localStorage.removeItem("refresh_token");
       sessionStorage.clear();
       try {
         const config = await fetch("/config.json", { cache: "no-store" }).then(response => response.json());

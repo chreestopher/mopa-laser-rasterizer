@@ -18,9 +18,18 @@ DEFAULT_RASTERIZER_PALETTE = (
     ("Light-Gold", 29),
 )
 
+# These are workflow settings rather than artwork-color mapping targets. Keep
+# them out of DEFAULT_RASTERIZER_PALETTE so they do not consume official
+# Rasterizer layers or alter hatch-palette planning.
+BLANK_PALETTE_UTILITY_ENTRIES = ("Labels", "Holographic")
+BLANK_PALETTE_ENTRIES = (
+    tuple(name for name, _layer_index in DEFAULT_RASTERIZER_PALETTE)
+    + BLANK_PALETTE_UTILITY_ENTRIES
+)
+
 
 def build_blank_palette_library(material_name):
-    """Return a valid, deliberately non-runnable 30-swatch .clb document."""
+    """Return a valid, deliberately non-runnable 32-entry .clb document."""
     material_name = str(material_name or "").strip()
     if not material_name or len(material_name) > 160:
         raise ValueError("Material name must be between 1 and 160 characters.")
@@ -32,7 +41,7 @@ def build_blank_palette_library(material_name):
         "Warning": "PLACEHOLDERS_ONLY_DO_NOT_RUN",
     })
     material = ET.SubElement(root, "Material", {"name": material_name})
-    for swatch_name, _layer_index in DEFAULT_RASTERIZER_PALETTE:
+    for swatch_name in BLANK_PALETTE_ENTRIES:
         entry = ET.SubElement(material, "Entry", {
             "Thickness": "-1.0000",
             "Desc": f"UNCONFIGURED {swatch_name}",

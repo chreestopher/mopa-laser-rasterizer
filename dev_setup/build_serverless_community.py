@@ -22,7 +22,7 @@ source = source.replace(
     '  <link rel="stylesheet" href="/machine_chrome.css?v=3">\n'
     '  <link rel="stylesheet" href="/staging-shell.css?v=1">\n'
     '  <link rel="stylesheet" href="/staging-pages.css?v=1">\n'
-    '  <script src="/staging-shell.js?v=1" defer></script>\n'
+    '  <script src="/staging-shell.js?v=2" defer></script>\n'
     "</head>",
     1,
 )

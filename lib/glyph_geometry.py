@@ -1,7 +1,7 @@
-"""Image-driven glyph mosaic built on Halftone Newsprint's shared matrix."""
+"""Shared glyph renderer used by Rasterizer Geometry Styles."""
 
-from .common import number
-from . import halftone_newsprint
+from abstract_filters.common import number
+from abstract_filters import halftone_newsprint
 
 
 USES_SOURCE_LUMINANCE = True
@@ -9,7 +9,8 @@ PRESERVE_SOURCE_BLACK = True
 
 GLYPH_SHAPES = {
     "circle", "square", "diamond", "triangle", "hexagon", "octagon",
-    "star", "cross", "bar", "mixed",
+    "star", "cross", "bar", "skull", "heart", "space_invader", "ghost",
+    "bat", "alien_head", "paw_print", "fish_scale", "puzzle_piece", "mixed",
 }
 
 DEFAULTS = {
@@ -29,29 +30,11 @@ DEFAULTS = {
 
 VECTOR_DEFAULTS = dict(halftone_newsprint.VECTOR_DEFAULTS)
 
-CONTROLS = (
-    ("cell_size_mm", 0.2, 1.0, 0.05),
-    ("minimum_glyph_ratio", 0.16, 0.8, 0.01),
-    ("maximum_glyph_ratio", 0.94, 1.0, 0.01),
-    ("non_black_glyph_density", 0.6, 4.0, 0.05),
-    ("tone_curve", 0.2, 1.3, 0.05),
-    ("contrast", 1.0, 3.0, 0.05),
-    ("grid_angle", -90, 0, 1),
-    ("glyph_rotation", -180, 180, 1),
-    ("invert", 0, 1, 1),
-    ("black_only", 0, 1, 1),
-    ("seed", 0, 999999, 1),
-)
-
-
-def apply(geometry, settings):
-    return geometry
-
 
 def remap_layers(processed_layers, target_colors, settings):
     shape = str(settings.get("glyph_shape") or DEFAULTS["glyph_shape"]).strip().lower()
     if shape not in GLYPH_SHAPES:
-        raise ValueError(f"Glyph Mosaic shape '{shape}' is not supported.")
+        raise ValueError(f"Glyph Geometry shape '{shape}' is not supported.")
     translated = dict(settings)
     translated.update({
         "minimum_dot_ratio": number(
@@ -66,6 +49,6 @@ def remap_layers(processed_layers, target_colors, settings):
         "_glyph_shape": shape,
         "_glyph_rotation": number(settings.get("glyph_rotation"), 0, -180, 180),
         "_glyph_seed": number(settings.get("seed"), 1, 0, 999999),
-        "_progress_name": "Glyph Mosaic",
+        "_progress_name": settings.get("_progress_name") or "Glyph Geometry Style",
     })
     return halftone_newsprint.remap_layers(processed_layers, target_colors, translated)

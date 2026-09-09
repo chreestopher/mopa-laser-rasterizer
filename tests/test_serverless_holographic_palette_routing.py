@@ -280,6 +280,8 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertIn('["Image preset",values.image_preset]', script)
         self.assertIn('["Abstract filter",values.abstract_filter]', script)
         self.assertIn('["Abstract filter parameters",values.abstract_filter_parameters]', script)
+        self.assertIn('["Geometry style",values.geometry_style]', script)
+        self.assertIn('["Geometry style parameters",values.geometry_style_parameters]', script)
         self.assertIn('<h3>Swatch Settings</h3>', script)
         self.assertIn('class="job-details-grid"', script)
         self.assertIn('job-details-column job-swatch-settings', script)
@@ -401,7 +403,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         page = (ROOT / "serverless_web" / "holographic.html").read_text(encoding="utf-8")
         script = (ROOT / "serverless_web" / "holographic.js").read_text(encoding="utf-8")
 
-        self.assertIn('src="/holographic.js?v=5"', page)
+        self.assertIn('src="/holographic.js?v=6"', page)
         self.assertIn('.holographic-downloads{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px', page)
         self.assertIn('.holographic-download-button{display:flex!important;box-sizing:border-box;width:100%;height:60px', page)
         self.assertEqual(script.count('class="staging-action-button holographic-download-button"'), 2)
@@ -414,7 +416,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         page = (ROOT / "serverless_web" / "holographic.html").read_text(encoding="utf-8")
         script = (ROOT / "serverless_web" / "holographic.js").read_text(encoding="utf-8")
 
-        self.assertIn('src="/holographic.js?v=5"', page)
+        self.assertIn('src="/holographic.js?v=6"', page)
         self.assertIn("numbered perspective overlay", page)
         self.assertIn("function overlayGrid()", script)
         self.assertIn("bilinear(column/columns,0)", script)
@@ -492,7 +494,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertIn('<strong>Job Duration:</strong> <span data-job-duration></span>', script)
         self.assertIn('setText("[data-job-duration]",formatDuration(job))', script)
         self.assertIn('active?" (in progress)":""', script)
-        self.assertIn('src="/history.js?v=5"', page)
+        self.assertIn('src="/history.js?v=6"', page)
 
     def test_serverless_docs_rewrite_production_only_routes(self):
         builder = (ROOT / "dev_setup" / "build_serverless_docs.py").read_text(encoding="utf-8")

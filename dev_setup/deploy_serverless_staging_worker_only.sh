@@ -36,7 +36,6 @@ fi
 aws cloudformation deploy --region "$REGION" --stack-name "$WORKER_STACK" \
   --template-file "$REPO_ROOT/ecs/rasterizer-worker.yaml" --capabilities CAPABILITY_IAM \
   --parameter-overrides "ImageUri=$IMAGE_URI" \
-    "KrasnowGratingWins=${SERVERLESS_STAGING_KRASNOW_GRATING_WINS:-true}" \
   --no-fail-on-empty-changeset
 
 TASK_DEFINITION_ARN="$(aws cloudformation describe-stacks --region "$REGION" --stack-name "$WORKER_STACK" \

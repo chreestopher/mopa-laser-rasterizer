@@ -24,7 +24,7 @@ def main(argv=None):
         raise SystemExit(
             "Usage: Material_Library.py INPUT OUTPUT PIXEL_MM WIDTH HEIGHT "
             "MATERIAL_LIBRARY MATERIAL COLORS PRESET FILTER [FILTER_JSON] [PALETTE_NAMES_JSON] "
-            "[SVG_ONLY] [COLOR_MATCHING_JSON] [VALIDATE_ONLY]"
+            "[SVG_ONLY] [COLOR_MATCHING_JSON] [VALIDATE_ONLY] [GEOMETRY_STYLE] [GEOMETRY_JSON] [CROP_SHAPE]"
         )
 
     (input_file, output_file, square_mm, new_width, new_height,
@@ -34,6 +34,11 @@ def main(argv=None):
     filter_parameters = {}
     color_name_overrides = {}
     color_matching = {}
+    geometry_style = argv[15].strip().lower() if len(argv) > 15 and argv[15].strip() else "vectors"
+    geometry_style_parameters = {}
+    crop_shape = argv[17].strip().lower() if len(argv) > 17 else ""
+    if crop_shape not in {"", "rectangle", "square", "oval", "circle", "transparency"}:
+        raise SystemExit("Invalid artwork crop shape")
     svg_only = len(argv) > 12 and argv[12].strip().lower() in ("true", "1", "yes", "on")
     # Accept the former argv[13]=validate-only layout for compatibility while
     # reserving argv[13] for the new, independent color-matching object.
@@ -62,6 +67,13 @@ def main(argv=None):
                 raise ValueError("color matching settings must be a JSON object")
         except (json.JSONDecodeError, ValueError) as error:
             raise SystemExit(f"Invalid color matching settings: {error}")
+    if len(argv) > 16 and argv[16].strip():
+        try:
+            geometry_style_parameters = json.loads(argv[16])
+            if not isinstance(geometry_style_parameters, dict):
+                raise ValueError("geometry style parameters must be a JSON object")
+        except (json.JSONDecodeError, ValueError) as error:
+            raise SystemExit(f"Invalid geometry style parameters: {error}")
 
     if image_preset.startswith("abstract_"):
         abstract_filter = image_preset.removeprefix("abstract_")
@@ -83,7 +95,40 @@ def main(argv=None):
     limit_list.extend(("black", "light-gray"))
     material_layer_report = {"loaded": [], "skipped": []}
     filter_module = vector_processing.ABSTRACT_FILTER_MODULES.get(abstract_filter)
-    required_setting = getattr(filter_module, "SETTING_NAME", None)
+    try:
+        geometry_style, geometry_style_parameters = vector_processing.geometry_styles.normalize(
+            geometry_style, geometry_style_parameters, abstract_filter
+        )
+    except ValueError as error:
+        raise SystemExit(str(error))
+    geometry_module = vector_processing.geometry_styles.module_for_style(geometry_style)
+    routed_styles = vector_processing.geometry_styles.assigned_styles(
+        geometry_style, geometry_style_parameters
+    )
+    routed_krasnow = (
+        vector_processing.geometry_styles.KRASNOW_STYLE in routed_styles
+        and geometry_style == vector_processing.geometry_styles.ROUTED_STYLE
+    )
+    setting_module = (
+        vector_processing.geometry_styles.module_for_style(
+            vector_processing.geometry_styles.KRASNOW_STYLE
+        )
+        if routed_krasnow
+        else geometry_module
+        if getattr(geometry_module, "SETTING_NAME", None)
+        else filter_module
+    )
+    setting_parameters = (
+        vector_processing.geometry_styles.parameters_for_style(
+            geometry_style,
+            geometry_style_parameters,
+            vector_processing.geometry_styles.KRASNOW_STYLE,
+        )
+        if routed_krasnow
+        else geometry_style_parameters if setting_module is geometry_module
+        else filter_parameters
+    )
+    required_setting = getattr(setting_module, "SETTING_NAME", None)
     if svg_only:
         filter_setting_layers = {}
         material_layer_report.update({"mode": "svg_only", "loaded": [], "skipped": []})
@@ -107,12 +152,16 @@ def main(argv=None):
             raise SystemExit(str(error))
     if required_setting and not svg_only:
         setting_layer_id = filter_setting_layers[required_setting.casefold()]
-        filter_parameters["_setting_layer_id"] = setting_layer_id
+        setting_parameters["_setting_layer_id"] = setting_layer_id
+        if routed_krasnow:
+            geometry_style_parameters[
+                vector_processing.geometry_styles.KRASNOW_STYLE
+            ]["_setting_layer_id"] = setting_layer_id
         if not bool(
-            getattr(filter_module, "REPLICATE_SETTING_TO_OUTPUT_LAYERS", False)
+            getattr(setting_module, "REPLICATE_SETTING_TO_OUTPUT_LAYERS", False)
         ):
-            layer_color = getattr(filter_module, "LAYER_COLOR", "#FEFEFE").upper()
-            layer_name = getattr(filter_module, "LAYER_NAME", required_setting)
+            layer_color = getattr(setting_module, "LAYER_COLOR", "#FEFEFE").upper()
+            layer_name = getattr(setting_module, "LAYER_NAME", required_setting)
             target_colors[layer_color] = (0, setting_layer_id, layer_name)
             vector_processing.NON_IMAGE_SWATCHES.add(layer_color)
             for layer in getattr(lb, "_layers", []):
@@ -120,15 +169,30 @@ def main(argv=None):
                     layer.name = layer_name
                     break
 
-    configure_output_layers = getattr(filter_module, "configure_output_layers", None)
+    configure_output_layers = getattr(setting_module, "configure_output_layers", None)
     if callable(configure_output_layers) and not svg_only:
         try:
-            configure_output_layers(lb, target_colors, filter_parameters)
+            output_target_colors = (
+                vector_processing.geometry_styles.target_colors_for_style(
+                    target_colors,
+                    geometry_style_parameters,
+                    vector_processing.geometry_styles.KRASNOW_STYLE,
+                )
+                if routed_krasnow
+                else target_colors
+            )
+            configure_output_layers(lb, output_target_colors, setting_parameters)
         except ValueError as error:
             raise SystemExit(str(error))
 
     vector_settings = dict(preset)
     vector_settings.update(getattr(filter_module, "VECTOR_DEFAULTS", {}))
+    vector_settings.update(getattr(geometry_module, "VECTOR_DEFAULTS", {}))
+    vector_settings.update(
+        vector_processing.geometry_styles.vector_settings_for_style(
+            geometry_style, geometry_style_parameters
+        )
+    )
     for name in ("min_island_area", "simplification_factor", "smoothing_radius"):
         if name in filter_parameters:
             vector_settings[name] = filter_parameters[name]
@@ -176,8 +240,12 @@ def main(argv=None):
             "requested_limit_colors": limit_colors or "all",
             "effective_limit_colors": limit_list,
             "material_library_layers": material_layer_report,
+            "artwork_crop_shape": crop_shape or "none",
         },
         export_lightburn=not svg_only,
+        geometry_style=geometry_style,
+        geometry_style_parameters=geometry_style_parameters,
+        crop_shape=crop_shape,
     )
 
 

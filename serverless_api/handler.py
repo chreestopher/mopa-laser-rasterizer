@@ -63,7 +63,7 @@ PALETTE_NAMES = {color.upper(): name for name, color in PALETTE}
 RASTER_PRESETS = {"cartoon", "color_photograph", "bw_dither_photograph"}
 ABSTRACT_FILTERS = {
     "wave", "voronoi", "shear", "spiral", "mosaic", "crystal", "ripple",
-    "glitch", "deep_fryer", "shattered", "halftone_newsprint", "glyph_mosaic", "optical_color_mix",
+    "glitch", "deep_fryer", "shattered", "halftone_newsprint", "optical_color_mix",
     "krasnow_grating", "none",
 }
 
@@ -564,6 +564,7 @@ LAST_USED_FORM_FIELDS = {
     "last_rasterizer_form": {
         "material_choice", "material_name", "pixel_square_mm", "new_width", "new_height",
         "image_preset", "filter_parameters", "cut_mode", "preserve_black_outlines",
+        "geometry_style", "geometry_style_parameters",
         "color_matching_mode", "color_matching_hue_weight",
         "color_matching_saturation_weight", "color_matching_lightness_weight",
     },
@@ -587,6 +588,21 @@ LAST_USED_FORM_FIELDS = {
 
 
 def clean_last_used_form(name, snapshot):
+    def clean_number(value):
+        if isinstance(value, bool):
+            return value
+        if not isinstance(value, (int, float, Decimal)) or isinstance(value, complex):
+            return None
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if not math.isfinite(numeric):
+            return None
+        if isinstance(value, Decimal):
+            return int(value) if value == value.to_integral_value() else numeric
+        return value
+
     if not isinstance(snapshot, dict):
         return None
     try:
@@ -598,38 +614,68 @@ def clean_last_used_form(name, snapshot):
     values = snapshot.get("values")
     if not isinstance(values, dict):
         return None
+    def clean_parameter_map(parameters, geometry=False):
+        cleaned = {}
+        for parameter, parameter_value in list(parameters.items())[:64]:
+            parameter = str(parameter)[:80]
+            if geometry and parameter == "posterize_colors":
+                continue
+            number = clean_number(parameter_value)
+            if number is not None:
+                cleaned[parameter] = number
+            elif parameter == "mixing_model" and parameter_value in {"lab", "rgb", "hsv"}:
+                cleaned[parameter] = parameter_value
+            elif parameter == "cell_shape" and parameter_value in {
+                "square", "hexagon", "triangle", "diamond", "skull",
+                "heart", "space_invader", "ghost", "bat",
+                "alien_head", "paw_print", "fish_scale", "puzzle_piece",
+            }:
+                cleaned[parameter] = parameter_value
+            elif parameter == "glyph_shape" and parameter_value in {
+                "circle", "square", "diamond", "triangle", "hexagon",
+                "octagon", "star", "cross", "bar", "skull", "heart",
+                "space_invader", "ghost", "bat", "alien_head",
+                "paw_print", "fish_scale", "puzzle_piece", "mixed",
+            }:
+                cleaned[parameter] = parameter_value
+        return cleaned
+
     allowed, clean_values = LAST_USED_FORM_FIELDS[name], {}
     for key, value in values.items():
         if key not in allowed:
             continue
-        if key == "filter_parameters" and isinstance(value, dict):
-            clean_values[key] = {
-                str(parameter)[:80]: parameter_value
-                for parameter, parameter_value in list(value.items())[:64]
-                if (
-                    isinstance(parameter_value, (bool, int, float))
-                    or (
-                        str(parameter) == "mixing_model"
-                        and parameter_value in {"lab", "rgb", "hsv"}
+        if key in {"filter_parameters", "geometry_style_parameters"} and isinstance(value, dict):
+            if key == "geometry_style_parameters" and isinstance(value.get("assignments"), dict):
+                clean_assignments = {
+                    str(color_hex).upper(): assigned_style
+                    for color_hex, assigned_style in list(value["assignments"].items())[:64]
+                    if len(str(color_hex)) == 7
+                    and str(color_hex).startswith("#")
+                    and all(
+                        character in "0123456789ABCDEF"
+                        for character in str(color_hex).upper()[1:]
                     )
-                    or (
-                        str(parameter) == "cell_shape"
-                        and parameter_value in {
-                            "square", "hexagon", "triangle", "diamond", "skull",
-                            "heart", "space_invader", "ghost", "bat",
-                            "alien_head", "paw_print", "fish_scale",
-                            "puzzle_piece",
-                        }
-                    )
+                    and assigned_style in {"vectors", "glyphs", "krasnow_grating"}
+                }
+                clean_assignments["#000000"] = "vectors"
+                clean_parameters = {
+                    "assignments": clean_assignments,
+                    "glyphs": clean_parameter_map(value.get("glyphs") or {}, geometry=True),
+                    "krasnow_grating": clean_parameter_map(
+                        value.get("krasnow_grating") or {}, geometry=True
+                    ),
+                }
+            else:
+                clean_parameters = clean_parameter_map(
+                    value, geometry=key == "geometry_style_parameters"
                 )
-                and not isinstance(parameter_value, complex)
-                and (not isinstance(parameter_value, float) or math.isfinite(parameter_value))
-            }
+            clean_values[key] = clean_parameters
+        elif key == "geometry_style" and value in {"vectors", "glyphs", "krasnow_grating", "by_swatch"}:
+            clean_values[key] = value
         elif isinstance(value, bool):
             clean_values[key] = value
-        elif (isinstance(value, (int, float)) and not isinstance(value, complex)
-              and (not isinstance(value, float) or math.isfinite(value))):
-            clean_values[key] = value
+        elif clean_number(value) is not None:
+            clean_values[key] = clean_number(value)
         elif isinstance(value, str):
             clean_values[key] = value[:2000 if key == "capture_notes" else 320]
     return {"saved_at": saved_at, "values": clean_values}
@@ -3440,9 +3486,117 @@ def submit_job(event, task_id, guest=False):
     except (TypeError, ValueError):
         return response(400, {"message": "Pixel size must be at least 0.01 mm"})
     data["pixel_square_mm"] = str(pixel_square_mm)
+    crop_shape = str(data.get("crop_shape") or "").strip().lower()
+    if crop_shape not in {"", "rectangle", "square", "oval", "circle", "transparency"}:
+        return response(400, {"message": "Choose a valid artwork crop shape"})
+    data["crop_shape"] = crop_shape
     data["image_preset"] = preset
     data["abstract_filter"] = preset.removeprefix("abstract_") if preset.startswith("abstract_") else "none"
     data["abstract_filter_parameters"] = json.dumps(parameters, separators=(",", ":"))
+    geometry_style = str(data.get("geometry_style") or "vectors").strip().lower()
+    if geometry_style not in {"vectors", "glyphs", "krasnow_grating", "by_swatch"}:
+        return response(400, {"message": "Choose a valid geometry style"})
+    if geometry_style in {"glyphs", "krasnow_grating", "by_swatch"} and data["abstract_filter"] in {
+        "halftone_newsprint", "optical_color_mix", "krasnow_grating",
+    }:
+        return response(400, {"message": "This Geometry Style is not available with the selected specialized image style"})
+    raw_geometry_parameters = data.get("geometry_style_parameters") or "{}"
+    try:
+        geometry_parameters = (
+            json.loads(raw_geometry_parameters)
+            if isinstance(raw_geometry_parameters, str)
+            else raw_geometry_parameters
+        )
+    except (TypeError, json.JSONDecodeError):
+        return response(400, {"message": "Geometry style settings are not valid JSON"})
+    if not isinstance(geometry_parameters, dict):
+        return response(400, {"message": "Geometry style settings must be a small object"})
+    # Older cached staging pages exposed this retired experimental control.
+    # Discard it so a browser/API/worker rolling deployment cannot strand an
+    # otherwise valid Rasterizer job.
+    geometry_parameters = dict(geometry_parameters)
+    geometry_parameters.pop("posterize_colors", None)
+    if len(geometry_parameters) > 16:
+        return response(400, {"message": "Geometry style settings must be a small object"})
+    numeric_geometry_parameters = {
+        "cell_size_mm", "minimum_glyph_ratio", "maximum_glyph_ratio",
+        "non_black_glyph_density", "tone_curve", "contrast", "grid_angle",
+        "glyph_rotation", "seed", "speed_spread", "gradient_top",
+        "gradient_bottom", "gradient_curve", "hue_rotation",
+        "saturation_cutoff", "patch_size_mm", "line_spacing_mm",
+        "hue_line_spacing_minimum_mm", "hue_line_spacing_maximum_mm",
+        "angle_min", "angle_max",
+    }
+    toggle_geometry_parameters = {"invert", "invert_fill", "black_only", "preserve_black"}
+    glyph_shapes = {
+        "circle", "square", "diamond", "triangle", "hexagon", "octagon",
+        "star", "cross", "bar", "skull", "heart", "space_invader",
+        "ghost", "bat", "alien_head", "paw_print", "fish_scale",
+        "puzzle_piece", "mixed",
+    }
+    cell_shapes = {
+        "square", "hexagon", "triangle", "diamond", "skull", "heart",
+        "space_invader", "ghost", "bat", "alien_head", "paw_print",
+        "fish_scale", "puzzle_piece",
+    }
+    def validate_geometry_section(section):
+        if not isinstance(section, dict) or len(section) > 16:
+            raise ValueError("Geometry style settings must be a small object")
+        for key, value in section.items():
+            valid = (
+                (key == "glyph_shape" and value in glyph_shapes)
+                or (key == "cell_shape" and value in cell_shapes)
+                or (key in toggle_geometry_parameters and isinstance(value, (bool, int)) and value in {0, 1})
+                or (
+                    key in numeric_geometry_parameters
+                    and not isinstance(value, bool)
+                    and isinstance(value, (int, float))
+                    and math.isfinite(value)
+                )
+            )
+            if not valid:
+                raise ValueError(f"Geometry style setting '{key}' is invalid")
+        if section.get("invert_fill") and section.get("black_only"):
+            raise ValueError("Invert Fill cannot be combined with Black Only")
+
+    try:
+        if geometry_style == "by_swatch":
+            if set(geometry_parameters) - {"assignments", "glyphs", "krasnow_grating"}:
+                raise ValueError("Geometry routing settings contain an invalid section")
+            assignments = geometry_parameters.get("assignments") or {}
+            if not isinstance(assignments, dict) or len(assignments) > 64:
+                raise ValueError("Geometry routing assignments must be a small object")
+            selected_hexes = {
+                str(value).strip().upper()
+                for value in (data.get("selected_color_hexes") or [])
+            }
+            clean_assignments = {}
+            for color_hex, assigned_style in assignments.items():
+                color_hex = str(color_hex).strip().upper()
+                assigned_style = str(assigned_style).strip().lower()
+                if (
+                    not re.fullmatch(r"#[0-9A-F]{6}", color_hex)
+                    or color_hex not in selected_hexes | {"#000000"}
+                    or assigned_style not in {"vectors", "glyphs", "krasnow_grating"}
+                ):
+                    raise ValueError("Geometry routing contains an invalid swatch assignment")
+                clean_assignments[color_hex] = assigned_style
+            clean_assignments["#000000"] = "vectors"
+            glyph_parameters = geometry_parameters.get("glyphs") or {}
+            krasnow_parameters = geometry_parameters.get("krasnow_grating") or {}
+            validate_geometry_section(glyph_parameters)
+            validate_geometry_section(krasnow_parameters)
+            geometry_parameters = {
+                "assignments": clean_assignments,
+                "glyphs": glyph_parameters,
+                "krasnow_grating": krasnow_parameters,
+            }
+        else:
+            validate_geometry_section(geometry_parameters)
+    except ValueError as error:
+        return response(400, {"message": str(error)})
+    data["geometry_style"] = geometry_style
+    data["geometry_style_parameters"] = json.dumps(geometry_parameters, separators=(",", ":"))
     token = str(data.get("upload_token", ""))
     if not valid_upload_capability(item, token):
         return response(403, {"message": "Upload capability is invalid or expired"})

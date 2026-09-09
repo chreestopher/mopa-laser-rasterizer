@@ -56,13 +56,15 @@ class LightBurnProjectNotesTests(unittest.TestCase):
                 simplification_factor=0.1,
                 smoothing_radius=0.001,
                 abstract_filter="krasnow_grating",
-                abstract_filter_parameters={"favor_black": True, "_private": object()},
+                abstract_filter_parameters={"preserve_black": True, "_private": object()},
                 color_matching={"color_matching_mode": "balanced"},
                 job_settings={"selected_material": "Stainless Steel"},
                 target_colors={
                     "#000000": (0, 0, "black"),
                     "#3366FF": (0, 1, "blue"),
                 },
+                geometry_style="glyphs",
+                geometry_style_parameters={"glyph_shape": "star", "_private": object()},
             )
             with patch.object(vector_processing, "LARGE_LIGHTBURN_PROJECT_BYTES", 1):
                 vector_processing.save_vector_output(
@@ -76,7 +78,9 @@ class LightBurnProjectNotesTests(unittest.TestCase):
             self.assertTrue(saved_note.startswith(vector_processing.LARGE_LIGHTBURN_PROJECT_WARNING))
             self.assertIn("Job type: Rasterizer", saved_note)
             self.assertIn("Abstract filter: Krasnow Grating", saved_note)
-            self.assertIn("- Favor Black: On", saved_note)
+            self.assertIn("- Preserve Black: On", saved_note)
+            self.assertIn("Geometry style: Glyphs", saved_note)
+            self.assertIn("- Glyph Shape: star", saved_note)
             self.assertNotIn("private", saved_note.casefold())
 
     def test_holographic_artwork_is_labeled_as_holographic(self):
