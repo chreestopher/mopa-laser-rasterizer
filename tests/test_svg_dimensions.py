@@ -20,6 +20,7 @@ def test_svg_root_uses_scaled_canvas_when_requested_width_is_blank():
     assert root.attrib["viewBox"] == "0 0 75 50"
     assert root.attrib["width"] == "75mm"
     assert root.attrib["height"] == "50mm"
+    assert root.attrib["xmlns"] == "http://www.w3.org/2000/svg"
 
 
 def test_svg_root_does_not_use_a_zero_requested_dimension():
@@ -34,3 +35,4 @@ def test_svg_root_does_not_use_a_zero_requested_dimension():
     assert root.attrib["viewBox"] == "0 0 64 36"
     assert root.attrib["width"] == "64mm"
     assert root.attrib["height"] == "36mm"
+    assert root.attrib["xmlns"] == "http://www.w3.org/2000/svg"
