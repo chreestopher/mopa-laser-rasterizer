@@ -77,6 +77,16 @@ def test_web_stack_supports_preview_and_both_production_hostnames():
     production_script = read("dev_setup/deploy_serverless_production_web.sh")
     assert 'CERTIFICATE_ARN="${SERVERLESS_PRODUCTION_CERTIFICATE_ARN:-}"' in production_script
     assert 'export SERVERLESS_PRIMARY_HOSTNAME=""' in production_script
+    assert "SERVERLESS_CONFIGURE_ARTIFACT_CORS=true" in production_script
+
+
+def test_production_web_configures_post_only_artifact_cors():
+    script = read("dev_setup/deploy_serverless_staging_web.sh")
+
+    assert "put-bucket-cors" in script
+    assert '\"AllowedMethods\":[\"POST\"]' in script
+    assert '\"AllowedOrigins\":origins' in script
+    assert '"${CLOUDFRONT_URL%/}"' in script
 
 
 def test_production_path_contains_no_dns_mutation():

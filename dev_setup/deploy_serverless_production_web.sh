@@ -48,6 +48,7 @@ fi
 # Before DNS cutover the CloudFront hostname is the browser-test endpoint. The
 # Cognito client permits both it and the eventual production hostnames.
 export SERVERLESS_USE_CLOUDFRONT_CALLBACK="${SERVERLESS_PRODUCTION_USE_CLOUDFRONT_CALLBACK:-true}"
+export SERVERLESS_CONFIGURE_ARTIFACT_CORS=true
 export SERVERLESS_ADMIN_EMAIL="${SERVERLESS_PRODUCTION_ADMIN_EMAIL:-${IDENTITY_CENTER_ADMIN_EMAIL:-}}"
 
 exec bash "$SCRIPT_DIR/deploy_serverless_staging_web.sh"

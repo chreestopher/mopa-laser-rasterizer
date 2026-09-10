@@ -84,6 +84,18 @@ CLIENT_ID="$(output "$WEB_STACK" CognitoClientId)"
 DISTRIBUTION_ID="$(output "$WEB_STACK" DistributionId)"
 bash "$SCRIPT_DIR/apply_cognito_managed_branding.sh" "$CLIENT_ID"
 CLOUDFRONT_URL="$(output "$WEB_STACK" CloudFrontUrl)"
+if [ "${SERVERLESS_CONFIGURE_ARTIFACT_CORS:-false}" = "true" ]; then
+  CORS_ORIGINS=("${CLOUDFRONT_URL%/}")
+  [ -z "$PRIMARY_HOSTNAME" ] || CORS_ORIGINS+=("https://$PRIMARY_HOSTNAME")
+  [ -z "$ALTERNATE_HOSTNAME" ] || CORS_ORIGINS+=("https://$ALTERNATE_HOSTNAME")
+  CORS_ALLOWED_ORIGINS="$(IFS=,; echo "${CORS_ORIGINS[*]}")"
+  CORS_CONFIGURATION="$(CORS_ALLOWED_ORIGINS="$CORS_ALLOWED_ORIGINS" python3 -c 'import json,os
+origins=[value for value in os.environ["CORS_ALLOWED_ORIGINS"].split(",") if value]
+print(json.dumps({"CORSRules":[{"AllowedHeaders":["*"],"AllowedMethods":["POST"],"AllowedOrigins":origins,"ExposeHeaders":["ETag"],"MaxAgeSeconds":600}]},separators=(",",":")))')"
+  aws s3api put-bucket-cors --region "$REGION" --bucket "$BUCKET" \
+    --cors-configuration "$CORS_CONFIGURATION"
+  echo "Artifact upload CORS configured for: ${CORS_ORIGINS[*]}"
+fi
 if [ "${SERVERLESS_USE_CLOUDFRONT_CALLBACK:-false}" = "true" ]; then
   CALLBACK_URL="$CLOUDFRONT_URL"
 else
