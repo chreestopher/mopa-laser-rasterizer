@@ -27,7 +27,7 @@ from services import (
 from . import routes
 from ._job_access import browser_job_session, issue_submission_auth_token, request_can_access_job
 from .account import apply_entry_update, library_entries, mutate_library
-from .holographic import (
+from .fauxlographic import (
     _calibration_base_layer,
     _exact_setting,
     _grid_label_setting,

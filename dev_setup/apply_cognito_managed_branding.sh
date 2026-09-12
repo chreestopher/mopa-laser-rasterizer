@@ -72,7 +72,12 @@ apply_client_branding() {
   echo "Managed login branding applied to client $client_id ($branding_id)"
 }
 
-apply_client_branding "$PRODUCTION_CLIENT_ID"
+if aws cognito-idp describe-user-pool-client "${aws_args[@]}" \
+    --user-pool-id "$USER_POOL_ID" --client-id "$PRODUCTION_CLIENT_ID" >/dev/null 2>&1; then
+  apply_client_branding "$PRODUCTION_CLIENT_ID"
+else
+  echo "Skipping stale Cognito production client ID; client no longer exists."
+fi
 apply_client_branding "$STAGING_CLIENT_ID"
 
 echo "Cognito domain $DOMAIN_PREFIX is using managed login version 2."

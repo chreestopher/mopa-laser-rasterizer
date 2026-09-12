@@ -45,7 +45,7 @@ class ServerlessSeoTests(unittest.TestCase):
     def test_deployment_uploads_all_seo_assets(self):
         deploy = (ROOT / "dev_setup" / "deploy_serverless_staging_web.sh").read_text(encoding="utf-8")
         self.assertIn("build_serverless_seo.py", deploy)
-        self.assertIn('PUBLIC_BASE_URL="${SERVERLESS_STAGING_PUBLIC_URL:-$WEB_URL}"', deploy)
+        self.assertIn('PUBLIC_BASE_URL="${SERVERLESS_PUBLIC_URL:-${SERVERLESS_STAGING_PUBLIC_URL:-$WEB_URL}}"', deploy)
         self.assertIn('$BUILD_DIR/seo/index.html', deploy)
         self.assertIn("laser-engraving-tool color-laser-engraving-tool depthmap-relief-engraving-tool", deploy)
         self.assertIn('web/sitemap.xml', deploy)

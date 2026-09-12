@@ -26,6 +26,24 @@ class LightBurnProjectNotesTests(unittest.TestCase):
             self.assertEqual(notes.attrib["ShowOnLoad"], "1")
             self.assertEqual(notes.attrib["Notes"], 'First line\nSecond "line" & detail')
 
+    def test_generated_project_disables_path_optimizations_but_orders_by_layer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "optimized.lbrn2"
+            Lightburn().write(output)
+
+            prefs = ET.parse(output).getroot().find("UIPrefs")
+            self.assertIsNotNone(prefs)
+            values = {item.tag: item.attrib["Value"] for item in prefs}
+            self.assertEqual(values["Optimize_ByLayer"], "0")
+            self.assertEqual(values["Optimize_ByGroup"], "-1")
+            self.assertEqual(values["Optimize_ByPriority"], "-1")
+            self.assertTrue(all(
+                value == "0"
+                for name, value in values.items()
+                if name not in {"Optimize_ByLayer", "Optimize_ByGroup", "Optimize_ByPriority", "Optimize_OverlapDist"}
+            ))
+            self.assertEqual(values["Optimize_OverlapDist"], "0.025")
+
     def test_large_file_warning_can_replace_only_the_notes_tail(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "notes.lbrn2"
@@ -83,7 +101,7 @@ class LightBurnProjectNotesTests(unittest.TestCase):
             self.assertIn("- Glyph Shape: star", saved_note)
             self.assertNotIn("private", saved_note.casefold())
 
-    def test_holographic_artwork_is_labeled_as_holographic(self):
+    def test_holographic_artwork_is_labeled_as_fauxlographic(self):
         note = vector_processing.build_rasterizer_project_note(
             image_preset="holographic_artwork",
             width=100,
@@ -99,7 +117,7 @@ class LightBurnProjectNotesTests(unittest.TestCase):
             job_settings={},
             target_colors={},
         )
-        self.assertIn("Job type: Holographic", note)
+        self.assertIn("Job type: Fauxlographic", note)
 
 
 if __name__ == "__main__":

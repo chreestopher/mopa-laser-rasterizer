@@ -1,8 +1,10 @@
 import os
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 from PIL import Image
+import pytest
 from shapely.geometry import box
 
 
@@ -242,6 +244,88 @@ def test_by_swatch_parser_accepts_nested_renderer_settings():
     assert parsed["krasnow_grating"]["cell_shape"] == "hexagon"
 
 
+def test_by_swatch_does_not_force_the_dedicated_krasnow_black_mask():
+    parsed = parse_geometry_style_parameters({
+        "assignments": {
+            "#000000": "krasnow_grating",
+            "#0000FF": "krasnow_grating",
+        },
+        "krasnow_grating": {"preserve_black": 0},
+    })
+
+    assert parsed["assignments"]["#000000"] == "vectors"
+    assert parsed["krasnow_grating"]["preserve_black"] == 0
+
+
+def test_by_swatch_omits_settings_for_unused_geometry_renderers():
+    parsed = parse_geometry_style_parameters({
+        "assignments": {
+            "#FF0000": "krasnow_grating",
+        },
+        "glyphs": {"glyph_shape": "star", "cell_size_mm": .6},
+        "krasnow_grating": {"cell_shape": "hexagon", "patch_size_mm": .4},
+    })
+
+    assert "glyphs" not in parsed
+    assert parsed["krasnow_grating"]["cell_shape"] == "hexagon"
+
+
+def test_by_swatch_krasnow_quantizes_black_normally_without_darkness_reservation(
+    tmp_path,
+):
+    image_path = tmp_path / "blue-and-black.png"
+    image = Image.new("RGB", (2, 1))
+    image.putdata([(0, 0, 255), (0, 0, 0)])
+    image.save(image_path)
+    captured = {}
+
+    with patch.object(
+        vector_processing,
+        "load_resized_source_black_cutoff_mask",
+        side_effect=AssertionError("mixed routing must not reserve dark pixels"),
+    ), patch.object(
+        vector_processing,
+        "export_processed_layers",
+        side_effect=lambda **kwargs: captured.update(kwargs),
+    ), patch.object(vector_processing, "save_vector_output"):
+        vector_processing.raster_to_puzzle_and_lightburn(
+            raster_image_path=image_path,
+            output_svg_path=str(tmp_path / "mixed.svg"),
+            new_height=0,
+            new_width=2,
+            lb_project_instance=object(),
+            TARGET_COLORS={
+                "#000000": (0, 0, "Black"),
+                "#0000FF": (240, 1, "Blue"),
+            },
+            scale_factor=1,
+            image_preset="cartoon",
+            abstract_filter="none",
+            export_lightburn=False,
+            geometry_style="by_swatch",
+            geometry_style_parameters={
+                "assignments": {
+                    "#000000": "vectors",
+                    "#0000FF": "krasnow_grating",
+                },
+                "krasnow_grating": {
+                    "preserve_black": 1,
+                    "patch_size_mm": 1,
+                    "line_spacing_mm": .25,
+                    "hue_line_spacing_minimum_mm": .25,
+                    "hue_line_spacing_maximum_mm": .25,
+                    "angle_min": 0,
+                    "angle_max": 0,
+                },
+            },
+        )
+
+    layers = captured["processed_layers"]
+    assert layers["#000000"].area == pytest.approx(1, abs=1e-8)
+    assert not layers["#0000FF"].is_empty
+    assert layers["#000000"].intersection(layers["#0000FF"]).length <= 1e-9
+
+
 def test_krasnow_geometry_style_does_not_override_palette_quantization():
     settings = dict(vector_processing.PHOTO_TYPE_PRESETS["cartoon"])
     settings.update(
@@ -321,12 +405,16 @@ def test_geometry_parameter_parser_accepts_only_supported_controls():
     }
     assert parse_geometry_style_parameters({
         "cell_shape": "hexagon", "preserve_black": False,
+        "fauxlogram_gradient_scope": "each_shape",
+        "fauxlogram_gradient_direction": "center_to_edge",
         "patch_size_mm": .4, "line_spacing_mm": .06,
         "hue_line_spacing_minimum_mm": .05,
         "hue_line_spacing_maximum_mm": .07,
         "speed_spread": 1,
     }) == {
         "cell_shape": "hexagon", "preserve_black": 0,
+        "fauxlogram_gradient_scope": "each_shape",
+        "fauxlogram_gradient_direction": "center_to_edge",
         "patch_size_mm": .4, "line_spacing_mm": .06,
         "hue_line_spacing_minimum_mm": .05,
         "hue_line_spacing_maximum_mm": .07,
@@ -338,6 +426,57 @@ def test_geometry_parameter_parser_accepts_only_supported_controls():
         assert "invalid" in str(error)
     else:
         raise AssertionError("Expected an unknown geometry parameter to be rejected")
+
+
+def test_fauxlogram_gradient_directions_cover_axes_and_radial_space():
+    bounds = (0, 0, 10, 20)
+    position = krasnow_grating._gradient_position
+
+    assert position(5, 0, bounds, {"fauxlogram_gradient_direction": "top_to_bottom"}) == 0
+    assert position(5, 20, bounds, {"fauxlogram_gradient_direction": "top_to_bottom"}) == 1
+    assert position(5, 0, bounds, {"fauxlogram_gradient_direction": "bottom_to_top"}) == 1
+    assert position(0, 10, bounds, {"fauxlogram_gradient_direction": "left_to_right"}) == 0
+    assert position(10, 10, bounds, {"fauxlogram_gradient_direction": "right_to_left"}) == 0
+    assert position(5, 10, bounds, {"fauxlogram_gradient_direction": "center_to_edge"}) == 0
+    assert position(5, 10, bounds, {"fauxlogram_gradient_direction": "edge_to_center"}) == 1
+    assert position(5, 0, bounds, {"fauxlogram_gradient_direction": "center_to_edge"}) == 1
+    assert position(0, 10, bounds, {"fauxlogram_gradient_direction": "center_to_edge"}) == 1
+    assert position(0, 0, bounds, {"fauxlogram_gradient_direction": "center_to_edge"}) == 1
+
+
+def test_each_shape_fauxlogram_gradient_restarts_for_disconnected_regions():
+    layers = {"#808080": box(0, 0, 4, 2).union(box(0, 8, 4, 10))}
+    colors = {
+        "#111111": [0, 1, "Carrier 1"],
+        "#444444": [0, 2, "Carrier 2"],
+        "#888888": [0, 3, "Carrier 3"],
+        "#DDDDDD": [0, 4, "Carrier 4"],
+    }
+    base = {
+        "preserve_black": 0,
+        "patch_size_mm": 1,
+        "line_spacing_mm": .5,
+        "gradient_top": 0,
+        "gradient_bottom": 255,
+        "gradient_curve": 1,
+        "fauxlogram_gradient_direction": "top_to_bottom",
+        "angle_min": 0,
+        "angle_max": 0,
+        "_canvas_bounds": (0, 0, 4, 10),
+        "_scale_factor": 1,
+    }
+    artwork = krasnow_grating.remap_layers(
+        layers, colors, {**base, "fauxlogram_gradient_scope": "entire_artwork"}
+    )
+    shapes = krasnow_grating.remap_layers(
+        layers, colors, {**base, "fauxlogram_gradient_scope": "each_shape"}
+    )
+
+    assert artwork["#111111"].bounds[3] <= 2
+    assert artwork["#DDDDDD"].bounds[1] >= 8
+    assert shapes["#111111"].bounds[3] > 8
+    assert shapes["#888888"].bounds[1] < 2
+    assert shapes["#888888"].bounds[3] > 8
 
 
 def test_retired_geometry_posterize_control_is_ignored_for_cached_pages():
@@ -384,15 +523,21 @@ def test_staging_ui_exposes_an_independent_compatible_geometry_section():
     assert "SPECIALIZED_GEOMETRY_PRESETS" in page
     assert "geometry_style:effectiveGeometryStyle()" in page
     assert "geometry_style_parameters:JSON.stringify(geometryStyleParameters())" in page
+    assert "if(used.has('glyphs'))parameters.glyphs=" in page
+    assert "if(used.has('krasnow_grating'))parameters.krasnow_grating=" in page
     assert "['invert_fill',false]" in page
     assert "syncGeometryToggleCompatibility" in page
     assert "Every output layer is made mutually exclusive before export." in page
-    assert "const KRASNOW_GEOMETRY=PRESETS.abstract_krasnow_grating" in page
+    assert "const KRASNOW_GEOMETRY={...PRESETS.abstract_krasnow_grating" in page
+    assert "fauxlogram_gradient_scope" in page
+    assert "fauxlogram_gradient_direction" in page
+    assert "Fauxlogram Gradient Start" in page
+    assert "Fauxlogram Gradient End" in page
     assert 'id="geometryRoutingGrid"' in page
     assert 'data-route-bulk="glyphs"' in page
     assert 'data-route-bulk="krasnow_grating"' in page
     assert "posterize_colors" not in page
-    assert "This requires a Holographic Cut Setting" in page
+    assert "This requires a Fauxlographic Cut Setting" in page
     for value, label in (
         ("skull", "Skull"), ("heart", "Heart"),
         ("space_invader", "Space Invader"), ("ghost", "Ghost"),

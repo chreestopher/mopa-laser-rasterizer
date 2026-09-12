@@ -46,7 +46,7 @@ class BlankPaletteLibraryTests(unittest.TestCase):
             [entry.attrib["Desc"] for entry in entries],
         )
         self.assertEqual(
-            ["UNCONFIGURED Labels", "UNCONFIGURED Holographic"],
+            ["UNCONFIGURED Labels", "UNCONFIGURED Fauxlographic"],
             [entry.attrib["Desc"] for entry in entries[-len(BLANK_PALETTE_UTILITY_ENTRIES):]],
         )
         for entry in entries:

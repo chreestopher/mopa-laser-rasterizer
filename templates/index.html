@@ -15,7 +15,7 @@
 
 <style>
   /* Keep padding and borders inside the mobile viewport, matching the
-     Holographic Etching Lab's layout model. */
+     Fauxlographic Etching Lab's layout model. */
   *, *::before, *::after { box-sizing: border-box; }
   body {
     font-family: system-ui, -apple-system, sans-serif;
@@ -679,7 +679,7 @@
       krasnow_grating: {
         selects: [['cell_shape', 'square', [['square', 'Square'], ['hexagon', 'Hexagon'], ['triangle', 'Triangle'], ['diamond', 'Diamond / Rhombus'], ['skull', 'Skull'], ['heart', 'Heart'], ['space_invader', 'Space Invader'], ['ghost', 'Ghost'], ['bat', 'Bat'], ['alien_head', 'Alien Head'], ['paw_print', 'Paw Print'], ['fish_scale', 'Fish Scale'], ['puzzle_piece', 'Puzzle Piece']]]],
         toggles: [['preserve_black', true]],
-        description: 'Transforms the color-separated artwork into open parallel-line patches and distributes corrected grating levels across the available LightBurn layers. The Material Library entry matching Holographic is treated as the machine-specific 1.00 µm calibration anchor. Each output layer receives an independent copy that preserves the anchor power, frequency, pulse width, passes, and other values while scaling speed for a target pitch between approximately 0.55 and 1.55 µm. Speed Spread scales each layer\'s deviation around the anchor: 0 gives every layer the anchor speed, 1 uses the normal calculated range, and 2 doubles the variation without moving the 1.00 µm layer. With a 300 mm/s anchor and Speed Spread 1 this yields 165–465 mm/s, following Ben Krasnow\'s fixed-frequency progression. Hue Line Spacing Minimum and Maximum vary visible line density using an approximate wavelength ordering: violet and blue use spacing near the minimum while red uses spacing near the maximum. Purple and magenta use a continuous violet-to-red proxy because they do not have a single spectral wavelength. Equal values preserve uniform spacing, and low-saturation swatches continue to use Line Spacing. These controls affect visible hatch spacing; the calibrated microscopic diffraction pitch remains controlled by the carrier settings. Preserve Black keeps source Black as normal Black geometry with its Black laser setting. Turn it off to convert Black regions into gratings and clone the Holographic setting onto the Black LightBurn layer like every other carrier.',
+        description: 'Transforms the color-separated artwork into open parallel-line patches and distributes corrected grating levels across the available LightBurn layers. The Material Library entry matching Fauxlographic is treated as the machine-specific 1.00 µm calibration anchor. Each output layer receives an independent copy that preserves the anchor power, frequency, pulse width, passes, and other values while scaling speed for a target pitch between approximately 0.55 and 1.55 µm. Speed Spread scales each layer\'s deviation around the anchor: 0 gives every layer the anchor speed, 1 uses the normal calculated range, and 2 doubles the variation without moving the 1.00 µm layer. With a 300 mm/s anchor and Speed Spread 1 this yields 165–465 mm/s, following Ben Krasnow\'s fixed-frequency progression. Hue Line Spacing Minimum and Maximum vary visible line density using an approximate wavelength ordering: violet and blue use spacing near the minimum while red uses spacing near the maximum. Purple and magenta use a continuous violet-to-red proxy because they do not have a single spectral wavelength. Equal values preserve uniform spacing, and low-saturation swatches continue to use Line Spacing. These controls affect visible hatch spacing; the calibrated microscopic diffraction pitch remains controlled by the carrier settings. Preserve Black keeps source Black as normal Black geometry with its Black laser setting. Turn it off to convert Black regions into gratings and clone the Fauxlographic setting onto the Black LightBurn layer like every other carrier.',
         controls: [['speed_spread', 1, 0, 2, .001], ['gradient_top', 165, 0, 255, 1], ['gradient_bottom', 90, 0, 255, 1],
           ['gradient_curve', 1, .2, 5, .05], ['hue_rotation', .13, 0, 1, .01],
           ['saturation_cutoff', .2, 0, 1, .01], ['patch_size_mm', .4, .1, 5, .05],
@@ -688,9 +688,9 @@
           ['hue_line_spacing_maximum_mm', .06, .01, .5, .001], ['angle_min', -90, -180, 180, 1],
           ['angle_max', 90, -180, 180, 1]]
       },
-      /* Retired Abstract Holographic preset.
+      /* Retired Abstract Fauxlographic preset.
       holographic: {
-        description: 'Applies one continuous, calibration-free holographic grating to the light/background swatches. The Holographic palette swatch supplies the Material Library operation type and laser values-its interval, angle, power, speed, frequency, and pulse width are used unchanged. Fill Mode defaults to From Setting, matching the Holographic Etching Lab; choose Fill, Offset Fill, or Line to override that behavior explicitly. Rename the Holographic swatch to match your library. Enable Invert Threshold to apply the grating to swatches at or below the Light Threshold instead. Keep Black preserves dark source-image geometry on the normal Black material setting, like the Holographic Etching Lab.',
+        description: 'Applies one continuous, calibration-free fauxlographic grating to the light/background swatches. The Fauxlographic palette swatch supplies the Material Library operation type and laser values-its interval, angle, power, speed, frequency, and pulse width are used unchanged. Fill Mode defaults to From Setting, matching the Fauxlographic Etching Lab; choose Fill, Offset Fill, or Line to override that behavior explicitly. Rename the Fauxlographic swatch to match your library. Enable Invert Threshold to apply the grating to swatches at or below the Light Threshold instead. Keep Black preserves dark source-image geometry on the normal Black material setting, like the Fauxlographic Etching Lab.',
         controls: [['light_threshold', 150, 0, 255, 1]],
         selects: [['fill_mode', 'from_setting', [['fill', 'Fill'], ['offset_fill', 'Offset Fill'], ['from_setting', 'From Setting'], ['line', 'Line']]]],
         toggles: [['invert_threshold', false], ['keep_black', false]]
@@ -718,7 +718,7 @@
       document.getElementById('abstract_filter_parameters').value = JSON.stringify(values);
     }
 
-    /* Retired Abstract Holographic readout.
+    /* Retired Abstract Fauxlographic readout.
     function updateHolographicSwatchReadout(values = {}) {
       let readout = document.getElementById('holographic_swatch_readout');
       if (document.getElementById('image_preset').value !== 'abstract_holographic') {
@@ -752,13 +752,13 @@
       const summary = document.createElement('div');
       summary.className = 'holographic-normal-summary';
       summary.textContent = `Normal Material Library settings (${normalSwatches.length}) · ` +
-        `Holographic applies to enabled swatches ${direction} ${threshold}; Black remains on its Black setting.`;
+        `Fauxlographic applies to enabled swatches ${direction} ${threshold}; Black remains on its Black setting.`;
       readout.appendChild(summary);
       const swatchGroup = document.createElement('div');
       swatchGroup.className = 'holographic-normal-swatches';
       if (!normalSwatches.length) {
         const empty = document.createElement('span');
-        empty.textContent = 'All enabled swatches are holographic.';
+        empty.textContent = 'All enabled swatches are fauxlographic.';
         swatchGroup.appendChild(empty);
       } else {
         normalSwatches.forEach(({name, hex}) => {

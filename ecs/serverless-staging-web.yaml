@@ -7,8 +7,10 @@ Parameters:
     Type: String
     Description: Private bucket containing the web bundle and Lambda deployment packages.
   RuntimeTableName: {Type: String}
+  WorkerLogGroupName: {Type: String}
   QueueUrl: {Type: String}
   QueueArn: {Type: String}
+  WorkerPipeName: {Type: String}
   LambdaCodeBucket: {Type: String}
   LambdaCodeKey: {Type: String}
   CognitoUserPoolId: {Type: String}
@@ -17,6 +19,19 @@ Parameters:
     Type: String
     NoEcho: true
     Default: ""
+  AccessGateAuthorization:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: Base64-encoded Basic Authentication username and password. Empty disables the CloudFront gate.
+  GuestAccessEnabled:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+  AllowedUserSub:
+    Type: String
+    Default: ""
+    Description: When set, the API accepts authenticated requests only from this Cognito subject.
   StagingHostname:
     Type: String
     Default: ""
@@ -37,6 +52,7 @@ Parameters:
     AllowedPattern: "[a-zA-Z0-9-_]+"
 
 Conditions:
+  HasAccessGate: !Not [!Equals [!Ref AccessGateAuthorization, ""]]
   HasCustomDomain: !And
     - !Not [!Equals [!Ref StagingHostname, ""]]
     - !Not [!Equals [!Ref CloudFrontCertificateArn, ""]]
@@ -85,6 +101,12 @@ Resources:
                 Action: sqs:SendMessage
                 Resource: !Ref QueueArn
               - Effect: Allow
+                Action: [pipes:DescribePipe, pipes:StartPipe, pipes:StopPipe]
+                Resource: !Sub arn:${AWS::Partition}:pipes:${AWS::Region}:${AWS::AccountId}:pipe/${WorkerPipeName}
+              - Effect: Allow
+                Action: logs:GetLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${WorkerLogGroupName}:log-stream:*
+              - Effect: Allow
                 Action: cognito-idp:ListUsers
                 Resource: !Sub arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${CognitoUserPoolId}
 
@@ -103,10 +125,14 @@ Resources:
         Variables:
           S3_BUCKET_NAME: !Ref ArtifactBucketName
           JOB_RUNTIME_TABLE_NAME: !Ref RuntimeTableName
+          WORKER_LOG_GROUP_NAME: !Ref WorkerLogGroupName
           SQS_QUEUE_URL: !Ref QueueUrl
+          WORKER_PIPE_NAME: !Ref WorkerPipeName
           JOB_TTL_SECONDS: "604800"
           GUEST_JOB_SECONDS: "86400"
           GUEST_DAILY_JOB_LIMIT: "5"
+          GUEST_ACCESS_ENABLED: !Ref GuestAccessEnabled
+          ALLOWED_USER_SUB: !Ref AllowedUserSub
           ADMIN_EMAIL: !Ref AdminEmail
           COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
 
@@ -124,6 +150,31 @@ Resources:
         OriginAccessControlOriginType: s3
         SigningBehavior: always
         SigningProtocol: sigv4
+
+  StagingAccessFunction:
+    Type: AWS::CloudFront::Function
+    Condition: HasAccessGate
+    Properties:
+      Name: !Sub ${DeploymentName}-access-gate
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Require Basic Authentication before serving private staging content.
+        Runtime: cloudfront-js-2.0
+      FunctionCode: !Sub |
+        function handler(event) {
+          var authorization = event.request.headers.authorization;
+          if (authorization && authorization.value === 'Basic ${AccessGateAuthorization}') {
+            return event.request;
+          }
+          return {
+            statusCode: 401,
+            statusDescription: 'Unauthorized',
+            headers: {
+              'www-authenticate': {value: 'Basic realm="Private staging", charset="UTF-8"'},
+              'cache-control': {value: 'no-store'}
+            }
+          };
+        }
 
   StaticSecurityHeadersPolicy:
     Type: AWS::CloudFront::ResponseHeadersPolicy
@@ -188,6 +239,11 @@ Resources:
           CachedMethods: [GET, HEAD, OPTIONS]
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
           ResponseHeadersPolicyId: !Ref StaticSecurityHeadersPolicy
+          FunctionAssociations: !If
+            - HasAccessGate
+            - - EventType: viewer-request
+                FunctionARN: !GetAtt StagingAccessFunction.FunctionMetadata.FunctionARN
+            - !Ref AWS::NoValue
 
   StaticBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -265,6 +321,13 @@ Resources:
     Properties:
       ApiId: !Ref HttpApi
       RouteKey: GET /guest/config
+      AuthorizationType: NONE
+      Target: !Sub integrations/${ApiIntegration}
+  ServiceStatusRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: GET /service-status
       AuthorizationType: NONE
       Target: !Sub integrations/${ApiIntegration}
   GuestUploadRoute:
@@ -403,6 +466,12 @@ Resources:
   AdminUsersRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties: {ApiId: !Ref HttpApi, RouteKey: "GET /admin/users", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  AdminServiceControlGetRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "GET /admin/service-control", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  AdminServiceControlPostRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "POST /admin/service-control", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
   CreateDepthPaletteRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties: {ApiId: !Ref HttpApi, RouteKey: "POST /account/depth-palettes", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}

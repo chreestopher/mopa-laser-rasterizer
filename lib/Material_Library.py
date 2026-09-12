@@ -129,6 +129,11 @@ def main(argv=None):
         else filter_parameters
     )
     required_setting = getattr(setting_module, "SETTING_NAME", None)
+    required_setting_aliases = (
+        {required_setting: tuple(getattr(setting_module, "SETTING_ALIASES", ()))}
+        if required_setting
+        else {}
+    )
     if svg_only:
         filter_setting_layers = {}
         material_layer_report.update({"mode": "svg_only", "loaded": [], "skipped": []})
@@ -143,6 +148,7 @@ def main(argv=None):
                 material_name=material_name,
                 material_layer_report=material_layer_report,
                 required_setting_names=[required_setting] if required_setting else [],
+                required_setting_aliases=required_setting_aliases,
                 return_setting_layers=True,
             )
         except ValueError as error:

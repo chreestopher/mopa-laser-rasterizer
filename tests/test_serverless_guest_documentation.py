@@ -26,17 +26,17 @@ class ServerlessGuestDocumentationTests(unittest.TestCase):
 
     def test_guest_laboratory_boundaries_are_documented(self):
         self.assertIn("They can export enabled, qualified swatches as a .clb file", self.catalog)
-        self.assertIn("Guests can download the self-contained Holographic Swatch Palette file", self.catalog)
-        self.assertIn("a guest can upload it on the Rasterizer page to run Holographic Artwork", self.catalog)
-        self.assertIn("use it to generate Holographic Artwork", self.hub)
-        self.assertNotIn("or Holographic Artwork processing", self.hub)
+        self.assertIn("Guests can download the self-contained Fauxlographic Swatch Palette file", self.catalog)
+        self.assertIn("a guest can upload it on the Rasterizer page to run Fauxlographic Artwork", self.catalog)
+        self.assertIn("use it to generate Fauxlographic Artwork", self.hub)
+        self.assertNotIn("or Fauxlographic Artwork processing", self.hub)
         self.assertIn("saved Depth Palette color guidance requires signing in", self.catalog)
 
     def test_member_only_resources_are_identified(self):
         self.assertIn("Browsing and searching Community Set is available to signed-in members", self.catalog)
         self.assertIn("personal Swatch Palette Vault and Community Set", self.catalog)
-        self.assertIn("Signed-in members can choose a Holographic Palette saved in Swatch Palette Vault", self.catalog)
-        self.assertIn("Guests can choose Upload Holographic Swatch Palette", self.catalog)
+        self.assertIn("Signed-in members can choose a Fauxlographic Palette saved in Swatch Palette Vault", self.catalog)
+        self.assertIn("Guests can choose Upload Fauxlographic Swatch Palette", self.catalog)
 
 
 if __name__ == "__main__":

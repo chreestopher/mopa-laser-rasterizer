@@ -34,8 +34,9 @@ SOURCE_BLACK_PROGRESS_MIN_COMPONENTS = 1000
 LARGE_LIGHTBURN_PROJECT_BYTES = 50_000_000
 LARGE_LIGHTBURN_PROJECT_WARNING = (
     "WARNING: This LightBurn project is larger than 50 MB and contains a large "
-    "amount of geometry. Disable all optimizations in LightBurn before using "
-    "Frame, Send, or Start. LightBurn may appear frozen or not responding after "
+    "amount of geometry. Rasterizer has disabled the expensive cut-path "
+    "optimizations and left only Order by Layer enabled. Keep those optimization "
+    "settings before using Frame, Send, or Start. LightBurn may appear frozen or not responding after "
     "you press Frame, Send, or Start. Please be patient; LightBurn will typically "
     "become usable again after it finishes its calculations."
 )
@@ -137,7 +138,7 @@ def build_rasterizer_project_note(
         for key, value in dict(geometry_style_parameters or {}).items()
         if not str(key).startswith("_")
     }
-    job_type = "Holographic" if image_preset == "holographic_artwork" else "Rasterizer"
+    job_type = "Fauxlographic" if image_preset == "holographic_artwork" else "Rasterizer"
     swatch_names = [
         str(metadata[2])
         for metadata in target_colors.values()
@@ -512,6 +513,7 @@ def parse_material_settings(
     material_name="stainless - steel",
     material_layer_report=None,
     required_setting_names=(),
+    required_setting_aliases=None,
     return_setting_layers=False,
 ):
     """
@@ -574,6 +576,18 @@ def parse_material_settings(
     required_names = {
         str(name).strip().casefold() for name in required_setting_names if str(name).strip()
     }
+    required_setting_aliases = required_setting_aliases or {}
+    aliases_by_required_name = {
+        required_name: {
+            required_name,
+            *(
+                str(alias).strip().casefold()
+                for alias in required_setting_aliases.get(required_name, ())
+                if str(alias).strip()
+            ),
+        }
+        for required_name in required_names
+    }
     required_layers = {}
     next_layer_index = max((metadata[1] for metadata in TARGET_COLORS.values()), default=-1) + 1
     selected_targets = {
@@ -626,7 +640,10 @@ def parse_material_settings(
                 required_name
                 for required_name in required_names
                 if any(
-                    required_name in str(label or "").strip().casefold()
+                    any(
+                        alias in str(label or "").strip().casefold()
+                        for alias in aliases_by_required_name[required_name]
+                    )
                     for label in library_labels
                 )
             ),
@@ -2975,10 +2992,19 @@ def raster_to_puzzle_and_lightburn(
         }
         else filter_parameters
     )
-    krasnow_preserve_black = krasnow_mode and (mixed_krasnow or bool(_number(
-        krasnow_parameters.get("preserve_black", 1), 1, 0, 1
-    )))
-    krasnow_grate_black = krasnow_mode and not krasnow_preserve_black
+    # Choose-by-Swatch always routes Black to ordinary vector geometry. Let
+    # normal palette quantization decide which pixels Black owns in that mode;
+    # the dedicated Krasnow source-darkness mask would otherwise turn dark,
+    # chromatic artwork into Black before the swatch router sees it.
+    mixed_vector_black = mixed_krasnow
+    krasnow_preserve_black = (
+        krasnow_mode
+        and not mixed_krasnow
+        and bool(_number(krasnow_parameters.get("preserve_black", 1), 1, 0, 1))
+    )
+    krasnow_grate_black = (
+        krasnow_mode and not mixed_krasnow and not krasnow_preserve_black
+    )
     if krasnow_preserve_black:
         printLogMessage(
             "Krasnow Color Grating: reserving below-Teal source darkness for "
@@ -2987,7 +3013,12 @@ def raster_to_puzzle_and_lightburn(
     elif krasnow_grate_black:
         printLogMessage(
             "Krasnow Color Grating: Preserve Black is off; Black will be "
-            "quantized, grated, and assigned the Holographic carrier recipe."
+            "quantized, grated, and assigned the Fauxlographic carrier recipe."
+        )
+    elif mixed_vector_black:
+        printLogMessage(
+            "Geometry Routing: Black uses normal palette quantization and "
+            "remains mutually-exclusive vector geometry."
         )
     img = prepare_raster_image(
         raster_image_path=raster_image_path,
@@ -3152,6 +3183,8 @@ def raster_to_puzzle_and_lightburn(
         ignore_background_hex=ignore_background_hex,
         include_black=(
             krasnow_grate_black
+            or
+            mixed_vector_black
             or
             (preserve_source_black and not krasnow_mode)
             or source_black_mode

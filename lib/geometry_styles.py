@@ -48,19 +48,19 @@ def normalize(style, parameters=None, abstract_filter="none"):
         # prevents transformed non-Black regions from being engraved over a
         # second Black treatment.
         assignments["#000000"] = NORMAL_STYLE
-        _, glyph_parameters = normalize(
-            GLYPH_STYLE, raw.get(GLYPH_STYLE) or {}, filter_name
-        )
-        glyph_parameters["black_only"] = 0
-        _, krasnow_parameters = normalize(
-            KRASNOW_STYLE, raw.get(KRASNOW_STYLE) or {}, filter_name
-        )
-        krasnow_parameters["preserve_black"] = 1
-        normalized = {
-            "assignments": assignments,
-            GLYPH_STYLE: glyph_parameters,
-            KRASNOW_STYLE: krasnow_parameters,
-        }
+        normalized = {"assignments": assignments}
+        used_styles = set(assignments.values())
+        if GLYPH_STYLE in used_styles:
+            _, glyph_parameters = normalize(
+                GLYPH_STYLE, raw.get(GLYPH_STYLE) or {}, filter_name
+            )
+            glyph_parameters["black_only"] = 0
+            normalized[GLYPH_STYLE] = glyph_parameters
+        if KRASNOW_STYLE in used_styles:
+            _, krasnow_parameters = normalize(
+                KRASNOW_STYLE, raw.get(KRASNOW_STYLE) or {}, filter_name
+            )
+            normalized[KRASNOW_STYLE] = krasnow_parameters
         normalized.update({key: value for key, value in raw.items() if str(key).startswith("_")})
         return style, normalized
     defaults = (
@@ -194,7 +194,7 @@ def apply(processed_layers, target_colors, style, parameters=None, abstract_filt
             source_layers = routed_layers[routed_style]
             if not source_layers:
                 continue
-            routed_parameters = dict(values[routed_style])
+            routed_parameters = dict(values.get(routed_style) or {})
             for private_name in (
                 "_canvas_bounds", "_scale_factor", "_angle_image", "_progress_logger"
             ):

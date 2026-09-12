@@ -11,16 +11,22 @@ HANDLER = ROOT / "serverless_api" / "handler.py"
 
 def load_blank_project_builder():
     tree = ast.parse(HANDLER.read_text(encoding="utf-8"))
-    function = next(
+    nodes = [
         node for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name == "blank_lightburn_project"
-    )
+        if (
+            isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "LIGHTBURN_SAFE_OPTIMIZATION_PREFS" for target in node.targets)
+        ) or (
+            isinstance(node, ast.FunctionDef)
+            and node.name in {"add_lightburn_safe_optimization_prefs", "blank_lightburn_project"}
+        )
+    ]
     namespace = {
         "ET": ET,
         "deepcopy": deepcopy,
         "PALETTE": [(f"Layer {index}", f"#{index:06X}") for index in range(30)],
     }
-    exec(compile(ast.Module(body=[function], type_ignores=[]), str(HANDLER), "exec"), namespace)
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), str(HANDLER), "exec"), namespace)
     return namespace["blank_lightburn_project"]
 
 
@@ -47,6 +53,11 @@ class ServerlessBlankLightburnProjectTests(unittest.TestCase):
 
         self.assertEqual(project.tag, "LightBurnProject")
         self.assertEqual(project.findall("./Shape"), [])
+        prefs = project.find("./UIPrefs")
+        self.assertIsNotNone(prefs)
+        self.assertEqual(prefs.find("./Optimize_ByLayer").get("Value"), "0")
+        self.assertEqual(prefs.find("./Optimize_ByGroup").get("Value"), "-1")
+        self.assertEqual(prefs.find("./Optimize_ReduceTravel").get("Value"), "0")
         layers = project.findall("./CutSetting")
         self.assertEqual(len(layers), 4)
         assignments = {

@@ -216,3 +216,21 @@ body.light-machine.staging-admin .admin-job-record.status-failed>.admin-job-titl
   color:#482629!important;
   background:linear-gradient(#f1dcdc,#e5c5c7)!important;
 }
+
+/* Runtime output must wrap inside the job panel, including long YAML/JSON values. */
+.admin-log-list{
+  box-sizing:border-box;
+  width:100%;
+  min-width:0;
+  max-width:100%;
+}
+.admin-log-message{
+  min-width:0;
+  max-width:100%;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+.admin-service-panel{border-left:4px solid #c4d594!important}
+.admin-service-actions{justify-content:flex-start!important}
+.admin-service-actions button{width:auto!important}

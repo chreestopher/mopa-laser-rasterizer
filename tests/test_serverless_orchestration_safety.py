@@ -37,6 +37,16 @@ def test_staging_deployment_pauses_dispatch_across_task_revision_change():
     assert "The pipe remains STOPPED so queued jobs are preserved." in deploy
 
 
+def test_staging_network_discovery_does_not_depend_on_retired_worker_stack():
+    deploy = (ROOT / "dev_setup" / "deploy_serverless_staging.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'SOURCE_WORKER_STACK="${SERVERLESS_SOURCE_WORKER_STACK:-$WORKER_STACK}"' in deploy
+    assert "mopa-rasterizer-serverless-production-worker" in deploy
+    assert 'FARGATE_STACK_NAME:-mopa-rasterizer-worker' not in deploy
+
+
 def test_deployment_queue_acceptance_script_coordinates_pause_deploy_and_resume():
     acceptance = (
         ROOT / "dev_setup" / "test_serverless_staging_deployment_queue.sh"

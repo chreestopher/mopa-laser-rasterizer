@@ -32,12 +32,26 @@ def test_production_reuses_staging_image_without_local_docker_build():
     assert "docker build" not in production
 
 
+def test_production_enables_selective_job_ttl_with_durable_asset_guard():
+    production = read("dev_setup/deploy_serverless_production.sh")
+    ttl = read("dev_setup/ensure_dynamodb_job_ttl.sh")
+
+    assert 'ensure_dynamodb_job_ttl.sh" --apply "$DYNAMODB_TABLE_NAME"' in production
+    assert 'TTL_ATTRIBUTE="expires_at"' in ttl
+    assert "begins_with(#sk,:material)" in ttl
+    assert "begins_with(#sk,:depth)" in ttl
+    assert "begins_with(#sk,:holo)" in ttl
+    assert "begins_with(#pk,:community)" in ttl
+    assert "Refusing to enable TTL" in ttl
+
+
 def test_production_application_deploys_components_sequentially():
     application = read("dev_setup/deploy_serverless_production_application.sh")
 
     worker = application.index('bash "$SCRIPT_DIR/deploy_serverless_production.sh"')
     web = application.index('bash "$SCRIPT_DIR/deploy_serverless_production_web.sh"')
-    assert worker < web
+    cost_guard = application.index('bash "$SCRIPT_DIR/deploy_serverless_cost_guard.sh"')
+    assert worker < web < cost_guard
     assert "&" not in "\n".join(
         line for line in application.splitlines() if line.lstrip().startswith("bash ")
     )

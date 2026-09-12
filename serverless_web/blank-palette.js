@@ -4,7 +4,7 @@ const SWATCH_NAMES = [
   "Light-Blue", "Dark-Magenta", "Medium-Gray", "Slate-Blue", "Rose",
   "Periwinkle-Blue", "Raspberry", "Sage-Green", "Peach", "Light-Pink",
   "Orchid-Pink", "Deep-Purple", "Rust-Brown", "Teal", "Bright-Mint-Green",
-  "Light-Gold", "Labels", "Holographic"
+  "Light-Gold", "Labels", "Fauxlographic"
 ];
 
 const PLACEHOLDER_VALUES = {

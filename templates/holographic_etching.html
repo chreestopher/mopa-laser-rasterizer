@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Holographic Etching Lab · MOPA Laser Rasterizer</title>
+  <title>Fauxlographic Etching Lab · MOPA Laser Rasterizer</title>
   <style>
     :root { --cream:#d9d2af; --phosphor:#83f06a; --control-top:#66766d; --control-base:#34443e; --control-edge:#9ba89f; --control-shadow:#18221e; --metal:#34382e; }
     * { box-sizing:border-box; }
@@ -136,15 +136,15 @@
       </div>
     </div>
   </div>
-  {{ machine_chrome('experimental', 'HOLOGRAPHIC ETCHING LAB · SERIES 79') }}
+  {{ machine_chrome('experimental', 'FAUXLOGRAPHIC ETCHING LAB · SERIES 79') }}
   <section class="process-schematic" aria-labelledby="process_schematic_title">
-    <div id="process_schematic_title" class="schematic-title">HOLOGRAPHIC ETCHING, CALIBRATION SIGNAL FLOW</div>
+    <div id="process_schematic_title" class="schematic-title">FAUXLOGRAPHIC ETCHING, CALIBRATION SIGNAL FLOW</div>
     <div class="schematic-flow">
       <div class="schematic-node"><span>01</span><strong>Build Test Grid</strong><small>Sweep interval, angle, and laser settings.</small></div>
       <div class="schematic-arrow" aria-hidden="true">→</div>
       <div class="schematic-node"><span>02</span><strong>Laser + Capture</strong><small>Mark the grid, then photograph the swatches.</small></div>
       <div class="schematic-arrow" aria-hidden="true">→</div>
-      <div class="schematic-node"><span>03</span><strong>Measure + Save</strong><small>Align, sample, and keep the useful holographic swatches.</small></div>
+      <div class="schematic-node"><span>03</span><strong>Measure + Save</strong><small>Align, sample, and keep the useful fauxlographic swatches.</small></div>
       <div class="schematic-arrow" aria-hidden="true">→</div>
       <div class="schematic-node"><span>04</span><strong>Build Artwork</strong><small>Map artwork into calibrated grating layers.</small></div>
     </div>
@@ -173,7 +173,7 @@
     </label>
     <p id="calibration_vault_note" class="form-note" hidden>New uploads are added to your <a href="/material-libraries">Swatch Palette Vault</a> for reuse.</p>
     <label>Material name<input id="calibration_material" name="material" list="calibration_material_suggestions" value="stainless - steel" required><datalist id="calibration_material_suggestions"></datalist></label>
-    <label>Material Library Entry Description<div class="calibration-description-autocomplete"><input id="calibration_setting_description" name="setting_description" value="holographic-etching" autocomplete="off" placeholder="Type or choose a palette color" role="combobox" aria-autocomplete="list" aria-controls="calibration_setting_suggestions" aria-expanded="false" required><div id="calibration_setting_suggestions" class="calibration-description-menu" role="listbox" hidden></div></div><span class="form-note">Type to filter the Rasterizer palette, choose a swatch, or edit the color name directly to match the Description of a Material Library entry.</span></label>
+    <label>Material Library Entry Description<div class="calibration-description-autocomplete"><input id="calibration_setting_description" name="setting_description" value="Fauxlographic" autocomplete="off" placeholder="Type or choose a palette color" role="combobox" aria-autocomplete="list" aria-controls="calibration_setting_suggestions" aria-expanded="false" required><div id="calibration_setting_suggestions" class="calibration-description-menu" role="listbox" hidden></div></div><span class="form-note">Type to filter the Rasterizer palette, choose a swatch, or edit the color name directly to match the Description of a Material Library entry.</span></label>
     <label>Cut mode<select name="cut_mode"><option value="setting" selected>Setting</option><option value="line">Line</option><option value="fill">Fill</option><option value="offset-fill">Offset Fill</option></select><span class="form-note">Setting preserves the selected Material Library operation type. Other choices override every generated calibration swatch layer.</span></label>
     <label>Laser source<input name="laser_source" placeholder="Example: JPT M7 100 W MOPA"></label>
     <label>Lens field of view (mm)<input name="lens_field_mm" type="number" value="110" min="1" max="1000" step="1" required></label>
@@ -207,8 +207,8 @@
   <form id="analysis_form" class="calibration-form">
     <input class="submission-auth-token" type="hidden" name="submission_auth_token" value="{{ submission_auth_token }}">
     <input class="continue-as-guest" type="hidden" name="continue_as_guest" value="0">
-    <h3><span class="sequence-tag">03</span> Holographic Swatch Measurement Console</h3>
-    <p class="form-note">This first analysis pass finds the grid, straightens it when it can see a clear border, samples the center of every numbered cell, and saves the observed photo color next to that cell’s interval and angle. Enter any crop value to make your crop the grid boundary, then trim tightly around the swatch. Review the preview before treating it as a holographic swatch map.</p>
+    <h3><span class="sequence-tag">03</span> Fauxlographic Swatch Measurement Console</h3>
+    <p class="form-note">This first analysis pass finds the grid, straightens it when it can see a clear border, samples the center of every numbered cell, and saves the observed photo color next to that cell’s interval and angle. Enter any crop value to make your crop the grid boundary, then trim tightly around the swatch. Review the preview before treating it as a fauxlographic swatch map.</p>
     <label>Calibration profile ID<input id="analysis_profile_id" name="profile_id" placeholder="Created automatically when you save a grid photo" required></label>
     <label>Photo rotation, degrees<input id="rotation_degrees" name="rotation_degrees" type="number" value="0" min="-180" max="180" step=".1"><span class="form-note">Positive rotates counterclockwise.</span></label>
     <label>Crop left, %<input name="crop_left" type="number" value="0" min="0" max="45" step=".1"></label>
@@ -216,17 +216,17 @@
     <label>Crop right, %<input name="crop_right" type="number" value="0" min="0" max="45" step=".1"></label>
     <label>Crop bottom, %<input name="crop_bottom" type="number" value="0" min="0" max="45" step=".1"></label>
     <label class="full-width">Analysis maximum edge, px<input name="max_edge" type="number" value="1800" min="0" max="6000" step="100"><span class="form-note">Use 0 for the original size. 1800 px is normally plenty and keeps analysis brisk.</span></label>
-    <label class="full-width">Neutral reference, observed RGB<input name="reference_r" type="number" min="1" max="255" placeholder="R"><input name="reference_g" type="number" min="1" max="255" placeholder="G"><input name="reference_b" type="number" min="1" max="255" placeholder="B"><span class="form-note">Optional. Photograph a white or neutral-gray reference card beside the grid, sample its observed RGB with an image color picker, and enter it here to normalize the photo before holographic swatches are measured.</span></label>
+    <label class="full-width">Neutral reference, observed RGB<input name="reference_r" type="number" min="1" max="255" placeholder="R"><input name="reference_g" type="number" min="1" max="255" placeholder="G"><input name="reference_b" type="number" min="1" max="255" placeholder="B"><span class="form-note">Optional. Photograph a white or neutral-gray reference card beside the grid, sample its observed RGB with an image color picker, and enter it here to normalize the photo before fauxlographic swatches are measured.</span></label>
     <div class="action-row full-width"><button id="load_corner_editor" class="action secondary" type="button">Load Photo, Align Corners</button></div>
     <div id="corner_editor" class="corner-editor"><canvas id="corner_canvas"></canvas><p>Drag a green handle to reshape the grid. Click and drag inside the green outline to slide the whole grid over the photo. These corners override rotation and crop for the next analysis.</p></div>
     <div class="action-row"><button class="action" type="submit">Analyze Grid Photo</button></div>
     <p id="analysis_results" class="calibration-results" aria-live="polite"></p>
     <section id="sample_editor" class="sample-editor"><canvas id="sample_canvas"></canvas><p>Click a clean, representative spot inside any swatch to move that cell’s sample point. Click Analyze Grid Photo again to resample using the blue points.</p></section>
     <section id="recipe_review" class="recipe-review">
-      <h4>Holographic Swatch Palette Review</h4>
+      <h4>Fauxlographic Swatch Palette Review</h4>
       <p class="form-note">Keep the cells that produce clean, useful color. Give each one a memorable name, then save your chosen structural-color palette.</p>
       <div id="recipe_grid" class="recipe-grid"></div>
-      <div class="action-row"><button id="save_recipes" class="action" type="button">Save Holographic Swatch Palette</button></div>
+      <div class="action-row"><button id="save_recipes" class="action" type="button">Save Fauxlographic Swatch Palette</button></div>
       <p id="recipe_results" class="calibration-results" aria-live="polite"></p>
     </section>
   </form>
@@ -234,13 +234,13 @@
     <input class="material-history-session" type="hidden" name="history_session">
     <input class="submission-auth-token" type="hidden" name="submission_auth_token" value="{{ submission_auth_token }}">
     <input class="continue-as-guest" type="hidden" name="continue_as_guest" value="0">
-    <h3><span class="sequence-tag">04</span> Holographic Artwork Console</h3>
-    <p class="form-note">Bring your artwork, the Holographic Palette you saved above, and the same LightBurn Material Library used for calibration. Each processed image pixel becomes a tiny square on its closest calibrated holographic swatch layer, using that holographic swatch’s measured Fill interval and angle.</p>
+    <h3><span class="sequence-tag">04</span> Fauxlographic Artwork Console</h3>
+    <p class="form-note">Bring your artwork, the Fauxlographic Palette you saved above, and the same LightBurn Material Library used for calibration. Each processed image pixel becomes a tiny square on its closest calibrated fauxlographic swatch layer, using that fauxlographic swatch’s measured Fill interval and angle.</p>
     <label class="full-width">Artwork image<input name="artwork" type="file" accept="image/*" required></label>
-    <label id="saved_holographic_recipe_row" class="full-width" hidden>Saved Holographic Palette
-      <select id="saved_holographic_recipe" name="saved_holographic_recipe_id"><option value="">Choose a Holographic Palette…</option></select>
+    <label id="saved_holographic_recipe_row" class="full-width" hidden>Saved Fauxlographic Palette
+      <select id="saved_holographic_recipe" name="saved_holographic_recipe_id"><option value="">Choose a Fauxlographic Palette…</option></select>
     </label>
-    <label>Holographic Palette<input id="holographic_recipe_file" name="recipe_profile" type="file" accept=".json,application/json" aria-describedby="remembered_holographic_recipe"><span id="remembered_holographic_recipe" class="remembered-input-note" hidden></span></label>
+    <label>Fauxlographic Palette<input id="holographic_recipe_file" name="recipe_profile" type="file" accept=".json,application/json" aria-describedby="remembered_holographic_recipe"><span id="remembered_holographic_recipe" class="remembered-input-note" hidden></span></label>
     <label id="artwork_material_upload_row" class="full-width">LightBurn Material Library file
       <input id="artwork_material_settings" name="material_settings" type="file" accept=".clb,.lbmat,.lbrn">
     </label>
@@ -250,17 +250,17 @@
     </label>
     <label id="saved_artwork_library_row" class="full-width" hidden>Or use one of your saved Material Libraries
       <select id="saved_artwork_library" name="saved_material_library_id"><option value="">Choose an account library…</option></select>
-      <span class="form-note">Choose the Material Library used to create this legacy Holographic Palette.</span>
+      <span class="form-note">Choose the Material Library used to create this legacy Fauxlographic Palette.</span>
     </label>
     <p id="artwork_vault_note" class="form-note" hidden>New uploads are added to your <a href="/material-libraries">Swatch Palette Vault</a> for reuse.</p>
     <label>Maximum processing dimension, pixels<input name="max_dimension" type="number" value="96" min="8" max="1600" step="1"><span class="form-note">Start at 64–96. The 1600-pixel limit is for serious experiments, and detailed artwork can still create a very large LightBurn file.</span></label>
     <label>Physical pixel size, mm<input name="pixel_mm" type="number" value=".5" min=".01" max="5" step=".0001"><span class="form-note">This sets each grating patch’s width and height.</span></label>
-    <label>Cut mode<select name="cut_mode"><option value="setting" selected>Setting</option><option value="line">Line</option><option value="fill">Fill</option><option value="offset-fill">Offset Fill</option></select><span class="form-note">Setting preserves the operation type from the selected holographic Material Library setting. Other choices override the generated holographic layers.</span></label>
+    <label>Cut mode<select name="cut_mode"><option value="setting" selected>Setting</option><option value="line">Line</option><option value="fill">Fill</option><option value="offset-fill">Offset Fill</option></select><span class="form-note">Setting preserves the operation type from the selected fauxlographic Material Library setting. Other choices override the generated fauxlographic layers.</span></label>
     <label class="outline-toggle"><input name="preserve_black_outlines" type="checkbox">Preserve black outlines<span class="form-note">Uses the BW Photo two-color pass, then places its dark geometry on the Black Material Library layer.</span></label>
-    <label>Grating direction mode<select name="direction_mode"><option value="recipe">Use each holographic swatch angle</option><option value="brightness">Map artwork brightness to angle</option><option value="linear">Sweep left to right</option><option value="radial">Radiate from image center</option><option value="fixed">Use one fixed angle</option></select><span class="form-note">Experimental modes keep measured holographic swatch settings but independently change Offset Fill angle.</span></label>
+    <label>Grating direction mode<select name="direction_mode"><option value="recipe">Use each fauxlographic swatch angle</option><option value="brightness">Map artwork brightness to angle</option><option value="linear">Sweep left to right</option><option value="radial">Radiate from image center</option><option value="fixed">Use one fixed angle</option></select><span class="form-note">Experimental modes keep measured fauxlographic swatch settings but independently change Offset Fill angle.</span></label>
     <label>Direction bins<input name="direction_bins" type="number" value="6" min="2" max="12" step="1"><span class="form-note">Fewer bins create smaller, faster LightBurn projects.</span></label>
     <label>Fixed direction, degrees<input name="fixed_direction_degrees" type="number" value="0" min="0" max="180" step="1"><span class="form-note">Used only by Fixed direction mode.</span></label>
-    <div class="action-row"><button class="action" type="submit">Build Holographic Artwork</button></div>
+    <div class="action-row"><button class="action" type="submit">Build Fauxlographic Artwork</button></div>
     <p id="artwork_results" class="calibration-results" aria-live="polite"></p>
   </form>
   <p class="reference">This lab is informed by Ben Krasnow’s documented stainless-steel MOPA diffraction-grating work. We will build an original, calibration-first workflow around the same physical principles rather than integrate that project directly. <a href="https://github.com/benkrasnow/MOPA_Laser_Diffraction_Gratings" target="_blank" rel="noopener noreferrer">Review the reference project ↗</a></p>
@@ -326,7 +326,7 @@
       setHolographicGuestIntent(false);
       const loginWindow = window.open('/login?popup=1', 'mopa-account-login', 'popup,width=540,height=720');
       if (!loginWindow) {
-        holographicAuthMessage.textContent = 'Your browser blocked the sign-in window. Allow popups for this site, then choose Reconnect account again. Your Holographic Lab forms remain unchanged.';
+        holographicAuthMessage.textContent = 'Your browser blocked the sign-in window. Allow popups for this site, then choose Reconnect account again. Your Fauxlographic Lab forms remain unchanged.';
         return;
       }
       stopHolographicAuthenticationPoll();
@@ -354,7 +354,7 @@
     const rememberedMaterialKey = `mopa-material-library:${historySession}`;
     const rememberedRecipeKey = `mopa-holographic-recipe:${historySession}`;
     let operatorSignedIn = false;
-    // Keep repeat-use Holographic Lab settings for this browser session. File
+    // Keep repeat-use Fauxlographic Lab settings for this browser session. File
     // inputs are deliberately excluded because browsers do not permit a file
     // selection to be restored programmatically.
     const holographicSettingsKey = 'mopa-holographic-lab-settings';
@@ -510,7 +510,7 @@
     refreshRememberedRecipe();
     const rasterizerPalette = {{ lightburn_palette | tojson }};
     const holographicPalette = [
-      ['holographic-etching', 'linear-gradient(90deg,#ff496c,#ffca3a,#8cff98,#45d7ff,#8f70ff,#ff61d8)'],
+      ['Fauxlographic', 'linear-gradient(90deg,#ff496c,#ffca3a,#8cff98,#45d7ff,#8f70ff,#ff61d8)'],
       ...rasterizerPalette,
     ];
     let savedCalibrationEntries = [];
@@ -534,8 +534,8 @@
       ].filter(description => !query || description.toLocaleLowerCase().includes(query))
         .map(description => [description.toLocaleLowerCase(), description])).values()]
         .sort((left, right) => {
-          if (left.toLocaleLowerCase() === 'holographic-etching') return -1;
-          if (right.toLocaleLowerCase() === 'holographic-etching') return 1;
+          if (left.toLocaleLowerCase() === 'fauxlographic') return -1;
+          if (right.toLocaleLowerCase() === 'fauxlographic') return 1;
           return left.localeCompare(right, undefined, {sensitivity:'base'});
         });
       calibrationSettingSuggestions.replaceChildren(...descriptions.map(description => {
@@ -549,8 +549,8 @@
           const chip = document.createElement('span');
           chip.className = 'calibration-description-swatch';
           chip.style.background = swatch[1];
-          chip.title = swatch[0] === 'holographic-etching'
-            ? 'Holographic Etching Lab default'
+          chip.title = swatch[0].toLocaleLowerCase() === 'fauxlographic'
+            ? 'Fauxlographic Etching Lab default'
             : `Rasterizer palette: ${swatch[0]}`;
           option.appendChild(chip);
         }
@@ -562,8 +562,8 @@
     };
     const ensureHolographicDescription = () => {
       if (calibrationSettingDescription.value.trim()) return;
-      calibrationSettingDescription.value = 'holographic-etching';
-      rememberedHolographicSettings['calibration_form:setting_description'] = 'holographic-etching';
+      calibrationSettingDescription.value = 'Fauxlographic';
+      rememberedHolographicSettings['calibration_form:setting_description'] = 'Fauxlographic';
       rememberHolographicSettings();
     };
     ensureHolographicDescription();
@@ -633,7 +633,7 @@
       .then(response => response.ok ? response.json() : null)
       .then(data => {
         const recipes = data?.recipes || [];
-        savedHolographicRecipe.replaceChildren(new Option('Choose a Holographic Palette…', ''));
+        savedHolographicRecipe.replaceChildren(new Option('Choose a Fauxlographic Palette…', ''));
         savedHolographicRecipeRow.hidden = !recipes.length;
         if (!recipes.length) return;
         recipes.forEach(recipe => {
@@ -751,7 +751,7 @@
         try {
           data = JSON.parse(responseText);
         } catch {
-          throw new Error(`Calibration grid request failed (HTTP ${response.status}). The server returned an HTML error page; restart the app deployment so the new Holographic Etching route is loaded, then try again.`);
+          throw new Error(`Calibration grid request failed (HTTP ${response.status}). The server returned an HTML error page; restart the app deployment so the new Fauxlographic Etching route is loaded, then try again.`);
         }
         if (!response.ok && handleHolographicAuthenticationFailure(data, () => form.requestSubmit())) return;
         if (!response.ok) throw new Error(data.message || 'Calibration grid could not be created.');
@@ -954,7 +954,7 @@
         const swatch = document.createElement('div');
         swatch.className = 'swatch'; swatch.style.background = cell.observed_hex;
         const name = document.createElement('input');
-        name.type = 'text'; name.value = `Holographic ${String(cell.index).padStart(2, '0')}`; name.dataset.nameFor = cell.index;
+        name.type = 'text'; name.value = `Fauxlographic ${String(cell.index).padStart(2, '0')}`; name.dataset.nameFor = cell.index;
         details.append(swatch, name);
         const metadata = document.createElement('small');
         const grating = cell.grating_signature || {};
@@ -1000,7 +1000,7 @@
         .filter(input => input.checked)
         .map(input => ({index: Number(input.dataset.index), name: document.querySelector(`#recipe_grid input[data-name-for="${input.dataset.index}"]`).value}));
       button.disabled = true;
-      results.textContent = 'Saving selected holographic swatches...';
+      results.textContent = 'Saving selected fauxlographic swatches...';
       try {
         const body = new FormData();
         body.set('profile_id', measuredProfileId);
@@ -1014,7 +1014,7 @@
         try { data = JSON.parse(responseText); }
         catch { throw new Error(`Recipe save failed (HTTP ${response.status}); the server returned an HTML error page.`); }
         if (!response.ok && handleHolographicAuthenticationFailure(data, () => button.click())) return;
-        if (!response.ok) throw new Error(data.message || 'Holographic Palette could not be saved.');
+        if (!response.ok) throw new Error(data.message || 'Fauxlographic Palette could not be saved.');
         if (data.account_saved) {
           sessionStorage.removeItem(rememberedRecipeKey);
           refreshRememberedRecipe();
@@ -1045,11 +1045,11 @@
       const results = document.getElementById('artwork_results');
       const button = form.querySelector('button[type="submit"]');
       if (!savedHolographicRecipe.value && !holographicRecipeFile.files.length && !sessionStorage.getItem(rememberedRecipeKey)) {
-        results.textContent = 'Choose a saved Holographic Palette or upload an Etching Recipe JSON file.';
+        results.textContent = 'Choose a saved Fauxlographic Palette or upload an Etching Recipe JSON file.';
         return;
       }
       if (operatorSignedIn && !savedArtworkLibrary.value && !artworkMaterialSettings.files.length) {
-        results.textContent = 'Upload the LightBurn Material Library used by this legacy Holographic Palette or choose it from your Swatch Palette Vault.';
+        results.textContent = 'Upload the LightBurn Material Library used by this legacy Fauxlographic Palette or choose it from your Swatch Palette Vault.';
         return;
       }
       if (!operatorSignedIn && !selectedGuestLibraryAvailable(guestArtworkLibrarySource, artworkMaterialSettings)) {
@@ -1057,7 +1057,7 @@
         return;
       }
       button.disabled = true;
-      results.textContent = 'Submitting Holographic Artwork job...';
+      results.textContent = 'Submitting Fauxlographic Artwork job...';
       try {
         const artworkTaskId = crypto.randomUUID();
         const body = new FormData(form);
@@ -1068,7 +1068,7 @@
         try { submitted = JSON.parse(responseText); }
         catch { throw new Error(`Could not queue artwork (HTTP ${response.status}); the server returned an HTML error page.`); }
         if (!response.ok && handleHolographicAuthenticationFailure(submitted, () => form.requestSubmit())) return;
-        if (!response.ok) throw new Error(submitted.message || 'Holographic Artwork could not be queued.');
+        if (!response.ok) throw new Error(submitted.message || 'Fauxlographic Artwork could not be queued.');
         const queuedTaskId = submitted.task_id || artworkTaskId;
         window.location.assign(`/job-history?task_id=${encodeURIComponent(queuedTaskId)}`);
       } catch (error) {

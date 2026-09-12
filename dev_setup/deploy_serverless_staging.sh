@@ -19,13 +19,26 @@ WORKER_NAME="${SERVERLESS_WORKER_NAME:-mopa-rasterizer-serverless-staging-worker
 STATE_MACHINE_NAME="${SERVERLESS_STATE_MACHINE_NAME:-mopa-rasterizer-serverless-staging-job}"
 FOUNDATION_TEMPLATE="${SERVERLESS_FOUNDATION_TEMPLATE:-$REPO_ROOT/ecs/serverless-staging-foundation.yaml}"
 
-# Reuse the proven production network by discovery when it is not duplicated
-# in .env.aws. Only subnet/VPC placement is shared; all staging data resources
-# and task definitions remain isolated.
-SOURCE_WORKER_STACK="${FARGATE_STACK_NAME:-mopa-rasterizer-worker}"
+# Reuse the existing staging placement first, then the current serverless
+# production worker during initial staging creation. The retired legacy worker
+# stack must not remain a deployment dependency.
+SOURCE_WORKER_STACK="${SERVERLESS_SOURCE_WORKER_STACK:-$WORKER_STACK}"
+FALLBACK_SOURCE_WORKER_STACK="${SERVERLESS_PRODUCTION_WORKER_STACK:-mopa-rasterizer-serverless-production-worker}"
+source_worker_output() {
+  local output_key="$1"
+  local stack_name value
+  for stack_name in "$SOURCE_WORKER_STACK" "$FALLBACK_SOURCE_WORKER_STACK"; do
+    value="$(aws cloudformation describe-stacks --region "$REGION" --stack-name "$stack_name" \
+      --query "Stacks[0].Outputs[?OutputKey=='$output_key'].OutputValue" --output text 2>/dev/null || true)"
+    if [ -n "$value" ] && [ "$value" != "None" ]; then
+      printf '%s' "$value"
+      return 0
+    fi
+  done
+  return 1
+}
 if [ -z "${SUBNET_IDS:-}" ]; then
-  SUBNET_IDS="$(aws cloudformation describe-stacks --region "$REGION" --stack-name "$SOURCE_WORKER_STACK" \
-    --query "Stacks[0].Outputs[?OutputKey=='SubnetIds'].OutputValue" --output text)"
+  SUBNET_IDS="$(source_worker_output SubnetIds)"
 fi
 if [ -z "${VPC_ID:-}" ] && [ -n "$SUBNET_IDS" ]; then
   FIRST_SUBNET="${SUBNET_IDS%%,*}"
@@ -33,8 +46,7 @@ if [ -z "${VPC_ID:-}" ] && [ -n "$SUBNET_IDS" ]; then
     --query 'Subnets[0].VpcId' --output text)"
 fi
 if [ -z "${FARGATE_ASSIGN_PUBLIC_IP:-}" ]; then
-  FARGATE_ASSIGN_PUBLIC_IP="$(aws cloudformation describe-stacks --region "$REGION" --stack-name "$SOURCE_WORKER_STACK" \
-    --query "Stacks[0].Outputs[?OutputKey=='AssignPublicIp'].OutputValue" --output text)"
+  FARGATE_ASSIGN_PUBLIC_IP="$(source_worker_output AssignPublicIp)"
 fi
 
 required=(VPC_ID SUBNET_IDS)
@@ -155,6 +167,7 @@ aws cloudformation deploy --region "$REGION" --stack-name "$WORKER_STACK" \
     "ImageUri=$IMAGE_URI" "VpcId=$VPC_ID" "SubnetIds=$SUBNET_IDS" \
     "RedisHost=" "RedisSecurityGroupId=" "S3BucketName=$ARTIFACT_BUCKET" \
     "DynamoDbTableName=$RUNTIME_TABLE" \
+    "LogRetentionDays=${SERVERLESS_WORKER_LOG_RETENTION_DAYS:-7}" \
     "Cpu=${SERVERLESS_FARGATE_CPU:-${SERVERLESS_STAGING_FARGATE_CPU:-${FARGATE_CPU:-2048}}}" \
     "Memory=${SERVERLESS_FARGATE_MEMORY:-${SERVERLESS_STAGING_FARGATE_MEMORY:-${FARGATE_MEMORY:-4096}}}" \
     "WorkerProcesses=${SERVERLESS_WORKER_PROCESSES:-${SERVERLESS_STAGING_WORKER_PROCESSES:-${FARGATE_WORKER_PROCESSES:-2}}}" \

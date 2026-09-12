@@ -210,7 +210,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
 
         self.assertEqual(page.count('class="lab-card"'), 3)
         self.assertIn("<h2>Color Lab</h2>", page)
-        self.assertLess(page.index("<h2>Color Lab</h2>"), page.index("<h2>Holographic Etching Lab</h2>"))
+        self.assertLess(page.index("<h2>Color Lab</h2>"), page.index("<h2>Fauxlographic Etching Lab</h2>"))
         self.assertLess(page.index("<h2>Color Lab</h2>"), page.index("<h2>Depthmap/Relief Engraving Lab</h2>"))
         self.assertIn('href="/color-discovery">Open Color Lab</a>', page)
         self.assertIn("'href=\"/color-discovery\"', 'href=\"/color-lab.html\"'", builder)
@@ -281,7 +281,12 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertIn('["Abstract filter",values.abstract_filter]', script)
         self.assertIn('["Abstract filter parameters",values.abstract_filter_parameters]', script)
         self.assertIn('["Geometry style",values.geometry_style]', script)
-        self.assertIn('["Geometry style parameters",values.geometry_style_parameters]', script)
+        self.assertIn('["Geometry style parameters",geometryParameters]', script)
+        self.assertIn('function formattedValue(value,depth=0)', script)
+        self.assertIn('formattedValue(item,depth+1)', script)
+        self.assertIn('function effectiveGeometryParameters(style,value)', script)
+        self.assertIn('if(used.has("glyphs")&&parsed.glyphs)', script)
+        self.assertIn('if(used.has("krasnow_grating")&&parsed.krasnow_grating)', script)
         self.assertIn('<h3>Swatch Settings</h3>', script)
         self.assertIn('class="job-details-grid"', script)
         self.assertIn('job-details-column job-swatch-settings', script)
@@ -297,7 +302,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertNotIn('<h3>Downloads</h3>', script)
         self.assertIn('job-primary-downloads', script)
         self.assertIn('<strong>Job type:</strong> <span data-job-type></span>', script)
-        self.assertIn('holographic_artwork:"Holographic Etching Lab"', script)
+        self.assertIn('holographic_artwork:"Fauxlographic Etching Lab"', script)
         self.assertIn('font-size:clamp(1.15rem,3vw,1.65rem)!important', styles)
 
     def test_rasterizer_pixel_size_accepts_four_decimals_down_to_point_zero_one(self):
@@ -375,7 +380,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertNotIn('"metadata_url"', worker)
         self.assertIn("output_names = (svg_name, lbrn_name)", worker)
         self.assertIn("registering 2/2 outputs with job history", worker)
-        self.assertIn("prepared 2/2 Holographic Artwork artifacts", holographic)
+        self.assertIn("prepared 2/2 Fauxlographic Artwork artifacts", holographic)
 
     def test_all_rasterizer_downloads_are_svg_first_and_uniform_filename_buttons(self):
         handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
@@ -433,7 +438,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         rasterizer = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
 
         self.assertIn('id="runRecipeInRasterizer"', page)
-        self.assertIn('Run Rasterizer with This Holographic Palette', page)
+        self.assertIn('Run Rasterizer with This Fauxlographic Palette', page)
         self.assertNotIn('id="artworkForm"', page)
         self.assertNotIn('id="holoArtwork"', page)
         self.assertNotIn('$("#artworkForm").onsubmit', script)
@@ -494,7 +499,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertIn('<strong>Job Duration:</strong> <span data-job-duration></span>', script)
         self.assertIn('setText("[data-job-duration]",formatDuration(job))', script)
         self.assertIn('active?" (in progress)":""', script)
-        self.assertIn('src="/history.js?v=6"', page)
+        self.assertIn('src="/history.js?v=8"', page)
 
     def test_serverless_docs_rewrite_production_only_routes(self):
         builder = (ROOT / "dev_setup" / "build_serverless_docs.py").read_text(encoding="utf-8")
@@ -601,7 +606,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertIn('draft.profile_name=draftName', script)
         self.assertIn('editor.querySelector(".editRecipeName")', script)
         self.assertIn('editor.querySelectorAll("[data-recipe-setting]")', script)
-        self.assertIn("Holographic Palette JSON downloaded with current edits.", script)
+        self.assertIn("Fauxlographic Palette JSON downloaded with current edits.", script)
 
     def test_api_routes_saved_holographic_palette_to_holographic_worker(self):
         handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")

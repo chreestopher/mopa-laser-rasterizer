@@ -9,7 +9,7 @@ The layer colors are identifiers, not promises about the engraved color. Black
 is excluded from the grating carriers and is emitted later as an independent,
 source-derived dark mask. This preset does not synthesize a Black canvas or
 punch into Black. The selected material's
-Holographic recipe is treated as a calibrated 1-micron anchor. Every non-black
+Fauxlographic recipe is treated as a calibrated 1-micron anchor. Every non-black
 output layer receives an independent copy whose speed is scaled to create its
 target microscopic pitch while retaining the anchor's other laser values.
 Speed Spread lets the user contract or expand those speed differences around
@@ -33,7 +33,8 @@ from .common import number
 USES_SOURCE_LUMINANCE = True
 PRESERVE_SOURCE_BLACK = True
 OUTPUT_PATH_MODE = "Cut"
-SETTING_NAME = "holographic"
+SETTING_NAME = "fauxlographic"
+SETTING_ALIASES = ("holographic",)
 REPLICATE_SETTING_TO_OUTPUT_LAYERS = True
 REFERENCE_PITCH_UM = 1.0
 PITCH_MIN_UM = .55
@@ -42,6 +43,8 @@ PITCH_MAX_UM = 1.55
 DEFAULTS = {
     "preserve_black": 1,
     "cell_shape": "square",
+    "fauxlogram_gradient_scope": "entire_artwork",
+    "fauxlogram_gradient_direction": "top_to_bottom",
     "speed_spread": 1,
     "gradient_top": 165,
     "gradient_bottom": 90,
@@ -60,6 +63,12 @@ CELL_SHAPES = (
     "square", "hexagon", "triangle", "diamond", "skull", "heart",
     "space_invader", "ghost", "bat", "alien_head", "paw_print",
     "fish_scale", "puzzle_piece",
+)
+
+FAUXLOGRAM_GRADIENT_SCOPES = ("entire_artwork", "each_shape")
+FAUXLOGRAM_GRADIENT_DIRECTIONS = (
+    "top_to_bottom", "bottom_to_top", "left_to_right", "right_to_left",
+    "center_to_edge", "edge_to_center",
 )
 
 # The general Abstract preset deliberately performs aggressive cleanup for
@@ -116,7 +125,7 @@ def _speed_for_pitch(reference_speed, target_pitch_um, speed_spread=1):
     reference_speed = number(reference_speed, 0)
     if reference_speed <= 0:
         raise ValueError(
-            "The Holographic Material Library setting must have a positive speed."
+            "The Fauxlographic Material Library setting must have a positive speed."
         )
     spread = number(speed_spread, 1, 0, 2)
     pitch_ratio = target_pitch_um / REFERENCE_PITCH_UM
@@ -139,10 +148,10 @@ def configure_output_layers(lightburn_project, target_colors, settings=None):
     if source_layer is None:
         raise ValueError(
             "Krasnow Color Grating requires a Material Library setting "
-            "matching 'holographic'."
+            "matching 'Fauxlographic' or the classic name 'Holographic'."
         )
 
-    # The palette entry's parent CutSetting is the user-editable Holographic
+    # The palette entry's parent CutSetting is the user-editable Fauxlographic
     # recipe and is therefore authoritative.  Offset child passes can omit
     # fields such as QPulseWidth or retain stale imported values, so they must
     # not become the template for generated grating layers.  The generated
@@ -151,7 +160,7 @@ def configure_output_layers(lightburn_project, target_colors, settings=None):
     reference_frequency = number(getattr(setting_template, "frequency", 0), 0)
     if reference_frequency <= 0:
         raise ValueError(
-            "The Holographic Material Library setting must have a positive frequency."
+            "The Fauxlographic Material Library setting must have a positive frequency."
         )
 
     output_layers = {}
@@ -273,18 +282,63 @@ def _line_spacing_for_color(color_hex, settings, scale_factor):
     return spacing_mm / scale_factor
 
 
-def _gradient_value(y, min_y, max_y, settings):
+def _fauxlogram_gradient_scope(settings):
+    value = str(settings.get(
+        "fauxlogram_gradient_scope", "entire_artwork"
+    )).strip().lower()
+    return value if value in FAUXLOGRAM_GRADIENT_SCOPES else "entire_artwork"
+
+
+def _fauxlogram_gradient_direction(settings):
+    value = str(settings.get(
+        "fauxlogram_gradient_direction", "top_to_bottom"
+    )).strip().lower()
+    return value if value in FAUXLOGRAM_GRADIENT_DIRECTIONS else "top_to_bottom"
+
+
+def _gradient_position(x, y, bounds, settings):
+    """Return the directed 0..1 position within artwork or shape bounds."""
+    min_x, min_y, max_x, max_y = bounds
+    direction = _fauxlogram_gradient_direction(settings)
+    if direction in {"left_to_right", "right_to_left"}:
+        position = (x - min_x) / max(max_x - min_x, 1e-9)
+        if direction == "right_to_left":
+            position = 1.0 - position
+    elif direction in {"center_to_edge", "edge_to_center"}:
+        center_x = (min_x + max_x) / 2
+        center_y = (min_y + max_y) / 2
+        half_width = max((max_x - min_x) / 2, 1e-9)
+        half_height = max((max_y - min_y) / 2, 1e-9)
+        position = math.hypot(
+            (x - center_x) / half_width,
+            (y - center_y) / half_height,
+        )
+        if direction == "edge_to_center":
+            position = 1.0 - position
+    else:
+        position = (y - min_y) / max(max_y - min_y, 1e-9)
+        if direction == "bottom_to_top":
+            position = 1.0 - position
+    return min(1.0, max(0.0, position))
+
+
+def _gradient_value_at(x, y, bounds, settings):
     top = number(settings.get("gradient_top"), 165, 0, 255)
     bottom = number(settings.get("gradient_bottom"), 90, 0, 255)
     curve = number(settings.get("gradient_curve"), 1, .2, 5)
-    span = max(max_y - min_y, 1e-9)
-    position = min(1.0, max(0.0, (y - min_y) / span))
+    position = _gradient_position(x, y, bounds, settings)
     shaped = position ** curve
     return top + (bottom - top) * shaped
 
 
-def _level_at_y(color_hex, y, min_y, max_y, settings, level_count):
-    control = _gradient_value(y, min_y, max_y, settings) + _hue_offset(color_hex, settings)
+def _gradient_value(y, min_y, max_y, settings):
+    """Compatibility wrapper for the original vertical-gradient helper."""
+    return _gradient_value_at(0, y, (0, min_y, 1, max_y), settings)
+
+
+def _level_at_position(color_hex, x, y, bounds, settings, level_count):
+    control = _gradient_value_at(x, y, bounds, settings) \
+        + _hue_offset(color_hex, settings)
     control = min(255.0, max(0.0, control))
     return min(level_count - 1, math.floor(control / 256 * level_count))
 
@@ -724,7 +778,7 @@ def _process_layer_patches(layer_plan, grating_swatches, bounds, settings,
                            patch_size, scale_factor, cell_shape,
                            progress_callback=None):
     """Clip one source layer while preserving its original patch order."""
-    source_hex, geometry, candidate_indices = layer_plan
+    source_hex, geometry, candidate_indices, gradient_bounds = layer_plan
     line_spacing = _line_spacing_for_color(source_hex, settings, scale_factor)
     min_x, min_y, max_x, max_y = bounds
     layer_pieces = {swatch: [] for swatch in grating_swatches}
@@ -747,11 +801,11 @@ def _process_layer_patches(layer_plan, grating_swatches, bounds, settings,
                 center_y = (patch.bounds[1] + patch.bounds[3]) / 2
             else:
                 center_x, center_y = patch.centroid.coords[0]
-            level = _level_at_y(
+            level = _level_at_position(
                 source_hex,
+                center_x,
                 center_y,
-                min_y,
-                max_y,
+                gradient_bounds,
                 settings,
                 len(grating_swatches),
             )
@@ -804,20 +858,36 @@ def remap_layers(processed_layers, target_colors, settings):
 
     layer_plans = []
     total_patches = 0
+    gradient_scope = _fauxlogram_gradient_scope(settings)
     for source_hex, geometry in processed_layers.items():
         if geometry.is_empty or (
             preserve_black and str(source_hex).upper() == "#000000"
         ):
             continue
-        if cell_shape == "square":
-            candidate_indices = _candidate_patch_indices(geometry, bounds, patch_size)
-        else:
-            candidate_indices = [
-                cell for cell in tessellated_cells
-                if geometry.intersects(cell[1])
-            ]
-        total_patches += len(candidate_indices)
-        layer_plans.append((source_hex, geometry, candidate_indices))
+        gradient_regions = (
+            list(_geometry_components(geometry))
+            if gradient_scope == "each_shape"
+            else [geometry]
+        )
+        for region_geometry in gradient_regions:
+            if cell_shape == "square":
+                candidate_indices = _candidate_patch_indices(
+                    region_geometry, bounds, patch_size
+                )
+            else:
+                candidate_indices = [
+                    cell for cell in tessellated_cells
+                    if region_geometry.intersects(cell[1])
+                ]
+            total_patches += len(candidate_indices)
+            gradient_bounds = (
+                region_geometry.bounds
+                if gradient_scope == "each_shape"
+                else bounds
+            )
+            layer_plans.append((
+                source_hex, region_geometry, candidate_indices, gradient_bounds
+            ))
 
     log(
         f"[Krasnow mapping 1/3] DONE: planned {total_patches} candidate "

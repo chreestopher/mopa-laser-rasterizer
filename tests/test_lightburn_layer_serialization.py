@@ -161,6 +161,38 @@ class LightburnLayerSerializationTests(unittest.TestCase):
         self.assertIn('<crossHatch Value="1"/>', output.getvalue())
         self.assertIn('<bidir Value="1"/>', output.getvalue())
 
+    def test_imported_fill_strategy_and_flood_fill_are_preserved(self):
+        library_xml = """\
+<LightBurnLibrary>
+  <Material name="steel">
+    <Entry Desc="Black">
+      <CutSetting type="Scan"><scanOpt Value="individual"/><floodFill Value="1"/></CutSetting>
+    </Entry>
+  </Material>
+</LightBurnLibrary>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            library_path = Path(directory) / "flood-fill.clb"
+            library_path.write_text(library_xml, encoding="utf-8")
+            layer = Lightburn().parse_material_library(library_path)[0]
+
+        output = io.StringIO()
+        layer.write(output)
+
+        self.assertEqual(layer.scanOpt, "individual")
+        self.assertIs(layer.floodFill, True)
+        self.assertIn('<scanOpt Value="individual"/>', output.getvalue())
+        self.assertIn('<floodFill Value="1"/>', output.getvalue())
+
+    def test_missing_fill_behavior_remains_omitted(self):
+        layer = FillLayer(1, "Blue", 5, 27)
+        output = io.StringIO()
+
+        layer.write(output)
+
+        self.assertNotIn("<scanOpt", output.getvalue())
+        self.assertNotIn("<floodFill", output.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

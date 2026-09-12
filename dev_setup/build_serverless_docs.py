@@ -99,7 +99,8 @@ template_source = template_source.replace(
 route_rewrites = {
     'href="/color-discovery"': 'href="/color-lab.html"',
     'href="/depthmap-generator"': 'href="/depthmap.html"',
-    'href="/holographic-etching"': 'href="/holographic.html"',
+    'href="/fauxlographic-etching"': 'href="/fauxlographic.html"',
+    'href="/holographic-etching"': 'href="/fauxlographic.html"',
     'href="/material-libraries"': 'href="/vault.html"',
     'href="/job-history"': 'href="/history.html"',
 }

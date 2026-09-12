@@ -70,7 +70,7 @@ LIGHTBURN_LAYER_ID_BY_HEX = {
 
 
 def _validated_submission_identity():
-    """Apply the shared account/guest intent contract to Holographic Lab POSTs."""
+    """Apply the shared account/guest intent contract to Fauxlographic Lab POSTs."""
     explicit_guest = str(request.form.get("continue_as_guest", "")).strip() == "1"
     user_id, auth_error = validate_submission_auth(
         request.form.get("submission_auth_token", ""),
@@ -190,10 +190,10 @@ def _resolve_holographic_recipe(task_id, uploaded_recipe, saved_recipe_id, histo
         return path
     if saved_recipe_id:
         if not user_id:
-            raise PermissionError("Sign in to use a saved Holographic Palette.")
+            raise PermissionError("Sign in to use a saved Fauxlographic Palette.")
         recipe = get_user_holographic_recipe(user_id, saved_recipe_id)
         if not recipe:
-            raise FileNotFoundError("That saved Holographic Palette is no longer available.")
+            raise FileNotFoundError("That saved Fauxlographic Palette is no longer available.")
         filename = secure_filename(recipe.get("original_name") or "holographic-recipe.json")
         path = os.path.join(upload_folder, f"{task_id}_saved_holographic_recipe_{filename}")
         download_user_holographic_recipe(recipe, path)
@@ -209,7 +209,7 @@ def _resolve_holographic_recipe(task_id, uploaded_recipe, saved_recipe_id, histo
             download_task_artifact(cached["key"], path)
         if path and os.path.isfile(path):
             return path
-    raise ValueError("Choose a Holographic Etching Recipe JSON file")
+    raise ValueError("Choose a Fauxlographic Etching Recipe JSON file")
 
 
 def _lightburn_module():
@@ -458,7 +458,7 @@ def _ensure_holographic_artifact(upload_folder, filename):
         return path
     key = redis_client.get(_holographic_artifact_cache_key(filename))
     if not key:
-        raise FileNotFoundError(f"Holographic lab artifact '{filename}' was not found.")
+        raise FileNotFoundError(f"Fauxlographic lab artifact '{filename}' was not found.")
     download_task_artifact(key, path)
     return path
 
@@ -673,7 +673,7 @@ def _load_recipe_profile(profile_file):
     recipes = profile.get("recipes")
     grid = profile.get("grid", {})
     if profile.get("kind") != "holographic_calibration_profile" or not isinstance(recipes, list) or not recipes:
-        raise ValueError("Upload a saved Holographic Etching recipe profile with at least one kept recipe.")
+        raise ValueError("Upload a saved Fauxlographic Etching recipe profile with at least one kept recipe.")
     if (int(profile.get("schema_version") or 1) < 2
             and (not grid.get("material") or not grid.get("setting_description"))):
         raise ValueError("The recipe profile does not contain its original Material Library setting reference.")
@@ -704,7 +704,7 @@ def _merge_recipe_pixels(layer_map, recipe_count, progress=None, excluded_mask=N
     else:
         excluded_mask = np.asarray(excluded_mask, dtype=bool)
         if excluded_mask.shape != layer_map.shape:
-            raise ValueError("Excluded holographic geometry mask does not match the artwork dimensions.")
+            raise ValueError("Excluded fauxlographic geometry mask does not match the artwork dimensions.")
         visited = excluded_mask.copy()
     rectangles = {index: [] for index in range(recipe_count)}
     for y in range(height):
@@ -841,10 +841,10 @@ def _resolved_holographic_dimension(max_dimension, image_size, safety_limit=1600
         requested = int(max_dimension or 0)
         source_dimension = max(int(image_size[0]), int(image_size[1]))
     except (TypeError, ValueError, IndexError) as error:
-        raise ValueError("Holographic artwork dimensions are invalid.") from error
+        raise ValueError("Fauxlographic artwork dimensions are invalid.") from error
     if requested:
         if not 8 <= requested <= safety_limit:
-            raise ValueError(f"Holographic processing dimensions must be between 8 and {safety_limit} pixels.")
+            raise ValueError(f"Fauxlographic processing dimensions must be between 8 and {safety_limit} pixels.")
         return requested
     if source_dimension < 1:
         raise ValueError("Artwork image has no usable pixels.")
@@ -856,16 +856,16 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
                                progress=None, store_artifacts=True, selected_recipe_indexes=None,
                                embedded_material_name=None, embedded_black_setting_name=None):
     progress = progress or (lambda _message: None)
-    progress("[Step 1/8] START: loading Holographic Palette and artwork image.")
+    progress("[Step 1/8] START: loading Fauxlographic Palette and artwork image.")
     profile = _load_recipe_profile(profile_file)
     if selected_recipe_indexes is not None:
         try:
             requested_indexes = list(dict.fromkeys(int(index) for index in selected_recipe_indexes))
         except (TypeError, ValueError) as error:
-            raise ValueError("Selected Holographic Palette swatches are invalid.") from error
+            raise ValueError("Selected Fauxlographic Palette swatches are invalid.") from error
         if (not requested_indexes or any(index < 0 or index >= len(profile["recipes"])
                                          for index in requested_indexes)):
-            raise ValueError("Select at least one valid Holographic Palette swatch.")
+            raise ValueError("Select at least one valid Fauxlographic Palette swatch.")
         profile = dict(profile)
         profile["recipes"] = [profile["recipes"][index] for index in requested_indexes]
     try:
@@ -898,7 +898,7 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
             lightburn, material_path, grid["material"], grid["setting_description"]
         ))
     if cut_mode not in CUT_MODE_TYPES:
-        raise ValueError("Unknown Holographic Artwork cut mode.")
+        raise ValueError("Unknown Fauxlographic Artwork cut mode.")
     recipes_by_name = {}
     project = lightburn.Lightburn()
     # Reserve LightBurn's true black palette layer for the optional outline
@@ -929,12 +929,12 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
         }
     progress(
         f"[Step 2/8] DONE: configured {len(recipes_by_name)}/{len(profile['recipes'])} "
-        f"holographic recipe layers; cut mode {cut_mode}."
+        f"fauxlographic recipe layers; cut mode {cut_mode}."
     )
 
     progress(
         f"[Step 3/8] START: assigning {source_pixel_count}/{source_pixel_count} pixels "
-        "to their nearest measured holographic colors."
+        "to their nearest measured fauxlographic colors."
     )
     holographic_workers = _holographic_worker_count(pixels.shape[0])
     progress(
@@ -949,7 +949,7 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
     color_pixel_count = source_pixel_count
     if preserve_black_outlines:
         # The preserved-black pass owns these pixels exclusively. Do not also
-        # generate holographic grating geometry beneath the Black layer.
+        # generate fauxlographic grating geometry beneath the Black layer.
         black_mask, _black_source_color = _bw_photo_black_geometry_mask(image)
         color_pixel_count -= int(np.count_nonzero(black_mask))
     progress(
@@ -1000,7 +1000,7 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
         progress("[Step 6/8] START: generating preserved black-outline geometry.")
         if embedded_material_name:
             if not embedded_black_setting_name:
-                raise ValueError("This Holographic Palette does not contain a preserved Black setting.")
+                raise ValueError("This Fauxlographic Palette does not contain a preserved Black setting.")
             black_setting = _calibration_base_layer(_exact_setting(
                 lightburn, material_path, embedded_material_name, embedded_black_setting_name
             ))
@@ -1046,12 +1046,12 @@ def _build_holographic_exports(upload_folder, art_file, profile_file, material_p
     project.write(os.path.join(upload_folder, lbrn_name))
     progress(f"[Step 7/8] DONE: serialized {total_rectangles}/{total_rectangles} vector rectangles.")
     if store_artifacts:
-        progress("[Step 8/8] START: storing 2/2 Holographic Artwork output artifacts.")
+        progress("[Step 8/8] START: storing 2/2 Fauxlographic Artwork output artifacts.")
         for filename in (svg_name, lbrn_name):
             _store_holographic_artifact(task_id, os.path.join(upload_folder, filename))
-        progress("[Step 8/8] DONE: stored 2/2 Holographic Artwork output artifacts.")
+        progress("[Step 8/8] DONE: stored 2/2 Fauxlographic Artwork output artifacts.")
     else:
-        progress("[Step 8/8] DONE: prepared 2/2 Holographic Artwork artifacts for durable worker upload.")
+        progress("[Step 8/8] DONE: prepared 2/2 Fauxlographic Artwork artifacts for durable worker upload.")
     return svg_name, lbrn_name, pixels.shape[1], pixels.shape[0], sum(
         len(bucket["rectangles"]) for bucket in recipes_by_name.values()
     ) + len(black_rectangles)
@@ -1104,7 +1104,7 @@ def calibration_grid():
     except FileNotFoundError as error:
         return jsonify({"status": "error", "message": str(error)}), 404
     except RuntimeError as error:
-        current_app.logger.exception("Could not resolve holographic calibration library")
+        current_app.logger.exception("Could not resolve fauxlographic calibration library")
         return jsonify({"status": "error", "message": str(error)}), 503
     except ValueError as error:
         return jsonify({"status": "error", "message": str(error)}), 400
@@ -1114,7 +1114,7 @@ def calibration_grid():
         base_setting = _calibration_base_layer(matched_setting)
         if base_setting is not matched_setting:
             current_app.logger.info(
-                "Holographic calibration: using the first of %s sublayers for '%s'.",
+                "Fauxlographic calibration: using the first of %s sublayers for '%s'.",
                 len(matched_setting.subLayers),
                 description,
             )
@@ -1234,7 +1234,7 @@ def calibration_grid():
         for filename in (svg_name, lbrn_name, f"{stem}.json"):
             _store_holographic_artifact(task_id, os.path.join(upload_folder, filename))
     except Exception as error:
-        current_app.logger.exception("Holographic calibration-grid export failed")
+        current_app.logger.exception("Fauxlographic calibration-grid export failed")
         return jsonify({
             "status": "error",
             "message": f"Could not build the calibration grid: {error}",
@@ -1309,7 +1309,7 @@ def save_calibration_profile():
         json.dump(profile, profile_file, indent=2)
     for filename in (photo_name, profile_name_on_disk):
         _store_holographic_artifact(profile_id, os.path.join(upload_folder, filename))
-    current_app.logger.info("Saved holographic calibration profile %s from grid %s.", profile_id, calibration_id)
+    current_app.logger.info("Saved fauxlographic calibration profile %s from grid %s.", profile_id, calibration_id)
     return jsonify({
         "status": "saved",
         "profile_id": profile_id,
@@ -1378,7 +1378,7 @@ def analyze_calibration_profile():
             os.path.join(upload_folder, profile["grid_photo"]), profile["grid"], rotation_degrees, crop, max_edge, manual_corners, manual_sample_points, reference_correction
         )
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
-        current_app.logger.exception("Holographic calibration analysis failed")
+        current_app.logger.exception("Fauxlographic calibration analysis failed")
         return jsonify({"status": "error", "message": f"Calibration analysis could not run: {error}"}), 400
 
     preview_name = f"holographic_profile_{profile_id}_analysis.jpg"
@@ -1403,7 +1403,7 @@ def analyze_calibration_profile():
         json.dump(profile, profile_file, indent=2)
     _store_holographic_artifact(profile_id, os.path.join(upload_folder, preview_name))
     _store_holographic_artifact(profile_id, profile_path)
-    current_app.logger.info("Measured %s holographic calibration cells for profile %s.", len(cells), profile_id)
+    current_app.logger.info("Measured %s fauxlographic calibration cells for profile %s.", len(cells), profile_id)
     return jsonify({
         "status": "measured",
         "profile_id": profile_id,
@@ -1445,7 +1445,7 @@ def save_holographic_recipes():
             index = int(item["index"])
             if index not in cells:
                 raise ValueError(f"Cell {index} is not part of this profile.")
-            name = str(item.get("name", "")).strip() or f"Holographic {index:02d}"
+            name = str(item.get("name", "")).strip() or f"Fauxlographic {index:02d}"
             unique_name = name.casefold()
             if unique_name in used_names:
                 raise ValueError("Recipe names must be unique.")
@@ -1487,9 +1487,9 @@ def save_holographic_recipes():
             )
             saved_recipe_id = saved_recipe.get("recipe_id")
         except RuntimeError as error:
-            current_app.logger.exception("Could not save generated Holographic Palette to the account")
+            current_app.logger.exception("Could not save generated Fauxlographic Palette to the account")
             return jsonify({"status": "error", "message": str(error)}), 503
-    current_app.logger.info("Saved %s holographic recipes for profile %s.", len(recipes), profile_id)
+    current_app.logger.info("Saved %s fauxlographic recipes for profile %s.", len(recipes), profile_id)
     return jsonify({
         "status": "saved",
         "recipe_count": len(recipes),
@@ -1498,9 +1498,9 @@ def save_holographic_recipes():
         "saved_recipe_id": saved_recipe_id,
         "palette_diagnostics": profile["palette_diagnostics"],
         "message": (
-            f"Saved {len(recipes)} holographic recipe(s) to your Recipe Vault."
+            f"Saved {len(recipes)} fauxlographic recipe(s) to your Recipe Vault."
             if user_id else
-            f"Prepared {len(recipes)} holographic recipe(s). Download the recipe file before leaving."
+            f"Prepared {len(recipes)} fauxlographic recipe(s). Download the recipe file before leaving."
         ),
     })
 
@@ -1553,7 +1553,7 @@ def build_holographic_artwork():
         recipe_key = upload_task_artifact(artwork_task_id, recipe_path, category="inputs", user_id=user_id)
         material_key = upload_task_artifact(artwork_task_id, library_path, category="inputs", user_id=user_id)
         if not all((artwork_key, recipe_key, material_key)):
-            raise RuntimeError("Queued Holographic Artwork jobs require durable artifact storage.")
+            raise RuntimeError("Queued Fauxlographic Artwork jobs require durable artifact storage.")
         with open(recipe_path, encoding="utf-8") as recipe_stream:
             recipe_summary = json.load(recipe_stream)
         display_material = (recipe_summary.get("grid") or {}).get("material") or os.path.basename(library_path)
@@ -1589,7 +1589,7 @@ def build_holographic_artwork():
             artwork_task_id, user_id=user_id, browser_session=browser_job_session(),
         )
         redis_client.set(f"task:{artwork_task_id}:status", "pending", ex=HISTORY_TTL_SECONDS)
-        redis_client.rpush(f"task:{artwork_task_id}:log", "Holographic Artwork job queued for a dedicated worker.")
+        redis_client.rpush(f"task:{artwork_task_id}:log", "Fauxlographic Artwork job queued for a dedicated worker.")
         redis_client.expire(f"task:{artwork_task_id}:log", HISTORY_TTL_SECONDS)
         store_and_enqueue_job(payload)
     except PermissionError as error:
@@ -1597,11 +1597,11 @@ def build_holographic_artwork():
     except FileNotFoundError as error:
         return fail(error, 404)
     except RuntimeError as error:
-        current_app.logger.exception("Could not resolve holographic artwork library")
+        current_app.logger.exception("Could not resolve fauxlographic artwork library")
         return fail(error, 503)
     except (OSError, ValueError, ET.ParseError, KeyError, TypeError) as error:
-        current_app.logger.exception("Holographic artwork export failed")
-        return fail(f"Could not build holographic artwork: {error}", 400)
+        current_app.logger.exception("Fauxlographic artwork export failed")
+        return fail(f"Could not build fauxlographic artwork: {error}", 400)
     response = make_response(jsonify({"status": "pending", "task_id": artwork_task_id}), 202)
     response.set_cookie(
         "mopa_history_session", history_session, max_age=HISTORY_TTL_SECONDS,

@@ -26,20 +26,20 @@
 
   const routes = [
     { href: "/", label: "Rasterizer", match: path => ["/", "/laser-engraving-tool", "/color-laser-engraving-tool"].includes(path) },
-    { href: "/experimental-laboratories", label: "Experimental Laboratories", match: path => ["/experimental-laboratories", "/holographic.html", "/depthmap.html", "/color-lab.html", "/depthmap-relief-engraving-tool"].includes(path) },
+    { href: "/experimental-laboratories", label: "Experimental Laboratories", match: path => ["/experimental-laboratories", "/fauxlographic.html", "/depthmap.html", "/color-lab.html", "/depthmap-relief-engraving-tool"].includes(path) },
     { href: "/history.html", label: "Job History", match: path => path === "/history.html" },
     { href: "/vault.html", label: "Swatch Palette Vault", match: path => path === "/vault.html" },
     { href: "/community-set", label: "Community Set", match: path => path === "/community-set" },
-    { href: "/docs", label: "Docs", match: path => path === "/docs" || path.startsWith("/docs/") },
+    { href: "/docs", label: "Docs", match: path => path === "/docs" || path.startsWith("/docs/") || path === "/release-story" },
   ];
   const pageHeroes = {
     "/": ["Serverless raster processing", "MOPA Laser Rasterizer", "Turn artwork into a laser-ready color engraving project using your saved Material Libraries and palettes.", isStagingEnvironment ? "Production-parity staging" : "Production service"],
-    "/holographic.html": ["Directional engraving workflow", "Holographic Etching Lab", "Map artwork through a saved Holographic Palette and its LightBurn Material Library.", "Experimental - active development"],
+    "/fauxlographic.html": ["Directional engraving workflow", "Fauxlographic Etching Lab", "Map artwork through a saved Fauxlographic Palette and its LightBurn Material Library.", "Experimental - active development"],
     "/depthmap.html": ["Client-side monocular depth estimation", "Depth Map Generator", "Estimate relative scene depth from a single image, inspect a relief-style projection, adjust the usable range, and export grayscale depth maps for further preparation.", "Experimental - active development"],
     "/color-lab.html": ["Controlled laser color experiments", "Color Lab", "Sweep two laser parameters at a time, measure engraved test grids, refine promising settings, and save repeatable results for your exact equipment and material.", isStagingEnvironment ? "Experimental - staging port" : "Experimental - verify all output"],
     "/experimental-laboratories": ["Workflows under active development", "Experimental Laboratories", "Explore engraving tools that extend beyond the standard Rasterizer workflow, including diffraction artwork and depth-relief preparation.", "Experimental - verify all output"],
     "/history.html": ["Retained account processing", "Job History", "Review serverless runs, processing logs, parameters, and downloads retained for the last seven days.", "Authenticated workspace"],
-    "/vault.html": ["Account-owned laser parameters", "Swatch Palette Vault", "Manage Material Libraries, Color Palettes, Hatch Palettes, Depth Palettes, and Holographic Palettes.", "Authenticated workspace"],
+    "/vault.html": ["Account-owned laser parameters", "Swatch Palette Vault", "Manage Material Libraries, Color Palettes, Hatch Palettes, Depth Palettes, and Fauxlographic Palettes.", "Authenticated workspace"],
     "/community-set": ["Anonymous shared settings", "Community Set", "Explore settings voluntarily shared by laser operators using similar machines, lenses, and materials.", "Authenticated workspace"],
     "/admin.html": ["Private operational visibility", "Administration", "Review seven-day job activity, inspect retained logs, manage waiting jobs, and view the Cognito user directory.", "Authorized operator only"],
   };
@@ -63,7 +63,8 @@
       : location.pathname === "/depthmap.html" ? "staging-depthmap"
       : location.pathname === "/color-lab.html" ? "staging-color-lab"
       : location.pathname === "/experimental-laboratories" ? "staging-experimental"
-      : location.pathname === "/holographic.html" ? "staging-holographic"
+      : location.pathname === "/fauxlographic.html" ? "staging-holographic"
+      : location.pathname === "/release-story" ? "staging-release-story"
       : location.pathname === "/" ? "staging-home" : "";
     if (pageClass) {
       document.body.classList.add("staging-prototype", pageClass);
@@ -95,6 +96,22 @@
       </div>
       <nav class="machine-nav" aria-label="Primary navigation">${routes.map(route => `<span class="machine-nav-item"><a href="${route.href}" data-shell-route="${route.href}">${route.label}</a></span>`).join("")}</nav>`;
     document.body.prepend(header);
+    const loadServiceAvailability = async () => {
+      try {
+        const config = await fetch("/config.json", {cache: "no-store"}).then(result => result.json());
+        const state = await fetch(`${config.api_url}/service-status`, {cache: "no-store"}).then(result => result.json());
+        document.querySelector(".service-pause-banner")?.remove();
+        if (state.status !== "paused") return;
+        const banner = document.createElement("aside");
+        banner.className = "service-pause-banner";
+        banner.setAttribute("role", "alert");
+        const resume = state.resumes_at ? new Date(Number(state.resumes_at) * 1000).toLocaleDateString(undefined, {dateStyle: "long"}) : "the first day of the next billing cycle";
+        banner.textContent = `Processing is temporarily unavailable because this month's AWS spending limit was exceeded. Service is scheduled to resume automatically on ${resume}, but it may return sooner. Please check back soon.`;
+        header.after(banner);
+        document.body.classList.add("service-processing-paused");
+      } catch (_) {}
+    };
+    loadServiceAvailability();
     const machineNav = header.querySelector(".machine-nav");
     const mobileNavLayout = matchMedia("(max-width: 700px)");
     let navMeasureFrame, navMeasuredWidth = -1;

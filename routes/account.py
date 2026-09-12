@@ -1,4 +1,4 @@
-"""Authenticated preferences, Material Libraries, and Holographic Palettes."""
+"""Authenticated preferences, Material Libraries, and Fauxlographic Palettes."""
 
 import os
 import tempfile
@@ -202,7 +202,7 @@ def holographic_recipe_summary(path):
         payload = json.load(recipe_file)
     recipes = payload.get("recipes")
     if payload.get("kind") != "holographic_calibration_profile" or not isinstance(recipes, list) or not recipes:
-        raise ValueError("Choose a Holographic Etching Recipe JSON file with at least one saved recipe.")
+        raise ValueError("Choose a Fauxlographic Etching Recipe JSON file with at least one saved recipe.")
     return {
         "profile_name": str(payload.get("profile_name") or "").strip()[:160],
         "recipe_count": len(recipes),
@@ -214,12 +214,12 @@ def holographic_recipe_summary(path):
 def holographic_recipes():
     user_id = authenticated_user_id()
     if not user_id:
-        return jsonify({"status": "error", "message": "Sign in to use saved Holographic Palettes."}), 401
+        return jsonify({"status": "error", "message": "Sign in to use saved Fauxlographic Palettes."}), 401
     try:
         if request.method == "GET":
             return jsonify({"status": "ok", "recipes": [{
                 "recipe_id": recipe.get("recipe_id"),
-                "name": recipe.get("name", "Holographic Palette"),
+                "name": recipe.get("name", "Fauxlographic Palette"),
                 "original_name": recipe.get("original_name", ""),
                 "metadata": recipe.get("metadata", {}),
                 "created_at": recipe.get("created_at"),
@@ -227,7 +227,7 @@ def holographic_recipes():
         upload = request.files.get("recipe")
         filename = secure_filename(upload.filename if upload else "")
         if not upload or not filename or os.path.splitext(filename)[1].lower() != ".json":
-            raise ValueError("Choose a Holographic Etching Recipe JSON file.")
+            raise ValueError("Choose a Fauxlographic Etching Recipe JSON file.")
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as temp_file:
             temp_path = temp_file.name
         try:
@@ -249,11 +249,11 @@ def holographic_recipes():
 def holographic_recipe_detail(recipe_id):
     user_id = authenticated_user_id()
     if not user_id:
-        return jsonify({"status": "error", "message": "Sign in to manage Holographic Palettes."}), 401
+        return jsonify({"status": "error", "message": "Sign in to manage Fauxlographic Palettes."}), 401
     try:
         recipe = get_user_holographic_recipe(user_id, recipe_id)
         if not recipe:
-            return jsonify({"status": "error", "message": "That Holographic Palette no longer exists."}), 404
+            return jsonify({"status": "error", "message": "That Fauxlographic Palette no longer exists."}), 404
         if request.method == "DELETE":
             delete_user_holographic_recipe(user_id, recipe_id)
             return jsonify({"status": "ok"})

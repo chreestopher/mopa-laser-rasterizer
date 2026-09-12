@@ -15,5 +15,6 @@ fi
 # published only after that update succeeds.
 bash "$SCRIPT_DIR/deploy_serverless_production.sh" --apply
 bash "$SCRIPT_DIR/deploy_serverless_production_web.sh" --apply
+bash "$SCRIPT_DIR/deploy_serverless_cost_guard.sh" --apply
 
 echo "Serverless production infrastructure is deployed. Route 53 is unchanged."

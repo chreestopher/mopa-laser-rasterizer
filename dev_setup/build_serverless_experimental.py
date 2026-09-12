@@ -19,7 +19,8 @@ source = re.sub(
     count=1,
     flags=re.DOTALL,
 )
-source = source.replace('href="/holographic-etching"', 'href="/holographic.html"')
+source = source.replace('href="/fauxlographic-etching"', 'href="/fauxlographic.html"')
+source = source.replace('href="/holographic-etching"', 'href="/fauxlographic.html"')
 source = source.replace('href="/depthmap-generator"', 'href="/depthmap.html"')
 source = source.replace('href="/color-discovery"', 'href="/color-lab.html"')
 source = source.replace('href="/depthmap-relief-engraving-tool"', 'href="/docs/depthmap-generator"')

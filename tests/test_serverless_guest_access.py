@@ -43,13 +43,13 @@ class ServerlessGuestAccessTests(unittest.TestCase):
     def test_guest_jobs_cannot_use_saved_account_assets(self):
         self.assertIn("Guest jobs cannot use saved palettes or Material Libraries", self.handler)
         self.assertIn('"material": None if svg_only or uploaded_holographic_palette else presigned_post(', self.handler)
-        self.assertIn("Guest jobs require a freshly uploaded Material Library, a Holographic Swatch Palette, or SVG-Only", self.page)
+        self.assertIn("Guest jobs require a freshly uploaded Material Library, a Fauxlographic Swatch Palette, or SVG-Only", self.page)
 
     def test_guest_can_upload_a_transient_holographic_palette(self):
-        self.assertIn("Upload a Holographic Swatch Palette", self.page)
-        self.assertIn("new Option('Upload a Holographic Swatch Palette','holographic-upload')", self.page)
+        self.assertIn("Upload a Fauxlographic Swatch Palette", self.page)
+        self.assertIn("new Option('Upload a Fauxlographic Swatch Palette','holographic-upload')", self.page)
         self.assertIn('id="holographicUploadInfo"', self.page)
-        self.assertIn("store Holographic Swatch Palettes in your Swatch Palette Vault", self.page)
+        self.assertIn("store Fauxlographic Swatch Palettes in your Swatch Palette Vault", self.page)
         self.assertIn("uploadedHolographicProfile", self.page)
         self.assertIn("holographic_palette_key:grant.holographic_palette?.key||''", self.page)
         self.assertIn('item["uploaded_holographic_palette"] = True', self.handler)
@@ -59,8 +59,8 @@ class ServerlessGuestAccessTests(unittest.TestCase):
         self.assertIn('Tagging="mopa-retention=guest"', self.handler)
 
     def test_holographic_palette_schema_version_is_not_user_facing(self):
-        self.assertNotIn("self-contained v2 Holographic Palettes", self.handler)
-        self.assertNotIn("v2 Holographic", self.page)
+        self.assertNotIn("self-contained v2 Fauxlographic Palettes", self.handler)
+        self.assertNotIn("v2 Fauxlographic", self.page)
 
     def test_guest_swatches_are_editable_but_preferences_are_not_saved(self):
         self.assertIn("async function loadGuestResources()", self.page)

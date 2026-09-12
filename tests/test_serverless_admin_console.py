@@ -97,9 +97,9 @@ class ServerlessAdminConsoleTests(unittest.TestCase):
         self.assertIn("color:#20221e!important", self.styles)
 
     def test_operational_panels_stay_hidden_until_admin_authorization_succeeds(self):
-        self.assertEqual(self.page.count('class="admin-panel admin-protected'), 2)
-        self.assertEqual(self.page.count('aria-labelledby="admin-'), 2)
-        self.assertEqual(self.page.count('hidden>'), 2)
+        self.assertEqual(self.page.count('class="admin-panel admin-protected'), 3)
+        self.assertEqual(self.page.count('aria-labelledby="admin-'), 3)
+        self.assertEqual(self.page.count('hidden>'), 3)
         self.assertIn('document.querySelectorAll(".admin-protected")', self.client)
         self.assertIn("protectedPanels.forEach(panel=>panel.hidden=false)", self.client)
         self.assertIn('if(!token||(tokenExpiresSoon()&&!await refreshSession()))return', self.client)

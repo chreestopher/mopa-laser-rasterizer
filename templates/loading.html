@@ -76,6 +76,8 @@
     .terminal-box {
         flex: 3 1 0;
         min-height: 0;
+        min-width: 0;
+        max-width: 100%;
         background: #1e1e1e;
         color: #00ff00;
         font-family: 'Courier New', Courier, monospace;
@@ -97,14 +99,20 @@
         scrollbar-color: #218c53 #151515;
     }
     .log-list {
+        min-width: 0;
+        max-width: 100%;
         list-style: none;
         padding: 0;
         margin: 0;
     }
     .log-item {
+        min-width: 0;
+        max-width: 100%;
         margin-bottom: 8px;
         line-height: 1.4;
-        word-break: break-all;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        word-break: break-word;
     }
     .log-prefix {
         color: #666;
@@ -145,6 +153,8 @@
     .machine-workspace {
         flex: 8;
         min-height: 0;
+        min-width: 0;
+        max-width: 100%;
         width: 100%;
         display: flex;
         flex-direction: row;
@@ -414,7 +424,7 @@
                         <div class="file-menu-details"><span><strong>Style:</strong> <span class="file-meta">{{ file.image_preset|replace('_', ' ') }}{% if file.abstract_filter and file.abstract_filter != 'none' %} · {{ file.abstract_filter|replace('_', ' ') }}{% endif %}</span></span>{% if file.material_name %}<span><strong>Material:</strong> {{ file.material_name }}</span>{% endif %}<span><strong>Status:</strong> <span class="file-status">[{{ 'starting worker' if file.status == 'pending' else file.status }}]</span></span></div>
                         <div class="file-run-parameters">
                             {% set parameters = file.run_parameters or {} %}
-                            {% if parameters.job_type == 'holographic_artwork' %}<span><strong>Holographic Palette:</strong> {{ parameters.recipe_name }}</span><span><strong>Pixel size:</strong> {{ parameters.pixel_size_mm }} mm</span><span><strong>Maximum processing size:</strong> {{ parameters.processing_width_px }} px</span><span><strong>Cut mode:</strong> {{ parameters.cut_mode|replace('-', ' ') }}</span>{% elif parameters %}<span><strong>Pixel size:</strong> {{ parameters.pixel_size_mm }} mm</span><span><strong>Processing:</strong> {{ parameters.processing_width_px }} × {{ parameters.processing_height_px }} px</span><span><strong>Colors:</strong> {{ parameters.colors|join(', ') or 'all available' }}</span>{% for key, value in (parameters.filter_parameters or {}).items() %}<span><strong>{{ key|replace('_', ' ') }}:</strong> {{ value }}</span>{% endfor %}{% else %}<span>Detailed parameters were not recorded for this older run.</span>{% endif %}
+                            {% if parameters.job_type == 'holographic_artwork' %}<span><strong>Fauxlographic Palette:</strong> {{ parameters.recipe_name }}</span><span><strong>Pixel size:</strong> {{ parameters.pixel_size_mm }} mm</span><span><strong>Maximum processing size:</strong> {{ parameters.processing_width_px }} px</span><span><strong>Cut mode:</strong> {{ parameters.cut_mode|replace('-', ' ') }}</span>{% elif parameters %}<span><strong>Pixel size:</strong> {{ parameters.pixel_size_mm }} mm</span><span><strong>Processing:</strong> {{ parameters.processing_width_px }} × {{ parameters.processing_height_px }} px</span><span><strong>Colors:</strong> {{ parameters.colors|join(', ') or 'all available' }}</span>{% for key, value in (parameters.filter_parameters or {}).items() %}<span><strong>{{ key|replace('_', ' ') }}:</strong> {{ value }}</span>{% endfor %}{% else %}<span>Detailed parameters were not recorded for this older run.</span>{% endif %}
                         </div>
                         <div class="file-actions">
                         <a class="download-button reuse-settings-button" href="{{ file.reuse_url }}">{{ file.reuse_label or 'Reuse Settings' }}</a>
@@ -489,7 +499,7 @@ function fileParametersHtml(parameters) {
         return '<div class="file-run-parameters"><span>Detailed parameters were not recorded for this older run.</span></div>';
     }
     if (parameters.job_type === 'holographic_artwork') {
-        return `<div class="file-run-parameters"><span><strong>Holographic Palette:</strong> ${escapeHtml(parameters.recipe_name || 'Holographic Palette')}</span>` +
+        return `<div class="file-run-parameters"><span><strong>Fauxlographic Palette:</strong> ${escapeHtml(parameters.recipe_name || 'Fauxlographic Palette')}</span>` +
           `<span><strong>Pixel size:</strong> ${escapeHtml(parameters.pixel_size_mm)} mm</span>` +
           `<span><strong>Maximum processing size:</strong> ${escapeHtml(parameters.processing_width_px)} px</span>` +
           `<span><strong>Cut mode:</strong> ${escapeHtml(String(parameters.cut_mode || 'setting').replaceAll('-', ' '))}</span></div>`;
@@ -685,7 +695,10 @@ function appendLogMessage(message) {
 
     const li = document.createElement("li");
     li.className = "log-item";
-    li.innerHTML = `<span class="log-prefix">$</span>${cleanMessage}`;
+    const prefix = document.createElement("span");
+    prefix.className = "log-prefix";
+    prefix.textContent = "$";
+    li.append(prefix, document.createTextNode(cleanMessage));
     logContainer.appendChild(li);
 
     terminalBox.scrollTop = terminalBox.scrollHeight;

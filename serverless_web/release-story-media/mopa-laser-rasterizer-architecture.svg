@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1350" viewBox="0 0 2400 1350" role="img" aria-labelledby="title desc">
+  <title id="title">MOPA Laser Rasterizer serverless architecture</title>
+  <desc id="desc">Architecture from browser and CloudFront through API Gateway, Lambda, SQS, Step Functions, Fargate, S3 and DynamoDB to SVG and LightBurn artifacts.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="11" refY="7" orient="auto"><path d="M0,0 L14,7 L0,14 Z" fill="#64748b"/></marker>
+    <style>
+      .title{font:600 46px Arial,sans-serif;fill:#0f172a}.sub{font:24px Arial,sans-serif;fill:#475569}.lane{font:600 22px Arial,sans-serif;letter-spacing:2px;fill:#475569}.heading{font:600 25px Arial,sans-serif;fill:#172033}.text{font:20px Arial,sans-serif;fill:#475569}.small{font:18px Arial,sans-serif;fill:#475569}.card{stroke:#cbd5e1;stroke-width:2;rx:18}.flow{stroke:#64748b;stroke-width:3;fill:none;marker-end:url(#arrow)}.label{font:17px Arial,sans-serif;fill:#64748b}.chip{fill:#fff;stroke:#cbd5e1;stroke-width:1.5;rx:8}
+    </style>
+  </defs>
+  <rect width="2400" height="1350" fill="#f8fafc"/>
+  <text x="100" y="92" class="title">MOPA Laser Rasterizer — Serverless Architecture</text>
+  <text x="100" y="132" class="sub">From artwork upload to SVG and LightBurn-ready output</text>
+
+  <rect x="80" y="185" width="490" height="1030" rx="24" fill="#eff6ff" stroke="#bfdbfe" stroke-width="2"/>
+  <rect x="635" y="185" width="490" height="1030" rx="24" fill="#eff6ff" stroke="#bfdbfe" stroke-width="2"/>
+  <rect x="1190" y="185" width="600" height="1030" rx="24" fill="#fff7ed" stroke="#fed7aa" stroke-width="2"/>
+  <rect x="1855" y="185" width="465" height="1030" rx="24" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="2"/>
+  <text x="112" y="230" class="lane">CLIENT &amp; EDGE</text><text x="667" y="230" class="lane">APPLICATION API</text><text x="1222" y="230" class="lane">JOB ORCHESTRATION</text><text x="1887" y="230" class="lane">DATA &amp; OUTPUTS</text>
+
+  <rect x="115" y="285" width="420" height="130" class="card" fill="#dbeafe"/><text x="145" y="332" class="heading">User browser</text><text x="145" y="372" class="text">Artwork, settings, palettes</text>
+  <rect x="115" y="510" width="420" height="145" class="card" fill="#dbeafe"/><text x="145" y="557" class="heading">CloudFront + S3 web app</text><text x="145" y="597" class="text">Static UI, docs, job status</text>
+  <rect x="115" y="750" width="420" height="130" class="card" fill="#fff"/><text x="145" y="797" class="heading">Cognito</text><text x="145" y="837" class="text">Sign-in and JWT identity</text>
+  <path d="M325 415 V505" class="flow"/><text x="345" y="470" class="label">HTTPS</text><path d="M325 655 V745" class="flow"/>
+
+  <rect x="670" y="285" width="420" height="130" class="card" fill="#dbeafe"/><text x="700" y="332" class="heading">API Gateway</text><text x="700" y="372" class="text">Authenticated REST endpoints</text>
+  <rect x="670" y="510" width="420" height="275" class="card" fill="#dbeafe"/><text x="700" y="557" class="heading">Lambda API</text>
+  <rect x="700" y="590" width="360" height="45" class="chip"/><text x="720" y="620" class="small">Presigned upload / download</text>
+  <rect x="700" y="650" width="360" height="45" class="chip"/><text x="720" y="680" class="small">Job creation and status</text>
+  <rect x="700" y="710" width="360" height="45" class="chip"/><text x="720" y="740" class="small">Saved swatches and palettes</text>
+  <path d="M880 415 V505" class="flow"/><text x="900" y="470" class="label">Invoke</text>
+
+  <rect x="1225" y="285" width="530" height="130" class="card" fill="#ffedd5"/><text x="1255" y="332" class="heading">SQS job queue</text><text x="1255" y="372" class="text">Durable buffering + dead-letter queue</text>
+  <rect x="1225" y="510" width="530" height="145" class="card" fill="#ffedd5"/><text x="1255" y="557" class="heading">EventBridge Pipe + Step Functions</text><text x="1255" y="597" class="text">Retries and Spot → On-Demand fallback</text>
+  <rect x="1225" y="750" width="530" height="315" class="card" fill="#ffedd5"/><text x="1255" y="797" class="heading">ECS Fargate workers</text>
+  <rect x="1255" y="830" width="470" height="43" class="chip"/><text x="1275" y="859" class="small">Vectorize + cleanup</text>
+  <rect x="1255" y="887" width="470" height="43" class="chip"/><text x="1275" y="916" class="small">Color, diffraction and hatch patterns</text>
+  <rect x="1255" y="944" width="470" height="43" class="chip"/><text x="1275" y="973" class="small">Depth, relief and parallax</text>
+  <rect x="1255" y="1001" width="470" height="43" class="chip"/><text x="1275" y="1030" class="small">Parallel layer geometry</text>
+  <path d="M1490 415 V505" class="flow"/><text x="1510" y="470" class="label">Trigger</text><path d="M1490 655 V745" class="flow"/><text x="1510" y="710" class="label">RunTask</text>
+
+  <rect x="1890" y="285" width="395" height="145" class="card" fill="#dcfce7"/><text x="1920" y="332" class="heading">Private S3 storage</text><text x="1920" y="372" class="text">Uploads, libraries, artifacts</text>
+  <rect x="1890" y="510" width="395" height="145" class="card" fill="#dcfce7"/><text x="1920" y="557" class="heading">DynamoDB</text><text x="1920" y="597" class="text">Jobs, ownership, saved settings</text>
+  <rect x="1890" y="750" width="395" height="130" class="card" fill="#fff"/><text x="1920" y="797" class="heading">CloudWatch</text><text x="1920" y="837" class="text">Logs and operational metrics</text>
+  <rect x="1890" y="975" width="395" height="175" class="card" fill="#dcfce7"/><text x="1920" y="1022" class="heading">Generated artifacts</text><text x="1920" y="1062" class="text">SVG · LightBurn .lbrn2</text><text x="1920" y="1102" class="text">Presigned download</text>
+
+  <path d="M535 350 H665" class="flow"/><text x="565" y="332" class="label">UI calls</text>
+  <path d="M1090 350 H1220" class="flow"/><text x="1115" y="332" class="label">enqueue</text>
+  <path d="M1755 350 H1885" class="flow"/><text x="1770" y="332" class="label">store</text>
+  <path d="M1755 860 H1885" class="flow"/><text x="1765" y="842" class="label">logs + metrics</text>
+  <path d="M1090 635 H1185 V580 H1220" class="flow"/><text x="1110" y="618" class="label">job state</text>
+  <path d="M1755 990 H1850 V1060 H1885" class="flow"/>
+  <path d="M535 582 H630 V350 H665" class="flow"/><text x="545" y="565" class="label">API</text>
+  <path d="M880 785 V1190 H2085 V1155" class="flow"/><text x="1120" y="1180" class="label">status + secure download links</text>
+
+  <rect x="100" y="1260" width="18" height="18" rx="4" fill="#93c5fd"/><text x="130" y="1276" class="small">Request path</text>
+  <rect x="315" y="1260" width="18" height="18" rx="4" fill="#fdba74"/><text x="345" y="1276" class="small">Compute pipeline</text>
+  <rect x="575" y="1260" width="18" height="18" rx="4" fill="#86efac"/><text x="605" y="1276" class="small">Persistent data</text>
+</svg>

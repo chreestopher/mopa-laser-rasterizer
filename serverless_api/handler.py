@@ -34,8 +34,13 @@ MAX_RECIPE_BYTES = int(os.environ.get("MAX_RECIPE_BYTES", str(10 * 1024 * 1024))
 UPLOAD_CAPABILITY_SECONDS = 600
 GUEST_JOB_SECONDS = int(os.environ.get("GUEST_JOB_SECONDS", str(24 * 3600)))
 GUEST_DAILY_JOB_LIMIT = int(os.environ.get("GUEST_DAILY_JOB_LIMIT", "5"))
+GUEST_ACCESS_ENABLED = os.environ.get("GUEST_ACCESS_ENABLED", "true").strip().casefold() == "true"
+ALLOWED_USER_SUB = os.environ.get("ALLOWED_USER_SUB", "").strip()
 GUEST_QUOTA_SALT = os.environ.get("GUEST_QUOTA_SALT", TABLE_NAME)
 ARTWORK_TELEMETRY_SECONDS = int(os.environ.get("ARTWORK_TELEMETRY_SECONDS", str(30 * 86400)))
+WORKER_LOG_GROUP_NAME = os.environ.get("WORKER_LOG_GROUP_NAME", "").strip()
+PIPE_NAME = os.environ.get("WORKER_PIPE_NAME", "").strip()
+MAX_JOB_LOG_EVENTS = max(1, min(10000, int(os.environ.get("MAX_JOB_LOG_EVENTS", "10000"))))
 
 s3 = boto3.client(
     "s3", region_name=REGION,
@@ -44,7 +49,11 @@ s3 = boto3.client(
 )
 sqs = boto3.client("sqs", region_name=REGION)
 cognito = boto3.client("cognito-idp", region_name=REGION)
+cloudwatch_logs = boto3.client("logs", region_name=REGION)
+pipes = boto3.client("pipes", region_name=REGION)
 table = boto3.resource("dynamodb", region_name=REGION).Table(TABLE_NAME)
+
+SERVICE_CONTROL_KEY = {"pk": "SYSTEM#SERVICE", "sk": "CONTROL"}
 
 PALETTE = [
     ("Black", "#000000"), ("Blue", "#0000FF"), ("Red", "#FF0000"),
@@ -64,7 +73,7 @@ RASTER_PRESETS = {"cartoon", "color_photograph", "bw_dither_photograph"}
 ABSTRACT_FILTERS = {
     "wave", "voronoi", "shear", "spiral", "mosaic", "crystal", "ripple",
     "glitch", "deep_fryer", "shattered", "halftone_newsprint", "optical_color_mix",
-    "krasnow_grating", "none",
+    "krasnow_grating", "structure_tensor_flow", "none",
 }
 
 
@@ -78,11 +87,57 @@ def response(status, body):
 
 def visible_job_logs(items, error_message=""):
     """Return retained logs with a terminal failure reason visible exactly once."""
-    messages = [str(item.get("message") or "") for item in items]
+    messages = [
+        str(item.get("message") or "") if isinstance(item, dict) else str(item or "")
+        for item in items
+    ]
     failure = str(error_message or "").strip()
     if failure and not any(failure in message for message in messages):
         messages.append(f"ERROR: {failure}")
     return messages
+
+
+def job_logs(task_id, live):
+    """Read new serverless logs from CloudWatch, retaining DynamoDB compatibility."""
+    stream = str((live or {}).get("cloudwatch_log_stream") or "").strip()
+    item_group = str((live or {}).get("cloudwatch_log_group") or "").strip()
+    if stream and WORKER_LOG_GROUP_NAME and item_group == WORKER_LOG_GROUP_NAME:
+        messages = []
+        token = None
+        pages = 0
+        prefix = f"[Task {task_id}] "
+        try:
+            while len(messages) < MAX_JOB_LOG_EVENTS and pages < 20:
+                options = {
+                    "logGroupName": WORKER_LOG_GROUP_NAME,
+                    "logStreamName": stream,
+                    "startFromHead": True,
+                    "limit": MAX_JOB_LOG_EVENTS - len(messages),
+                }
+                if token:
+                    options["nextToken"] = token
+                result = cloudwatch_logs.get_log_events(**options)
+                pages += 1
+                for event in result.get("events", []):
+                    message = str(event.get("message") or "")
+                    if message.startswith(prefix):
+                        messages.append(message[len(prefix):])
+                next_token = result.get("nextForwardToken")
+                if not next_token or next_token == token:
+                    break
+                token = next_token
+            return messages
+        except ClientError as error:
+            print(json.dumps({
+                "event": "cloudwatch_job_logs_unavailable", "task_id": task_id,
+                "error": error.response.get("Error", {}).get("Code", "ClientError"),
+            }, separators=(",", ":")), flush=True)
+    return table.query(
+        KeyConditionExpression=(
+            Key("pk").eq(f"JOB#{task_id}") & Key("sk").begins_with("LOG#")
+        ),
+        ScanIndexForward=True,
+    ).get("Items", [])
 
 
 def file_response(contents, filename, content_type="application/xml"):
@@ -138,6 +193,114 @@ def require_admin(event):
     if not is_admin(event):
         return response(404, {"message": "Not found"})
     return None
+
+
+def next_billing_cycle_start(now=None):
+    """Return the first instant of the next UTC calendar month as epoch seconds."""
+    from datetime import datetime, timezone
+    current = datetime.fromtimestamp(now or time.time(), tz=timezone.utc)
+    year, month = (current.year + 1, 1) if current.month == 12 else (current.year, current.month + 1)
+    return int(datetime(year, month, 1, tzinfo=timezone.utc).timestamp())
+
+
+def ensure_pipe_running(running):
+    if not PIPE_NAME:
+        return
+    state = str(pipes.describe_pipe(Name=PIPE_NAME).get("CurrentState") or "")
+    if running and state not in {"RUNNING", "STARTING"}:
+        pipes.start_pipe(Name=PIPE_NAME)
+    elif not running and state not in {"STOPPED", "STOPPING"}:
+        pipes.stop_pipe(Name=PIPE_NAME)
+
+
+def service_control(refresh_expired=True):
+    item = table.get_item(Key=SERVICE_CONTROL_KEY, ConsistentRead=True).get("Item") or {}
+    paused = str(item.get("status") or "active") == "paused"
+    resumes_at = int(item.get("resumes_at") or 0)
+    if paused and refresh_expired and resumes_at and resumes_at <= int(time.time()):
+        ensure_pipe_running(True)
+        now = int(time.time())
+        table.update_item(
+            Key=SERVICE_CONTROL_KEY,
+            UpdateExpression="SET #status=:active, updated_at=:now, updated_by=:actor REMOVE pause_reason, resumes_at",
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={":active": "active", ":now": now, ":actor": "automatic-monthly-reset"},
+        )
+        item = {"status": "active", "updated_at": now, "updated_by": "automatic-monthly-reset"}
+    return item
+
+
+def public_service_status():
+    item = service_control()
+    paused = str(item.get("status") or "active") == "paused"
+    resumes_at = int(item.get("resumes_at") or 0)
+    body = {"status": "paused" if paused else "active", "processing_available": not paused}
+    if paused:
+        body.update({
+            "reason": str(item.get("pause_reason") or "overspending"),
+            "resumes_at": resumes_at,
+            "message": (
+                "Processing is temporarily unavailable because this month's AWS spending limit was exceeded. "
+                "Service is scheduled to resume automatically on the first day of the next billing cycle, "
+                "but it may return sooner. Please check back soon."
+            ),
+        })
+    return response(200, body)
+
+
+def service_paused_response():
+    item = service_control()
+    if str(item.get("status") or "active") != "paused":
+        return None
+    return response(503, {
+        "message": (
+            "Processing is temporarily unavailable because this month's AWS spending limit was exceeded. "
+            "Service is scheduled to resume automatically on the first day of the next billing cycle, "
+            "but it may return sooner. Please check back soon."
+        ),
+        "code": "SERVICE_PAUSED_FOR_COST",
+        "resumes_at": int(item.get("resumes_at") or 0),
+    })
+
+
+def admin_service_control(event):
+    denied = require_admin(event)
+    if denied:
+        return denied
+    method = ((event.get("requestContext") or {}).get("http") or {}).get("method", "GET")
+    if method == "GET":
+        return response(200, json_value(service_control()))
+    data = body_json(event)
+    action = str(data.get("action") or "").strip().casefold()
+    if action == "pause":
+        now = int(time.time())
+        resumes_at = next_billing_cycle_start(now)
+        table.update_item(
+            Key=SERVICE_CONTROL_KEY,
+            UpdateExpression=("SET #status=:paused, pause_reason=:reason, resumes_at=:resumes, "
+                              "updated_at=:now, updated_by=:actor"),
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={
+                ":paused": "paused", ":reason": "overspending", ":resumes": resumes_at,
+                ":now": now, ":actor": str(jwt_claims(event).get("email") or "administrator"),
+            },
+        )
+        ensure_pipe_running(False)
+        return response(200, {"status": "paused", "processing_available": False, "resumes_at": resumes_at})
+    if action in {"continue", "resume"}:
+        ensure_pipe_running(True)
+        now = int(time.time())
+        table.update_item(
+            Key=SERVICE_CONTROL_KEY,
+            UpdateExpression="SET #status=:active, updated_at=:now, updated_by=:actor REMOVE pause_reason, resumes_at",
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={
+                ":active": "active", ":now": now,
+                ":actor": str(jwt_claims(event).get("email") or "administrator"),
+            },
+        )
+        return response(200, {"status": "active", "processing_available": True})
+    return response(400, {"message": "Choose pause, continue, or resume"})
 
 
 def safe_name(value, fallback):
@@ -399,17 +562,17 @@ def publish_community_palette(event):
     else:
         source = owned_recipe(owner, source_id)
         if not source:
-            return response(404, {"message": "Saved Holographic Palette not found"})
+            return response(404, {"message": "Saved Fauxlographic Palette not found"})
         profile = json.loads(s3.get_object(Bucket=BUCKET, Key=source["s3_key"])["Body"].read(MAX_RECIPE_BYTES + 1))
         measured = profile.get("recipes") if isinstance(profile, dict) else None
         if int(profile.get("schema_version") or 1) < 2 or not isinstance(measured, list):
-            raise ValueError("Only self-contained Holographic Palettes can be added to Community Set")
-        palette_name = str(source.get("name") or profile.get("profile_name") or "Holographic Palette")[:160]
+            raise ValueError("Only self-contained Fauxlographic Palettes can be added to Community Set")
+        palette_name = str(source.get("name") or profile.get("profile_name") or "Fauxlographic Palette")[:160]
         palette_type = "holographic_palette"
         material = str((profile.get("grid") or {}).get("material") or (source.get("metadata") or {}).get("material") or "")[:160]
         for index in selected:
             if index >= len(measured) or not isinstance(measured[index], dict):
-                raise ValueError("One of the selected Holographic swatches no longer exists")
+                raise ValueError("One of the selected Fauxlographic swatches no longer exists")
             swatch = measured[index]
             snapshot = swatch.get("laser_settings")
             validate_lightburn_setting_snapshot(snapshot)
@@ -417,7 +580,7 @@ def publish_community_palette(event):
             swatch_hex = PALETTE[official_index][1].upper()
             entries.append({
                 "entry_id": index,
-                "description": str(swatch.get("name") or f"Holographic swatch {index + 1}")[:160],
+                "description": str(swatch.get("name") or f"Fauxlographic swatch {index + 1}")[:160],
                 "source_description": str(swatch.get("name") or "")[:160],
                 "material": material,
                 "type": str(snapshot.get("type") or "Setting")[:40],
@@ -541,7 +704,7 @@ def account_resources(event):
         } for item in depth_palettes],
         "holographic_recipes": [{
             "recipe_id": str(item.get("recipe_id") or ""),
-            "name": str(item.get("name") or item.get("original_name") or "Holographic Palette"),
+            "name": str(item.get("name") or item.get("original_name") or "Fauxlographic Palette"),
             "original_name": str(item.get("original_name") or "recipe.json"),
             "metadata": item.get("metadata") or {},
             "laser_source": str(item.get("laser_source") or ""),
@@ -636,6 +799,15 @@ def clean_last_used_form(name, snapshot):
                 "octagon", "star", "cross", "bar", "skull", "heart",
                 "space_invader", "ghost", "bat", "alien_head",
                 "paw_print", "fish_scale", "puzzle_piece", "mixed",
+            }:
+                cleaned[parameter] = parameter_value
+            elif parameter == "fauxlogram_gradient_scope" and parameter_value in {
+                "entire_artwork", "each_shape",
+            }:
+                cleaned[parameter] = parameter_value
+            elif parameter == "fauxlogram_gradient_direction" and parameter_value in {
+                "top_to_bottom", "bottom_to_top", "left_to_right",
+                "right_to_left", "center_to_edge", "edge_to_center",
             }:
                 cleaned[parameter] = parameter_value
         return cleaned
@@ -848,10 +1020,7 @@ def admin_job(event, task_id):
     ).get("Item") if owner and history_sk else {}
     history = history or {}
     live = runtime(task_id) or {}
-    logs = table.query(
-        KeyConditionExpression=Key("pk").eq(f"JOB#{task_id}") & Key("sk").begins_with("LOG#"),
-        ScanIndexForward=True,
-    ).get("Items", [])
+    logs = job_logs(task_id, live)
     error_message = str(live.get("error_message") or history.get("error_message") or "")
     return response(200, {
         "task_id": task_id,
@@ -1079,10 +1248,7 @@ def account_job(event, task_id):
     live = runtime(task_id)
     logs = []
     if include_logs and live and live.get("user_id") == owner:
-        logs = table.query(
-            KeyConditionExpression=Key("pk").eq(f"JOB#{task_id}") & Key("sk").begins_with("LOG#"),
-            ScanIndexForward=True,
-        ).get("Items", [])
+        logs = job_logs(task_id, live)
     prefix = str(record.get("artifact_prefix") or f"users/{owner}/jobs/{task_id}/") + "outputs/"
     objects = s3.list_objects_v2(Bucket=BUCKET, Prefix=prefix).get("Contents", [])
     source_name = str(history.get("source_name") or "Artwork")
@@ -1246,9 +1412,10 @@ def edit_material_entry(event, library_id, entry_id):
     description = str(data.get("description") or "").strip()
     setting_type = str(data.get("type") or "Scan").strip()
     settings = data.get("settings") if isinstance(data.get("settings"), dict) else {}
+    unset_settings = data.get("unset_settings") if isinstance(data.get("unset_settings"), list) else []
     if not description or len(description) > 160:
         raise ValueError("Description is required and must be 160 characters or fewer")
-    if setting_type not in {"Cut", "Scan", "Image", "Offset"} or len(settings) > 80:
+    if setting_type not in {"Cut", "Scan", "Image", "Offset"} or len(settings) + len(unset_settings) > 80:
         raise ValueError("Choose a valid operation type and a small settings object")
     source = s3.get_object(Bucket=BUCKET, Key=library["s3_key"])["Body"].read(MAX_MATERIAL_BYTES + 1)
     if len(source) > MAX_MATERIAL_BYTES:
@@ -1267,6 +1434,11 @@ def edit_material_entry(event, library_id, entry_id):
     cut = entry.find("./CutSetting")
     if cut is None: cut = ET.SubElement(entry, "CutSetting")
     cut.set("type", setting_type)
+    for name in unset_settings:
+        name = str(name)
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", name): continue
+        field = cut.find(f"./{name}")
+        if field is not None: cut.remove(field)
     for name, value in settings.items():
         name = str(name)
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", name) or isinstance(value, (dict, list)): continue
@@ -1288,7 +1460,7 @@ LIGHTBURN_SETTING_FIELD_ORDER = (
     "speed", "frequency", "PPI", "QPulseWidth", "LaserOn_TC", "LaserOff_TC",
     "Polygon_TC", "JumpSpeed", "MinJumpDelay", "MaxJumpDelay", "numPasses",
     "crossHatch", "angle", "anglePerPass", "perfLen", "perfSkip", "dotTime",
-    "dotSpacing", "overscan", "overscanPercent", "interval", "tabsEnabled",
+    "dotSpacing", "scanOpt", "floodFill", "overscan", "overscanPercent", "interval", "tabsEnabled",
     "priority", "tabSize", "tabCount", "tabCountMax", "tabSpacing", "hide",
 )
 
@@ -1359,14 +1531,14 @@ def selected_settings_root(owner, selections, material_name, allow_duplicates=Fa
     for recipe_id, recipe_indexes in recipe_requested.items():
         record = owned_recipe(owner, recipe_id)
         if not record:
-            raise ValueError("One of the selected Holographic Palettes no longer exists")
+            raise ValueError("One of the selected Fauxlographic Palettes no longer exists")
         profile = json.loads(s3.get_object(Bucket=BUCKET, Key=record["s3_key"])["Body"].read(MAX_RECIPE_BYTES + 1))
         measured = profile.get("recipes") if isinstance(profile, dict) else None
         if int(profile.get("schema_version") or 1) < 2 or not isinstance(measured, list):
-            raise ValueError("Only self-contained Holographic Palette swatches can be exported")
+            raise ValueError("Only self-contained Fauxlographic Palette swatches can be exported")
         for recipe_index in sorted(recipe_indexes):
             if recipe_index >= len(measured):
-                raise ValueError("One of the selected Holographic Palette swatches no longer exists")
+                raise ValueError("One of the selected Fauxlographic Palette swatches no longer exists")
             recipe = measured[recipe_index]
             description = str(recipe.get("name") or "").strip()
             normalized = description.casefold()
@@ -1390,20 +1562,20 @@ def selected_settings_root(owner, selections, material_name, allow_duplicates=Fa
 
 
 def uploaded_holographic_settings_root(profile, recipe_indexes, material_name):
-    """Build a transient LightBurn library from an uploaded Holographic Palette."""
+    """Build a transient LightBurn library from an uploaded Fauxlographic Palette."""
     if not isinstance(profile, dict) or profile.get("kind") != "holographic_calibration_profile":
-        raise ValueError("Choose a valid Holographic Swatch Palette")
+        raise ValueError("Choose a valid Fauxlographic Swatch Palette")
     measured = profile.get("recipes")
     if int(profile.get("schema_version") or 1) < 2 or not isinstance(measured, list) or not measured:
-        raise ValueError("Choose a self-contained Holographic Swatch Palette")
+        raise ValueError("Choose a self-contained Fauxlographic Swatch Palette")
     if not isinstance(recipe_indexes, list) or not recipe_indexes:
-        raise ValueError("Select at least one Holographic Palette swatch")
+        raise ValueError("Select at least one Fauxlographic Palette swatch")
     recipe_indexes = list(dict.fromkeys(recipe_indexes))
     if (len(recipe_indexes) > 500
             or any(not isinstance(index, int) or isinstance(index, bool)
                    or index < 0 or index >= len(measured) for index in recipe_indexes)):
-        raise ValueError("The Holographic Swatch Palette contains too many swatches")
-    material_name = str(material_name or profile.get("profile_name") or "Holographic Palette").strip()
+        raise ValueError("The Fauxlographic Swatch Palette contains too many swatches")
+    material_name = str(material_name or profile.get("profile_name") or "Fauxlographic Palette").strip()
     if not material_name or len(material_name) > 160:
         raise ValueError("Provide a Material Name between 1 and 160 characters")
     root = ET.Element("LightBurnLibrary")
@@ -1412,7 +1584,7 @@ def uploaded_holographic_settings_root(profile, recipe_indexes, material_name):
     for recipe_index in sorted(recipe_indexes):
         recipe = measured[recipe_index]
         if not isinstance(recipe, dict):
-            raise ValueError("A Holographic Palette swatch is invalid")
+            raise ValueError("A Fauxlographic Palette swatch is invalid")
         description = str(recipe.get("name") or "").strip()
         normalized = description.casefold()
         if not description or normalized in descriptions:
@@ -1446,6 +1618,32 @@ def validate_library_descriptions(root):
             seen.add(description.casefold())
 
 
+LIGHTBURN_SAFE_OPTIMIZATION_PREFS = (
+    ("Optimize_ByLayer", "0"),
+    ("Optimize_ByGroup", "-1"),
+    ("Optimize_ByPriority", "-1"),
+    ("Optimize_WhichDirection", "0"),
+    ("Optimize_InnerToOuter", "0"),
+    ("Optimize_ByDirection", "0"),
+    ("Optimize_ReduceTravel", "0"),
+    ("Optimize_HideBacklash", "0"),
+    ("Optimize_ReduceDirChanges", "0"),
+    ("Optimize_ChooseCorners", "0"),
+    ("Optimize_AllowReverse", "0"),
+    ("Optimize_RemoveOverlaps", "0"),
+    ("Optimize_OptimalEntryPoint", "0"),
+    ("Optimize_OverlapDist", "0.025"),
+)
+
+
+def add_lightburn_safe_optimization_prefs(project):
+    """Keep layer order while disabling expensive LightBurn path optimization."""
+    prefs = ET.SubElement(project, "UIPrefs")
+    for name, value in LIGHTBURN_SAFE_OPTIMIZATION_PREFS:
+        ET.SubElement(prefs, name, {"Value": value})
+    return prefs
+
+
 def coupon_project(library_root, material_name, width, length, label_entry=None):
     entries = [entry for material in library_root.findall("./Material") for entry in material.findall("./Entry")]
     if not 1 <= len(entries) <= 29:
@@ -1454,6 +1652,7 @@ def coupon_project(library_root, material_name, width, length, label_entry=None)
     if not 10 <= width <= 1000 or not 10 <= length <= 1000:
         raise ValueError("Coupon width and length must each be between 10 and 1000 mm")
     project = ET.Element("LightBurnProject", {"AppVersion":"2.1.04","FormatVersion":"1","MaterialHeight":"0","MirrorX":"False","MirrorY":"True","AskForSendName":"True"})
+    add_lightburn_safe_optimization_prefs(project)
     columns = min(10, max(1, math.ceil(math.sqrt(len(entries)))))
     rows = math.ceil(len(entries) / columns)
     cell, gap, label_space = 10.0, 2.0, 6.0
@@ -1542,24 +1741,24 @@ def selected_blank_project_settings(owner, selections):
             if recipe_id not in recipe_cache:
                 record = owned_recipe(owner, recipe_id)
                 if not record:
-                    raise ValueError("One of the selected Holographic Palettes no longer exists")
+                    raise ValueError("One of the selected Fauxlographic Palettes no longer exists")
                 profile = json.loads(s3.get_object(Bucket=BUCKET, Key=record["s3_key"])["Body"].read(MAX_RECIPE_BYTES + 1))
                 measured = profile.get("recipes") if isinstance(profile, dict) else None
                 if int(profile.get("schema_version") or 1) < 2 or not isinstance(measured, list):
-                    raise ValueError("Only self-contained Holographic Palette swatches can be used")
+                    raise ValueError("Only self-contained Fauxlographic Palette swatches can be used")
                 recipe_cache[recipe_id] = measured
             measured = recipe_cache[recipe_id]
             if recipe_index >= len(measured) or not isinstance(measured[recipe_index], dict):
-                raise ValueError("One of the selected Holographic Palette swatches no longer exists")
+                raise ValueError("One of the selected Fauxlographic Palette swatches no longer exists")
             recipe = measured[recipe_index]
             description = str(recipe.get("name") or "").strip()
             expected_name = str(selection.get("recipe_name") or "").strip()
             expected_hex = str(selection.get("recipe_hex") or "").strip().upper()
             observed_hex = str(recipe.get("observed_hex") or "").strip().upper()
             if (expected_name and description != expected_name) or (expected_hex and observed_hex != expected_hex):
-                raise ValueError("One of the selected Holographic swatches changed; select it again")
+                raise ValueError("One of the selected Fauxlographic swatches changed; select it again")
             if not description:
-                raise ValueError("A selected Holographic swatch has no name")
+                raise ValueError("A selected Fauxlographic swatch has no name")
             entry = ET.Element("Entry", {
                 "Thickness":"-1.0000", "Desc":description,
                 "NoThickTitle":f"{description} {observed_hex}"[:160],
@@ -1591,6 +1790,7 @@ def blank_lightburn_project(settings):
         "AppVersion":"2.1.04", "FormatVersion":"1", "MaterialHeight":"0",
         "MirrorX":"False", "MirrorY":"True", "AskForSendName":"True",
     })
+    add_lightburn_safe_optimization_prefs(project)
     for layer_index, entry in sorted(assignments, key=lambda item:item[0]):
         layer = deepcopy(entry.find("./CutSetting"))
         if layer is None:
@@ -1610,7 +1810,7 @@ def blank_lightburn_project(settings):
 
 
 def delete_selected_palette_settings(owner, selections):
-    """Delete selected Material Library and Holographic Palette swatches."""
+    """Delete selected Material Library and Fauxlographic Palette swatches."""
     if not isinstance(selections, list) or not 1 <= len(selections) <= 500:
         raise ValueError("Select between 1 and 500 palette settings")
     requested, recipe_requested = {}, {}
@@ -1673,30 +1873,30 @@ def delete_selected_palette_settings(owner, selections):
         recipe_indexes = set(expected_recipes)
         record = owned_recipe(owner, recipe_id)
         if not record:
-            raise ValueError("One of the selected Holographic Palettes no longer exists")
+            raise ValueError("One of the selected Fauxlographic Palettes no longer exists")
         try:
             profile = json.loads(s3.get_object(Bucket=BUCKET, Key=record["s3_key"])["Body"].read(MAX_RECIPE_BYTES + 1))
         except (ClientError, UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise ValueError("One of the selected Holographic Palettes is unavailable or malformed") from error
+            raise ValueError("One of the selected Fauxlographic Palettes is unavailable or malformed") from error
         measured = profile.get("recipes") if isinstance(profile, dict) else None
         if (not isinstance(profile, dict) or int(profile.get("schema_version") or 1) < 2
                 or not isinstance(measured, list)):
-            raise ValueError("Only self-contained Holographic Palette swatches can be deleted")
+            raise ValueError("Only self-contained Fauxlographic Palette swatches can be deleted")
         if any(index >= len(measured) for index in recipe_indexes):
-            raise ValueError("One of the selected Holographic Palette swatches no longer exists")
+            raise ValueError("One of the selected Fauxlographic Palette swatches no longer exists")
         if any((str(measured[index].get("name") or "").strip(),
                 str(measured[index].get("observed_hex") or "").strip().upper()) != expected_recipes[index]
                for index in recipe_indexes if isinstance(measured[index], dict)):
             raise ValueError("One of the selected swatches changed; reload the palette and select it again")
         if any(not isinstance(measured[index], dict) for index in recipe_indexes):
-            raise ValueError("One of the selected Holographic Palette swatches is malformed")
+            raise ValueError("One of the selected Fauxlographic Palette swatches is malformed")
         if len(measured) - len(recipe_indexes) < 1:
-            raise ValueError(f"Keep at least one swatch in '{record.get('name') or 'Holographic Palette'}'")
+            raise ValueError(f"Keep at least one swatch in '{record.get('name') or 'Fauxlographic Palette'}'")
         kept = [item for index, item in enumerate(measured) if index not in recipe_indexes]
         profile["recipes"] = kept
         body = json.dumps(profile, indent=2).encode()
         if len(body) > MAX_RECIPE_BYTES:
-            raise ValueError("The updated Holographic Palette is too large")
+            raise ValueError("The updated Fauxlographic Palette is too large")
         metadata = dict(record.get("metadata") or {})
         metadata.update({
             "recipe_count": len(kept), "swatch_preview": holographic_swatch_preview(kept),
@@ -1907,19 +2107,19 @@ def lightburn_setting_snapshot(cut_setting):
 def validate_lightburn_setting_snapshot(snapshot, depth=0):
     """Validate the portable CutSetting subset accepted from imported v2 recipes."""
     if depth > 4 or not isinstance(snapshot, dict):
-        raise ValueError("A Holographic Palette contains invalid embedded laser settings")
+        raise ValueError("A Fauxlographic Palette contains invalid embedded laser settings")
     setting_type = str(snapshot.get("type") or "")
     settings = snapshot.get("settings")
     if not setting_type or len(setting_type) > 40 or not isinstance(settings, dict) or len(settings) > 100:
-        raise ValueError("A Holographic Palette contains invalid embedded laser settings")
+        raise ValueError("A Fauxlographic Palette contains invalid embedded laser settings")
     for name, value in settings.items():
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", str(name)) or isinstance(value, (dict, list)):
-            raise ValueError("A Holographic Palette contains invalid embedded laser settings")
+            raise ValueError("A Fauxlographic Palette contains invalid embedded laser settings")
         if len(str(value)) > 160:
-            raise ValueError("A Holographic Palette laser-setting value is too long")
+            raise ValueError("A Fauxlographic Palette laser-setting value is too long")
     sub_layers = snapshot.get("sub_layers") or []
     if not isinstance(sub_layers, list) or len(sub_layers) > 20:
-        raise ValueError("A Holographic Palette contains invalid embedded sublayers")
+        raise ValueError("A Fauxlographic Palette contains invalid embedded sublayers")
     for sub_layer in sub_layers:
         validate_lightburn_setting_snapshot(sub_layer, depth + 1)
     return snapshot
@@ -2001,7 +2201,7 @@ def create_holographic_calibration(event, guest=False, upload_task_id=""):
         elif not authorize_task(event, upload_item):
             return response(404, {"message":"Calibration upload not found"})
         if not upload_item.get("holographic_calibration_upload"):
-            return response(400, {"message":"Choose a Holographic Etching Lab Material Library upload"})
+            return response(400, {"message":"Choose a Fauxlographic Etching Lab Material Library upload"})
         upload_token = str(data.pop("upload_token", ""))
         if not valid_upload_capability(upload_item, upload_token):
             return response(403, {"message":"Upload capability is invalid or expired"})
@@ -2057,6 +2257,7 @@ def create_holographic_calibration(event, guest=False, upload_task_id=""):
     top_label = max(4.0, min(8.0, cell_mm * .45))
     label_center_y = max(.5, (top_label - 3.0) / 2)
     project = ET.Element("LightBurnProject", {"AppVersion":"2.1.04","FormatVersion":"1","MaterialHeight":"0","MirrorX":"False","MirrorY":"True","AskForSendName":"True"})
+    add_lightburn_safe_optimization_prefs(project)
     label_layer = deepcopy(label_cut)
     label_index = label_layer.find("./index")
     if label_index is None: label_index = ET.SubElement(label_layer, "index")
@@ -2322,6 +2523,7 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
     if source_cut is None: raise ValueError("The selected Material Library entry has no LightBurn setting")
     grid_id,now,top_mm=(upload_task_id if guest and upload_task_id and not refinement else str(uuid.uuid4())),int(time.time()),4.0
     project=ET.Element("LightBurnProject",{"AppVersion":"2.1.04","FormatVersion":"1","MaterialHeight":"0","MirrorX":"False","MirrorY":"True","AskForSendName":"True"})
+    add_lightburn_safe_optimization_prefs(project)
     label_layer=deepcopy(label_cut); label_index=label_layer.find("./index")
     if label_index is None: label_index=ET.SubElement(label_layer,"index")
     label_index.set("Value","0"); label_name=label_layer.find("./name")
@@ -2515,7 +2717,7 @@ def save_measured_holographic_recipe(event):
     recipes, names = [], set()
     for measurement in measurements:
         index = int(measurement.get("index")); rgb = measurement.get("observed_rgb")
-        name = str(measurement.get("name") or f"Holographic {index:02d}").strip()[:160]
+        name = str(measurement.get("name") or f"Fauxlographic {index:02d}").strip()[:160]
         if index not in known or not isinstance(rgb,list) or len(rgb)!=3: raise ValueError("A measured calibration cell is invalid")
         rgb = [max(0,min(255,int(value))) for value in rgb]
         if not name or name.casefold() in names: raise ValueError("Recipe names must be unique")
@@ -2544,11 +2746,11 @@ def holographic_recipe_detail(event, recipe_id):
     owner = user_id(event)
     recipe = owned_recipe(owner, recipe_id)
     if not recipe:
-        return response(404, {"message":"Holographic Palette not found"})
+        return response(404, {"message":"Fauxlographic Palette not found"})
     try:
         profile = json.loads(s3.get_object(Bucket=BUCKET, Key=recipe["s3_key"])["Body"].read(MAX_RECIPE_BYTES + 1))
     except (ClientError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError("The saved Holographic Palette is unavailable or malformed") from error
+        raise ValueError("The saved Fauxlographic Palette is unavailable or malformed") from error
     preview = holographic_swatch_preview(profile.get("recipes"))
     metadata = dict(recipe.get("metadata") or {})
     if metadata.get("swatch_preview") != preview:
@@ -2563,33 +2765,33 @@ def update_holographic_recipe(event, recipe_id):
     owner, data = user_id(event), body_json(event)
     record = owned_recipe(owner, recipe_id)
     if not record:
-        return response(404, {"message":"Holographic Palette not found"})
+        return response(404, {"message":"Fauxlographic Palette not found"})
     try:
         profile = json.loads(s3.get_object(Bucket=BUCKET, Key=record["s3_key"])["Body"].read(MAX_RECIPE_BYTES + 1))
     except (ClientError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError("The saved Holographic Palette is unavailable or malformed") from error
+        raise ValueError("The saved Fauxlographic Palette is unavailable or malformed") from error
     name = str(data.get("name") or "").strip()
     measured = data.get("recipes")
     if not name or len(name) > 160:
-        raise ValueError("Holographic Palette names must be between 1 and 160 characters")
+        raise ValueError("Fauxlographic Palette names must be between 1 and 160 characters")
     if not isinstance(measured, list) or not measured or len(measured) > 100:
-        raise ValueError("Keep between 1 and 100 Holographic Palette swatches")
+        raise ValueError("Keep between 1 and 100 Fauxlographic Palette swatches")
     cleaned, names = [], set()
     for raw in measured:
         if not isinstance(raw, dict):
-            raise ValueError("A Holographic Palette swatch is invalid")
+            raise ValueError("A Fauxlographic Palette swatch is invalid")
         swatch_name = str(raw.get("name") or "").strip()
         normalized_name = swatch_name.casefold()
         observed_hex = str(raw.get("observed_hex") or "").strip().upper()
         if not swatch_name or len(swatch_name) > 160 or normalized_name in names:
-            raise ValueError("Holographic Palette swatch names must be present and unique")
+            raise ValueError("Fauxlographic Palette swatch names must be present and unique")
         if not re.fullmatch(r"#[0-9A-F]{6}", observed_hex):
-            raise ValueError("Each Holographic Palette swatch needs a valid observed color")
+            raise ValueError("Each Fauxlographic Palette swatch needs a valid observed color")
         try:
             interval = max(.001, min(10, float(raw.get("interval_mm"))))
             angle = float(raw.get("angle_degrees")) % 180
         except (TypeError, ValueError) as error:
-            raise ValueError("Each Holographic Palette swatch needs a valid interval and angle") from error
+            raise ValueError("Each Fauxlographic Palette swatch needs a valid interval and angle") from error
         laser_settings = validate_lightburn_setting_snapshot(raw.get("laser_settings"))
         names.add(normalized_name)
         item = dict(raw)
@@ -2606,7 +2808,7 @@ def update_holographic_recipe(event, recipe_id):
     profile.update({"schema_version":2,"self_contained":True,"profile_name":name,"recipes":cleaned})
     body = json.dumps(profile, indent=2).encode()
     if len(body) > MAX_RECIPE_BYTES:
-        raise ValueError("The updated Holographic Palette is too large")
+        raise ValueError("The updated Fauxlographic Palette is too large")
     now = int(time.time())
     s3.put_object(Bucket=BUCKET, Key=record["s3_key"], Body=body, ContentType="application/json")
     metadata = dict(record.get("metadata") or {})
@@ -2626,7 +2828,7 @@ def import_upload(event):
     filename = safe_name(data.get("filename"), "upload")
     extension = os.path.splitext(filename)[1].lower()
     if kind not in extensions or extension not in extensions[kind]:
-        raise ValueError("Choose a supported Material Library or Holographic Palette file")
+        raise ValueError("Choose a supported Material Library or Fauxlographic Palette file")
     import_id, token = str(uuid.uuid4()), secrets.token_urlsafe(32)
     digest, now = token_hash(token), int(time.time())
     key = f"imports/{owner}/{import_id}/{filename}"
@@ -2840,17 +3042,17 @@ def finalize_import(event, import_id):
             recipe = json.loads(contents.decode("utf-8"))
             recipes = recipe.get("recipes") if isinstance(recipe, dict) else None
             if recipe.get("kind") != "holographic_calibration_profile" or not isinstance(recipes, list) or not recipes:
-                raise ValueError("Choose a Holographic Palette with at least one saved recipe")
+                raise ValueError("Choose a Fauxlographic Palette with at least one saved recipe")
             schema_version = int(recipe.get("schema_version") or 1)
             if schema_version >= 2:
                 for measured in recipes:
                     if not isinstance(measured, dict):
-                        raise ValueError("A Holographic Palette measurement is invalid")
+                        raise ValueError("A Fauxlographic Palette measurement is invalid")
                     validate_lightburn_setting_snapshot(measured.get("laser_settings"))
                 black_setting = recipe.get("black_setting")
                 if black_setting is not None:
                     if not isinstance(black_setting, dict):
-                        raise ValueError("A Holographic Palette Black setting is invalid")
+                        raise ValueError("A Fauxlographic Palette Black setting is invalid")
                     validate_lightburn_setting_snapshot(black_setting.get("laser_settings"))
             filename = pending["filename"]
             destination = f"users/{owner}/holographic-recipes/{asset_id}/{filename}"
@@ -2922,17 +3124,17 @@ def create_upload(event):
     saved_recipe_id = str(data.get("saved_holographic_recipe_id") or "").strip()
     svg_only = data.get("svg_only") is True or str(data.get("svg_only") or "").strip().lower() in {"1", "true", "yes", "on"}
     if svg_only and (saved_library_id or saved_recipe_id):
-        raise ValueError("SVG-Only cannot include a Material Library or Holographic Palette")
+        raise ValueError("SVG-Only cannot include a Material Library or Fauxlographic Palette")
     if saved_library_id and saved_recipe_id:
-        raise ValueError("Choose either a Material Library or a self-contained Holographic Palette")
+        raise ValueError("Choose either a Material Library or a self-contained Fauxlographic Palette")
     saved_material = owned_material(owner, saved_library_id) if saved_library_id else None
     if saved_library_id and not saved_material:
         return response(404, {"message": "Saved Material Library not found"})
     saved_recipe = owned_recipe(owner, saved_recipe_id) if saved_recipe_id else None
     if saved_recipe_id and not saved_recipe:
-        return response(404, {"message": "Saved Holographic Palette not found"})
+        return response(404, {"message": "Saved Fauxlographic Palette not found"})
     if saved_recipe and not (saved_recipe.get("metadata") or {}).get("self_contained"):
-        raise ValueError("Only self-contained Holographic Palettes can be used by Rasterizer")
+        raise ValueError("Only self-contained Fauxlographic Palettes can be used by Rasterizer")
     material_name = safe_name(
         saved_material.get("original_name") if saved_material else data.get("material_name"),
         "materials.clb",
@@ -2958,9 +3160,9 @@ def create_upload(event):
         profile = json.loads(s3.get_object(Bucket=BUCKET, Key=saved_recipe["s3_key"])["Body"].read(MAX_RECIPE_BYTES + 1))
         measured = profile.get("recipes") if isinstance(profile, dict) else None
         if int(profile.get("schema_version") or 1) < 2 or not isinstance(measured, list) or not measured:
-            raise ValueError("Only self-contained Holographic Palettes can be used by Rasterizer")
+            raise ValueError("Only self-contained Fauxlographic Palettes can be used by Rasterizer")
         selections = [{"recipe_id":saved_recipe_id,"recipe_index":index} for index in range(len(measured))]
-        library_root = selected_settings_root(owner, selections, saved_recipe.get("name") or "Holographic Palette")
+        library_root = selected_settings_root(owner, selections, saved_recipe.get("name") or "Fauxlographic Palette")
         embedded_black_name = ""
         black_setting = profile.get("black_setting")
         if isinstance(black_setting, dict) and isinstance(black_setting.get("laser_settings"), dict):
@@ -2979,14 +3181,14 @@ def create_upload(event):
             black_entry.append(black_cut)
         library_bytes = ET.tostring(library_root, encoding="utf-8", xml_declaration=True)
         if len(library_bytes) > MAX_MATERIAL_BYTES:
-            raise ValueError("Generated Holographic Palette Material Library is too large")
+            raise ValueError("Generated Fauxlographic Palette Material Library is too large")
         generated_material_key = f"jobs/{task_id}/inputs/material-{material_name}"
         s3.put_object(Bucket=BUCKET, Key=generated_material_key, Body=library_bytes,
                       ContentType="application/xml", Metadata={"upload-capability":digest})
         runtime_item["generated_recipe_id"] = saved_recipe_id
         runtime_item["saved_recipe_key"] = saved_recipe["s3_key"]
         runtime_item["saved_recipe_name"] = safe_name(saved_recipe.get("original_name"), "recipe.json")
-        runtime_item["generated_material_name"] = saved_recipe.get("name") or "Holographic Palette"
+        runtime_item["generated_material_name"] = saved_recipe.get("name") or "Fauxlographic Palette"
         runtime_item["generated_black_setting_name"] = embedded_black_name
         runtime_item["generated_recipe_count"] = len(measured)
     table.put_item(Item=runtime_item,
@@ -3101,7 +3303,7 @@ def create_guest_upload(event):
         data.get("upload_holographic_palette") or ""
     ).strip().lower() in {"1", "true", "yes", "on"}
     if svg_only and uploaded_holographic_palette:
-        raise ValueError("Choose either SVG-Only or a Holographic Swatch Palette")
+        raise ValueError("Choose either SVG-Only or a Fauxlographic Swatch Palette")
     task_id = str(uuid.uuid4())
     upload_token = secrets.token_urlsafe(32)
     access_token = secrets.token_urlsafe(32)
@@ -3260,13 +3462,13 @@ def verify_saved_material(key, owner, maximum):
 
 def verify_saved_recipe(key, owner, maximum):
     if not key.startswith(f"users/{owner}/holographic-recipes/"):
-        raise ValueError("Saved Holographic Palette does not belong to this account")
+        raise ValueError("Saved Fauxlographic Palette does not belong to this account")
     try:
         head = s3.head_object(Bucket=BUCKET, Key=key)
     except ClientError as error:
-        raise ValueError("Saved Holographic Palette file is missing") from error
+        raise ValueError("Saved Fauxlographic Palette file is missing") from error
     if head.get("ContentLength", 0) < 1 or head.get("ContentLength", 0) > maximum:
-        raise ValueError("Saved Holographic Palette has an invalid size")
+        raise ValueError("Saved Fauxlographic Palette has an invalid size")
 
 
 def create_holographic_upload(event):
@@ -3277,7 +3479,7 @@ def create_holographic_upload(event):
     if not material:
         return response(404, {"message": "Choose a saved Material Library"})
     if not recipe:
-        return response(404, {"message": "Choose a saved Holographic Palette"})
+        return response(404, {"message": "Choose a saved Fauxlographic Palette"})
     task_id, token = str(uuid.uuid4()), secrets.token_urlsafe(32)
     digest = token_hash(token)
     artwork_name = safe_name(data.get("artwork_name"), "artwork.png")
@@ -3305,6 +3507,9 @@ def create_holographic_upload(event):
 
 
 def submit_holographic_job(event, task_id):
+    paused = service_paused_response()
+    if paused:
+        return paused
     item = runtime(task_id)
     if not authorize_task(event, item):
         return response(404, {"message": "Task not found"})
@@ -3368,6 +3573,7 @@ def submit_holographic_job(event, task_id):
         "run_parameters": dynamo_value(run_parameters), "created_at": now,
         "updated_at": now, "status": "pending", "artifact_prefix": artifact_prefix,
         "input_keys": [artwork_key, recipe_key, material_key],
+        "expires_at": now + TTL_SECONDS,
     }
     with table.batch_writer() as batch:
         batch.put_item(Item=history)
@@ -3377,6 +3583,7 @@ def submit_holographic_job(event, task_id):
             "created_at": now, "updated_at": now, "history_sk": history_sk,
             "status": "pending", "artifact_prefix": artifact_prefix,
             "input_keys": [artwork_key, recipe_key, material_key],
+            "expires_at": now + TTL_SECONDS,
         })
         batch.put_item(Item=admin_job_index_item(event, history))
     try:
@@ -3419,6 +3626,9 @@ def json_value(value):
 
 
 def submit_job(event, task_id, guest=False):
+    paused = service_paused_response()
+    if paused:
+        return paused
     item = runtime(task_id)
     if guest:
         if not valid_guest_capability(item, request_header(event, "x-guest-capability")):
@@ -3539,6 +3749,11 @@ def submit_job(event, task_id, guest=False):
         "space_invader", "ghost", "bat", "alien_head", "paw_print",
         "fish_scale", "puzzle_piece",
     }
+    gradient_scopes = {"entire_artwork", "each_shape"}
+    gradient_directions = {
+        "top_to_bottom", "bottom_to_top", "left_to_right", "right_to_left",
+        "center_to_edge", "edge_to_center",
+    }
     def validate_geometry_section(section):
         if not isinstance(section, dict) or len(section) > 16:
             raise ValueError("Geometry style settings must be a small object")
@@ -3546,6 +3761,11 @@ def submit_job(event, task_id, guest=False):
             valid = (
                 (key == "glyph_shape" and value in glyph_shapes)
                 or (key == "cell_shape" and value in cell_shapes)
+                or (key == "fauxlogram_gradient_scope" and value in gradient_scopes)
+                or (
+                    key == "fauxlogram_gradient_direction"
+                    and value in gradient_directions
+                )
                 or (key in toggle_geometry_parameters and isinstance(value, (bool, int)) and value in {0, 1})
                 or (
                     key in numeric_geometry_parameters
@@ -3604,16 +3824,16 @@ def submit_job(event, task_id, guest=False):
         palette_key = str(data.get("holographic_palette_key") or "")
         expected_prefix = f"jobs/{task_id}/inputs/"
         if not palette_key.startswith(expected_prefix):
-            return response(400, {"message": "Holographic Palette upload key does not belong to this task"})
+            return response(400, {"message": "Fauxlographic Palette upload key does not belong to this task"})
         try:
             verify_upload(palette_key, item["upload_capability"], MAX_RECIPE_BYTES)
             contents = s3.get_object(Bucket=BUCKET, Key=palette_key)["Body"].read(MAX_RECIPE_BYTES + 1)
             if len(contents) > MAX_RECIPE_BYTES:
-                raise ValueError("The Holographic Swatch Palette is too large")
+                raise ValueError("The Fauxlographic Swatch Palette is too large")
             profile = json.loads(contents.decode("utf-8"))
             measured = profile.get("recipes") if isinstance(profile, dict) else None
             all_indexes = list(range(len(measured))) if isinstance(measured, list) else []
-            palette_material_name = str(profile.get("profile_name") or "Holographic Palette") if isinstance(profile, dict) else ""
+            palette_material_name = str(profile.get("profile_name") or "Fauxlographic Palette") if isinstance(profile, dict) else ""
             library_root = uploaded_holographic_settings_root(profile, all_indexes, palette_material_name)
             embedded_black_name = ""
             black_setting = profile.get("black_setting")
@@ -3636,7 +3856,7 @@ def submit_job(event, task_id, guest=False):
                 black_entry.append(black_cut)
             library_bytes = ET.tostring(library_root, encoding="utf-8", xml_declaration=True)
             if len(library_bytes) > MAX_MATERIAL_BYTES:
-                raise ValueError("Generated Holographic Palette Material Library is too large")
+                raise ValueError("Generated Fauxlographic Palette Material Library is too large")
             material_filename = safe_name(f"{palette_material_name}.clb", "holographic-palette.clb")
             generated_material_key = f"jobs/{task_id}/inputs/material-{material_filename}"
             s3.put_object(
@@ -3654,7 +3874,7 @@ def submit_job(event, task_id, guest=False):
             })
             data["material_key"] = generated_material_key
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as error:
-            return response(400, {"message": str(error) or "The Holographic Swatch Palette is malformed"})
+            return response(400, {"message": str(error) or "The Fauxlographic Swatch Palette is malformed"})
     generated_recipe_id = str(item.get("generated_recipe_id") or "")
     raw_overrides = data.get("color_name_overrides") or {}
     try:
@@ -3674,12 +3894,12 @@ def submit_job(event, task_id, guest=False):
     if generated_recipe_id:
         if (not isinstance(selected_recipe_indexes, list)
                 or any(not isinstance(index, int) or isinstance(index, bool) for index in selected_recipe_indexes)):
-            return response(400, {"message": "Select at least one valid Holographic Palette swatch"})
+            return response(400, {"message": "Select at least one valid Fauxlographic Palette swatch"})
         selected_recipe_indexes = list(dict.fromkeys(selected_recipe_indexes))
         recipe_count = int(item.get("generated_recipe_count") or 0)
         if (not selected_recipe_indexes or len(selected_recipe_indexes) > 30
                 or any(index < 0 or index >= recipe_count for index in selected_recipe_indexes)):
-            return response(400, {"message": "Select between 1 and 30 valid Holographic Palette swatches"})
+            return response(400, {"message": "Select between 1 and 30 valid Fauxlographic Palette swatches"})
         selected_hexes = []
     elif isinstance(selected_hexes, list):
         selected_hexes = [str(color).upper() for color in selected_hexes]
@@ -3752,14 +3972,14 @@ def submit_job(event, task_id, guest=False):
             requested_dimensions = [data.get("new_width"), data.get("new_height")]
             requested_dimensions = [int(value) for value in requested_dimensions if str(value or "").strip()]
             if any(value < 0 for value in requested_dimensions):
-                raise ValueError("Holographic processing dimensions cannot be negative")
+                raise ValueError("Fauxlographic processing dimensions cannot be negative")
             explicit_dimensions = [value for value in requested_dimensions if value > 0]
             max_dimension = max(explicit_dimensions) if explicit_dimensions else 0
             if max_dimension and not 8 <= max_dimension <= 1600:
-                raise ValueError("Holographic processing dimensions must be between 8 and 1600 pixels")
+                raise ValueError("Fauxlographic processing dimensions must be between 8 and 1600 pixels")
             pixel_mm = float(data.get("pixel_square_mm") or .5)
             if not .01 <= pixel_mm <= 5:
-                raise ValueError("Holographic pixel size must be between 0.01 and 5 mm")
+                raise ValueError("Fauxlographic pixel size must be between 0.01 and 5 mm")
         except (TypeError, ValueError) as error:
             return response(400, {"message": str(error)})
         holographic_parameters = (max_dimension, pixel_mm)
@@ -3783,11 +4003,11 @@ def submit_job(event, task_id, guest=False):
         max_dimension, pixel_mm = holographic_parameters
         cut_mode = str(data.get("cut_mode") or "setting").strip().lower()
         if cut_mode not in {"setting", "line", "fill", "offset_fill"}:
-            return response(400, {"message": "Choose a valid Holographic Artwork cut mode"})
+            return response(400, {"message": "Choose a valid Fauxlographic Artwork cut mode"})
         preserve_black_outlines = data.get("preserve_black_outlines") is True
         embedded_black_setting_name = str(item.get("generated_black_setting_name") or "")
         if preserve_black_outlines and not embedded_black_setting_name:
-            return response(400, {"message": "This Holographic Palette does not contain a preserved Black setting"})
+            return response(400, {"message": "This Fauxlographic Palette does not contain a preserved Black setting"})
         payload.update({
             "job_type": "holographic_artwork",
             "artwork_key": artwork_key,
@@ -3799,7 +4019,7 @@ def submit_job(event, task_id, guest=False):
             "cut_mode": cut_mode,
             "preserve_black_outlines": preserve_black_outlines,
             "selected_recipe_indexes": selected_recipe_indexes,
-            "embedded_material_name": str(item.get("generated_material_name") or "Holographic Palette"),
+            "embedded_material_name": str(item.get("generated_material_name") or "Fauxlographic Palette"),
             "embedded_black_setting_name": embedded_black_setting_name,
         })
     now = int(time.time())
@@ -3830,6 +4050,7 @@ def submit_job(event, task_id, guest=False):
         "run_parameters": dynamo_value(data), "created_at": now,
         "updated_at": now, "status": "pending", "artifact_prefix": artifact_prefix,
         "input_keys": list(dict.fromkeys(key for key in (artwork_key, material_key, recipe_input_key) if key)),
+        "expires_at": now + TTL_SECONDS,
     }
     owner_record = {
         "pk": f"JOB#{task_id}", "sk": "OWNER", "user_id": owner, "guest": guest,
@@ -3878,9 +4099,8 @@ def get_job(event, task_id, guest=False):
             return response(404, {"message": "Guest task not found or access expired"})
     elif not authorize_task(event, item):
         return response(404, {"message": "Task not found"})
-    count = int(item.get("log_count") or 0)
-    logs = table.query(KeyConditionExpression=(Key("pk").eq(f"JOB#{task_id}") & Key("sk").begins_with("LOG#")),
-                       ScanIndexForward=True).get("Items", [])
+    logs = job_logs(task_id, item)
+    count = len(logs)
     error_message = str(item.get("error_message") or "")
     result = {"task_id": task_id, "status": item.get("status", "unknown"),
               "logs": visible_job_logs(logs, error_message), "log_count": count}
@@ -3899,6 +4119,11 @@ def handler(event, _context):
     try:
         method = ((event.get("requestContext") or {}).get("http") or {}).get("method", "GET")
         path = unquote(event.get("rawPath") or "/")
+        if method == "GET" and path == "/service-status":
+            return public_service_status()
+        if path == "/guest" or path.startswith("/guest/"):
+            if not GUEST_ACCESS_ENABLED:
+                return response(403, {"message": "Guest access is disabled in this environment"})
         if method == "GET" and path == "/guest/config":
             return guest_config()
         if method == "POST" and path == "/guest/uploads":
@@ -3929,6 +4154,9 @@ def handler(event, _context):
                 return get_job(event, guest_task_id, guest=True)
         if not user_id(event):
             return response(401, {"message": "Authentication required"})
+        subject = user_id(event)
+        if ALLOWED_USER_SUB and not secrets.compare_digest(subject, ALLOWED_USER_SUB):
+            return response(403, {"message": "This account is not authorized for this environment"})
         if method == "POST" and path == "/uploads":
             return create_upload(event)
         if method == "POST" and path == "/holographic/uploads":
@@ -3967,6 +4195,8 @@ def handler(event, _context):
             return admin_jobs(event)
         if method == "GET" and path == "/admin/users":
             return admin_users(event)
+        if path == "/admin/service-control" and method in {"GET", "POST"}:
+            return admin_service_control(event)
         if method == "GET" and path == "/community-set/settings":
             return community_settings(event)
         if method == "POST" and path == "/account/community-set":

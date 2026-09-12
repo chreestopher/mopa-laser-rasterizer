@@ -14,25 +14,33 @@ application secrets do not belong in this file.
 | --- | --- |
 | Region | `us-east-2` |
 | Public domain | `mopa-laser-rasterizer.com` and `www.mopa-laser-rasterizer.com` |
-| Compute | One Ubuntu EC2 K3s control-plane node runs two web pods, Redis, and K3s system pods; raster work runs in one-shot Fargate tasks |
-| Private AWS access | S3 and DynamoDB Gateway VPC Endpoints are associated with every cluster-node subnet route table |
-| App networking | NodePort `30080` to container port `8000` |
-| Public edge | Internet-facing Application Load Balancer with ACM TLS termination |
+| Compute | CloudFront serves the static application, API Gateway invokes the Lambda API, and SQS/Step Functions launch one-shot ECS Fargate raster workers |
+| Private AWS access | Retained S3 and DynamoDB Gateway VPC Endpoints are associated with the shared worker-subnet route tables |
+| App networking | HTTPS through CloudFront and API Gateway; there is no production NodePort or K3s service |
+| Public edge | CloudFront distribution with ACM TLS termination |
 | Artifacts | Private S3 bucket `mopa-laser-rasterizer-artifacts-<account-id>`; jobs expire after 7 days, saved Material Libraries persist |
 | Account data | DynamoDB `mopa-laser-rasterizer-users`, on-demand; string keys `pk` and `sk` |
 | Container images | Private ECR repository `mopa-laser-rasterizer` in `us-east-2`; immutable tags and scan-on-push; production and staging images are retained in separate lifecycle pools |
-| Raster task queue | Encrypted standard SQS queue `mopa-laser-raster-jobs`; 7-day retention, 2-hour visibility, three receives before redrive |
-| Failed raster tasks | Encrypted SQS DLQ `mopa-laser-raster-jobs-dlq`; 14-day retention and restricted to the raster task queue |
-| Sign-in | Cognito Hosted UI, authenticated at the ALB |
+| Raster task queue | Encrypted standard SQS queue `mopa-rasterizer-serverless-production-jobs`; 7-day retention, 2-hour visibility, three receives before redrive |
+| Failed raster tasks | Encrypted SQS DLQ `mopa-rasterizer-serverless-production-jobs-dlq`; 14-day retention and restricted to the production serverless queue |
+| Sign-in | Cognito managed login with browser tokens validated by the serverless API |
 
-The application runs entirely from an immutable image in ECR. `/tmp/uploads` is pod-local scratch space; job inputs and outputs move through S3. A deployment must build and push a new image even for source-only changes.
+The worker runs from an immutable image in ECR, while the web application and
+Lambda API are deployed by the production web stack. Worker scratch storage is
+ephemeral; job inputs and outputs move through S3.
 
-## Parallel serverless staging
+The legacy EC2/K3s control plane, Redis-backed worker orchestration, Application
+Load Balancer, target group, and cluster-only IAM/network resources were
+permanently decommissioned on 2026-09-09 after serverless production acceptance.
+They are no longer a valid DNS or application rollback target.
 
-The AWS-native job backend is deliberately deployed beside production. It
-uses separate retained S3 and DynamoDB resources, a separate SQS queue/DLQ,
-and separate ECS/Step Functions/EventBridge Pipe names. Production continues
-to use `JOB_BACKEND=redis` until cutover; staging uses `JOB_BACKEND=aws`.
+## Isolated serverless staging
+
+The AWS-native staging environment is deliberately deployed beside production.
+It uses separate retained S3 and DynamoDB resources, a separate SQS queue/DLQ,
+and separate ECS/Step Functions/EventBridge Pipe names. Both environments use
+the AWS-native job backend, but staging must never share production queues or
+runtime data stores.
 
 Create or reconcile the isolated staging data plane and worker:
 
@@ -41,7 +49,7 @@ bash dev_setup/deploy_serverless_staging.sh
 ```
 
 Serverless staging defaults each Fargate job to 2 vCPU, 4 GiB of memory, and
-two deterministic CPU workers. Raster color-layer geometry and Holographic
+two deterministic CPU workers. Raster color-layer geometry and Fauxlographic
 Palette color assignment can run concurrently, while results are restored to
 their original layer and row order before export. Override staging independently
 with `SERVERLESS_STAGING_FARGATE_CPU`, `SERVERLESS_STAGING_FARGATE_MEMORY`, and
@@ -141,10 +149,10 @@ bash dev_setup/copy-user-data-to-serverless-staging.sh USERNAME 10
 The copy is idempotent and owner-scoped. It resolves the Cognito `sub`, copies
 the requested number of newest job history/owner records and their S3 artifact
 prefixes, and copies every color or hatch Material Library, depth palette, and
-Holographic Palette owned by that account. It also reconciles the anonymous
+Fauxlographic Palette owned by that account. It also reconciles the anonymous
 `LASER_COMMUNITY` partition into the isolated staging table so Community Set
 searches use staging data rather than reading production at runtime. Each
-Holographic Palette retains its referenced S3 object. The command refuses to run
+Fauxlographic Palette retains its referenced S3 object. The command refuses to run
 when the source and destination table or bucket are the same and never deletes
 or updates production data. Staging is a retained pre-production environment,
 but it is not a backup authority; repeat this command when its explicitly
@@ -162,7 +170,7 @@ bash dev_setup/deploy_serverless_staging_web.sh
 
 The staging bucket mirrors production retention: objects below `jobs/` and
 objects tagged `mopa-retention=job` expire after seven days, while saved
-Material Libraries and Holographic Palettes remain durable. Incomplete
+Material Libraries and Fauxlographic Palettes remain durable. Incomplete
 multipart uploads are aborted after one day.
 
 Keep the staging stacks and `serverless-staging` DNS name available after the
@@ -216,9 +224,11 @@ guest, member, administrator, queue-recovery, output, and browser smoke suite,
 set `SERVERLESS_PRODUCTION_USE_CLOUDFRONT_CALLBACK=false`, deploy the web stack
 again, and only then perform the separately authorized Route 53 cutover.
 
-None of the production serverless deployment scripts changes Route 53. Preserve
-an export of the legacy apex and `www` ALB aliases before cutover; restoring
-those aliases is the primary rollback. Keep the production serverless workers
+None of the production serverless deployment scripts changes Route 53. The
+retired ALB aliases remain historical cutover evidence only and must not be
+restored. Roll back by redeploying the last accepted serverless application
+revision and immutable worker image, invalidating CloudFront when required,
+then completing the production smoke checks. Keep the active serverless workers
 running long enough to finish or reconcile jobs accepted before a rollback.
 
 Deferred staging UX work after functional acceptance testing: replace the
@@ -274,7 +284,7 @@ Account isolation was acceptance-tested on 2026-08-24 without creating a
 second real user. A direct staging Lambda invocation using the real job owner
 could read a completed job, while the same request with a synthetic different
 Cognito `sub` returned `404`. The synthetic identity's account-resource lists
-contained no saved libraries, palettes, holographic swatches, or jobs. An HTTP request to
+contained no saved libraries, palettes, fauxlographic swatches, or jobs. An HTTP request to
 the public API without a JWT returned `401`. These checks validate both the API
 Gateway authentication boundary and the Lambda/DynamoDB ownership boundary.
 
@@ -290,7 +300,7 @@ successful conditional submission removes the capability to prevent reuse.
 Duplicate submission was acceptance-tested on 2026-08-24 by racing two
 conditional claims against one isolated synthetic staging task. Exactly one
 claim succeeded and the other received `ConditionalCheckFailed`; the test
-record was removed afterward. Both raster and holographic submit handlers map
+record was removed afterward. Both raster and fauxlographic submit handlers map
 that losing claim to HTTP `409`, so only the winning request can proceed to
 SQS. If SQS submission itself fails, the handler restores the still-unexpired
 capability so the browser can safely retry.
@@ -317,10 +327,20 @@ expire after ten minutes, bind each input to its task-specific key and upload
 capability, and enforce 100 MiB artwork and 10 MiB Material Library limits.
 Downloads use private presigned GET URLs that expire after fifteen minutes.
 
+Private staging is controlled by three ignored `.env.aws` values:
+`SERVERLESS_STAGING_ACCESS_GATE_AUTHORIZATION` contains the Base64 encoding of
+a strong `username:password` pair for the CloudFront Basic Auth gate,
+`SERVERLESS_STAGING_GUEST_ACCESS_ENABLED=false` disables every `/guest` API
+route, and `SERVERLESS_STAGING_ALLOWED_USER_SUB` restricts authenticated API
+requests to one immutable Cognito subject. Store the readable gate credentials
+outside Git and rotate them by changing the encoded value and redeploying the
+web stack. The production web wrapper explicitly disables the gate, enables
+guest routes, and clears the staging user allowlist before deployment.
+
 The static browser bundle includes production's shared `machine_chrome.css`
 alongside `staging-shell.css`, `staging-pages.css`, and `staging-shell.js`,
 which provide the shared staging machine header and navigation across the
-Rasterizer, Holographic Lab, Depthmap Lab, the staged Color Lab port, Job
+Rasterizer, Fauxlographic Lab, Depthmap Lab, the staged Color Lab port, Job
 History, and Swatch Palette Vault.
 `deploy_serverless_staging_web.sh` uploads these assets and invalidates
 CloudFront on every reconciliation. The Depthmap build helper injects the same
@@ -348,21 +368,21 @@ unchanged until the serverless site is explicitly promoted.
 The authenticated staging API also exposes `GET /account/resources`. It
 returns only records under the caller's Cognito `USER#<sub>` partition:
 recent live jobs, color and hatch Material Libraries, depth palettes, and
-Holographic Palettes. A raster submission may reference a saved Material
+Fauxlographic Palettes. A raster submission may reference a saved Material
 Library instead of uploading it again. The API resolves the library ID from
 that owner partition, verifies its S3 key remains below the same user's
 `materials/` prefix, and rejects arbitrary or cross-account object keys.
 The same selector offers an explicit SVG-Only option. In that mode the upload
 grant contains only an artwork target, the API rejects Material Library and
-Holographic Palette keys, the retained input list contains only the artwork,
+Fauxlographic Palette keys, the retained input list contains only the artwork,
 and the existing worker skips its Material Library download and `.lbrn2`
 export. The mode is bound to the upload record so it cannot be changed between
 upload authorization and job submission.
-Rasterizer submissions may also select a self-contained schema-v2 Holographic
+Rasterizer submissions may also select a self-contained schema-v2 Fauxlographic
 Palette. Lambda reconstructs a temporary `.clb` below the task's private
 `jobs/<task-id>/inputs/` prefix from the palette's embedded LightBurn settings,
 then records the selected palette and routes the completed submission through
-the holographic artwork worker path. The worker uses the palette's measured
+the fauxlographic artwork worker path. The worker uses the palette's measured
 swatch colors, intervals, angles, optional Black setting, cut-mode selection,
 and Preserve Black Outlines choice. This does not modify the saved palette and
 does not require its original calibration library. Legacy schema-v1 palettes
@@ -372,8 +392,8 @@ New serverless jobs write the same durable user-history and direct-owner records
 used by the existing application so the worker can update them on completion.
 
 The staging browser preserves production's separate-tool structure:
-`/` publishes the Rasterizer and `/holographic.html` publishes the
-Holographic Etching Lab. Each has a dedicated static form and browser module;
+`/` publishes the Rasterizer and `/fauxlographic.html` publishes the
+Fauxlographic Etching Lab. Each has a dedicated static form and browser module;
 the staging deployment publishes both explicitly. Cognito returns to the
 registered root callback and then restores the originating tool route.
 
@@ -388,7 +408,7 @@ OAuth refresh token to replace an expired ID token and retries one unauthorized
 API request; if refresh is unavailable or rejected, it clears the stale session
 and returns to the sign-in state instead of presenting an authorization error
 as a configuration failure.
-The staging Holographic Lab implements the calibration and palette-building
+The staging Fauxlographic Lab implements the calibration and palette-building
 portion of the calibration-first loop.
 `POST /holographic/calibrations` resolves an exact setting from an owned
 Material Library and creates durable `.lbrn2`, SVG, and JSON grid artifacts
@@ -398,14 +418,15 @@ the operator loads the grid photograph into a browser Canvas and aligns its
 four corners. Cell colors are sampled locally; the source photograph is never
 uploaded. `POST /account/holographic-recipes/measured` validates submitted
 cell indices against the caller's durable calibration metadata and stores the
-resulting Holographic Palette below the caller's legacy internal
+resulting Fauxlographic Palette below the caller's legacy internal
 `holographic-recipes/` prefix with a matching DynamoDB `HOLORECIPE` index
 record. The final lab card links to Rasterizer with the newly saved palette
 preselected. Artwork uploads directly to private S3 from Rasterizer, and the
-API submits the holographic artwork job through the existing SQS-to-Fargate
-orchestration. Worker status and logs use the DynamoDB runtime and do not
-require Redis.
-Newly measured Holographic Palettes use schema version 2. Each approved
+API submits the fauxlographic artwork job through the existing SQS-to-Fargate
+orchestration. Worker status uses the DynamoDB runtime, while detailed worker
+output uses the task's seven-day CloudWatch log stream; neither path requires
+Redis.
+Newly measured Fauxlographic Palettes use schema version 2. Each approved
 calibration cell contains a snapshot of its effective LightBurn cut setting
 after interval, angle, cut-mode, and sweep overrides are applied. When the
 selected material contains an entry explicitly named `Black`, that cut setting
@@ -419,11 +440,11 @@ Version-2 measured swatches can be edited as accordion rows and are persisted
 together with the profile name through `PUT` on the same owner-checked route.
 The update operation validates observed colors, interval, angle, unique names,
 and every embedded LightBurn setting before replacing the durable S3 object.
-Version-2 holographic swatches also participate in the Swatch Palette Vault's shared
-Selected Actions workflow. The API resolves selections by owner and holographic
+Version-2 fauxlographic swatches also participate in the Swatch Palette Vault's shared
+Selected Actions workflow. The API resolves selections by owner and fauxlographic
 swatch index, reconstructs LightBurn Material Library entries from the embedded
 CutSettings, and assigns each entry to the nearest official LightBurn layer
-color based on its observed swatch. Holographic swatch selections support `.clb` export,
+color based on its observed swatch. Fauxlographic swatch selections support `.clb` export,
 copying into new or existing owned libraries, and labeled LightBurn coupon
 generation subject to the shared 29-setting coupon limit.
 Depth palettes remain listed while the specialized, entirely browser-side
@@ -433,30 +454,30 @@ the shared browser module, and adds a Cognito-token bootstrap that loads only
 the signed-in owner's palettes through `GET /account/resources`. Source images,
 depth inference, color guidance, painting, previews, and 8-bit or 16-bit PNG
 exports remain local to the browser and do not create a Fargate task or upload
-the user's image. The raster and holographic Fargate paths do not consume Depth
+the user's image. The raster and fauxlographic Fargate paths do not consume Depth
 Palettes.
 
 The staging site also publishes `/history.html`. `GET /account/jobs` queries
 only the authenticated owner's ordered DynamoDB history partition, while
 `GET /account/jobs/{task_id}` verifies the direct owner record before returning
-parameters, retained DynamoDB logs, and fresh fifteen-minute S3 download URLs.
-This history remains usable after the short-lived runtime record disappears;
-downloads naturally become unavailable when the staging bucket's seven-day job
-lifecycle removes their objects.
+parameters, detailed logs proxied from the job's exact CloudWatch stream, and
+fresh fifteen-minute S3 download URLs. Legacy jobs whose logs were written to
+DynamoDB remain readable through a compatibility fallback. Job records,
+CloudWatch logs, and job artifacts share a seven-day retention window.
 
 `/vault.html` provides the first serverless Swatch Palette Vault management boundary:
 Depth Palettes can be created, edited, and deleted; existing Material Libraries
 can be renamed or reclassified as color/hatch palettes; and existing Material
-Libraries or Holographic Palettes can be deleted. Each mutation resolves a key
+Libraries or Fauxlographic Palettes can be deleted. Each mutation resolves a key
 below `USER#<sub>`, and object deletion additionally verifies the expected
 owner-specific S3 prefix. API IAM includes only object/item deletion needed for
-these explicit actions. New `.clb`, `.lbmat`, `.lbrn`, and Holographic Palette
+these explicit actions. New `.clb`, `.lbmat`, `.lbrn`, and Fauxlographic Palette
 JSON imports use a two-phase flow: the API creates a short-lived owner-bound
 import record and presigned S3 POST, then a finalize request verifies capability
 metadata, size, extension, and contents before copying the object into its
 durable owner prefix and creating the Vault index. Material Library XML must
-contain 1-500 settings with non-empty unique descriptions; Holographic Palette
-JSON must be a calibration profile with at least one saved holographic swatch. Temporary objects and
+contain 1-500 settings with non-empty unique descriptions; Fauxlographic Palette
+JSON must be a calibration profile with at least one saved fauxlographic swatch. Temporary objects and
 import records are removed after finalization, including validation failures.
 Unfinalized objects use the isolated `imports/` prefix and expire automatically
 after one day, so an abandoned browser upload cannot become permanent storage.
@@ -587,7 +608,12 @@ surrounding shell has another `AWS_PROFILE`. Set `DEPLOY_AWS_PROFILE` only when
 another deployment identity is intentional. `aws login` is reserved for
 IAM/root sign-in workflows and is not the Identity Center deployment command.
 
-## 2. Rebuild EC2 and K3s
+## 2. Legacy EC2 and K3s rebuild (retired)
+
+> Historical reference only. Production no longer uses this architecture, and
+> these steps must not be used as the normal recovery or rollback path. Rebuild
+> the serverless production stacks instead. An EC2/K3s recreation requires a
+> new, explicitly approved architecture rollback decision.
 
 Create a small Ubuntu instance in the target VPC and attach the `mopa-laser-rasterizer-ec2` instance profile. Create or use two security groups:
 

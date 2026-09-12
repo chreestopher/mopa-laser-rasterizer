@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Holographic Etching Lab · MOPA Laser Rasterizer</title>
+  <title>Fauxlographic Etching Lab · MOPA Laser Rasterizer</title>
+  <meta name="description" content="Calibrate angle-dependent diffraction effects that change color or appearance with viewing angle, then create reusable Fauxlographic Swatch Palettes.">
+  <link rel="canonical" href="/fauxlographic.html">
   <style>html.staging-shell-pending{background:#363a30!important}html.staging-shell-pending body{visibility:hidden}</style>
   <script>document.documentElement.classList.add('staging-shell-pending');setTimeout(()=>document.documentElement.classList.remove('staging-shell-pending'),3000)</script>
   <link rel="stylesheet" href="/machine_chrome.css?v=3"><link rel="stylesheet" href="/staging-shell.css?v=1"><link rel="stylesheet" href="/staging-pages.css?v=1"><script src="/staging-shell.js?v=2" defer></script>
@@ -11,7 +13,7 @@
   </style>
 </head>
 <body>
-  <p id="notice" class="result">Loading Holographic Etching Lab…</p>
+  <p id="notice" class="result">Loading Fauxlographic Etching Lab…</p>
   <section class="workflow">
     <form id="calibrationForm" class="stage form-grid">
       <h2 class="full"><span class="stage-number">Step 01</span>Calibration Grid Console</h2><p class="full note">For best results, sweep your most iridescent laser setting across fill intervals and engraving angles while preserving its selected LightBurn parameters.</p>
@@ -28,17 +30,17 @@
       <div class="actions full"><button type="submit">Build Calibration Grid</button></div><div id="calibrationResult" class="result downloads full"></div>
     </form>
     <section class="stage">
-      <h2><span class="stage-number">Step 02</span>Finished Grid Capture</h2><p class="note">Laser the downloaded grid, photograph it, then align the four green corners. The numbered perspective overlay identifies the cell represented by each measured holographic swatch. The photograph stays in this browser.</p>
+      <h2><span class="stage-number">Step 02</span>Finished Grid Capture</h2><p class="note">Laser the downloaded grid, photograph it, then align the four green corners. The numbered perspective overlay identifies the cell represented by each measured fauxlographic swatch. The photograph stays in this browser.</p>
       <div class="form-grid"><label>Profile name<input id="profileName" placeholder="Polished steel, 110 mm lens" required></label><label>Finished grid photograph<input id="gridPhoto" type="file" accept="image/*" required></label><label>Phone or camera<input id="captureCamera"></label><label>Camera distance (mm)<input id="captureDistance" type="number" min="1"></label><label>Viewing angle (degrees)<input id="captureAngle" type="number" min="0" max="90"></label><label>Lighting setup<input id="captureLighting"></label><label class="full">Capture notes<textarea id="captureNotes"></textarea></label></div>
       <div class="actions"><button id="resetCorners" type="button" disabled>Reset four corners</button><button id="analyzePhoto" type="button" disabled>Measure Grid Colors</button></div><p id="captureResult" class="result"></p><canvas id="captureCanvas" class="capture-canvas" hidden></canvas>
     </section>
     <section class="stage">
-      <h2><span class="stage-number">Step 03</span>Holographic Swatch Measurement Console</h2><p class="note">Review sampled colors, remove weak or unwanted cells, give useful holographic swatches memorable names, then save them as a Holographic Swatch Palette.</p><div id="recipeGrid" class="recipe-grid"></div><div class="actions"><button id="saveRecipes" type="button" disabled>Save Holographic Swatch Palette</button></div><p id="recipeResult" class="result"></p>
+      <h2><span class="stage-number">Step 03</span>Fauxlographic Swatch Measurement Console</h2><p class="note">Review sampled colors, remove weak or unwanted cells, give useful fauxlographic swatches memorable names, then save them as a Fauxlographic Swatch Palette.</p><div id="recipeGrid" class="recipe-grid"></div><div class="actions"><button id="saveRecipes" type="button" disabled>Save Fauxlographic Swatch Palette</button></div><p id="recipeResult" class="result"></p>
     </section>
     <section class="stage">
-      <h2><span class="stage-number">Step 04</span>Create Holographic Artwork</h2>
-      <p class="note">Run a Rasterizer job using the Holographic Palette you just created. The Rasterizer will select its measured swatches and show the Holographic Etching controls in place of the normal image-style controls.</p>
-      <div class="actions"><a id="runRecipeInRasterizer" class="button" href="/">Run Rasterizer with This Holographic Palette</a></div>
+      <h2><span class="stage-number">Step 04</span>Create Fauxlographic Artwork</h2>
+      <p class="note">Run a Rasterizer job using the Fauxlographic Palette you just created. The Rasterizer will select its measured swatches and show the Fauxlographic Etching controls in place of the normal image-style controls.</p>
+      <div class="actions"><a id="runRecipeInRasterizer" class="button" href="/">Run Rasterizer with This Fauxlographic Palette</a></div>
     </section>
   </section>
   <script type="module" src="/holographic.js?v=6"></script>

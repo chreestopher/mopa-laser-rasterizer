@@ -20,7 +20,7 @@ The application prepares artwork and project files; it does not control a laser 
 - Color Discovery calibration, photo analysis, and recipe saving
 - Browser-session and account-backed job history
 - Community settings browser
-- Experimental Holographic Etching Lab for diffraction-grid calibration and artwork generation
+- Experimental Fauxlographic Etching Lab for diffraction-grid calibration and artwork generation
 - Public user documentation at `/docs`
 
 ## Rasterizer workflow
@@ -160,11 +160,11 @@ Run the test suite from the repository root:
 python -m unittest discover -s tests
 ```
 
-The tests cover vector export behavior, SVG-only jobs, authentication intent, job access and history, Material Library coupons, Color Discovery, palette generation, and Holographic Lab access paths.
+The tests cover vector export behavior, SVG-only jobs, authentication intent, job access and history, Material Library coupons, Color Discovery, palette generation, and Fauxlographic Lab access paths.
 
-## Holographic Etching Lab
+## Fauxlographic Etching Lab
 
-The Holographic Lab is an experimental calibration workflow for angle-dependent diffraction structures:
+The Fauxlographic Lab is an experimental calibration workflow for angle-dependent diffraction structures:
 
 1. Generate and engrave a grid that sweeps fill interval, angle, and optionally another laser parameter.
 2. Upload a controlled photograph of the finished grid.

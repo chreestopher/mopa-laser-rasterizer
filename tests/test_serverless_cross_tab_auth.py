@@ -46,12 +46,22 @@ def test_shell_migrates_existing_session_and_synchronizes_login_state():
     assert 'localStorage.removeItem("refresh_token")' in shell
 
 
+def test_community_set_build_uses_shared_tokens_and_refreshes_expired_sessions():
+    builder = (ROOT / "dev_setup" / "build_serverless_community.py").read_text(encoding="utf-8")
+
+    assert "localStorage.getItem('id_token')||sessionStorage.getItem('id_token')" in builder
+    assert "localStorage.getItem('refresh_token')||sessionStorage.getItem('refresh_token')" in builder
+    assert "if(response.status===401&&refreshToken)" in builder
+    assert "localStorage.setItem('id_token',token)" in builder
+    assert "Session expired. Sign in again." in builder
+
+
 def test_changed_auth_assets_have_cache_busting_revisions():
     expected = {
         "index.html": ('/staging-shell.js?v=2',),
-        "vault.html": ('/staging-shell.js?v=2', '/vault.js?v=11'),
-        "history.html": ('/staging-shell.js?v=2', '/history.js?v=6'),
-        "admin.html": ('/staging-shell.js?v=2', '/admin.js?v=2'),
+        "vault.html": ('/staging-shell.js?v=2', '/vault.js?v=12'),
+        "history.html": ('/staging-shell.js?v=2', '/history.js?v=8'),
+        "admin.html": ('/staging-shell.js?v=2', '/admin.js?v=3'),
         "color-lab.html": ('/staging-shell.js?v=2', '/color-lab.js?v=7'),
         "holographic.html": ('/staging-shell.js?v=2', '/holographic.js?v=6'),
     }

@@ -21,7 +21,7 @@ DEFAULT_RASTERIZER_PALETTE = (
 # These are workflow settings rather than artwork-color mapping targets. Keep
 # them out of DEFAULT_RASTERIZER_PALETTE so they do not consume official
 # Rasterizer layers or alter hatch-palette planning.
-BLANK_PALETTE_UTILITY_ENTRIES = ("Labels", "Holographic")
+BLANK_PALETTE_UTILITY_ENTRIES = ("Labels", "Fauxlographic")
 BLANK_PALETTE_ENTRIES = (
     tuple(name for name, _layer_index in DEFAULT_RASTERIZER_PALETTE)
     + BLANK_PALETTE_UTILITY_ENTRIES

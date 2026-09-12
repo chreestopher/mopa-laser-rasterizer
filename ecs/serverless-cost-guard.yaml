@@ -1,0 +1,175 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Monthly AWS budget alerts and manual Fargate pause controls for MOPA Rasterizer.
+
+Parameters:
+  BudgetName: {Type: String}
+  MonthlyLimitUsd: {Type: Number, Default: 100, MinValue: 1}
+  WarningThresholdPercent: {Type: Number, Default: 75, MinValue: 1, MaxValue: 99}
+  OperatorEmail: {Type: String}
+  ProductionPublicUrl: {Type: String}
+  ProductionRuntimeTableName: {Type: String}
+  ProductionPipeName: {Type: String}
+  StagingPublicUrl: {Type: String}
+  StagingRuntimeTableName: {Type: String}
+  StagingPipeName: {Type: String}
+  LambdaCodeBucket: {Type: String}
+  LambdaCodeKey: {Type: String}
+  FunctionName: {Type: String, Default: mopa-rasterizer-production-cost-guard}
+
+Resources:
+  BudgetEventsTopic:
+    Type: AWS::SNS::Topic
+  BudgetEventsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref BudgetEventsTopic]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowAwsBudgets
+            Effect: Allow
+            Principal: {Service: budgets.amazonaws.com}
+            Action: SNS:Publish
+            Resource: !Ref BudgetEventsTopic
+            Condition:
+              StringEquals: {aws:SourceAccount: !Ref "AWS::AccountId"}
+              ArnLike:
+                aws:SourceArn: !Sub arn:${AWS::Partition}:budgets::${AWS::AccountId}:budget/${BudgetName}
+
+  OperatorNotificationsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref OperatorEmail
+
+  GuardRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ReadBudgetAndControlRasterizer
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: budgets:ViewBudget
+                Resource: !Sub arn:${AWS::Partition}:budgets::${AWS::AccountId}:budget/${BudgetName}
+              - Effect: Allow
+                Action: billing:GetBillingViewData
+                Resource: "*"
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:UpdateItem]
+                Resource:
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProductionRuntimeTableName}
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${StagingRuntimeTableName}
+              - Effect: Allow
+                Action: [pipes:DescribePipe, pipes:StartPipe]
+                Resource:
+                  - !Sub arn:${AWS::Partition}:pipes:${AWS::Region}:${AWS::AccountId}:pipe/${ProductionPipeName}
+                  - !Sub arn:${AWS::Partition}:pipes:${AWS::Region}:${AWS::AccountId}:pipe/${StagingPipeName}
+              - Effect: Allow
+                Action: sns:Publish
+                Resource: !Ref OperatorNotificationsTopic
+
+  GuardFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref FunctionName
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: handler.handler
+      Role: !GetAtt GuardRole.Arn
+      Timeout: 30
+      Code: {S3Bucket: !Ref LambdaCodeBucket, S3Key: !Ref LambdaCodeKey}
+      Environment:
+        Variables:
+          ACCOUNT_ID: !Ref "AWS::AccountId"
+          BUDGET_NAME: !Ref BudgetName
+          MONTHLY_LIMIT_USD: !Ref MonthlyLimitUsd
+          WARNING_PERCENT: !Ref WarningThresholdPercent
+          PRODUCTION_RUNTIME_TABLE_NAME: !Ref ProductionRuntimeTableName
+          PRODUCTION_PIPE_NAME: !Ref ProductionPipeName
+          PRODUCTION_PUBLIC_URL: !Ref ProductionPublicUrl
+          STAGING_RUNTIME_TABLE_NAME: !Ref StagingRuntimeTableName
+          STAGING_PIPE_NAME: !Ref StagingPipeName
+          STAGING_PUBLIC_URL: !Ref StagingPublicUrl
+          OPERATOR_TOPIC_ARN: !Ref OperatorNotificationsTopic
+
+  GuardLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${GuardFunction}
+      RetentionInDays: 30
+
+  BudgetTopicSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref BudgetEventsTopic
+      Protocol: lambda
+      Endpoint: !GetAtt GuardFunction.Arn
+  AllowBudgetTopicInvoke:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GuardFunction
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref BudgetEventsTopic
+
+  GuardSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Poll current spend and automatically resume paused service at a new month.
+      ScheduleExpression: rate(1 hour)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt GuardFunction.Arn
+          Id: CostGuard
+  AllowScheduleInvoke:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GuardFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt GuardSchedule.Arn
+
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    DependsOn: BudgetEventsTopicPolicy
+    Properties:
+      Budget:
+        BudgetName: !Ref BudgetName
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref MonthlyLimitUsd
+          Unit: USD
+      NotificationsWithSubscribers:
+        - Notification:
+            ComparisonOperator: GREATER_THAN
+            NotificationType: ACTUAL
+            Threshold: !Ref WarningThresholdPercent
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref BudgetEventsTopic
+        - Notification:
+            ComparisonOperator: GREATER_THAN
+            NotificationType: ACTUAL
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref BudgetEventsTopic
+
+Outputs:
+  BudgetName: {Value: !Ref BudgetName}
+  OperatorNotificationsTopicArn: {Value: !Ref OperatorNotificationsTopic}
+  GuardFunctionArn: {Value: !GetAtt GuardFunction.Arn}

@@ -97,6 +97,7 @@ ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
     "crystal", "ripple", "glitch", "shattered", "deep_fryer",
     "halftone_newsprint", "optical_color_mix", "krasnow_grating",
+    "structure_tensor_flow",
 }
 ABSTRACT_PRESET_PREFIX = "abstract_"
 RASTER_JOB_QUEUE = "rasterizer:jobs"
@@ -496,7 +497,7 @@ def list_user_holographic_recipes(user_id):
             ScanIndexForward=False,
         )
     except ClientError as error:
-        raise RuntimeError("Could not load saved Holographic Palettes.") from error
+        raise RuntimeError("Could not load saved Fauxlographic Palettes.") from error
     return [_json_values(item) for item in response.get("Items", [])]
 
 
@@ -507,7 +508,7 @@ def get_user_holographic_recipe(user_id, recipe_id):
     try:
         item = table.get_item(Key={"pk": f"USER#{user_id}", "sk": f"HOLORECIPE#{recipe_id}"}).get("Item")
     except ClientError as error:
-        raise RuntimeError("Could not load the saved Holographic Palette.") from error
+        raise RuntimeError("Could not load the saved Fauxlographic Palette.") from error
     return _json_values(item) if item else None
 
 
@@ -515,10 +516,10 @@ def save_user_holographic_recipe(user_id, local_file_path, display_name=None, me
                                  source_filename=None):
     table = account_table()
     if not table or not S3_BUCKET_NAME:
-        raise RuntimeError("Account Holographic Palette storage is not configured.")
+        raise RuntimeError("Account Fauxlographic Palette storage is not configured.")
     recipe_id = str(uuid.uuid4())
     filename = os.path.basename(source_filename or local_file_path)
-    name = str(display_name or os.path.splitext(filename)[0]).strip()[:160] or "Holographic Palette"
+    name = str(display_name or os.path.splitext(filename)[0]).strip()[:160] or "Fauxlographic Palette"
     s3_key = f"users/{user_id}/holographic-recipes/{recipe_id}/{filename}"
     try:
         s3_client.upload_file(local_file_path, S3_BUCKET_NAME, s3_key)
@@ -530,17 +531,17 @@ def save_user_holographic_recipe(user_id, local_file_path, display_name=None, me
         }
         table.put_item(Item=item)
     except ClientError as error:
-        raise RuntimeError("Could not save the Holographic Palette to this account.") from error
+        raise RuntimeError("Could not save the Fauxlographic Palette to this account.") from error
     return _json_values(item)
 
 
 def download_user_holographic_recipe(recipe, local_path):
     if not recipe or not recipe.get("s3_key"):
-        raise RuntimeError("Saved Holographic Palette is unavailable.")
+        raise RuntimeError("Saved Fauxlographic Palette is unavailable.")
     try:
         s3_client.download_file(S3_BUCKET_NAME, recipe["s3_key"], local_path)
     except ClientError as error:
-        raise RuntimeError("Could not retrieve the saved Holographic Palette.") from error
+        raise RuntimeError("Could not retrieve the saved Fauxlographic Palette.") from error
 
 
 def delete_user_holographic_recipe(user_id, recipe_id):
@@ -553,7 +554,7 @@ def delete_user_holographic_recipe(user_id, recipe_id):
             s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=recipe["s3_key"])
         table.delete_item(Key={"pk": f"USER#{user_id}", "sk": f"HOLORECIPE#{recipe_id}"})
     except ClientError as error:
-        raise RuntimeError("Could not delete the saved Holographic Palette.") from error
+        raise RuntimeError("Could not delete the saved Fauxlographic Palette.") from error
     return True
 
 
@@ -857,12 +858,14 @@ def record_user_job(user_id, task_id, source_name, image_preset, abstract_filter
         "material_name": material_name, "run_parameters": _dynamodb_values(run_parameters or {}),
         "created_at": created_at, "updated_at": created_at, "status": "pending",
         "artifact_prefix": artifact_prefix, "input_keys": list(input_keys or []),
+        "expires_at": created_at + HISTORY_TTL_SECONDS,
     }
     owner_item = {
         "pk": f"JOB#{task_id}", "sk": "OWNER", "user_id": user_id,
         "created_at": created_at, "updated_at": created_at, "history_sk": history_sk,
         "status": "pending", "artifact_prefix": artifact_prefix,
         "input_keys": list(input_keys or []),
+        "expires_at": created_at + HISTORY_TTL_SECONDS,
     }
     try:
         with table.batch_writer() as batch:
@@ -1394,7 +1397,7 @@ def job_history_links(entry):
         return {
             "svg_url": f"/download-svg/{task_id}",
             "lightburn_url": f"/download-lbrn2/{task_id}",
-            "reuse_url": "/holographic-etching",
+            "reuse_url": "/fauxlographic-etching",
             "reuse_label": "Open Lab",
         }
     return {
@@ -1549,13 +1552,17 @@ def parse_geometry_style_parameters(raw_value):
                 raise ValueError("Geometry routing contains an invalid swatch assignment")
             clean_assignments[color_hex] = style
         clean_assignments["#000000"] = "vectors"
-        return {
-            "assignments": clean_assignments,
-            "glyphs": parse_geometry_style_parameters(parameters.get("glyphs") or {}),
-            "krasnow_grating": parse_geometry_style_parameters(
+        used_styles = set(clean_assignments.values())
+        clean = {"assignments": clean_assignments}
+        if "glyphs" in used_styles:
+            clean["glyphs"] = parse_geometry_style_parameters(
+                parameters.get("glyphs") or {}
+            )
+        if "krasnow_grating" in used_styles:
+            clean["krasnow_grating"] = parse_geometry_style_parameters(
                 parameters.get("krasnow_grating") or {}
-            ),
-        }
+            )
+        return clean
     numeric = {
         "cell_size_mm", "minimum_glyph_ratio", "maximum_glyph_ratio",
         "non_black_glyph_density", "tone_curve", "contrast", "grid_angle",
@@ -1577,11 +1584,20 @@ def parse_geometry_style_parameters(raw_value):
         "space_invader", "ghost", "bat", "alien_head", "paw_print",
         "fish_scale", "puzzle_piece",
     }
+    gradient_scopes = {"entire_artwork", "each_shape"}
+    gradient_directions = {
+        "top_to_bottom", "bottom_to_top", "left_to_right", "right_to_left",
+        "center_to_edge", "edge_to_center",
+    }
     clean = {}
     for key, value in parameters.items():
         if key == "glyph_shape" and value in shapes:
             clean[key] = value
         elif key == "cell_shape" and value in cell_shapes:
+            clean[key] = value
+        elif key == "fauxlogram_gradient_scope" and value in gradient_scopes:
+            clean[key] = value
+        elif key == "fauxlogram_gradient_direction" and value in gradient_directions:
             clean[key] = value
         elif key in toggles and isinstance(value, bool):
             clean[key] = int(value)
@@ -1812,7 +1828,6 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
                         line = "".join(current_line).strip()
                         if line:
                             last_line = line
-                            print(f"[Task {task_id}] {line}", flush=True)
                             job_runtime.append_log(task_id, line)
                         current_line = []
                     else:
@@ -1820,7 +1835,6 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
             line = "".join(current_line).strip()
             if line:
                 last_line = line
-                print(f"[Task {task_id}] {line}", flush=True)
                 job_runtime.append_log(task_id, line)
             return process.wait(), last_line
 
@@ -1873,7 +1887,6 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
                     line = "".join(current_line).strip()
                     if line:
                         last_process_line = line
-                        print(f"[Task {task_id}] {line}", flush=True)
                         job_runtime.append_log(task_id, line)
                     current_line = []
                 else:
@@ -1881,7 +1894,6 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
         line = "".join(current_line).strip()
         if line:
             last_process_line = line
-            print(f"[Task {task_id}] {line}", flush=True)
             job_runtime.append_log(task_id, line)
         exit_code = process.wait()
         if exit_code == 0:

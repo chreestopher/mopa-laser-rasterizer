@@ -141,7 +141,7 @@ def logout():
     return response
 
 
-@routes.route("/holographic-etching")
+@routes.route("/fauxlographic-etching")
 def holographic_etching():
     """Dedicated workspace for the structural-color engraving workflow."""
     palette = [
@@ -153,6 +153,13 @@ def holographic_etching():
         lightburn_palette=palette,
         submission_auth_token=issue_submission_auth_token(),
     )
+
+
+@routes.route("/holographic-etching")
+def legacy_holographic_etching():
+    """Redirect the classic public URL without breaking saved links."""
+    query = f"?{request.query_string.decode('latin-1')}" if request.query_string else ""
+    return redirect(f"/fauxlographic-etching{query}", code=308)
 
 
 @routes.route("/material-libraries")

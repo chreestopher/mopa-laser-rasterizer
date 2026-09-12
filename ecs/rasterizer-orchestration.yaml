@@ -70,6 +70,9 @@ Resources:
               - Effect: Allow
                 Action: dynamodb:UpdateItem
                 Resource: !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RuntimeTableName}
+              - Effect: Allow
+                Action: dynamodb:GetItem
+                Resource: !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RuntimeTableName}
 
   WorkerWorkflow:
     Type: AWS::StepFunctions::StateMachine
@@ -100,7 +103,7 @@ Resources:
               message:
                 task_id.$: $.event.task_id
               spot_attempt.$: $.spot_attempt
-            Next: RunSpotWorker
+            Next: CheckServiceAvailability
           SplitDispatchKey:
             Type: Pass
             Parameters:
@@ -113,7 +116,32 @@ Resources:
               message:
                 task_id.$: $.key_parts[1]
               spot_attempt.$: $.spot_attempt
-            Next: RunSpotWorker
+            Next: CheckServiceAvailability
+          CheckServiceAvailability:
+            Type: Task
+            Resource: arn:aws:states:::dynamodb:getItem
+            Parameters:
+              TableName: !Ref RuntimeTableName
+              ConsistentRead: true
+              Key:
+                pk: {S: "SYSTEM#SERVICE"}
+                sk: {S: "CONTROL"}
+            ResultPath: $.service_control
+            Next: IsServicePaused
+          IsServicePaused:
+            Type: Choice
+            Choices:
+              - And:
+                  - Variable: $.service_control.Item.status.S
+                    IsPresent: true
+                  - Variable: $.service_control.Item.status.S
+                    StringEquals: paused
+                Next: WaitForServiceResume
+            Default: RunSpotWorker
+          WaitForServiceResume:
+            Type: Wait
+            Seconds: 300
+            Next: CheckServiceAvailability
           RunSpotWorker:
             Type: Task
             Resource: arn:aws:states:::ecs:runTask.sync

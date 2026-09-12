@@ -32,6 +32,42 @@ def test_krasnow_uses_source_faithful_vector_defaults():
     }
 
 
+def test_krasnow_accepts_fauxlographic_and_classic_holographic_setting_names():
+    class MaterialLibrary:
+        def __init__(self, setting):
+            self.setting = setting
+            self.layers = []
+
+        def parse_material_library(self, _path):
+            return [self.setting]
+
+        def add_layer(self, layer):
+            self.layers.append(layer)
+
+    for setting_name in ("Fauxlographic", "Holographic"):
+        setting = SimpleNamespace(
+            materialName="Stainless",
+            entryDesc=setting_name,
+            name=setting_name,
+            frequency=120000,
+        )
+        library = MaterialLibrary(setting)
+        matched, required = vector_processing.parse_material_settings(
+            library,
+            "unused.clb",
+            [],
+            {"#000000": (0, 0, "Black")},
+            material_name="Stainless",
+            required_setting_names=["fauxlographic"],
+            required_setting_aliases={"fauxlographic": ("holographic",)},
+            return_setting_layers=True,
+        )
+
+        assert matched == {}
+        assert required == {"fauxlographic": 1}
+        assert library.layers == [setting]
+
+
 def test_krasnow_output_layers_use_parent_recipe_not_offset_sublayer():
     krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
     child = SimpleNamespace(

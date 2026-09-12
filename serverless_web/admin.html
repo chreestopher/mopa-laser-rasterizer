@@ -13,6 +13,18 @@
 <body>
   <h1>Administration</h1>
   <p>Private operational visibility for serverless processing.</p>
+  <section class="admin-panel admin-protected admin-service-panel" aria-labelledby="admin-service-title" hidden>
+    <div class="admin-heading">
+      <div><p class="admin-kicker">Monthly spend protection</p><h2 id="admin-service-title">Processing availability</h2></div>
+      <strong id="serviceState" class="admin-count">—</strong>
+    </div>
+    <p id="serviceNotice" role="status">Loading service state…</p>
+    <div class="admin-tools admin-service-actions">
+      <button id="pauseService" class="danger" type="button">Pause Service</button>
+      <button id="continueService" type="button">Continue / Re-enable Service</button>
+    </div>
+    <p>Pausing stops the queue trigger and blocks worker launches. Waiting jobs remain queued. A cost-related pause automatically expires on the first day of the next UTC billing cycle.</p>
+  </section>
   <section class="admin-panel admin-protected admin-jobs-panel" aria-labelledby="admin-jobs-title" hidden>
     <div class="admin-heading">
       <div><p class="admin-kicker">Authorized operator</p><h2 id="admin-jobs-title">Seven-day job activity</h2></div>
@@ -32,6 +44,6 @@
     </div>
     <div id="adminUsers" class="admin-users"><p>Loading the user directory…</p></div>
   </section>
-  <script type="module" src="/admin.js?v=2"></script>
+  <script type="module" src="/admin.js?v=3"></script>
 </body>
 </html>

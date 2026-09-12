@@ -12,6 +12,7 @@ scripts=(
   "$SCRIPT_DIR/deploy_serverless_production.sh"
   "$SCRIPT_DIR/deploy_serverless_production_web.sh"
   "$SCRIPT_DIR/deploy_serverless_production_application.sh"
+  "$SCRIPT_DIR/ensure_dynamodb_job_ttl.sh"
   "$SCRIPT_DIR/inspect_serverless_production_readiness.sh"
 )
 for script in "${scripts[@]}"; do

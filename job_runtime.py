@@ -102,6 +102,7 @@ class RedisJobRuntime(JobRuntime):
             self.append_log(task_id, error)
 
     def append_log(self, task_id, message):
+        print(f"[Task {task_id}] {message}", flush=True)
         pipe = self.client.pipeline()
         pipe.rpush(f"task:{task_id}:log", str(message))
         pipe.expire(f"task:{task_id}:log", self.ttl)
@@ -186,18 +187,29 @@ class DynamoJobRuntime(JobRuntime):
                                ExpressionAttributeNames=names, ExpressionAttributeValues=values)
 
     def append_log(self, task_id, message):
-        result = self.table.update_item(
+        """Emit detailed AWS job output through the task's CloudWatch stream.
+
+        The ECS awslogs driver already persists stdout. Avoid duplicating every
+        processing line as two DynamoDB writes (an atomic counter update plus a
+        separate LOG item); DynamoDB remains the authoritative status store.
+        """
+        print(f"[Task {task_id}] {message}", flush=True)
+
+    def set_cloudwatch_log_stream(self, task_id, log_group, log_stream):
+        """Bind a one-shot ECS worker's deterministic log stream to its job."""
+        if not log_group or not log_stream:
+            return
+        self.table.update_item(
             Key=self._key(task_id),
-            UpdateExpression="SET log_count=if_not_exists(log_count,:zero)+:one, updated_at=:now, expires_at=:expiry",
-            ExpressionAttributeValues={":zero": 0, ":one": 1, ":now": int(time.time()),
-                                       ":expiry": self._expiry()},
-            ReturnValues="UPDATED_NEW",
+            UpdateExpression=(
+                "SET cloudwatch_log_group=:log_group, "
+                "cloudwatch_log_stream=:log_stream, updated_at=:now, expires_at=:expiry"
+            ),
+            ExpressionAttributeValues={
+                ":log_group": str(log_group), ":log_stream": str(log_stream),
+                ":now": int(time.time()), ":expiry": self._expiry(),
+            },
         )
-        sequence = int(result["Attributes"]["log_count"])
-        self.table.put_item(Item={"pk": self._key(task_id)["pk"],
-                                  "sk": f"LOG#{sequence:09d}",
-                                  "message": str(message)[:4000],
-                                  "expires_at": self._expiry()})
 
     def claim_guest_quota(self, task_id, visitor, day, limit):
         """Count each validated task once, including safe retries of the same task."""

@@ -29,10 +29,19 @@ source = source.replace(
 source = source.replace(
     "const response=await fetch(`/community-set/settings?${query}`,{credentials:'same-origin'});",
     "const config=await fetch('/config.json',{cache:'no-store'}).then(result=>result.json());"
-    "const token=sessionStorage.getItem('id_token');"
+    "let token=localStorage.getItem('id_token')||sessionStorage.getItem('id_token');"
+    "const refreshToken=localStorage.getItem('refresh_token')||sessionStorage.getItem('refresh_token');"
     "if(!token) throw new Error('Sign in to search Community Set settings.');"
-    "const response=await fetch(`${config.api_url}/community-set/settings?${query}`,"
-    "{headers:{authorization:`Bearer ${token}`}});",
+    "const request=()=>fetch(`${config.api_url}/community-set/settings?${query}`,"
+    "{headers:{authorization:`Bearer ${token}`}});"
+    "let response=await request();"
+    "if(response.status===401&&refreshToken){"
+    "const body=new URLSearchParams({grant_type:'refresh_token',client_id:config.client_id,refresh_token:refreshToken});"
+    "const refreshed=await fetch(`https://${config.cognito_domain}/oauth2/token`,"
+    "{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body}).then(result=>result.json());"
+    "if(refreshed.id_token){token=refreshed.id_token;localStorage.setItem('id_token',token);response=await request();}"
+    "}"
+    "if(response.status===401)throw new Error('Session expired. Sign in again.');",
     1,
 )
 

@@ -432,7 +432,7 @@ def job_history():
     return render_template(
         "loading.html", task_id=active_task_id, history_session=history_session,
         history_files=history_files, history_mode=True,
-        current_source_name=active_file.get("source_name", "Holographic Artwork"),
+        current_source_name=active_file.get("source_name", "Fauxlographic Artwork"),
         current_image_preset=active_file.get("image_preset", "holographic_artwork"),
         current_abstract_filter=active_file.get("abstract_filter", "none"),
         current_material_name=active_file.get("material_name", ""),

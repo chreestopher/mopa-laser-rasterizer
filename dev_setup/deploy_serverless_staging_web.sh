@@ -9,6 +9,8 @@ REGION="${AWS_REGION:-us-east-2}"
 export AWS_PROFILE="${DEPLOY_AWS_PROFILE:-mopa-admin}"
 ENVIRONMENT_LABEL="${SERVERLESS_ENVIRONMENT_LABEL:-Serverless staging}"
 FOUNDATION_STACK="${SERVERLESS_FOUNDATION_STACK:-${SERVERLESS_STAGING_FOUNDATION_STACK:-mopa-rasterizer-serverless-staging}}"
+WORKER_STACK="${SERVERLESS_WORKER_STACK:-${SERVERLESS_STAGING_WORKER_STACK:-mopa-rasterizer-serverless-staging-worker}}"
+ORCHESTRATION_STACK="${SERVERLESS_ORCHESTRATION_STACK:-${SERVERLESS_STAGING_ORCHESTRATION_STACK:-mopa-rasterizer-serverless-staging-orchestration}}"
 WEB_STACK="${SERVERLESS_WEB_STACK:-${SERVERLESS_STAGING_WEB_STACK:-mopa-rasterizer-serverless-staging-web}}"
 DEPLOYMENT_NAME="${SERVERLESS_DEPLOYMENT_NAME:-mopa-rasterizer-serverless-staging}"
 API_FUNCTION_NAME="${SERVERLESS_API_FUNCTION_NAME:-mopa-rasterizer-serverless-staging-api}"
@@ -20,6 +22,13 @@ for name in COGNITO_POOL_ID COGNITO_DOMAIN; do
 done
 ADMIN_EMAIL="${SERVERLESS_ADMIN_EMAIL:-${SERVERLESS_STAGING_ADMIN_EMAIL:-${IDENTITY_CENTER_ADMIN_EMAIL:-}}}"
 [ -n "$ADMIN_EMAIL" ] || { echo "SERVERLESS_ADMIN_EMAIL or IDENTITY_CENTER_ADMIN_EMAIL is required." >&2; exit 2; }
+ACCESS_GATE_AUTHORIZATION="${SERVERLESS_ACCESS_GATE_AUTHORIZATION:-${SERVERLESS_STAGING_ACCESS_GATE_AUTHORIZATION:-}}"
+GUEST_ACCESS_ENABLED="${SERVERLESS_GUEST_ACCESS_ENABLED:-${SERVERLESS_STAGING_GUEST_ACCESS_ENABLED:-true}}"
+ALLOWED_USER_SUB="${SERVERLESS_ALLOWED_USER_SUB:-${SERVERLESS_STAGING_ALLOWED_USER_SUB:-}}"
+case "$GUEST_ACCESS_ENABLED" in
+  true|false) ;;
+  *) echo "SERVERLESS_GUEST_ACCESS_ENABLED must be true or false." >&2; exit 2 ;;
+esac
 
 output() {
   aws cloudformation describe-stacks --region "$REGION" --stack-name "$1" \
@@ -32,8 +41,11 @@ if [ -z "$STATIC_BUCKET" ] || [ "$STATIC_BUCKET" = "None" ]; then
   STATIC_BUCKET="$BUCKET"
 fi
 TABLE="$(output "$FOUNDATION_STACK" RuntimeTableName)"
+WORKER_LOG_GROUP="$(output "$WORKER_STACK" LogGroupName)"
 QUEUE_URL="$(output "$FOUNDATION_STACK" JobQueueUrl)"
 QUEUE_ARN="$(output "$FOUNDATION_STACK" JobQueueArn)"
+PIPE_ARN="$(output "$ORCHESTRATION_STACK" PipeArn)"
+PIPE_NAME="${PIPE_ARN##*/}"
 BUILD_DIR="$(mktemp -d)"
 trap 'rm -rf -- "$BUILD_DIR"' EXIT
 cp "$REPO_ROOT/serverless_api/handler.py" "$BUILD_DIR/handler.py"
@@ -67,10 +79,13 @@ aws cloudformation deploy --region "$REGION" --stack-name "$WEB_STACK" \
   --capabilities CAPABILITY_IAM \
   --parameter-overrides \
     "ArtifactBucketName=$BUCKET" "StaticBucketName=$STATIC_BUCKET" "RuntimeTableName=$TABLE" \
-    "QueueUrl=$QUEUE_URL" "QueueArn=$QUEUE_ARN" \
+    "WorkerLogGroupName=$WORKER_LOG_GROUP" \
+    "QueueUrl=$QUEUE_URL" "QueueArn=$QUEUE_ARN" "WorkerPipeName=$PIPE_NAME" \
     "LambdaCodeBucket=$STATIC_BUCKET" "LambdaCodeKey=$CODE_KEY" \
     "CognitoUserPoolId=$COGNITO_POOL_ID" "CognitoDomain=$COGNITO_DOMAIN" \
     "AdminEmail=$ADMIN_EMAIL" \
+    "AccessGateAuthorization=$ACCESS_GATE_AUTHORIZATION" \
+    "GuestAccessEnabled=$GUEST_ACCESS_ENABLED" "AllowedUserSub=$ALLOWED_USER_SUB" \
     "DeploymentName=$DEPLOYMENT_NAME" "ApiFunctionName=$API_FUNCTION_NAME" \
     "${DOMAIN_PARAMETERS[@]}" \
   --no-fail-on-empty-changeset
@@ -109,7 +124,9 @@ python3 -c 'import json,os; print(json.dumps({
   > "$BUILD_DIR/config.json"
 aws s3 cp "$BUILD_DIR/seo/index.html" "s3://$STATIC_BUCKET/web/index.html" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
-aws s3 cp "$REPO_ROOT/serverless_web/holographic.html" "s3://$STATIC_BUCKET/web/holographic.html" \
+aws s3 cp "$REPO_ROOT/serverless_web/holographic.html" "s3://$STATIC_BUCKET/web/fauxlographic.html" \
+  --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/holographic-redirect.html" "s3://$STATIC_BUCKET/web/holographic.html" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/holographic.js" "s3://$STATIC_BUCKET/web/holographic.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
@@ -155,6 +172,23 @@ aws s3 cp "$BUILD_DIR/community-set" "s3://$STATIC_BUCKET/web/community-set" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
 aws s3 cp "$BUILD_DIR/experimental-laboratories" "s3://$STATIC_BUCKET/web/experimental-laboratories" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/release-story.html" "s3://$STATIC_BUCKET/web/release-story" \
+  --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
+# Upload release-story media sequentially so large video transfers do not
+# compete for local CPU, disk, and network resources during deployment.
+for media_file in "$REPO_ROOT"/serverless_web/release-story-media/*; do
+  media_name="$(basename "$media_file")"
+  case "$media_name" in
+    *.jpeg|*.jpg) media_type="image/jpeg" ;;
+    *.png) media_type="image/png" ;;
+    *.svg) media_type="image/svg+xml" ;;
+    *.mp4) media_type="video/mp4" ;;
+    *.mov) media_type="video/quicktime" ;;
+    *) continue ;;
+  esac
+  aws s3 cp "$media_file" "s3://$STATIC_BUCKET/web/release-story-media/$media_name" \
+    --region "$REGION" --content-type "$media_type" --cache-control "public,max-age=604800" --only-show-errors
+done
 for route in laser-engraving-tool color-laser-engraving-tool depthmap-relief-engraving-tool; do
   aws s3 cp "$BUILD_DIR/seo/$route" "s3://$STATIC_BUCKET/web/$route" \
     --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors

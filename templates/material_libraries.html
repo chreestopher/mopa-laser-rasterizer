@@ -63,14 +63,14 @@
         <div id="notice" class="notice" role="status"></div>
       </section>
       <section class="panel vault-terminal recipe-console" aria-labelledby="holographic_recipe_heading">
-        <div class="settings-toolbar"><strong id="holographic_recipe_heading">HOLOGRAPHIC PALETTES</strong></div>
-        <p class="meta">Store reusable Holographic Palettes and their measured holographic swatches separately from ordinary LightBurn Material Libraries.</p>
+        <div class="settings-toolbar"><strong id="holographic_recipe_heading">FAUXLOGRAPHIC PALETTES</strong></div>
+        <p class="meta">Store reusable Fauxlographic Palettes and their measured fauxlographic swatches separately from ordinary LightBurn Material Libraries.</p>
         <details id="holographic_recipe_controls" class="settings-accordion">
-          <summary>IMPORT OR BUILD A HOLOGRAPHIC PALETTE</summary>
+          <summary>IMPORT OR BUILD A FAUXLOGRAPHIC PALETTE</summary>
           <div class="settings-accordion-content">
-            <label for="holographic_recipe_upload">Load a Holographic Palette</label>
+            <label for="holographic_recipe_upload">Load a Fauxlographic Palette</label>
             <input id="holographic_recipe_upload" type="file" accept=".json,application/json">
-            <button id="holographic_recipe_import" type="button">Import Holographic Palette</button>
+            <button id="holographic_recipe_import" type="button">Import Fauxlographic Palette</button>
             <button id="holographic_recipe_build" type="button">Build Palette in Etching Lab</button>
           </div>
         </details>
@@ -193,33 +193,33 @@
     const loadHolographicRecipes = async () => {
       const response = await fetch('/account/holographic-recipes', {credentials:'same-origin'});
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Could not load Holographic Palettes.');
+      if (!response.ok) throw new Error(data.message || 'Could not load Fauxlographic Palettes.');
       const recipes = data.recipes || [];
-      holographicRecipeList.innerHTML = recipes.length ? recipes.map(recipe => `<section class="settings-accordion" data-recipe-id="${esc(recipe.recipe_id)}"><div class="settings-library-head"><div class="recipe-metadata"><span class="meta">Swatches: ${esc(recipe.metadata?.recipe_count || 0)}</span>${recipe.metadata?.material ? `<span class="meta">Material: ${esc(recipe.metadata.material)}</span>` : ''}</div><div class="rename"><strong>${esc(recipe.name)}</strong></div><div class="library-actions recipe-actions"><button class="delete holographic-recipe-delete" type="button">Delete</button></div></div></section>`).join('') : '<p class="empty">No saved Holographic Palettes yet.</p>';
+      holographicRecipeList.innerHTML = recipes.length ? recipes.map(recipe => `<section class="settings-accordion" data-recipe-id="${esc(recipe.recipe_id)}"><div class="settings-library-head"><div class="recipe-metadata"><span class="meta">Swatches: ${esc(recipe.metadata?.recipe_count || 0)}</span>${recipe.metadata?.material ? `<span class="meta">Material: ${esc(recipe.metadata.material)}</span>` : ''}</div><div class="rename"><strong>${esc(recipe.name)}</strong></div><div class="library-actions recipe-actions"><button class="delete holographic-recipe-delete" type="button">Delete</button></div></div></section>`).join('') : '<p class="empty">No saved Fauxlographic Palettes yet.</p>';
     };
     document.getElementById('holographic_recipe_build').addEventListener('click', () => {
-      window.location.assign('/holographic-etching');
+      window.location.assign('/fauxlographic-etching');
     });
     document.getElementById('holographic_recipe_import').addEventListener('click', async () => {
       const input = document.getElementById('holographic_recipe_upload');
-      if (!input.files.length) { holographicRecipeNotice.textContent = 'Choose a Holographic Palette JSON file first.'; return; }
+      if (!input.files.length) { holographicRecipeNotice.textContent = 'Choose a Fauxlographic Palette JSON file first.'; return; }
       const body = new FormData(); body.append('recipe', input.files[0]);
       const response = await fetch('/account/holographic-recipes', {method:'POST', credentials:'same-origin', body});
       const responseText = await response.text();
       let data;
       try { data = JSON.parse(responseText); }
-      catch { data = {message:`Holographic Palette import failed (HTTP ${response.status}); the server returned an HTML error page.`}; }
-      holographicRecipeNotice.textContent = response.ok ? 'Holographic Palette saved.' : (data.message || 'Could not save Holographic Palette.');
+      catch { data = {message:`Fauxlographic Palette import failed (HTTP ${response.status}); the server returned an HTML error page.`}; }
+      holographicRecipeNotice.textContent = response.ok ? 'Fauxlographic Palette saved.' : (data.message || 'Could not save Fauxlographic Palette.');
       if (response.ok) { input.value = ''; await loadHolographicRecipes(); }
     });
     holographicRecipeList.addEventListener('click', async event => {
       const button = event.target.closest('.holographic-recipe-delete');
       if (!button) return;
       const card = button.closest('[data-recipe-id]');
-      if (!confirm('Delete this saved Holographic Palette?')) return;
+      if (!confirm('Delete this saved Fauxlographic Palette?')) return;
       const response = await fetch(`/account/holographic-recipes/${encodeURIComponent(card.dataset.recipeId)}`, {method:'DELETE', credentials:'same-origin'});
       const data = await response.json();
-      holographicRecipeNotice.textContent = response.ok ? 'Holographic Palette removed.' : (data.message || 'Could not delete Holographic Palette.');
+      holographicRecipeNotice.textContent = response.ok ? 'Fauxlographic Palette removed.' : (data.message || 'Could not delete Fauxlographic Palette.');
       if (response.ok) await loadHolographicRecipes();
     });
     const selectedSettings = new Map();

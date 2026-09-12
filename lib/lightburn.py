@@ -9,6 +9,22 @@ from xml.sax.saxutils import escape
 
 file_header = '''<?xml version="1.0" encoding="UTF-8"?>
 <LightBurnProject AppVersion="1.2.01" FormatVersion="1" MaterialHeight="0" MirrorX="False" MirrorY="True">
+    <UIPrefs>
+        <Optimize_ByLayer Value="0"/>
+        <Optimize_ByGroup Value="-1"/>
+        <Optimize_ByPriority Value="-1"/>
+        <Optimize_WhichDirection Value="0"/>
+        <Optimize_InnerToOuter Value="0"/>
+        <Optimize_ByDirection Value="0"/>
+        <Optimize_ReduceTravel Value="0"/>
+        <Optimize_HideBacklash Value="0"/>
+        <Optimize_ReduceDirChanges Value="0"/>
+        <Optimize_ChooseCorners Value="0"/>
+        <Optimize_AllowReverse Value="0"/>
+        <Optimize_RemoveOverlaps Value="0"/>
+        <Optimize_OptimalEntryPoint Value="0"/>
+        <Optimize_OverlapDist Value="0.025"/>
+    </UIPrefs>
 '''
 
 file_footer = '''</LightBurnProject>
@@ -276,6 +292,9 @@ class Layer:
         self.anglePerPass = 0
         self.crossHatch = 0
         self.bidir = 0
+        # LightBurn omits these elements for its default fill behavior.
+        self.scanOpt = None
+        self.floodFill = None
         self.hide = 0
         self.dotTime = 1
         self.priority = 0
@@ -296,6 +315,10 @@ class Layer:
                 f'        <frequency Value="{self.frequency}"/>\n')
         if self.QPulseWidth is not None:
             f.write(f'        <QPulseWidth Value="{self.QPulseWidth}"/>\n')
+        if self.scanOpt is not None:
+            f.write(f'        <scanOpt Value="{self.scanOpt}"/>\n')
+        if self.floodFill is not None:
+            f.write(f'        <floodFill Value="{int(self.floodFill)}"/>\n')
         f.write(
                 f'        <interval Value="{self.interval}"/>\n'        #if self.interval not None else None
                 f'        <angle Value="{self.angle}"/>\n'              #if self.angle not None else None
@@ -555,6 +578,8 @@ class Lightburn:
                     setting.cleanupPass = int(value)
                 elif child.tag == "scanOpt":
                     setting.scanOpt = value
+                elif child.tag == "floodFill":
+                    setting.floodFill = parse_lightburn_bool(value)
                 elif child.tag == "overscan":
                     setting.overscan = float(value)
                 elif child.tag == "overscanPercent":

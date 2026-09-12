@@ -23,7 +23,8 @@ pages = {
 route_rewrites = {
     'href="/color-discovery"': 'href="/color-lab.html"',
     'href="/depthmap-generator"': 'href="/depthmap.html"',
-    'href="/holographic-etching"': 'href="/holographic.html"',
+    'href="/fauxlographic-etching"': 'href="/fauxlographic.html"',
+    'href="/holographic-etching"': 'href="/fauxlographic.html"',
     'href="/material-libraries"': 'href="/vault.html"',
     'href="/job-history"': 'href="/history.html"',
 }
@@ -61,7 +62,7 @@ home = re.sub(r"<title>.*?</title>", "<title>MOPA Laser Rasterizer | Layered SVG
 home = home.replace(
     "</title>",
     "</title>\n"
-    '  <meta name="description" content="Convert raster artwork into layered SVG geometry and LightBurn projects using color, hatch, holographic, and SVG-only workflows.">\n'
+    '  <meta name="description" content="Convert raster artwork into layered SVG geometry and LightBurn projects using color, hatch, fauxlographic, and SVG-only workflows.">\n'
     f'  <link rel="canonical" href="{public_url}">\n'
     '  <meta property="og:type" content="website">\n'
     '  <meta property="og:title" content="MOPA Laser Rasterizer">\n'
@@ -76,7 +77,8 @@ public_paths = [
     "",
     *pages,
     "experimental-laboratories",
-    "holographic.html",
+    "release-story",
+    "fauxlographic.html",
     "depthmap.html",
     "color-lab.html",
     "community-set",

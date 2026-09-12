@@ -7,10 +7,11 @@ import signal
 import threading
 import time
 from datetime import datetime
+from urllib.request import urlopen
 
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
-from job_runtime import RedisJobRuntime
+from job_runtime import DynamoJobRuntime, RedisJobRuntime
 
 from services import (
     HISTORY_TTL_SECONDS,
@@ -42,6 +43,28 @@ RECOVERY_LOCK_SECONDS = max(
     5, int(os.environ.get("RASTER_JOB_RECOVERY_LOCK_SECONDS", "10"))
 )
 RECOVERY_LOCK_KEY = "rasterizer:jobs:recovery-lock"
+
+
+def register_cloudwatch_log_stream(runtime, task_id):
+    """Record this one-shot ECS task's awslogs stream for authenticated reads."""
+    if not isinstance(runtime, DynamoJobRuntime):
+        return
+    metadata_uri = os.environ.get("ECS_CONTAINER_METADATA_URI_V4", "").rstrip("/")
+    log_group = os.environ.get("CLOUDWATCH_LOG_GROUP", "").strip()
+    if not metadata_uri or not log_group:
+        print(f"[Raster-Worker] CloudWatch stream metadata is unavailable for {task_id}.", flush=True)
+        return
+    try:
+        with urlopen(f"{metadata_uri}/task", timeout=3) as response:
+            metadata = json.load(response)
+        ecs_task_id = str(metadata.get("TaskARN") or "").rsplit("/", 1)[-1]
+        if not ecs_task_id:
+            raise ValueError("ECS task metadata did not contain a TaskARN")
+        prefix = os.environ.get("CLOUDWATCH_LOG_STREAM_PREFIX", "worker").strip("/") or "worker"
+        container = os.environ.get("CLOUDWATCH_LOG_CONTAINER_NAME", "raster-worker").strip("/") or "raster-worker"
+        runtime.set_cloudwatch_log_stream(task_id, log_group, f"{prefix}/{container}/{ecs_task_id}")
+    except Exception as error:
+        print(f"[Raster-Worker] Could not register CloudWatch logs for {task_id}: {error}", flush=True)
 
 REFRESH_LEASE = redis_client.register_script(
     """
@@ -228,18 +251,17 @@ def run_job(raw_payload, upload_folder):
 
 
 def run_holographic_artwork_job(payload, upload_folder):
-    """Materialize a queued Holographic Artwork export outside the web pod."""
+    """Materialize a queued Fauxlographic Artwork export outside the web pod."""
     from werkzeug.datastructures import FileStorage
-    from routes.holographic import _build_holographic_exports
+    from routes.fauxlographic import _build_holographic_exports
 
     task_id = str(payload["task_id"])
     def progress(message):
         line = f"[{datetime.now().strftime('%H:%M:%S')}] {message}"
-        print(f"[Task {task_id}] {line}", flush=True)
         job_runtime.append_log(task_id, line)
 
     job_runtime.set_status(task_id, "processing")
-    progress("Dedicated worker claimed the Holographic Artwork job.")
+    progress("Dedicated worker claimed the Fauxlographic Artwork job.")
     names = {
         "artwork": secure_artifact_name(payload.get("artwork_name"), "artwork.png"),
         "recipe": secure_artifact_name(payload.get("recipe_name"), "recipe.json"),
@@ -250,13 +272,13 @@ def run_holographic_artwork_job(payload, upload_folder):
     progress("[Input download 1/3] START: downloading artwork.")
     download_task_artifact(payload["artwork_key"], paths["artwork"])
     progress("[Input download 1/3] DONE: downloaded artwork.")
-    progress("[Input download 2/3] START: downloading Holographic Palette.")
+    progress("[Input download 2/3] START: downloading Fauxlographic Palette.")
     download_task_artifact(payload["recipe_key"], paths["recipe"])
-    progress("[Input download 2/3] DONE: downloaded Holographic Palette.")
+    progress("[Input download 2/3] DONE: downloaded Fauxlographic Palette.")
     progress("[Input download 3/3] START: downloading Material Library.")
     download_task_artifact(payload["material_key"], paths["material"])
     progress("[Input download 3/3] DONE: downloaded Material Library.")
-    progress(f"Building calibrated holographic grating layers; cut mode {payload.get('cut_mode', 'setting')}.")
+    progress(f"Building calibrated fauxlographic grating layers; cut mode {payload.get('cut_mode', 'setting')}.")
     with open(paths["artwork"], "rb") as artwork_stream, open(paths["recipe"], encoding="utf-8") as recipe_file:
         artwork = FileStorage(stream=artwork_stream, filename=names["artwork"])
         svg_name, lbrn_name, width, height, rectangle_count = _build_holographic_exports(
@@ -289,7 +311,7 @@ def run_holographic_artwork_job(payload, upload_folder):
     if isinstance(job_runtime, RedisJobRuntime):
         redis_client.set(f"holographic-artwork-result:{task_id}", json.dumps(result), ex=HISTORY_TTL_SECONDS)
     job_runtime.set_status(task_id, "completed")
-    progress(f"Holographic Artwork complete: {rectangle_count}/{rectangle_count} vector rectangles ready.")
+    progress(f"Fauxlographic Artwork complete: {rectangle_count}/{rectangle_count} vector rectangles ready.")
 
 
 def process_owned_job(raw_payload, task_id, upload_folder):
@@ -323,6 +345,7 @@ def process_owned_job(raw_payload, task_id, upload_folder):
 def run_task_by_id(task_id, upload_folder):
     """Process exactly one persisted job envelope and return a process exit code."""
     runtime = sync_job_runtime(redis_client)
+    register_cloudwatch_log_stream(runtime, task_id)
     if isinstance(runtime, RedisJobRuntime):
         if redis_client.get(f"task:{task_id}:status") == "completed":
             print(f"[Raster-Worker] Task {task_id} is already complete; nothing to do.", flush=True)

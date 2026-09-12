@@ -30,6 +30,11 @@ case "$S3_BUCKET_NAME $DYNAMODB_TABLE_NAME" in
     ;;
 esac
 
+# The retained production table is passed into CloudFormation rather than
+# created by it, so reconcile selective job-record TTL explicitly. The helper
+# aborts if any durable Material Library or palette record contains expires_at.
+bash "$SCRIPT_DIR/ensure_dynamodb_job_ttl.sh" --apply "$DYNAMODB_TABLE_NAME"
+
 export SERVERLESS_ENVIRONMENT_NAME=serverless-production
 export SERVERLESS_ENVIRONMENT_LABEL="Serverless production"
 export SERVERLESS_FOUNDATION_STACK="${SERVERLESS_PRODUCTION_FOUNDATION_STACK:-mopa-rasterizer-serverless-production}"
