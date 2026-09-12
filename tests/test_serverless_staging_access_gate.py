@@ -36,7 +36,12 @@ def test_staging_api_can_disable_guests_and_allow_only_one_subject():
 
 def test_production_explicitly_disables_the_staging_gate():
     production = read("dev_setup/deploy_serverless_production_web.sh")
+    shared_deployment = read("dev_setup/deploy_serverless_staging_web.sh")
 
     assert 'export SERVERLESS_ACCESS_GATE_AUTHORIZATION=""' in production
     assert 'export SERVERLESS_GUEST_ACCESS_ENABLED="true"' in production
     assert 'export SERVERLESS_ALLOWED_USER_SUB=""' in production
+    assert 'SERVERLESS_ACCESS_GATE_AUTHORIZATION+x' in shared_deployment
+    assert 'ACCESS_GATE_AUTHORIZATION="$SERVERLESS_ACCESS_GATE_AUTHORIZATION"' in shared_deployment
+    assert 'SERVERLESS_ALLOWED_USER_SUB+x' in shared_deployment
+    assert 'ALLOWED_USER_SUB="$SERVERLESS_ALLOWED_USER_SUB"' in shared_deployment
