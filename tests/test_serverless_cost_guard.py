@@ -113,6 +113,17 @@ def test_cost_guard_deployment_defaults_to_requested_limits():
     assert "StaticBucketName" in deployment
 
 
+def test_cost_guard_resolves_public_urls_from_deployed_web_stacks():
+    deployment = read("dev_setup/deploy_serverless_cost_guard.sh")
+
+    assert 'PRODUCTION_WEB_STACK="${SERVERLESS_PRODUCTION_WEB_STACK:-mopa-rasterizer-serverless-production-web}"' in deployment
+    assert 'STAGING_WEB_STACK="${SERVERLESS_STAGING_WEB_STACK:-mopa-rasterizer-serverless-staging-web}"' in deployment
+    assert 'PRODUCTION_PUBLIC_URL="$(output "$PRODUCTION_WEB_STACK" PublicUrl)"' in deployment
+    assert 'STAGING_PUBLIC_URL="$(output "$STAGING_WEB_STACK" PublicUrl)"' in deployment
+    assert 'https://${SERVERLESS_PRODUCTION_HOSTNAME:-}' not in deployment
+    assert 'https://${SERVERLESS_STAGING_HOSTNAME:-}' not in deployment
+
+
 def test_staging_pause_acceptance_refuses_busy_service_and_always_recovers():
     acceptance = read("dev_setup/test_serverless_cost_pause.sh")
 

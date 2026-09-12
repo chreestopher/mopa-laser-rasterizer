@@ -17,18 +17,18 @@ FOUNDATION_STACK="${SERVERLESS_PRODUCTION_FOUNDATION_STACK:-mopa-rasterizer-serv
 ORCHESTRATION_STACK="${SERVERLESS_PRODUCTION_ORCHESTRATION_STACK:-mopa-rasterizer-serverless-production-orchestration}"
 STAGING_FOUNDATION_STACK="${SERVERLESS_STAGING_FOUNDATION_STACK:-mopa-rasterizer-serverless-staging}"
 STAGING_ORCHESTRATION_STACK="${SERVERLESS_STAGING_ORCHESTRATION_STACK:-mopa-rasterizer-serverless-staging-orchestration}"
+PRODUCTION_WEB_STACK="${SERVERLESS_PRODUCTION_WEB_STACK:-mopa-rasterizer-serverless-production-web}"
+STAGING_WEB_STACK="${SERVERLESS_STAGING_WEB_STACK:-mopa-rasterizer-serverless-staging-web}"
 COST_STACK="${SERVERLESS_PRODUCTION_COST_GUARD_STACK:-mopa-rasterizer-serverless-production-cost-guard}"
 BUDGET_NAME="${SERVERLESS_MONTHLY_BUDGET_NAME:-mopa-rasterizer-monthly-spend}"
 MONTHLY_LIMIT="${SERVERLESS_MONTHLY_BUDGET_USD:-100}"
 WARNING_PERCENT="${SERVERLESS_BUDGET_WARNING_PERCENT:-75}"
 OPERATOR_EMAIL="${SERVERLESS_BUDGET_EMAIL:-${SERVERLESS_ADMIN_EMAIL:-${IDENTITY_CENTER_ADMIN_EMAIL:-}}}"
-PRODUCTION_PUBLIC_URL="${SERVERLESS_PRODUCTION_PUBLIC_URL:-https://${SERVERLESS_PRODUCTION_HOSTNAME:-}}"
-STAGING_PUBLIC_URL="${SERVERLESS_STAGING_PUBLIC_URL:-https://${SERVERLESS_STAGING_HOSTNAME:-}}"
+PRODUCTION_PUBLIC_URL="${SERVERLESS_PRODUCTION_PUBLIC_URL:-}"
+STAGING_PUBLIC_URL="${SERVERLESS_STAGING_PUBLIC_URL:-}"
 FUNCTION_NAME="${SERVERLESS_PRODUCTION_COST_GUARD_FUNCTION:-mopa-rasterizer-production-cost-guard}"
 
 [ -n "$OPERATOR_EMAIL" ] || { echo "SERVERLESS_BUDGET_EMAIL or an admin email is required." >&2; exit 2; }
-[ -n "$PRODUCTION_PUBLIC_URL" ] || { echo "SERVERLESS_PRODUCTION_PUBLIC_URL or SERVERLESS_PRODUCTION_HOSTNAME is required." >&2; exit 2; }
-[ -n "$STAGING_PUBLIC_URL" ] || { echo "SERVERLESS_STAGING_PUBLIC_URL or SERVERLESS_STAGING_HOSTNAME is required." >&2; exit 2; }
 
 output() {
   aws cloudformation describe-stacks --region "$REGION" --stack-name "$1" \
@@ -36,6 +36,20 @@ output() {
 }
 
 aws sts get-caller-identity >/dev/null
+if [ -z "$PRODUCTION_PUBLIC_URL" ]; then
+  PRODUCTION_PUBLIC_URL="$(output "$PRODUCTION_WEB_STACK" PublicUrl)"
+fi
+if [ -z "$STAGING_PUBLIC_URL" ]; then
+  STAGING_PUBLIC_URL="$(output "$STAGING_WEB_STACK" PublicUrl)"
+fi
+case "$PRODUCTION_PUBLIC_URL" in
+  https://?*) ;;
+  *) echo "Could not resolve a valid production public URL." >&2; exit 2 ;;
+esac
+case "$STAGING_PUBLIC_URL" in
+  https://?*) ;;
+  *) echo "Could not resolve a valid staging public URL." >&2; exit 2 ;;
+esac
 BUCKET="$(output "$FOUNDATION_STACK" StaticBucketName 2>/dev/null || output "$FOUNDATION_STACK" ArtifactBucketName)"
 PRODUCTION_TABLE="$(output "$FOUNDATION_STACK" RuntimeTableName)"
 PRODUCTION_PIPE_ARN="$(output "$ORCHESTRATION_STACK" PipeArn)"
