@@ -1,0 +1,236 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Fargate service for the MOPA Laser Rasterizer background worker.
+
+Parameters:
+  ClusterName:
+    Type: String
+    Default: mopa-laser-rasterizer
+    AllowedPattern: "[a-zA-Z0-9-_]+"
+  WorkerName:
+    Type: String
+    Default: mopa-laser-raster-worker
+    AllowedPattern: "[a-zA-Z0-9-_]+"
+  ImageUri:
+    Type: String
+    Description: Immutable ECR image URI, including its tag or digest.
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Two or more subnets that can reach Redis and the AWS APIs.
+  RedisHost:
+    Type: String
+    Default: ""
+    Description: Private Redis or ElastiCache primary endpoint hostname.
+  RedisPort:
+    Type: Number
+    Default: 6379
+  RedisSecurityGroupId:
+    Type: String
+    Default: ""
+    Description: Security group attached to Redis; this stack permits worker ingress.
+  RedisSsl:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+  RedisPasswordSecretArn:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: Optional Secrets Manager ARN whose value is the Redis password/token.
+  S3BucketName:
+    Type: String
+  DynamoDbTableName:
+    Type: String
+  Cpu:
+    Type: String
+    Default: "1024"
+    AllowedValues: ["1024", "2048", "4096", "8192", "16384"]
+  Memory:
+    Type: String
+    Default: "4096"
+    Description: Fargate task memory in MiB; must be valid for the selected CPU.
+  WorkerProcesses:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 16
+    Description: Maximum CPU workers used inside one raster or holographic task.
+  KrasnowProgress:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Emit intermediate Krasnow mapping progress logs.
+  SourceBlackComponents:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Opt in to sparse source-derived Black components instead of canvas punch-through.
+  AssignPublicIp:
+    Type: String
+    Default: DISABLED
+    AllowedValues: [ENABLED, DISABLED]
+    Description: Enable only when using public subnets; private subnets need NAT or VPC endpoints.
+  LogRetentionDays:
+    Type: Number
+    Default: 7
+
+Conditions:
+  HasRedisPassword: !Not [!Equals [!Ref RedisPasswordSecretArn, ""]]
+  HasRedis: !And
+    - !Not [!Equals [!Ref RedisHost, ""]]
+    - !Not [!Equals [!Ref RedisSecurityGroupId, ""]]
+
+Resources:
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Ref ClusterName
+      CapacityProviders: [FARGATE, FARGATE_SPOT]
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/${WorkerName}
+      RetentionInDays: !Ref LogRetentionDays
+
+  WorkerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Egress-only security group for rasterizer Fargate workers
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+
+  RedisIngressFromWorkers:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: HasRedis
+    Properties:
+      GroupId: !Ref RedisSecurityGroupId
+      IpProtocol: tcp
+      FromPort: !Ref RedisPort
+      ToPort: !Ref RedisPort
+      SourceSecurityGroupId: !Ref WorkerSecurityGroup
+      Description: MOPA rasterizer Fargate workers
+
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ecs-tasks.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - !If
+          - HasRedisPassword
+          - PolicyName: ReadRedisPassword
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action: secretsmanager:GetSecretValue
+                  Resource: !Ref RedisPasswordSecretArn
+          - !Ref AWS::NoValue
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ecs-tasks.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: RasterizerArtifactsAndJobs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub arn:${AWS::Partition}:s3:::${S3BucketName}
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:PutObjectTagging, s3:DeleteObject]
+                Resource: !Sub arn:${AWS::Partition}:s3:::${S3BucketName}/*
+              - Effect: Allow
+                Action: [dynamodb:BatchGetItem, dynamodb:BatchWriteItem, dynamodb:DeleteItem, dynamodb:DescribeTable, dynamodb:GetItem, dynamodb:PutItem, dynamodb:Query, dynamodb:UpdateItem]
+                Resource: !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DynamoDbTableName}
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Ref WorkerName
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: !Ref Cpu
+      Memory: !Ref Memory
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      RuntimePlatform:
+        CpuArchitecture: X86_64
+        OperatingSystemFamily: LINUX
+      ContainerDefinitions:
+        - Name: raster-worker
+          Image: !Ref ImageUri
+          Essential: true
+          # The launcher overrides REQUIRED_TASK_ID for every invocation. This
+          # fail-closed placeholder prevents an accidental queue-polling task.
+          Command: [python, -u, worker.py, --task-id, REQUIRED_TASK_ID]
+          StopTimeout: 120
+          Environment:
+            - {Name: AWS_REGION, Value: !Ref "AWS::Region"}
+            - {Name: REDIS_HOST, Value: !Ref RedisHost}
+            - {Name: REDIS_PORT, Value: !Sub "${RedisPort}"}
+            - {Name: REDIS_SSL, Value: !Ref RedisSsl}
+            - {Name: S3_BUCKET_NAME, Value: !Ref S3BucketName}
+            - {Name: DYNAMODB_TABLE_NAME, Value: !Ref DynamoDbTableName}
+            - {Name: JOB_RUNTIME_TABLE_NAME, Value: !Ref DynamoDbTableName}
+            - {Name: JOB_BACKEND, Value: !If [HasRedis, redis, aws]}
+            - {Name: CLOUDWATCH_LOG_GROUP, Value: !Ref LogGroup}
+            - {Name: CLOUDWATCH_LOG_STREAM_PREFIX, Value: worker}
+            - {Name: CLOUDWATCH_LOG_CONTAINER_NAME, Value: raster-worker}
+            - {Name: RASTER_WORKER_PROCESSES, Value: !Sub "${WorkerProcesses}"}
+            - {Name: RASTER_KRASNOW_PROGRESS, Value: !Ref KrasnowProgress}
+            - {Name: RASTER_SOURCE_BLACK_COMPONENTS, Value: !Ref SourceBlackComponents}
+            - {Name: UPLOAD_FOLDER, Value: /tmp/uploads}
+            - {Name: RASTER_JOB_LEASE_SECONDS, Value: "90"}
+            - {Name: RASTER_JOB_HEARTBEAT_SECONDS, Value: "20"}
+            - {Name: RASTER_JOB_RECOVERY_INTERVAL_SECONDS, Value: "15"}
+            - {Name: RASTER_JOB_RECOVERY_LOCK_SECONDS, Value: "10"}
+          Secrets:
+            - !If
+              - HasRedisPassword
+              - {Name: REDIS_PASSWORD, ValueFrom: !Ref RedisPasswordSecretArn}
+              - !Ref AWS::NoValue
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: worker
+
+Outputs:
+  ClusterName:
+    Value: !Ref Cluster
+  TaskDefinitionArn:
+    Value: !Ref TaskDefinition
+  TaskExecutionRoleArn:
+    Value: !GetAtt ExecutionRole.Arn
+  TaskRoleArn:
+    Value: !GetAtt TaskRole.Arn
+  WorkerSecurityGroupId:
+    Value: !Ref WorkerSecurityGroup
+  SubnetIds:
+    Value: !Join [",", !Ref SubnetIds]
+  AssignPublicIp:
+    Value: !Ref AssignPublicIp
+  LogGroupName:
+    Value: !Ref LogGroup

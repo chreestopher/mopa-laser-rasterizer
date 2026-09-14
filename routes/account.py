@@ -1,4 +1,4 @@
-"""Authenticated preferences, Material Libraries, and Holographic Recipes."""
+"""Authenticated preferences, Material Libraries, and Fauxlographic Palettes."""
 
 import os
 import tempfile
@@ -12,23 +12,31 @@ from flask import jsonify, request, send_file
 from werkzeug.utils import secure_filename
 
 from lib.lightburn import Lightburn
+from lib.material_library_template import (
+    DEFAULT_RASTERIZER_PALETTE,
+    build_hatch_palette_library,
+)
 
 from services import (
     ABSTRACT_FILTER_NAMES,
     LIGHTBURN_PALETTE_NAMES,
     delete_user_material_library,
+    delete_user_depth_palette,
     delete_user_holographic_recipe,
     download_user_holographic_recipe,
     download_user_material_library,
     get_user_material_library,
+    get_user_depth_palette,
     get_user_holographic_recipe,
     list_user_holographic_recipes,
     list_user_material_libraries,
+    list_user_depth_palettes,
     get_user_preferences,
     get_user_job_history,
     normalize_dimension,
     save_user_preferences,
     save_user_material_library,
+    save_user_depth_palette,
     save_user_holographic_recipe,
     rename_user_material_library,
     update_user_material_library_file,
@@ -40,6 +48,42 @@ from . import routes
 def authenticated_user_id():
     """Return the ALB-provided Cognito subject for this trusted backend hop."""
     return request.headers.get("x-amzn-oidc-identity", "").strip() or None
+
+
+def clean_depth_palette(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("Depth Palette data must be an object.")
+    name = str(payload.get("name", "")).strip()
+    if not name or len(name) > 160:
+        raise ValueError("Depth Palette names must be between 1 and 160 characters.")
+    entries = payload.get("entries")
+    if not isinstance(entries, list):
+        raise ValueError("Depth Palette entries must be a list.")
+    official = {color.upper(): swatch for color, swatch in LIGHTBURN_PALETTE_NAMES.items()}
+    cleaned = []
+    seen = set()
+    for entry in entries[:len(official)]:
+        if not isinstance(entry, dict):
+            continue
+        color_hex = str(entry.get("hex", "")).upper()
+        if color_hex not in official or color_hex in seen:
+            continue
+        seen.add(color_hex)
+        try:
+            depth = max(0.0, min(100.0, float(entry.get("depth", 50))))
+            influence = max(0.0, min(100.0, float(entry.get("influence", 0))))
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"Depth settings for {official[color_hex]} are invalid.") from error
+        cleaned.append({
+            "hex": color_hex,
+            "name": official[color_hex],
+            "depth": depth,
+            "influence": influence,
+            "enabled": entry.get("enabled") is not False,
+        })
+    if not cleaned:
+        raise ValueError("Keep at least one Rasterizer swatch in the Depth Palette.")
+    return name, cleaned
 
 
 def clean_preferences(payload):
@@ -158,7 +202,7 @@ def holographic_recipe_summary(path):
         payload = json.load(recipe_file)
     recipes = payload.get("recipes")
     if payload.get("kind") != "holographic_calibration_profile" or not isinstance(recipes, list) or not recipes:
-        raise ValueError("Choose a Holographic Etching Recipe JSON file with at least one saved recipe.")
+        raise ValueError("Choose a Fauxlographic Etching Recipe JSON file with at least one saved recipe.")
     return {
         "profile_name": str(payload.get("profile_name") or "").strip()[:160],
         "recipe_count": len(recipes),
@@ -170,12 +214,12 @@ def holographic_recipe_summary(path):
 def holographic_recipes():
     user_id = authenticated_user_id()
     if not user_id:
-        return jsonify({"status": "error", "message": "Sign in to use saved Holographic Recipes."}), 401
+        return jsonify({"status": "error", "message": "Sign in to use saved Fauxlographic Palettes."}), 401
     try:
         if request.method == "GET":
             return jsonify({"status": "ok", "recipes": [{
                 "recipe_id": recipe.get("recipe_id"),
-                "name": recipe.get("name", "Holographic Recipe"),
+                "name": recipe.get("name", "Fauxlographic Palette"),
                 "original_name": recipe.get("original_name", ""),
                 "metadata": recipe.get("metadata", {}),
                 "created_at": recipe.get("created_at"),
@@ -183,7 +227,7 @@ def holographic_recipes():
         upload = request.files.get("recipe")
         filename = secure_filename(upload.filename if upload else "")
         if not upload or not filename or os.path.splitext(filename)[1].lower() != ".json":
-            raise ValueError("Choose a Holographic Etching Recipe JSON file.")
+            raise ValueError("Choose a Fauxlographic Etching Recipe JSON file.")
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as temp_file:
             temp_path = temp_file.name
         try:
@@ -205,11 +249,11 @@ def holographic_recipes():
 def holographic_recipe_detail(recipe_id):
     user_id = authenticated_user_id()
     if not user_id:
-        return jsonify({"status": "error", "message": "Sign in to manage Holographic Recipes."}), 401
+        return jsonify({"status": "error", "message": "Sign in to manage Fauxlographic Palettes."}), 401
     try:
         recipe = get_user_holographic_recipe(user_id, recipe_id)
         if not recipe:
-            return jsonify({"status": "error", "message": "That Holographic Recipe no longer exists."}), 404
+            return jsonify({"status": "error", "message": "That Fauxlographic Palette no longer exists."}), 404
         if request.method == "DELETE":
             delete_user_holographic_recipe(user_id, recipe_id)
             return jsonify({"status": "ok"})
@@ -245,10 +289,50 @@ def all_xml_entries(root):
     return [(material, entry) for material in root.findall("Material") for entry in material.findall("Entry")]
 
 
+def validate_unique_entry_descriptions(root):
+    """Require one case-insensitive swatch description per material."""
+    for material in root.findall("Material"):
+        material_name = str(material.attrib.get("name", "") or "").strip() or "(unnamed material)"
+        seen = {}
+        duplicates = set()
+        for entry in material.findall("Entry"):
+            description = str(entry.attrib.get("Desc", "") or "").strip()
+            if not description:
+                continue
+            key = description.casefold()
+            if key in seen:
+                duplicates.add(seen[key])
+            else:
+                seen[key] = description
+        if duplicates:
+            names = ", ".join(sorted(duplicates, key=str.casefold))
+            raise ValueError(
+                f"Material '{material_name}' contains duplicate swatch name(s): {names}. "
+                "Each material may contain only one setting per swatch name. "
+                "Duplicate names are allowed only when generating a coupon from multiple libraries."
+            )
+
+
 def setting_value(value):
     if isinstance(value, bool):
         return "1" if value else "0"
     return str(value)
+
+
+def ensure_entry_description_available(root, material_name, description, excluded_entry=None):
+    material_key = str(material_name or "").strip().casefold()
+    description_key = str(description or "").strip().casefold()
+    for material in root.findall("Material"):
+        if str(material.attrib.get("name", "") or "").strip().casefold() != material_key:
+            continue
+        for entry in material.findall("Entry"):
+            if entry is excluded_entry:
+                continue
+            if str(entry.attrib.get("Desc", "") or "").strip().casefold() == description_key:
+                raise ValueError(
+                    f"Material '{material_name}' already contains a setting named '{description}'. "
+                    "Choose a unique swatch name."
+                )
 
 
 def apply_entry_update(root, entry_id, payload, creating=False):
@@ -267,6 +351,8 @@ def apply_entry_update(root, entry_id, payload, creating=False):
         if entry_id < 0 or entry_id >= len(entries):
             raise ValueError("That Material Library entry no longer exists.")
         old_material, entry = entries[entry_id]
+    ensure_entry_description_available(root, material_name, description, excluded_entry=entry)
+    if not creating:
         old_material.remove(entry)
     target = next((material for material in root.findall("Material") if material.attrib.get("name") == material_name), None)
     if target is None:
@@ -304,6 +390,63 @@ def apply_entry_update(root, entry_id, payload, creating=False):
             root.remove(material)
 
 
+def apply_hatch_plan(root, start_angle=0, angle_span=180,
+                     interval_start=None, interval_end=None):
+    """Evenly distribute hatch angles and optional intervals over palette entries."""
+    try:
+        start_angle = float(start_angle)
+        angle_span = float(angle_span)
+    except (TypeError, ValueError) as error:
+        raise ValueError("Start angle and angle span must be numbers.") from error
+    if not -360 <= start_angle <= 360 or not 0 < angle_span <= 360:
+        raise ValueError("Start angle must be between -360 and 360, and span above 0 through 360 degrees.")
+
+    if interval_start in (None, ""):
+        interval_start = interval_end = None
+    else:
+        try:
+            interval_start = float(interval_start)
+            interval_end = interval_start if interval_end in (None, "") else float(interval_end)
+        except (TypeError, ValueError) as error:
+            raise ValueError("Line intervals must be positive numbers.") from error
+        if not 0 < interval_start <= 100 or not 0 < interval_end <= 100:
+            raise ValueError("Line intervals must be above 0 and no greater than 100 mm.")
+
+    layer_order = {
+        name.casefold(): layer_index
+        for name, layer_index in DEFAULT_RASTERIZER_PALETTE
+    }
+    entries = all_xml_entries(root)
+    entries.sort(key=lambda item: (
+        layer_order.get(str(item[1].attrib.get("Desc", "")).strip().casefold(), 1000),
+        str(item[1].attrib.get("Desc", "")).casefold(),
+    ))
+    count = len(entries)
+    if not count:
+        raise ValueError("This Hatch Palette has no settings to plan.")
+
+    def set_value(cut, name, value):
+        field = cut.find(name)
+        if field is None:
+            field = ET.SubElement(cut, name)
+        field.attrib["Value"] = f"{value:.6f}".rstrip("0").rstrip(".")
+
+    for position, (_material, entry) in enumerate(entries):
+        cut = entry.find("CutSetting")
+        if cut is None:
+            cut = ET.SubElement(entry, "CutSetting")
+        angle = start_angle + position * angle_span / count
+        set_value(cut, "angle", angle)
+        if interval_start is not None:
+            fraction = position / max(count - 1, 1)
+            interval = interval_start + fraction * (interval_end - interval_start)
+            set_value(cut, "interval", interval)
+        for sublayer in cut.findall(".//SubLayer"):
+            set_value(sublayer, "angle", angle)
+            if interval_start is not None:
+                set_value(sublayer, "interval", interval)
+
+
 def mutate_library(user_id, library_id, callback):
     library = get_user_material_library(user_id, library_id)
     if not library:
@@ -323,7 +466,7 @@ def mutate_library(user_id, library_id, callback):
             os.remove(temp_path)
 
 
-def selected_settings_library(user_id, selections, material_name):
+def selected_settings_library(user_id, selections, material_name, allow_cross_library_duplicates=False):
     """Build a valid LightBurn library containing only account-owned selections."""
     if not isinstance(selections, list) or not selections or len(selections) > 500:
         raise ValueError("Select between 1 and 500 Material Library settings.")
@@ -343,6 +486,7 @@ def selected_settings_library(user_id, selections, material_name):
 
     target_root = ET.Element("LightBurnLibrary")
     target_material = ET.SubElement(target_root, "Material", {"name": material_name})
+    selected_name_sources = {}
     temp_paths = []
     try:
         for library_id, entry_ids in requested.items():
@@ -357,7 +501,20 @@ def selected_settings_library(user_id, selections, material_name):
             for entry_id in sorted(entry_ids):
                 if entry_id >= len(entries):
                     raise ValueError("One of the selected settings no longer exists.")
-                target_material.append(deepcopy(entries[entry_id][1]))
+                selected_entry = entries[entry_id][1]
+                description = str(selected_entry.attrib.get("Desc", "") or "").strip()
+                description_key = description.casefold()
+                if description_key and description_key in selected_name_sources:
+                    first_library_id = selected_name_sources[description_key]
+                    if not allow_cross_library_duplicates or first_library_id == library_id:
+                        raise ValueError(
+                            f"Duplicate swatch name '{description}' is not allowed. "
+                            "Coupon generation permits duplicate names only when the settings "
+                            "come from different Material Libraries."
+                        )
+                elif description_key:
+                    selected_name_sources[description_key] = library_id
+                target_material.append(deepcopy(selected_entry))
         if not target_material.findall("Entry"):
             raise ValueError("Select at least one Material Library setting.")
         return target_root
@@ -398,7 +555,7 @@ def material_coupon_project(library_root, material_name="Material Library Settin
     scale_y = coupon_length_mm / native_length
 
     def transform(x, y):
-        return f"{scale_x:g} 0 0 {scale_y:g} {x * scale_x:g} {y * scale_y:g}"
+        return f"{scale_x:.12g} 0 0 {scale_y:.12g} {x * scale_x:.12g} {y * scale_y:.12g}"
 
     def fitted_text_height(text, available_width, preferred_height):
         # Arial's typical glyph width is roughly 0.6 times its height. Keep
@@ -488,7 +645,14 @@ def selected_material_library_settings():
     payload = request.get_json(silent=True) or {}
     action = str(payload.get("action", "")).strip()
     try:
-        root = selected_settings_library(user_id, payload.get("selections"), payload.get("material_name"))
+        root = selected_settings_library(
+            user_id,
+            payload.get("selections"),
+            payload.get("material_name"),
+            allow_cross_library_duplicates=action == "coupon",
+        )
+        if action != "coupon":
+            validate_unique_entry_descriptions(root)
         with tempfile.NamedTemporaryFile(suffix=".clb", delete=False) as temp_file:
             output_path = temp_file.name
         try:
@@ -510,6 +674,7 @@ def selected_material_library_settings():
                     if destination is None:
                         destination = ET.SubElement(target_root, "Material", {"name": material_name})
                     destination.extend(deepcopy(source_entries))
+                    validate_unique_entry_descriptions(target_root)
 
                 result = mutate_library(user_id, target_library_id, append_selected_entries)
                 if result is None:
@@ -560,6 +725,7 @@ def preview_material_libraries():
                 temp_path = temp_file.name
             temp_paths.append(temp_path)
             file.save(temp_path)
+            validate_unique_entry_descriptions(ET.parse(temp_path).getroot())
             summary = library_entries(temp_path)
             if not summary["entry_count"]:
                 raise ValueError(f"{filename} contains no LightBurn Material Library entries.")
@@ -580,14 +746,74 @@ def new_material_library():
         return jsonify({"status": "error", "message": "Sign in to create a Material Library."}), 401
     payload = request.get_json(silent=True) or {}
     name = str(payload.get("name", "")).strip()
+    library_intent = (
+        "hatch_palette"
+        if payload.get("library_intent") == "hatch_palette"
+        else "color_palette"
+    )
     if not name or len(name) > 160:
         return jsonify({"status": "error", "message": "Library names must be between 1 and 160 characters."}), 400
     with tempfile.NamedTemporaryFile(suffix=".clb", delete=False) as temp_file:
         temp_path = temp_file.name
     try:
-        ET.ElementTree(ET.Element("LightBurnLibrary")).write(temp_path, encoding="utf-8", xml_declaration=True)
-        library = save_user_material_library(user_id, temp_path, "", summary=library_entries(temp_path),
-                                             display_name=name, source_filename=f"{secure_filename(name) or 'material-library'}.clb")
+        material_name = str(payload.get("material_name", "")).strip()
+        if library_intent == "hatch_palette":
+            base_entry = None
+            base_settings = None
+            if payload.get("base_mode") == "library":
+                source_library = get_user_material_library(
+                    user_id, str(payload.get("source_library_id", "")).strip()
+                )
+                try:
+                    source_entry_id = int(payload.get("source_entry_id"))
+                except (TypeError, ValueError) as error:
+                    raise ValueError("Choose a base setting from a saved Material Library.") from error
+                if not source_library:
+                    raise ValueError("Choose an available base Material Library.")
+                with tempfile.NamedTemporaryFile(suffix=".clb", delete=False) as source_file:
+                    source_path = source_file.name
+                try:
+                    download_user_material_library(source_library, source_path)
+                    source_entries = all_xml_entries(ET.parse(source_path).getroot())
+                    if source_entry_id < 0 or source_entry_id >= len(source_entries):
+                        raise ValueError("The selected base setting no longer exists.")
+                    base_entry = source_entries[source_entry_id][1]
+                    # The template builder clones synchronously, but detach a
+                    # copy before its parsed source document is discarded.
+                    base_entry = deepcopy(base_entry)
+                finally:
+                    if os.path.exists(source_path):
+                        os.remove(source_path)
+            else:
+                supplied = payload.get("base_settings", {})
+                if not isinstance(supplied, dict):
+                    raise ValueError("Manual base settings must be an object.")
+                allowed = {
+                    "minPower", "maxPower", "maxPower2", "speed", "frequency",
+                    "QPulseWidth", "numPasses", "anglePerPass", "crossHatch",
+                    "bidir", "overscan", "overscanPercent", "dotTime", "dotSpacing",
+                    "doOutput", "hide",
+                }
+                base_settings = {
+                    str(key): value for key, value in supplied.items()
+                    if key in allowed and isinstance(value, (str, int, float, bool))
+                }
+                base_settings.setdefault("doOutput", 1)
+                base_settings.setdefault("hide", 0)
+            hatch_library = build_hatch_palette_library(
+                material_name or "hatch palette",
+                payload.get("interval_mm", 0.1),
+                base_entry=base_entry,
+                base_settings=base_settings,
+                base_type=("Offset" if payload.get("base_type") == "Offset" else "Scan"),
+            )
+            with open(temp_path, "wb") as output_file:
+                output_file.write(hatch_library.read())
+        else:
+            ET.ElementTree(ET.Element("LightBurnLibrary")).write(temp_path, encoding="utf-8", xml_declaration=True)
+        library = save_user_material_library(user_id, temp_path, material_name, summary=library_entries(temp_path),
+                                             display_name=name, source_filename=f"{secure_filename(name) or 'material-library'}.clb",
+                                             library_intent=library_intent)
         return jsonify({"status": "ok", "library": library}), 201
     except (RuntimeError, OSError, ValueError, ET.ParseError) as error:
         return jsonify({"status": "error", "message": str(error)}), 400
@@ -623,6 +849,7 @@ def material_libraries():
                 try:
                     file.save(temp_path)
                     filtered_material_library(temp_path, filtered_path, selected_materials)
+                    validate_unique_entry_descriptions(ET.parse(filtered_path).getroot())
                     summary = library_entries(filtered_path)
                     if not summary["entry_count"]:
                         raise ValueError(f"{filename} contains no selected Material Library entries.")
@@ -649,6 +876,7 @@ def material_libraries():
                 "lens_field_of_view": item.get("lens_field_of_view", ""),
                 "notes": item.get("notes", ""),
                 "laser_community": item.get("laser_community") is True,
+                "library_intent": item.get("library_intent", "color_palette"),
                 "summary": item.get("summary", {}),
             }
             for item in libraries
@@ -688,6 +916,7 @@ def material_library_detail(library_id):
                 payload.get("laser_source"), payload.get("lens_field_of_view"), payload.get("notes"),
                 laser_community,
                 community_summary,
+                payload.get("library_intent"),
             ):
                 return jsonify({"status": "error", "message": "That Material Library no longer exists."}), 404
             return jsonify({
@@ -696,6 +925,11 @@ def material_library_detail(library_id):
                 "lens_field_of_view": str(payload.get("lens_field_of_view") or "").strip(),
                 "notes": str(payload.get("notes") or "").strip(),
                 "laser_community": laser_community,
+                "library_intent": (
+                    ("hatch_palette" if payload.get("library_intent") == "hatch_palette" else "color_palette")
+                    if "library_intent" in payload
+                    else existing_library.get("library_intent", "color_palette")
+                ),
             })
         library = get_user_material_library(user_id, library_id)
         if not library:
@@ -704,7 +938,7 @@ def material_library_detail(library_id):
             temp_path = temp_file.name
         try:
             download_user_material_library(library, temp_path)
-            return jsonify({"status": "ok", "library": {"library_id": library_id, "name": library.get("name", "Material Library"), "laser_source": library.get("laser_source", ""), "lens_field_of_view": library.get("lens_field_of_view", ""), "notes": library.get("notes", ""), "laser_community": library.get("laser_community") is True, "summary": library_entries(temp_path, include_settings=True)}})
+            return jsonify({"status": "ok", "library": {"library_id": library_id, "name": library.get("name", "Material Library"), "laser_source": library.get("laser_source", ""), "lens_field_of_view": library.get("lens_field_of_view", ""), "notes": library.get("notes", ""), "laser_community": library.get("laser_community") is True, "library_intent": library.get("library_intent", "color_palette"), "summary": library_entries(temp_path, include_settings=True)}})
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
@@ -728,6 +962,69 @@ def edit_material_library_entry(library_id, entry_id=None):
             return jsonify({"status": "error", "message": "That Material Library no longer exists."}), 404
         return jsonify({"status": "ok", "summary": summary})
     except (RuntimeError, OSError, ValueError, ET.ParseError) as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+
+@routes.route("/account/material-libraries/<library_id>/hatch-plan", methods=["POST"])
+def plan_material_library_hatches(library_id):
+    user_id = authenticated_user_id()
+    if not user_id:
+        return jsonify({"status": "error", "message": "Sign in to plan Hatch Palettes."}), 401
+    payload = request.get_json(silent=True) or {}
+    try:
+        library = get_user_material_library(user_id, library_id)
+        if not library:
+            return jsonify({"status": "error", "message": "That Material Library no longer exists."}), 404
+        if library.get("library_intent", "color_palette") != "hatch_palette":
+            raise ValueError("Change this library to a Hatch Palette before applying a hatch plan.")
+        summary = mutate_library(
+            user_id,
+            library_id,
+            lambda root: apply_hatch_plan(
+                root,
+                payload.get("start_angle", 0),
+                payload.get("angle_span", 180),
+                payload.get("interval_start"),
+                payload.get("interval_end"),
+            ),
+        )
+        return jsonify({"status": "ok", "summary": summary})
+    except (RuntimeError, OSError, ValueError, ET.ParseError) as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+
+@routes.route("/account/depth-palettes", methods=["GET", "POST"])
+def depth_palettes():
+    user_id = authenticated_user_id()
+    if not user_id:
+        return jsonify({"status": "error", "message": "Sign in to use saved Depth Palettes."}), 401
+    try:
+        if request.method == "POST":
+            name, entries = clean_depth_palette(request.get_json(silent=True) or {})
+            palette = save_user_depth_palette(user_id, name, entries)
+            return jsonify({"status": "ok", "palette": palette}), 201
+        return jsonify({"status": "ok", "palettes": list_user_depth_palettes(user_id)})
+    except (RuntimeError, ValueError) as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+
+@routes.route("/account/depth-palettes/<palette_id>", methods=["GET", "PUT", "DELETE"])
+def depth_palette_detail(palette_id):
+    user_id = authenticated_user_id()
+    if not user_id:
+        return jsonify({"status": "error", "message": "Sign in to manage Depth Palettes."}), 401
+    try:
+        palette = get_user_depth_palette(user_id, palette_id)
+        if not palette:
+            return jsonify({"status": "error", "message": "That Depth Palette no longer exists."}), 404
+        if request.method == "DELETE":
+            delete_user_depth_palette(user_id, palette_id)
+            return jsonify({"status": "ok"})
+        if request.method == "PUT":
+            name, entries = clean_depth_palette(request.get_json(silent=True) or {})
+            palette = save_user_depth_palette(user_id, name, entries, palette_id=palette_id)
+        return jsonify({"status": "ok", "palette": palette})
+    except (RuntimeError, ValueError) as error:
         return jsonify({"status": "error", "message": str(error)}), 400
 
 

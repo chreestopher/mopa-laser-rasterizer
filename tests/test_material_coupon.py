@@ -1,10 +1,105 @@
 import unittest
 from xml.etree import ElementTree as ET
 
-from routes.account import apply_entry_update, material_coupon_project
+from routes.account import (
+    apply_entry_update,
+    apply_hatch_plan,
+    material_coupon_project,
+    validate_unique_entry_descriptions,
+)
 
 
 class MaterialCouponTests(unittest.TestCase):
+    def test_duplicate_swatch_names_are_rejected_within_one_material(self):
+        library = ET.fromstring("""
+            <LightBurnLibrary><Material name="steel">
+              <Entry Desc="Dark-Orange"><CutSetting type="Scan"/></Entry>
+              <Entry Desc=" dark-orange "><CutSetting type="Scan"/></Entry>
+            </Material></LightBurnLibrary>
+        """)
+
+        with self.assertRaisesRegex(ValueError, "duplicate swatch name.*Dark-Orange"):
+            validate_unique_entry_descriptions(library)
+
+    def test_same_swatch_name_is_allowed_in_different_materials(self):
+        library = ET.fromstring("""
+            <LightBurnLibrary>
+              <Material name="steel"><Entry Desc="Blue"><CutSetting type="Scan"/></Entry></Material>
+              <Material name="aluminum"><Entry Desc="blue"><CutSetting type="Scan"/></Entry></Material>
+            </LightBurnLibrary>
+        """)
+
+        validate_unique_entry_descriptions(library)
+
+    def test_inline_editor_accepts_a_nonstandard_swatch_name(self):
+        library = ET.fromstring("""
+            <LightBurnLibrary><Material name="steel">
+              <Entry Desc="Blue"><CutSetting type="Scan"><name Value="Blue"/></CutSetting></Entry>
+              <Entry Desc="Dark-Orange"><CutSetting type="Scan"/></Entry>
+              <Entry Desc="dark-orange"><CutSetting type="Scan"/></Entry>
+            </Material></LightBurnLibrary>
+        """)
+
+        apply_entry_update(library, 0, {
+            "material": "steel",
+            "description": "Customer Iridescent 01",
+            "type": "Scan",
+            "settings": {"speed": 750},
+        })
+        entry = library.findall("Material/Entry")[-1]
+        self.assertEqual("Customer Iridescent 01", entry.attrib["Desc"])
+
+    def test_inline_editor_rejects_a_duplicate_custom_name(self):
+        library = ET.fromstring("""
+            <LightBurnLibrary><Material name="steel">
+              <Entry Desc="Customer Iridescent 01"><CutSetting type="Scan"/></Entry>
+              <Entry Desc="Blue"><CutSetting type="Scan"/></Entry>
+            </Material></LightBurnLibrary>
+        """)
+
+        with self.assertRaisesRegex(ValueError, "already contains a setting"):
+            apply_entry_update(library, 1, {
+                "material": "steel",
+                "description": " customer iridescent 01 ",
+                "type": "Scan",
+                "settings": {},
+            })
+
+    def test_coupon_allows_duplicate_names_from_multiple_libraries(self):
+        library = ET.fromstring("""
+            <LightBurnLibrary><Material name="combined coupon">
+              <Entry Desc="Blue"><CutSetting type="Scan"><speed Value="500"/></CutSetting></Entry>
+              <Entry Desc="Blue"><CutSetting type="Scan"><speed Value="900"/></CutSetting></Entry>
+            </Material></LightBurnLibrary>
+        """)
+
+        project = material_coupon_project(library)
+
+        self.assertEqual(["Blue", "Blue"], [
+            layer.find("name").attrib["Value"] for layer in project.findall("CutSetting")[1:]
+        ])
+
+    def test_hatch_plan_preserves_base_settings_and_offset_mode(self):
+        library = ET.fromstring("""
+            <LightBurnLibrary><Material name="steel">
+              <Entry Desc="Black"><CutSetting type="Offset"><speed Value="500"/><frequency Value="300000"/><interval Value="0.2"/><angle Value="90"/><SubLayer type="Offset"><speed Value="450"/><interval Value="0.3"/><angle Value="45"/></SubLayer></CutSetting></Entry>
+              <Entry Desc="Blue"><CutSetting type="Scan"><speed Value="500"/><frequency Value="300000"/><interval Value="0.2"/><angle Value="90"/></CutSetting></Entry>
+            </Material></LightBurnLibrary>
+        """)
+
+        apply_hatch_plan(library, start_angle=0, angle_span=180, interval_start=.1, interval_end=.2)
+
+        black, blue = library.findall("Material/Entry")
+        self.assertEqual("Offset", black.find("CutSetting").attrib["type"])
+        self.assertEqual("Scan", blue.find("CutSetting").attrib["type"])
+        self.assertEqual("500", black.find("CutSetting/speed").attrib["Value"])
+        self.assertEqual("450", black.find("CutSetting/SubLayer/speed").attrib["Value"])
+        self.assertEqual("0", black.find("CutSetting/angle").attrib["Value"])
+        self.assertEqual("0", black.find("CutSetting/SubLayer/angle").attrib["Value"])
+        self.assertEqual("90", blue.find("CutSetting/angle").attrib["Value"])
+        self.assertEqual("0.1", black.find("CutSetting/interval").attrib["Value"])
+        self.assertEqual("0.2", blue.find("CutSetting/interval").attrib["Value"])
+
     def test_inline_setting_update_preserves_unsubmitted_lightburn_fields(self):
         library = ET.fromstring("""
             <LightBurnLibrary><Material name="steel">

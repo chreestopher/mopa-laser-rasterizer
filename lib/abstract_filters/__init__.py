@@ -1,13 +1,16 @@
-from . import centerline, crystal, deep_fryer, glitch, krasnow_grating, mosaic, ripple, shattered, shear, spiral, voronoi, wave
+from . import crystal, deep_fryer, glitch, halftone_newsprint, krasnow_grating, mosaic, optical_color_mix, ripple, shattered, shear, spiral, structure_tensor_flow, voronoi, wave
 
 MODULES={
     "wave":wave,"voronoi":voronoi,"shear":shear,"spiral":spiral,
     "mosaic":mosaic,"crystal":crystal,"ripple":ripple,
-    "centerline":centerline,"glitch":glitch,"shattered":shattered,
-    "deep_fryer":deep_fryer,"krasnow_grating":krasnow_grating,
+    "glitch":glitch,"shattered":shattered,
+    "deep_fryer":deep_fryer,"halftone_newsprint":halftone_newsprint,
+    "optical_color_mix":optical_color_mix,
+    "krasnow_grating":krasnow_grating,
+    "structure_tensor_flow":structure_tensor_flow,
 }
 ALIASES={"tessellation":"crystal","triangles":"crystal","topographic":"ripple","xenoglyph":"shattered","alien":"shattered"}
-FULL_PALETTE_FILTERS={"wave","voronoi","shear","spiral","mosaic","crystal","ripple","glitch","shattered","deep_fryer"}
+FULL_PALETTE_FILTERS={"wave","voronoi","shear","spiral","mosaic","crystal","ripple","glitch","shattered","deep_fryer","halftone_newsprint","optical_color_mix","structure_tensor_flow"}
 
 def canonical_name(name):
     name=str(name or "none").strip().lower()

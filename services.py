@@ -5,6 +5,7 @@ import base64
 import glob
 import hashlib
 import hmac
+import math
 import multiprocessing
 import os
 import re
@@ -18,21 +19,68 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlencode
 
 import boto3
+from botocore.config import Config
 import redis
 from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key
 from lib.lightburn import Lightburn
+from job_runtime import DynamoJobRuntime, RedisJobRuntime, create_job_runtime
 
 
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-2").strip()
-redis_client = redis.Redis(
-    host=os.environ.get("REDIS_HOST", "localhost"),
-    port=int(os.environ.get("REDIS_PORT", 6379)),
-    decode_responses=True,
+
+
+def _environment_flag(name, default="false"):
+    return os.environ.get(name, default).strip().lower() in ("1", "true", "yes", "on")
+
+
+def create_redis_client():
+    """Create a Redis client usable by local, Kubernetes, and ECS workloads."""
+    redis_url = os.environ.get("REDIS_URL", "").strip()
+    common_options = {
+        "decode_responses": True,
+        "socket_connect_timeout": int(os.environ.get("REDIS_CONNECT_TIMEOUT_SECONDS", "5")),
+        "socket_timeout": int(os.environ.get("REDIS_SOCKET_TIMEOUT_SECONDS", "10")),
+        "health_check_interval": int(os.environ.get("REDIS_HEALTH_CHECK_SECONDS", "30")),
+    }
+    if redis_url:
+        return redis.Redis.from_url(redis_url, **common_options)
+
+    password = os.environ.get("REDIS_PASSWORD", "")
+    username = os.environ.get("REDIS_USERNAME", "")
+    return redis.Redis(
+        host=os.environ.get("REDIS_HOST", "localhost"),
+        port=int(os.environ.get("REDIS_PORT", 6379)),
+        ssl=_environment_flag("REDIS_SSL"),
+        password=password or None,
+        username=username or None,
+        **common_options,
+    )
+
+
+redis_client = create_redis_client()
+s3_client = boto3.client(
+    "s3",
+    region_name=AWS_REGION,
+    config=Config(
+        connect_timeout=10,
+        read_timeout=60,
+        retries={"max_attempts": 3, "mode": "standard"},
+    ),
 )
-s3_client = boto3.client("s3", region_name=AWS_REGION)
+sqs_client = boto3.client(
+    "sqs",
+    region_name=AWS_REGION,
+    config=Config(
+        connect_timeout=5,
+        read_timeout=10,
+        retries={"max_attempts": 3, "mode": "standard"},
+    ),
+)
 S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME", "").strip()
 DYNAMODB_TABLE_NAME = os.environ.get("DYNAMODB_TABLE_NAME", "").strip()
+SQS_QUEUE_URL = os.environ.get("SQS_QUEUE_URL", "").strip()
+FARGATE_DISPATCH_VIA_S3 = _environment_flag("FARGATE_DISPATCH_VIA_S3")
 LIGHTBURN_PALETTE_NAMES = {
     "#B4B4B4": "Light-Gray", "#000000": "Black", "#0000FF": "Blue",
     "#FF0000": "Red", "#00E000": "Green", "#D0D000": "Yellow",
@@ -47,21 +95,28 @@ LIGHTBURN_PALETTE_NAMES = {
 }
 ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
-    "crystal", "ripple", "centerline", "glitch", "shattered", "deep_fryer",
-    "krasnow_grating",
+    "crystal", "ripple", "glitch", "shattered", "deep_fryer",
+    "halftone_newsprint", "optical_color_mix", "krasnow_grating",
+    "structure_tensor_flow",
 }
 ABSTRACT_PRESET_PREFIX = "abstract_"
 RASTER_JOB_QUEUE = "rasterizer:jobs"
 RASTER_JOB_PROCESSING_QUEUE = "rasterizer:jobs:processing"
+RASTER_JOB_PAYLOAD_PREFIX = "rasterizer:job-payload:"
 HISTORY_SESSION_RE = re.compile(r"^[a-f0-9-]{32,36}$")
 HISTORY_TTL_SECONDS = 7 * 24 * 60 * 60
 GUEST_MATERIAL_LIBRARY_LIMIT = 12
 DAILY_JOB_LIMIT = max(1, int(os.environ.get("DAILY_JOB_LIMIT", "3")))
-COMMUNITY_CONTRIBUTOR_SECRET = os.environ.get(
-    "COMMUNITY_CONTRIBUTOR_SECRET", os.environ.get("APP_SESSION_SECRET", "local-development-only-secret")
-).encode("utf-8")
 manager = multiprocessing.Manager()
 tasks = manager.dict()
+job_runtime = create_job_runtime(redis_client, HISTORY_TTL_SECONDS, RASTER_JOB_PAYLOAD_PREFIX)
+
+
+def sync_job_runtime(client=None):
+    """Keep test/legacy Redis monkey-patches attached to the runtime adapter."""
+    if isinstance(job_runtime, RedisJobRuntime):
+        job_runtime.client = client or redis_client
+    return job_runtime
 
 
 def account_table():
@@ -131,7 +186,7 @@ def resolve_material_setting_usage(material_settings_path, material_name, select
     chosen.update({names["#000000"].casefold(), names["#B4B4B4"].casefold()})
     requested_material = str(material_name or "").strip().casefold()
     matched = {}
-    for setting in LightBurn().parse_material_library(material_settings_path):
+    for setting in Lightburn().parse_material_library(material_settings_path):
         if str(getattr(setting, "materialName", "") or "").strip().casefold() != requested_material:
             continue
         labels = {
@@ -222,6 +277,34 @@ def record_setting_usage(task_id, resolved_settings, library=None):
         raise RuntimeError("Could not record Material Library setting usage.") from error
 
 
+def record_setting_usage_async(task_id, resolved_settings, library=None):
+    """Record optional aggregate telemetry without delaying job submission.
+
+    A palette can resolve dozens of swatches, and each swatch updates several
+    aggregate dimensions. Those remote DynamoDB writes must never sit inside
+    the user-facing /upload request or delay queueing the raster job.
+    """
+    if not resolved_settings:
+        return None
+
+    def record_in_background():
+        try:
+            record_setting_usage(task_id, resolved_settings, library)
+        except RuntimeError as error:
+            print(
+                f"Could not record Material Library usage for {task_id}: {error}",
+                flush=True,
+            )
+
+    usage_thread = threading.Thread(
+        target=record_in_background,
+        name=f"setting-usage-{task_id}",
+        daemon=True,
+    )
+    usage_thread.start()
+    return usage_thread
+
+
 def get_user_preferences(user_id):
     table = account_table()
     if not table or not user_id:
@@ -274,7 +357,8 @@ def get_user_material_library(user_id, library_id):
 
 
 def save_user_material_library(user_id, local_file_path, material_name="", summary=None,
-                               display_name=None, source_filename=None):
+                               display_name=None, source_filename=None,
+                               library_intent="color_palette"):
     """Store an uploaded LightBurn library once under its Cognito owner."""
     table = account_table()
     if not table or not S3_BUCKET_NAME:
@@ -282,6 +366,7 @@ def save_user_material_library(user_id, local_file_path, material_name="", summa
     library_id = str(uuid.uuid4())
     filename = os.path.basename(source_filename or local_file_path)
     library_name = str(display_name or filename).strip()[:160] or filename
+    library_intent = "hatch_palette" if library_intent == "hatch_palette" else "color_palette"
     s3_key = f"users/{user_id}/materials/{library_id}/{filename}"
     try:
         # Material libraries are outside the S3 lifecycle rules, so they do
@@ -294,6 +379,7 @@ def save_user_material_library(user_id, local_file_path, material_name="", summa
             "name": library_name,
             "original_name": filename,
             "material_name": str(material_name or "").strip()[:160],
+            "library_intent": library_intent,
             "s3_key": s3_key,
             "created_at": int(time.time()),
         }
@@ -303,7 +389,8 @@ def save_user_material_library(user_id, local_file_path, material_name="", summa
     except ClientError as error:
         raise RuntimeError("Could not save the Material Library to this account.") from error
     return {"library_id": library_id, "name": library_name, "original_name": filename,
-            "material_name": str(material_name or "").strip()}
+            "material_name": str(material_name or "").strip(),
+            "library_intent": library_intent}
 
 
 def download_user_material_library(library, local_path):
@@ -330,6 +417,73 @@ def delete_user_material_library(user_id, library_id):
     return True
 
 
+def list_user_depth_palettes(user_id):
+    """Return account-owned depth palettes stored directly in DynamoDB."""
+    table = account_table()
+    if not table or not user_id:
+        return []
+    try:
+        response = table.query(
+            KeyConditionExpression=Key("pk").eq(f"USER#{user_id}") & Key("sk").begins_with("DEPTHPALETTE#"),
+            ScanIndexForward=False,
+        )
+    except ClientError as error:
+        raise RuntimeError("Could not load saved Depth Palettes.") from error
+    return [_json_values(item) for item in response.get("Items", [])]
+
+
+def get_user_depth_palette(user_id, palette_id):
+    table = account_table()
+    if not table or not user_id or not palette_id:
+        return None
+    try:
+        item = table.get_item(
+            Key={"pk": f"USER#{user_id}", "sk": f"DEPTHPALETTE#{palette_id}"}
+        ).get("Item")
+    except ClientError as error:
+        raise RuntimeError("Could not load the saved Depth Palette.") from error
+    return _json_values(item) if item else None
+
+
+def save_user_depth_palette(user_id, name, entries, palette_id=None):
+    table = account_table()
+    if not table:
+        raise RuntimeError("Account Depth Palette storage is not configured.")
+    if not user_id:
+        raise ValueError("An authenticated account is required.")
+    palette_id = palette_id or str(uuid.uuid4())
+    existing = get_user_depth_palette(user_id, palette_id) if palette_id else None
+    item = {
+        "pk": f"USER#{user_id}",
+        "sk": f"DEPTHPALETTE#{palette_id}",
+        "palette_id": palette_id,
+        "name": str(name).strip()[:160],
+        "entries": _dynamodb_values(entries),
+        "created_at": (existing or {}).get("created_at", int(time.time())),
+        "updated_at": int(time.time()),
+    }
+    try:
+        # Existing DynamoDB numeric values are converted to ordinary Python
+        # numbers when read for JSON responses. Normalize the complete item on
+        # every write so an existing Decimal timestamp cannot return as a float
+        # and trigger boto3's unsupported-float serializer error on updates.
+        table.put_item(Item=_dynamodb_values(item))
+    except (ClientError, TypeError, ValueError) as error:
+        raise RuntimeError("Could not save the Depth Palette.") from error
+    return _json_values(item)
+
+
+def delete_user_depth_palette(user_id, palette_id):
+    table = account_table()
+    if not table or not get_user_depth_palette(user_id, palette_id):
+        return False
+    try:
+        table.delete_item(Key={"pk": f"USER#{user_id}", "sk": f"DEPTHPALETTE#{palette_id}"})
+    except ClientError as error:
+        raise RuntimeError("Could not delete the Depth Palette.") from error
+    return True
+
+
 def list_user_holographic_recipes(user_id):
     table = account_table()
     if not table or not user_id:
@@ -340,7 +494,7 @@ def list_user_holographic_recipes(user_id):
             ScanIndexForward=False,
         )
     except ClientError as error:
-        raise RuntimeError("Could not load saved Holographic Recipes.") from error
+        raise RuntimeError("Could not load saved Fauxlographic Palettes.") from error
     return [_json_values(item) for item in response.get("Items", [])]
 
 
@@ -351,7 +505,7 @@ def get_user_holographic_recipe(user_id, recipe_id):
     try:
         item = table.get_item(Key={"pk": f"USER#{user_id}", "sk": f"HOLORECIPE#{recipe_id}"}).get("Item")
     except ClientError as error:
-        raise RuntimeError("Could not load the saved Holographic Recipe.") from error
+        raise RuntimeError("Could not load the saved Fauxlographic Palette.") from error
     return _json_values(item) if item else None
 
 
@@ -359,10 +513,10 @@ def save_user_holographic_recipe(user_id, local_file_path, display_name=None, me
                                  source_filename=None):
     table = account_table()
     if not table or not S3_BUCKET_NAME:
-        raise RuntimeError("Account Holographic Recipe storage is not configured.")
+        raise RuntimeError("Account Fauxlographic Palette storage is not configured.")
     recipe_id = str(uuid.uuid4())
     filename = os.path.basename(source_filename or local_file_path)
-    name = str(display_name or os.path.splitext(filename)[0]).strip()[:160] or "Holographic Recipe"
+    name = str(display_name or os.path.splitext(filename)[0]).strip()[:160] or "Fauxlographic Palette"
     s3_key = f"users/{user_id}/holographic-recipes/{recipe_id}/{filename}"
     try:
         s3_client.upload_file(local_file_path, S3_BUCKET_NAME, s3_key)
@@ -374,17 +528,17 @@ def save_user_holographic_recipe(user_id, local_file_path, display_name=None, me
         }
         table.put_item(Item=item)
     except ClientError as error:
-        raise RuntimeError("Could not save the Holographic Recipe to this account.") from error
+        raise RuntimeError("Could not save the Fauxlographic Palette to this account.") from error
     return _json_values(item)
 
 
 def download_user_holographic_recipe(recipe, local_path):
     if not recipe or not recipe.get("s3_key"):
-        raise RuntimeError("Saved Holographic Recipe is unavailable.")
+        raise RuntimeError("Saved Fauxlographic Palette is unavailable.")
     try:
         s3_client.download_file(S3_BUCKET_NAME, recipe["s3_key"], local_path)
     except ClientError as error:
-        raise RuntimeError("Could not retrieve the saved Holographic Recipe.") from error
+        raise RuntimeError("Could not retrieve the saved Fauxlographic Palette.") from error
 
 
 def delete_user_holographic_recipe(user_id, recipe_id):
@@ -397,7 +551,7 @@ def delete_user_holographic_recipe(user_id, recipe_id):
             s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=recipe["s3_key"])
         table.delete_item(Key={"pk": f"USER#{user_id}", "sk": f"HOLORECIPE#{recipe_id}"})
     except ClientError as error:
-        raise RuntimeError("Could not delete the saved Holographic Recipe.") from error
+        raise RuntimeError("Could not delete the saved Fauxlographic Palette.") from error
     return True
 
 
@@ -419,6 +573,22 @@ def _community_substring_match(value, query):
 
 def _community_exact_match(value, query):
     return not query or _community_normalized_value(value) == _community_normalized_value(query)
+
+
+COMMUNITY_PUBLIC_SETTING_FIELDS = (
+    "speed", "minPower", "maxPower", "frequency", "QPulseWidth", "interval",
+    "angle", "numPasses", "anglePerPass", "bidir", "crossHatch", "type",
+)
+
+
+def _community_public_settings(settings):
+    """Strip private LightBurn metadata before a setting enters Community Set."""
+    settings = settings if isinstance(settings, dict) else {}
+    return {
+        field: settings[field]
+        for field in COMMUNITY_PUBLIC_SETTING_FIELDS
+        if field in settings and not isinstance(settings[field], (dict, list))
+    }
 
 
 def _community_filter_partitions(laser_source, lens_field_of_view, materials):
@@ -532,14 +702,15 @@ def query_laser_community(laser_source="", lens_field_of_view="", material="", c
         raise RuntimeError("Could not query Comunity Set settings.") from error
 
 
-def _anonymous_community_contributor(user_id):
-    """Return a stable, non-public token used only for distinct-contributor counts."""
-    return hmac.new(COMMUNITY_CONTRIBUTOR_SECRET, user_id.encode("utf-8"), hashlib.sha256).hexdigest()
-
-
 def _write_laser_community_record(table, user_id, library_id, summary, laser_source,
                                   lens_field_of_view, notes):
     """Write the anonymous canonical record and all seven possible filter indexes."""
+    summary = dict(summary or {})
+    summary["entries"] = [
+        {**entry, "settings": _community_public_settings(entry.get("settings"))}
+        for entry in summary.get("entries", [])
+        if isinstance(entry, dict)
+    ]
     summary = _annotate_community_swatches(user_id, summary)
     canonical_key = {"pk": "LASER_COMMUNITY", "sk": f"MATERIAL#{library_id}"}
     old_item = table.get_item(Key=canonical_key).get("Item") or {}
@@ -559,7 +730,6 @@ def _write_laser_community_record(table, user_id, library_id, summary, laser_sou
         "index_keys": index_keys,
         "updated_at": updated_at,
     }
-    contributor = _anonymous_community_contributor(user_id)
     with table.batch_writer() as batch:
         for old_key in old_item.get("index_keys", []):
             if isinstance(old_key, dict) and old_key.get("pk") and old_key.get("sk"):
@@ -575,43 +745,11 @@ def _write_laser_community_record(table, user_id, library_id, summary, laser_sou
                 "material_names": summary.get("material_names", []),
                 "updated_at": updated_at,
             })
-        for entry in summary.get("entries", []):
-            entry_id = entry.get("entry_id")
-            if entry_id is None or not isinstance(entry.get("settings"), dict):
-                continue
-            setting_key = {
-                "pk": "LASER_COMMUNITY_SETTINGS",
-                "sk": f"SETTING#{library_id}#{entry_id}",
-            }
-            swatch_hex, official_color = _official_community_swatch(entry)
-            batch.put_item(Item={
-                **setting_key,
-                "community_pk": canonical_key["pk"],
-                "community_sk": canonical_key["sk"],
-                "contributor": contributor,
-                "laser_source": laser_source,
-                "lens_field_of_view": lens_field_of_view,
-                "material": entry.get("material", ""),
-                "description": official_color,
-                "swatch_hex": swatch_hex,
-                "source_description": entry.get("description", ""),
-                "type": entry.get("type", ""),
-                "settings": _dynamodb_values(entry["settings"]),
-                "updated_at": updated_at,
-            })
-            color_key = _community_filter_value(official_color)
-            if color_key:
-                batch.put_item(Item={
-                    "pk": f"LASER_COMMUNITY_COLOR_INDEX#color={color_key}",
-                    "sk": f"UPDATED#{time.time_ns():019d}#SETTING#{library_id}#{entry_id}",
-                    "setting_pk": setting_key["pk"],
-                    "setting_sk": setting_key["sk"],
-                })
 
 
 def rename_user_material_library(user_id, library_id, display_name, laser_source=None,
                                  lens_field_of_view=None, notes=None, laser_community=False,
-                                 community_summary=None):
+                                 community_summary=None, library_intent=None):
     table = account_table()
     library = get_user_material_library(user_id, library_id) if table else None
     if not table or not library:
@@ -622,6 +760,11 @@ def rename_user_material_library(user_id, library_id, display_name, laser_source
     laser_source = str(laser_source or "").strip()
     lens_field_of_view = str(lens_field_of_view or "").strip()
     notes = str(notes or "").strip()
+    library_intent = (
+        library.get("library_intent", "color_palette")
+        if library_intent is None
+        else ("hatch_palette" if library_intent == "hatch_palette" else "color_palette")
+    )
     # Community contribution is permanent once accepted for this library.
     laser_community = library.get("laser_community") is True or laser_community is True
     if len(laser_source) > 160 or len(lens_field_of_view) > 160 or len(notes) > 1000:
@@ -629,7 +772,7 @@ def rename_user_material_library(user_id, library_id, display_name, laser_source
     try:
         table.update_item(
             Key={"pk": f"USER#{user_id}", "sk": f"MATERIAL#{library_id}"},
-            UpdateExpression="SET #name = :name, laser_source = :laser_source, lens_field_of_view = :lens_field_of_view, notes = :notes, laser_community = :laser_community, updated_at = :updated_at",
+            UpdateExpression="SET #name = :name, laser_source = :laser_source, lens_field_of_view = :lens_field_of_view, notes = :notes, laser_community = :laser_community, library_intent = :library_intent, updated_at = :updated_at",
             ExpressionAttributeNames={"#name": "name"},
             ExpressionAttributeValues={
                 ":name": display_name,
@@ -637,6 +780,7 @@ def rename_user_material_library(user_id, library_id, display_name, laser_source
                 ":lens_field_of_view": lens_field_of_view,
                 ":notes": notes,
                 ":laser_community": laser_community,
+                ":library_intent": library_intent,
                 ":updated_at": int(time.time()),
             },
         )
@@ -695,12 +839,14 @@ def record_user_job(user_id, task_id, source_name, image_preset, abstract_filter
         "material_name": material_name, "run_parameters": _dynamodb_values(run_parameters or {}),
         "created_at": created_at, "updated_at": created_at, "status": "pending",
         "artifact_prefix": artifact_prefix, "input_keys": list(input_keys or []),
+        "expires_at": created_at + HISTORY_TTL_SECONDS,
     }
     owner_item = {
         "pk": f"JOB#{task_id}", "sk": "OWNER", "user_id": user_id,
         "created_at": created_at, "updated_at": created_at, "history_sk": history_sk,
         "status": "pending", "artifact_prefix": artifact_prefix,
         "input_keys": list(input_keys or []),
+        "expires_at": created_at + HISTORY_TTL_SECONDS,
     }
     try:
         with table.batch_writer() as batch:
@@ -772,21 +918,151 @@ def get_user_job_history(user_id, limit=100):
     except ClientError as error:
         raise RuntimeError("Could not load account job history.") from error
     entries = []
+    retention_cutoff = int(time.time()) - HISTORY_TTL_SECONDS
     for item in response.get("Items", []):
         entry = _json_values(item)
         task_id = entry.get("task_id")
         if not task_id:
             continue
-        stored_status = redis_client.get(f"task:{task_id}:status")
+        stored_status = sync_job_runtime().status(task_id)
         durable_status = entry.get("status", "pending")
         # Keep account history consistent with S3 lifecycle/manual cleanup,
-        # just as the guest history panel already does.
-        if not stored_status and not task_artifacts_exist(task_id):
-            continue
+        # just as the guest history panel already does. Jobs older than the
+        # retention window are known to have expired and need no remote S3
+        # request. Only an unusual recent row missing Redis status needs an
+        # S3 existence check, using the already-known owner prefix directly.
+        if not stored_status:
+            if int(entry.get("created_at") or 0) <= retention_cutoff:
+                continue
+            if not task_artifacts_exist(task_id, user_id=user_id):
+                continue
         entry["status"] = stored_status or durable_status
         entry.update(job_history_links(entry))
         entries.append(entry)
     return entries
+
+
+def record_admin_job(payload):
+    """Record a global seven-day operational index without artwork or secrets."""
+    table = account_table()
+    if not table:
+        return
+    task_id = str(payload.get("task_id") or "")
+    if not task_id:
+        return
+    created_at = int(time.time())
+    data = payload.get("data") or {}
+    item = {
+        "pk": "ADMIN#JOBS",
+        "sk": f"JOB#{created_at:010d}#{task_id}",
+        "task_id": task_id,
+        "created_at": created_at,
+        "user_id": str(payload.get("user_id") or "guest"),
+        "source_name": str(payload.get("image_name") or "")[:255],
+        "material_name": str(data.get("material") or "")[:160],
+        "image_preset": str(data.get("image_preset") or "")[:100],
+        "status": "pending",
+    }
+    try:
+        table.put_item(Item=item)
+    except ClientError as error:
+        raise RuntimeError("Could not record the administrative job index.") from error
+
+
+def list_admin_jobs(days=7):
+    """Return indexed jobs and live pre-index jobs, newest first."""
+    table = account_table()
+    cutoff = int(time.time()) - max(1, int(days)) * 86400
+    jobs_by_id = {}
+    if table:
+        try:
+            response = table.query(
+                KeyConditionExpression=Key("pk").eq("ADMIN#JOBS") &
+                Key("sk").gte(f"JOB#{cutoff:010d}"),
+                ScanIndexForward=False,
+            )
+        except ClientError as error:
+            raise RuntimeError("Could not load the administrative job index.") from error
+        for raw in response.get("Items", []):
+            job = _json_values(raw)
+            if job.get("task_id"):
+                jobs_by_id[job["task_id"]] = job
+
+    # Backfill the current seven-day window from browser/account history lists
+    # created before the global admin index existed. Access-token keys share
+    # the prefix but are strings, so inspect list keys only.
+    for history_key in redis_client.scan_iter(match="history:*"):
+        if history_key.endswith(":access") or redis_client.type(history_key) != "list":
+            continue
+        for raw_entry in redis_client.lrange(history_key, 0, -1):
+            try:
+                entry = json.loads(raw_entry)
+            except (TypeError, json.JSONDecodeError):
+                continue
+            task_id = str(entry.get("task_id") or "")
+            created_at = int(entry.get("created_at") or 0)
+            if not task_id or created_at < cutoff or task_id in jobs_by_id:
+                continue
+            binding = _job_access_binding(task_id)
+            operator = binding[1] if binding and binding[0] == "account" else "guest"
+            jobs_by_id[task_id] = {
+                "task_id": task_id, "created_at": created_at,
+                "user_id": operator,
+                "source_name": str(entry.get("source_name") or "")[:255],
+                "material_name": str(entry.get("material_name") or "")[:160],
+                "image_preset": str(entry.get("image_preset") or "")[:100],
+                "status": "pending",
+            }
+
+    for queue_name, queue_state in (
+        (RASTER_JOB_QUEUE, "pending"),
+        (RASTER_JOB_PROCESSING_QUEUE, "processing"),
+    ):
+        for raw_payload in redis_client.lrange(queue_name, 0, -1):
+            try:
+                payload = json.loads(raw_payload)
+            except (TypeError, json.JSONDecodeError):
+                continue
+            task_id = str(payload.get("task_id") or "")
+            if not task_id or task_id in jobs_by_id:
+                continue
+            data = payload.get("data") or {}
+            jobs_by_id[task_id] = {
+                "task_id": task_id, "created_at": 0,
+                "user_id": str(payload.get("user_id") or "guest"),
+                "source_name": str(payload.get("image_name") or "")[:255],
+                "material_name": str(data.get("material") or "")[:160],
+                "image_preset": str(data.get("image_preset") or "")[:100],
+                "status": queue_state,
+            }
+    jobs = []
+    for job in jobs_by_id.values():
+        task_id = job["task_id"]
+        job["status"] = sync_job_runtime().status(task_id) or job.get("status", "pending")
+        job["queued"] = raster_queue_position(task_id) is not None
+        jobs.append(job)
+    return sorted(jobs, key=lambda item: int(item.get("created_at") or 0), reverse=True)
+
+
+def delete_queued_admin_job(task_id):
+    """Remove only a waiting job; running jobs require a separate workflow."""
+    task_id = str(task_id or "")
+    removed = 0
+    for raw_payload in redis_client.lrange(RASTER_JOB_QUEUE, 0, -1):
+        try:
+            matches = str(json.loads(raw_payload).get("task_id") or "") == task_id
+        except (TypeError, json.JSONDecodeError):
+            matches = False
+        if matches:
+            removed += redis_client.lrem(RASTER_JOB_QUEUE, 0, raw_payload)
+    if not removed:
+        return False
+    message = "Removed from the waiting queue by an administrator."
+    redis_client.set(f"task:{task_id}:status", "failed", ex=HISTORY_TTL_SECONDS)
+    redis_client.rpush(f"task:{task_id}:log", message)
+    redis_client.expire(f"task:{task_id}:log", HISTORY_TTL_SECONDS)
+    update_user_job(task_id, "failed", error_message=message)
+    return True
 
 
 def get_job_owner(task_id):
@@ -902,6 +1178,27 @@ def claim_history_session(history_session, browser_session):
     if not browser_session:
         raise ValueError("A valid browser session is required for job history.")
     candidate = valid_history_session(history_session) or str(uuid.uuid4())
+    runtime = sync_job_runtime()
+    if isinstance(runtime, DynamoJobRuntime):
+        for _attempt in range(2):
+            key = {"pk": f"HISTORY#{candidate}", "sk": "ACCESS"}
+            try:
+                runtime.table.put_item(
+                    Item={**key, "browser_session": browser_session,
+                          "expires_at": int(time.time()) + HISTORY_TTL_SECONDS},
+                    ConditionExpression="attribute_not_exists(pk)",
+                )
+                return candidate
+            except ClientError as error:
+                if error.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+                    raise RuntimeError("Could not create a private job-history session.") from error
+                item = runtime.table.get_item(Key=key, ConsistentRead=True).get("Item") or {}
+                if hmac.compare_digest(str(item.get("browser_session", "")), browser_session):
+                    runtime.table.update_item(Key=key, UpdateExpression="SET expires_at=:expiry",
+                                              ExpressionAttributeValues={":expiry": int(time.time()) + HISTORY_TTL_SECONDS})
+                    return candidate
+                candidate = str(uuid.uuid4())
+        raise RuntimeError("Could not create a private job-history session.")
     for _attempt in range(2):
         access_key = f"history:{candidate}:access"
         if redis_client.set(access_key, browser_session, ex=HISTORY_TTL_SECONDS, nx=True):
@@ -919,7 +1216,14 @@ def history_access_allowed(history_session, browser_session):
     browser_session = valid_history_session(browser_session)
     if not history_session or not browser_session:
         return False
-    expected = valid_history_session(redis_client.get(f"history:{history_session}:access"))
+    runtime = sync_job_runtime()
+    if isinstance(runtime, DynamoJobRuntime):
+        item = runtime.table.get_item(
+            Key={"pk": f"HISTORY#{history_session}", "sk": "ACCESS"}
+        ).get("Item") or {}
+        expected = valid_history_session(item.get("browser_session"))
+    else:
+        expected = valid_history_session(redis_client.get(f"history:{history_session}:access"))
     return bool(expected) and hmac.compare_digest(expected, browser_session)
 
 
@@ -936,18 +1240,11 @@ def bind_job_access(task_id, user_id=None, browser_session=None):
         if not browser_session:
             raise ValueError("A valid guest browser session is required for job ownership.")
         binding = {"kind": "guest", "value": browser_session}
-    redis_client.set(
-        f"task:{task_id}:access",
-        json.dumps(binding, separators=(",", ":")),
-        ex=HISTORY_TTL_SECONDS,
-    )
+    sync_job_runtime().bind_access(task_id, binding["kind"], binding["value"])
 
 
 def _job_access_binding(task_id):
-    try:
-        binding = json.loads(redis_client.get(f"task:{task_id}:access") or "{}")
-    except (TypeError, json.JSONDecodeError):
-        return None
+    binding = sync_job_runtime().access(task_id) or {}
     kind, value = binding.get("kind"), str(binding.get("value") or "").strip()
     if kind == "account" and value:
         return kind, value
@@ -964,18 +1261,23 @@ def job_access_allowed(task_id, user_id=None, browser_session=None):
     user_id = str(user_id or "").strip()
     browser_session = valid_history_session(browser_session)
 
-    # Durable account ownership is authoritative even if the Redis binding has
-    # expired or disagrees. An account job must never fall back to guest access.
+    binding = _job_access_binding(task_id)
+    if binding:
+        kind, expected_identity = binding
+        if kind == "account":
+            # This server-issued binding is written when the account job is
+            # accepted and expires with its Redis history. Avoid a DynamoDB
+            # owner read for every row rendered immediately after submission.
+            return bool(user_id) and hmac.compare_digest(expected_identity, user_id)
+
+    # Durable ownership remains authoritative when the binding is absent or
+    # claims guest access. An account job must never fall back to guest access.
     owner_id = get_job_owner(task_id)
     if owner_id:
         return bool(user_id) and hmac.compare_digest(str(owner_id), user_id)
-
-    binding = _job_access_binding(task_id)
     if not binding:
         return False
-    kind, expected_identity = binding
-    if kind == "account":
-        return bool(user_id) and hmac.compare_digest(expected_identity, user_id)
+    _kind, expected_identity = binding
     return bool(browser_session) and hmac.compare_digest(expected_identity, browser_session)
 
 
@@ -984,6 +1286,17 @@ def claim_daily_job(user_id):
     now = datetime.now(timezone.utc)
     day_key = now.strftime("%Y-%m-%d")
     key = f"quota:{user_id}:{day_key}"
+    runtime = sync_job_runtime()
+    if isinstance(runtime, DynamoJobRuntime):
+        expiry = int(((now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0) - datetime(1970, 1, 1, tzinfo=timezone.utc)).total_seconds())
+        result = runtime.table.update_item(
+            Key={"pk": f"QUOTA#{user_id}#{day_key}", "sk": "USAGE"},
+            UpdateExpression="SET used=if_not_exists(used,:zero)+:one, expires_at=:expiry",
+            ExpressionAttributeValues={":zero": 0, ":one": 1, ":expiry": expiry},
+            ReturnValues="UPDATED_NEW",
+        )
+        used = int(result["Attributes"]["used"])
+        return used <= DAILY_JOB_LIMIT, max(0, DAILY_JOB_LIMIT - used)
     used = redis_client.incr(key)
     if used == 1:
         next_day = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -1005,6 +1318,17 @@ def normalize_dimension(value, default=0):
 def add_history_entry(session_id, task_id, source_name, image_preset, abstract_filter, material_name,
                       run_parameters=None):
     if not session_id:
+        return
+    runtime = sync_job_runtime()
+    if isinstance(runtime, DynamoJobRuntime):
+        created_at = int(time.time())
+        runtime.table.put_item(Item=_dynamodb_values({
+            "pk": f"HISTORY#{session_id}", "sk": f"JOB#{created_at:010d}#{task_id}",
+            "task_id": task_id, "source_name": source_name,
+            "image_preset": image_preset, "abstract_filter": abstract_filter,
+            "material_name": material_name, "run_parameters": run_parameters or {},
+            "created_at": created_at, "expires_at": created_at + HISTORY_TTL_SECONDS,
+        }))
         return
     key = f"history:{session_id}"
     entry = json.dumps({
@@ -1037,6 +1361,8 @@ def reuse_settings_url(entry):
         "selected_color_hexes": parameters.get("selected_color_hexes", []),
         "color_name_overrides": parameters.get("color_name_overrides", {}),
         "abstract_filter_parameters": parameters.get("filter_parameters", {}),
+        "geometry_style": parameters.get("geometry_style", "vectors"),
+        "geometry_style_parameters": parameters.get("geometry_style_parameters", {}),
     }
     encoded = base64.urlsafe_b64encode(
         json.dumps(settings, separators=(",", ":")).encode("utf-8")
@@ -1052,7 +1378,7 @@ def job_history_links(entry):
         return {
             "svg_url": f"/download-svg/{task_id}",
             "lightburn_url": f"/download-lbrn2/{task_id}",
-            "reuse_url": "/holographic-etching",
+            "reuse_url": "/fauxlographic-etching",
             "reuse_label": "Open Lab",
         }
     return {
@@ -1066,11 +1392,20 @@ def job_history_links(entry):
 def get_history_entries(session_id):
     if not session_id:
         return []
+    runtime = sync_job_runtime()
+    if isinstance(runtime, DynamoJobRuntime):
+        response = runtime.table.query(
+            KeyConditionExpression=Key("pk").eq(f"HISTORY#{session_id}") & Key("sk").begins_with("JOB#"),
+            ScanIndexForward=False, Limit=99,
+        )
+        raw_entries = [_json_values(item) for item in response.get("Items", [])]
+    else:
+        raw_entries = redis_client.lrange(f"history:{session_id}", 0, 98)
     history_key = f"history:{session_id}"
     entries, stale_records = [], []
-    for raw_entry in redis_client.lrange(history_key, 0, 98):
+    for raw_entry in raw_entries:
         try:
-            entry = json.loads(raw_entry)
+            entry = raw_entry if isinstance(raw_entry, dict) else json.loads(raw_entry)
         except (TypeError, json.JSONDecodeError):
             stale_records.append(raw_entry)
             continue
@@ -1078,7 +1413,7 @@ def get_history_entries(session_id):
         if not task_id:
             stale_records.append(raw_entry)
             continue
-        stored_status = redis_client.get(f"task:{task_id}:status")
+        stored_status = runtime.status(task_id)
         # A manually purged or lifecycle-expired S3 job must not leave a dead
         # download row behind just because its browser-history record remains.
         if not stored_status and not task_artifacts_exist(task_id):
@@ -1094,7 +1429,7 @@ def get_history_entries(session_id):
         }
         history_entry.update(job_history_links(history_entry))
         entries.append(history_entry)
-    if stale_records:
+    if stale_records and isinstance(runtime, RedisJobRuntime):
         pipeline = redis_client.pipeline()
         for raw_entry in stale_records:
             pipeline.lrem(history_key, 0, raw_entry)
@@ -1131,6 +1466,21 @@ def parse_abstract_filter_parameters(raw_value):
             clean[key] = value.strip()
         elif key == "fill_mode" and value in {"from_setting", "fill", "offset_fill", "line"}:
             clean[key] = value
+        elif key == "mixing_model" and value in {"lab", "rgb", "hsv"}:
+            clean[key] = value
+        elif key == "glyph_shape" and value in {
+            "circle", "square", "diamond", "triangle", "hexagon", "octagon",
+            "star", "cross", "bar", "skull", "heart", "space_invader",
+            "ghost", "bat", "alien_head", "paw_print", "fish_scale",
+            "puzzle_piece", "mixed",
+        }:
+            clean[key] = value
+        elif key == "cell_shape" and value in {
+            "square", "hexagon", "triangle", "diamond", "skull", "heart",
+            "space_invader", "ghost", "bat", "alien_head", "paw_print",
+            "fish_scale", "puzzle_piece",
+        }:
+            clean[key] = value
         elif key in {"transparent", "invert_threshold", "keep_black"} and isinstance(value, bool):
             clean[key] = value
         elif key in {"transparent", "invert_threshold", "keep_black"} and isinstance(value, str) and value.lower() in ("true", "false"):
@@ -1138,10 +1488,192 @@ def parse_abstract_filter_parameters(raw_value):
             # checkbox as text. Normalize it to the same boolean used by the
             # current JSON-producing UI.
             clean[key] = value.lower() == "true"
+        elif key in {"square_dots", "invert", "black_only", "keep_available_colors_as_vectors", "preserve_black"} and isinstance(value, str) and value.lower() in ("true", "false"):
+            clean[key] = int(value.lower() == "true")
+        elif key in {"transparent", "invert_threshold", "keep_black", "square_dots", "invert", "black_only", "keep_available_colors_as_vectors", "preserve_black"} and isinstance(value, bool):
+            clean[key] = int(value)
         elif isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError(f"Abstract filter setting '{key}' must be numeric")
         else:
             clean[key] = value
+    return clean
+
+
+def parse_geometry_style_parameters(raw_value):
+    if not raw_value:
+        return {}
+    try:
+        parameters = json.loads(raw_value) if isinstance(raw_value, str) else raw_value
+    except (TypeError, json.JSONDecodeError) as error:
+        raise ValueError("Geometry style settings are not valid JSON") from error
+    if not isinstance(parameters, dict):
+        raise ValueError("Geometry style settings must be a small object")
+    # Compatibility with the short-lived Krasnow Geometry posterization
+    # control. Cached staging pages and persisted form snapshots can continue
+    # sending it after removal; it no longer changes processing and must not
+    # make an otherwise valid job fail.
+    parameters = dict(parameters)
+    parameters.pop("posterize_colors", None)
+    if len(parameters) > 24:
+        raise ValueError("Geometry style settings must be a small object")
+    if any(key in parameters for key in ("assignments", "glyphs", "krasnow_grating")):
+        if set(parameters) - {"assignments", "glyphs", "krasnow_grating"}:
+            raise ValueError("Geometry routing settings contain an invalid section")
+        assignments = parameters.get("assignments") or {}
+        if not isinstance(assignments, dict) or len(assignments) > 64:
+            raise ValueError("Geometry routing assignments must be a small object")
+        clean_assignments = {}
+        for color_hex, style in assignments.items():
+            color_hex = str(color_hex).strip().upper()
+            style = str(style).strip().lower()
+            if (
+                not re.fullmatch(r"#[0-9A-F]{6}", color_hex)
+                or style not in {"vectors", "glyphs", "krasnow_grating"}
+            ):
+                raise ValueError("Geometry routing contains an invalid swatch assignment")
+            clean_assignments[color_hex] = style
+        clean_assignments["#000000"] = "vectors"
+        used_styles = set(clean_assignments.values())
+        clean = {"assignments": clean_assignments}
+        if "glyphs" in used_styles:
+            clean["glyphs"] = parse_geometry_style_parameters(
+                parameters.get("glyphs") or {}
+            )
+        if "krasnow_grating" in used_styles:
+            clean["krasnow_grating"] = parse_geometry_style_parameters(
+                parameters.get("krasnow_grating") or {}
+            )
+        return clean
+    numeric = {
+        "cell_size_mm", "minimum_glyph_ratio", "maximum_glyph_ratio",
+        "non_black_glyph_density", "tone_curve", "contrast", "grid_angle",
+        "glyph_rotation", "seed", "speed_spread", "gradient_top",
+        "gradient_bottom", "gradient_curve", "hue_rotation",
+        "saturation_cutoff", "patch_size_mm", "line_spacing_mm",
+        "hue_line_spacing_minimum_mm", "hue_line_spacing_maximum_mm",
+        "angle_min", "angle_max",
+    }
+    toggles = {"invert", "invert_fill", "black_only", "preserve_black"}
+    shapes = {
+        "circle", "square", "diamond", "triangle", "hexagon", "octagon",
+        "star", "cross", "bar", "skull", "heart", "space_invader",
+        "ghost", "bat", "alien_head", "paw_print", "fish_scale",
+        "puzzle_piece", "mixed",
+    }
+    cell_shapes = {
+        "square", "hexagon", "triangle", "diamond", "skull", "heart",
+        "space_invader", "ghost", "bat", "alien_head", "paw_print",
+        "fish_scale", "puzzle_piece",
+    }
+    gradient_scopes = {"entire_artwork", "each_shape"}
+    gradient_directions = {
+        "top_to_bottom", "bottom_to_top", "left_to_right", "right_to_left",
+        "center_to_edge", "edge_to_center",
+    }
+    clean = {}
+    for key, value in parameters.items():
+        if key == "glyph_shape" and value in shapes:
+            clean[key] = value
+        elif key == "cell_shape" and value in cell_shapes:
+            clean[key] = value
+        elif key == "fauxlogram_gradient_scope" and value in gradient_scopes:
+            clean[key] = value
+        elif key == "fauxlogram_gradient_direction" and value in gradient_directions:
+            clean[key] = value
+        elif key == "fauxlogram_flow":
+            if not isinstance(value, dict):
+                raise ValueError("Fauxlogram Flow Painter settings must be an object")
+            regions = value.get("regions") or []
+            strokes = value.get("strokes") or []
+            if not isinstance(regions, list) or not 1 <= len(regions) <= 8:
+                raise ValueError("Fauxlogram Flow Painter supports 1-8 regions")
+            if not isinstance(strokes, list) or len(strokes) > 256:
+                raise ValueError("Fauxlogram Flow Painter has too many brush strokes")
+            def flow_number(candidate, default, minimum, maximum):
+                try:
+                    candidate = float(candidate)
+                except (TypeError, ValueError):
+                    candidate = default
+                if not math.isfinite(candidate):
+                    candidate = default
+                return min(maximum, max(minimum, candidate))
+            clean_regions = []
+            for region in regions:
+                if not isinstance(region, dict):
+                    raise ValueError("A Fauxlogram Flow Painter region is invalid")
+                scope = str(region.get("scope") or "combined_region")
+                guide_type = str(region.get("guide_type") or "linear")
+                orientation = str(region.get("orientation") or "parallel")
+                if scope not in {"combined_region", "each_shape", "entire_artwork"}:
+                    raise ValueError("A Fauxlogram Flow Painter scope is invalid")
+                if guide_type not in {"linear", "radial"}:
+                    raise ValueError("A Fauxlogram Flow Painter guide is invalid")
+                if orientation not in {"parallel", "perpendicular", "fixed", "offset"}:
+                    raise ValueError("A Fauxlogram Flow Painter orientation is invalid")
+                def point(name, fallback):
+                    candidate = region.get(name, fallback)
+                    if not isinstance(candidate, list) or len(candidate) != 2:
+                        raise ValueError("A Fauxlogram Flow Painter guide point is invalid")
+                    numbers = [float(item) for item in candidate]
+                    if any(not math.isfinite(item) or not 0 <= item <= 1 for item in numbers):
+                        raise ValueError("A Fauxlogram Flow Painter guide point is invalid")
+                    return numbers
+                clean_regions.append({
+                    "name": str(region.get("name") or f"Region {len(clean_regions)+1}")[:40],
+                    "scope": scope, "guide_type": guide_type,
+                    "orientation": orientation,
+                    "start": point("start", [.25, .5]), "end": point("end", [.75, .5]),
+                    "gradient_start": flow_number(region.get("gradient_start"), 165, 0, 255),
+                    "gradient_end": flow_number(region.get("gradient_end"), 90, 0, 255),
+                    "curve": flow_number(region.get("curve"), 1, .2, 5),
+                    "fixed_angle": flow_number(region.get("fixed_angle"), 0, -180, 180),
+                    "angle_offset": flow_number(region.get("angle_offset"), 0, -180, 180),
+                    "reverse": bool(region.get("reverse")),
+                })
+            clean_strokes, point_count = [], 0
+            for stroke in strokes:
+                if not isinstance(stroke, dict):
+                    raise ValueError("A Fauxlogram Flow Painter stroke is invalid")
+                region_index = stroke.get("region")
+                points = stroke.get("points") or []
+                if not isinstance(region_index, int) or not 0 <= region_index < len(clean_regions):
+                    raise ValueError("A Fauxlogram Flow Painter stroke region is invalid")
+                if not isinstance(points, list) or not 1 <= len(points) <= 512:
+                    raise ValueError("A Fauxlogram Flow Painter stroke is invalid")
+                clean_points = []
+                for candidate in points:
+                    if not isinstance(candidate, list) or len(candidate) != 2:
+                        raise ValueError("A Fauxlogram Flow Painter stroke point is invalid")
+                    coordinates = [float(item) for item in candidate]
+                    if any(not math.isfinite(item) or not 0 <= item <= 1 for item in coordinates):
+                        raise ValueError("A Fauxlogram Flow Painter stroke point is invalid")
+                    clean_points.append(coordinates)
+                point_count += len(clean_points)
+                if point_count > 4000:
+                    raise ValueError("Fauxlogram Flow Painter has too many brush points")
+                clean_strokes.append({
+                    "region": region_index,
+                    "erase": bool(stroke.get("erase")),
+                    "width": flow_number(stroke.get("width"), .08, .002, .5),
+                    "points": clean_points,
+                })
+            clean[key] = {
+                "enabled": bool(value.get("enabled", True)),
+                "regions": clean_regions,
+                "strokes": clean_strokes,
+            }
+        elif key in toggles and isinstance(value, bool):
+            clean[key] = int(value)
+        elif key in toggles and isinstance(value, int) and value in {0, 1}:
+            clean[key] = value
+        elif key in toggles and isinstance(value, str) and value.lower() in {"true", "false"}:
+            clean[key] = int(value.lower() == "true")
+        elif key in numeric and not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value):
+            clean[key] = value
+        else:
+            raise ValueError(f"Geometry style setting '{key}' is invalid")
+    if clean.get("invert_fill") and clean.get("black_only"):
+        raise ValueError("Invert Fill cannot be combined with Black Only")
     return clean
 
 
@@ -1182,7 +1714,7 @@ def task_artifact_key(task_id, filename, category="outputs", user_id=None):
     return f"jobs/{task_id}/{category}/{filename}"
 
 
-def upload_task_artifact(task_id, local_file_path, category="outputs", user_id=None):
+def upload_task_artifact(task_id, local_file_path, category="outputs", user_id=None, guest=False):
     if not s3_artifacts_enabled():
         return None
     filename = os.path.basename(local_file_path)
@@ -1194,6 +1726,8 @@ def upload_task_artifact(task_id, local_file_path, category="outputs", user_id=N
             # targeted by a single S3 prefix rule. A lifecycle tag keeps them
             # on the same seven-day retention schedule as guest jobs.
             upload_args["ExtraArgs"] = {"Tagging": "mopa-retention=job"}
+        elif guest:
+            upload_args["ExtraArgs"] = {"Tagging": "mopa-retention=guest"}
         s3_client.upload_file(local_file_path, S3_BUCKET_NAME, key, **upload_args)
     except ClientError as error:
         raise RuntimeError(f"Could not store job artifact in S3: {error}") from error
@@ -1235,7 +1769,7 @@ def find_task_artifact(task_id, extension=None, user_id=None):
     return sorted(keys)[0] if keys else None
 
 
-def task_artifacts_exist(task_id):
+def task_artifacts_exist(task_id, user_id=None):
     """Return whether a task still has any durable S3 object.
 
     On an S3 error, preserve history rather than incorrectly hiding a job due
@@ -1247,7 +1781,7 @@ def task_artifacts_exist(task_id):
     try:
         response = s3_client.list_objects_v2(
             Bucket=S3_BUCKET_NAME,
-            Prefix=_task_artifact_prefix(task_id),
+            Prefix=_task_artifact_prefix(task_id, user_id=user_id),
             MaxKeys=1,
         )
         return bool(response.get("Contents"))
@@ -1292,12 +1826,11 @@ def start_disk_cleanup_worker(app, interval_seconds=3600):
 
 
 def long_running_script(task_id, data, image_path, material_settings_path, upload_folder,
-                        user_id=None, output_name=None):
+                        user_id=None, output_name=None, guest_job=False,
+                        guest_quota_visitor="", guest_quota_day="",
+                        guest_daily_job_limit=0):
     try:
-        log_key, status_key = f"task:{task_id}:log", f"task:{task_id}:status"
-        redis_client.set(status_key, "processing")
-        redis_client.expire(status_key, HISTORY_TTL_SECONDS)
-        redis_client.expire(log_key, HISTORY_TTL_SECONDS)
+        job_runtime.set_status(task_id, "processing")
         image_preset = str(data.get("image_preset", "cartoon")).strip().lower()
         svg_only = str(data.get("svg_only", "false")).strip().lower() in ("true", "1", "yes", "on")
         material_name = str(data.get("material", "stainless - steel")).strip().lower()
@@ -1309,7 +1842,17 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
             image_preset = "abstract"
         if image_preset != "abstract" or abstract_filter not in ABSTRACT_FILTER_NAMES:
             abstract_filter = "none"
-        process = subprocess.Popen([
+        geometry_style = str(data.get("geometry_style", "vectors")).strip().lower()
+        if geometry_style not in {"vectors", "glyphs", "krasnow_grating", "by_swatch"}:
+            raise ValueError("Choose a valid geometry style")
+        if geometry_style in {"glyphs", "krasnow_grating", "by_swatch"} and abstract_filter in {
+            "halftone_newsprint", "optical_color_mix", "krasnow_grating",
+        }:
+            raise ValueError("This Geometry Style is not available with the selected specialized image style")
+        geometry_parameters = parse_geometry_style_parameters(
+            data.get("geometry_style_parameters", "{}")
+        )
+        command = [
             "python", "-u", "lib/Material_Library.py", image_path,
             os.path.join(
                 upload_folder,
@@ -1322,8 +1865,82 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
             json.dumps(parse_abstract_filter_parameters(data.get("abstract_filter_parameters", "{}")), separators=(",", ":")),
             json.dumps(parse_color_name_overrides(data.get("color_name_overrides", "{}")), separators=(",", ":")),
             "true" if svg_only else "false",
-        ], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            json.dumps({
+                "color_matching_mode": data.get("color_matching_mode", "balanced"),
+                "color_matching_hue_weight": data.get("color_matching_hue_weight", 4.0),
+                "color_matching_saturation_weight": data.get("color_matching_saturation_weight", 1.0),
+                "color_matching_lightness_weight": data.get("color_matching_lightness_weight", 1.0),
+            }, separators=(",", ":")),
+            "false",
+            geometry_style,
+            json.dumps(geometry_parameters, separators=(",", ":")),
+            str(data.get("crop_shape", "")).strip().lower(),
+        ]
+
+        def run_process(arguments):
+            process = subprocess.Popen(
+                arguments, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            )
+            current_line, last_line = [], ""
+            while True:
+                char = process.stdout.read(1)
+                if not char and process.poll() is not None:
+                    break
+                if char:
+                    if char in ("\n", "\r"):
+                        line = "".join(current_line).strip()
+                        if line:
+                            last_line = line
+                            job_runtime.append_log(task_id, line)
+                        current_line = []
+                    else:
+                        current_line.append(char)
+            line = "".join(current_line).strip()
+            if line:
+                last_line = line
+                job_runtime.append_log(task_id, line)
+            return process.wait(), last_line
+
+        if guest_job:
+            job_runtime.append_log(
+                task_id,
+                "Validating artwork, parameters, Material Library, and material before counting this guest job.",
+            )
+            validation_command = list(command)
+            validation_command[17] = "true"
+            validation_exit, validation_message = run_process(validation_command)
+            if validation_exit != 0:
+                failure_message = validation_message or "Guest input validation failed"
+                job_runtime.set_status(task_id, "failed", error=failure_message)
+                job_runtime.append_log(task_id, f"ERROR: {failure_message}")
+                return
+            quota_context_present = bool(
+                guest_quota_visitor and guest_quota_day and int(guest_daily_job_limit or 0) > 0
+            )
+            if not quota_context_present:
+                # Jobs accepted by the immediately preceding API revision were
+                # already charged at submission time. Let those in-flight jobs
+                # finish without charging or rejecting them a second time.
+                job_runtime.append_log(
+                    task_id,
+                    "Input validation passed. This pre-update guest job retains its original quota claim.",
+                )
+            elif not job_runtime.claim_guest_quota(
+                task_id, guest_quota_visitor, guest_quota_day, guest_daily_job_limit,
+            ):
+                failure_message = (
+                    f"Guest limit reached ({int(guest_daily_job_limit or 0)} validated jobs per day). "
+                    "Sign in to continue."
+                )
+                job_runtime.set_status(task_id, "failed", error=failure_message)
+                job_runtime.append_log(task_id, f"ERROR: {failure_message}")
+                return
+            else:
+                job_runtime.append_log(task_id, "Input validation passed. This guest job now counts toward today's limit.")
+
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         current_line = []
+        last_process_line = ""
         while True:
             char = process.stdout.read(1)
             if not char and process.poll() is not None:
@@ -1332,43 +1949,49 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
                 if char in ("\n", "\r"):
                     line = "".join(current_line).strip()
                     if line:
-                        print(f"[Task {task_id}] {line}", flush=True)
-                        redis_client.rpush(log_key, line)
+                        last_process_line = line
+                        job_runtime.append_log(task_id, line)
                     current_line = []
                 else:
                     current_line.append(char)
         line = "".join(current_line).strip()
         if line:
-            print(f"[Task {task_id}] {line}", flush=True)
-            redis_client.rpush(log_key, line)
+            last_process_line = line
+            job_runtime.append_log(task_id, line)
         exit_code = process.wait()
         if exit_code == 0:
             output_paths = glob.glob(os.path.join(upload_folder, f"output_{task_id}_*"))
             output_keys = []
             for output_path in output_paths:
                 if os.path.isfile(output_path):
-                    key = upload_task_artifact(task_id, output_path, user_id=user_id)
+                    key = upload_task_artifact(
+                        task_id, output_path, user_id=user_id, guest=guest_job,
+                    )
                     if key:
                         output_keys.append(key)
-            redis_client.set(status_key, "completed")
+            job_runtime.set_status(task_id, "completed")
             try:
                 update_user_job(task_id, "completed", output_keys=output_keys)
             except RuntimeError as status_error:
                 print(f"[Thread-{task_id}] Could not save durable completion state: {status_error}", flush=True)
         else:
-            redis_client.set(status_key, "failed")
-            failure_message = f"Rasterizer exited with code {exit_code}"
+            failure_message = last_process_line or f"Rasterizer exited with code {exit_code}"
             if exit_code in (-9, 137):
-                failure_message += " (the worker may have been killed or exceeded its memory limit)"
-            redis_client.rpush(log_key, failure_message)
+                failure_message = (
+                    f"Rasterizer exited with code {exit_code} "
+                    "(the worker may have been killed or exceeded its memory limit)"
+                )
+            job_runtime.set_status(task_id, "failed", error=failure_message)
+            job_runtime.append_log(task_id, f"ERROR: {failure_message}")
             try:
                 update_user_job(task_id, "failed", error_message=failure_message)
             except RuntimeError as status_error:
                 print(f"[Thread-{task_id}] Could not save durable failure state: {status_error}", flush=True)
     except Exception as error:
         print(f"[Thread-{task_id}] Exception: {error}", flush=True)
-        redis_client.set(f"task:{task_id}:status", "failed", ex=HISTORY_TTL_SECONDS)
-        redis_client.rpush(f"task:{task_id}:log", f"Artifact processing failed: {error}")
+        failure_message = f"Artifact processing failed: {error}"
+        job_runtime.set_status(task_id, "failed", error=failure_message)
+        job_runtime.append_log(task_id, f"ERROR: {failure_message}")
         tasks[f"{task_id}_status"] = "failed"
         tasks[f"{task_id}_error"] = str(error)
         try:
@@ -1376,9 +1999,46 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
         except RuntimeError as status_error:
             print(f"[Thread-{task_id}] Could not save durable failure state: {status_error}", flush=True)
     finally:
-        redis_client.expire(f"task:{task_id}:status", HISTORY_TTL_SECONDS)
-        redis_client.expire(f"task:{task_id}:log", HISTORY_TTL_SECONDS)
-        redis_client.expire(f"task:{task_id}:access", HISTORY_TTL_SECONDS)
+        pass
+
+
+def store_and_enqueue_job(payload):
+    """Persist a task-addressable envelope, then publish its task ID."""
+    task_id = str(payload["task_id"])
+    runtime = sync_job_runtime()
+    raw_payload = json.dumps(payload, separators=(",", ":"))
+    if isinstance(runtime, RedisJobRuntime):
+        # Preserve the production Redis transaction and its established tests.
+        pipeline = redis_client.pipeline()
+        pipeline.set(f"{RASTER_JOB_PAYLOAD_PREFIX}{task_id}", raw_payload, ex=HISTORY_TTL_SECONDS)
+        if not SQS_QUEUE_URL and not FARGATE_DISPATCH_VIA_S3:
+            pipeline.lpush(RASTER_JOB_QUEUE, raw_payload)
+        pipeline.execute()
+    else:
+        runtime.put_payload(task_id, payload)
+    if FARGATE_DISPATCH_VIA_S3:
+        try:
+            s3_client.put_object(
+                Bucket=S3_BUCKET_NAME,
+                Key=f"jobs/{task_id}/dispatch.ready",
+                Body=b"",
+                ContentType="application/x-mopa-raster-dispatch",
+            )
+        except Exception as error:
+            raise RuntimeError("Could not publish the raster task through S3") from error
+    elif SQS_QUEUE_URL:
+        try:
+            message_body = (
+                task_id if isinstance(runtime, RedisJobRuntime)
+                else json.dumps({"task_id": task_id}, separators=(",", ":"))
+            )
+            sqs_client.send_message(
+                QueueUrl=SQS_QUEUE_URL,
+                MessageBody=message_body,
+            )
+        except Exception as error:
+            raise RuntimeError("Could not publish the raster task to SQS") from error
+    return raw_payload
 
 
 def enqueue_raster_job(task_id, data, image_key, material_key, output_name,
@@ -1397,8 +2057,14 @@ def enqueue_raster_job(task_id, data, image_key, material_key, output_name,
         "material_name": secure_artifact_name(material_name, "materials.clb"),
         "user_id": user_id,
     }
-    redis_client.lpush(RASTER_JOB_QUEUE, json.dumps(payload, separators=(",", ":")))
-    redis_client.rpush(f"task:{task_id}:log", "Job queued for a dedicated raster worker.")
+    try:
+        record_admin_job(payload)
+    except RuntimeError as error:
+        # Administrative indexing must never prevent an otherwise valid job
+        # from reaching a worker.
+        print(f"[Task {task_id}] Could not update admin job index: {error}", flush=True)
+    store_and_enqueue_job(payload)
+    sync_job_runtime().append_log(task_id, "Job accepted. Starting a raster worker...")
 
 
 def raster_queue_position(task_id):

@@ -108,7 +108,7 @@ material_script=$(cd -- "$(dirname -- "$material_script")" && pwd)/$(basename --
 material_library=$(cd -- "$(dirname -- "$material_library")" && pwd)/$(basename -- "$material_library")
 
 presets=(cartoon color_photograph bw_dither_photograph abstract)
-filters=(none wave voronoi shear spiral mosaic crystal ripple centerline glitch deep_fryer shattered krasnow_grating)
+filters=(none wave voronoi shear spiral mosaic crystal ripple glitch deep_fryer shattered structure_tensor_flow halftone_newsprint optical_color_mix krasnow_grating)
 
 # Defaults exercise each filter predictably. Override individual values by
 # editing these JSON objects or by copying this script for a test profile.
@@ -121,11 +121,13 @@ declare -A filter_json=(
   [mosaic]='{"tile_size":12,"gap":1,"stagger":0.5}'
   [crystal]='{"cell_size":18,"gap":0.7}'
   [ripple]='{"amplitude":3,"frequency":0.18,"phase":0,"center_x":0.5,"center_y":0.5}'
-  [centerline]='{"dark_threshold":145,"contrast":1.15,"blur":1,"gap_closure":1,"line_simplification":0.35,"min_branch_length":8,"stroke_width":0.35}'
   [glitch]='{"slice_height":18,"fragment_width":70,"shift_amount":28,"echo_count":2,"echo_spacing":9,"density":0.55,"fibonacci_stride":2,"vertical_jitter":3,"seed":1}'
   [deep_fryer]='{"block_size":24,"band_height":34,"compression_gap":0.7,"smear_amount":18,"echo_count":2,"echo_spacing":5,"degradation":0.35,"seed":1}'
   [shattered]='{"min_shard_size":8,"max_shard_size":32,"density":0.6,"minimum_gap":0.7,"gap_variation":2.2,"horizontal_spread":12,"fall_distance":20,"gravity_bias":1.4,"rotation":22,"break_origin_x":0.5,"break_origin_y":0.35,"seed":1}'
-  [krasnow_grating]='{"speed_spread":1,"gradient_top":165,"gradient_bottom":90,"gradient_curve":1,"hue_rotation":0.13,"saturation_cutoff":0.2,"patch_size_mm":0.4,"line_spacing_mm":0.06,"angle_min":-90,"angle_max":90}'
+  [structure_tensor_flow]='{"abstraction":0.5,"line_spacing_mm":0.9,"line_length_mm":5,"minimum_ribbon_width_mm":0.1,"maximum_ribbon_width_mm":0.35,"minimum_color_run_mm":0.3,"width_tone_influence":0.65,"width_coherence_influence":0.35,"step_size_mm":0.15,"source_blur_px":1.5,"tensor_smoothing_px":6,"coherence_cutoff":0,"coherence_influence":0.5,"flow_rotation":0,"seed_jitter":0.15,"seed":1}'
+  [halftone_newsprint]='{"cell_size_mm":0.6,"minimum_dot_ratio":0.48,"maximum_dot_ratio":0.97,"non_black_dot_density":2.3,"tone_curve":0.75,"contrast":2.0,"grid_angle":-45,"square_dots":0,"invert":0}'
+  [optical_color_mix]='{"mixing_model":"lab","dot_pitch_mm":0.35,"mix_cell_dots":4,"dot_size_ratio":0.72,"direct_color_preference":0.08,"hue_shift":0,"saturation_gain":1,"brightness_gamma":1,"dot_influence":1,"neutral_bias":0,"pattern_seed":1,"square_dots":0}'
+  [krasnow_grating]='{"preserve_black":1,"cell_shape":"square","speed_spread":1,"gradient_top":165,"gradient_bottom":90,"gradient_curve":1,"hue_rotation":0.13,"saturation_cutoff":0.2,"patch_size_mm":0.4,"line_spacing_mm":0.06,"hue_line_spacing_minimum_mm":0.06,"hue_line_spacing_maximum_mm":0.06,"angle_min":-90,"angle_max":90}'
 )
 
 base_name=$(basename -- "$input_file")

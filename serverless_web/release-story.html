@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="The release story of MOPA Laser Rasterizer: color discovery, diffraction, fauxlographic engraving, depth, palettes, and LightBurn workflows.">
+<link rel="canonical" href="https://www.mopa-laser-rasterizer.com/release-story">
+<meta property="og:type" content="article">
+<meta property="og:title" content="I Need More Lasers — MOPA Laser Rasterizer">
+<meta property="og:description" content="A field report on color discovery, diffraction engraving, reusable laser palettes, depth, and the experiments behind MOPA Laser Rasterizer.">
+<meta property="og:image" content="https://www.mopa-laser-rasterizer.com/release-story-media/IMG_4580.jpeg">
+<meta name="twitter:card" content="summary_large_image">
+<title>I Need More Lasers — MOPA Laser Rasterizer</title>
+<script>document.documentElement.classList.add('staging-shell-pending');setTimeout(()=>document.documentElement.classList.remove('staging-shell-pending'),3000)</script>
+<link rel="stylesheet" href="/machine_chrome.css?v=3">
+<link rel="stylesheet" href="/staging-shell.css?v=1">
+<link rel="stylesheet" href="/staging-pages.css?v=1">
+<script src="/staging-shell.js?v=3" defer></script>
+<style>
+:root{
+  --bg:#090c0a;--panel:#0f1511;--panel2:#141c16;--panel3:#0b100d;
+  --ink:#edf7ef;--muted:#8ca093;--line:#253129;--line2:#38483e;
+  --green:#9af4a4;--green2:#66cf75;--amber:#e9ce63;--shadow:rgba(0,0,0,.5);
+  --max:1180px;
+}
+body.light-machine{
+  --bg:#eef3ef;--panel:#f8fbf9;--panel2:#fff;--panel3:#edf3ee;
+  --ink:#172019;--muted:#607165;--line:#ccd9d0;--line2:#aebfb3;
+  --green:#176e2b;--green2:#2a8640;--amber:#806500;--shadow:rgba(20,40,26,.10);
+}
+*{box-sizing:border-box} html{scroll-behavior:smooth}
+body{margin:0;color:var(--ink);background:var(--bg);
+background-image:linear-gradient(rgba(255,255,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.012) 1px,transparent 1px);
+background-size:28px 28px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;line-height:1.6}
+#progress{position:fixed;z-index:1000;top:0;left:0;width:0;height:2px;background:var(--green);box-shadow:0 0 12px var(--green)}
+.site-header{position:sticky;top:0;z-index:900;border-bottom:1px solid var(--line);backdrop-filter:blur(16px);background:color-mix(in srgb,var(--bg) 86%,transparent)}
+.header-inner{max-width:var(--max);margin:auto;padding:11px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}.brand-mark{width:11px;height:11px;border:2px solid var(--green);transform:rotate(45deg)}
+.brand-title{font-size:.78rem;letter-spacing:.13em;font-weight:800}.brand-sub{font-size:.61rem;color:var(--muted);letter-spacing:.11em;text-transform:uppercase}
+.header-actions{display:flex;gap:8px}.console-btn{border:1px solid var(--line2);background:var(--panel);color:var(--ink);text-decoration:none;padding:8px 10px;font:inherit;font-size:.66rem;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}
+.console-btn:hover{border-color:var(--green);color:var(--green)}
+.hero-shell{max-width:var(--max);margin:auto;padding:48px 20px 22px}.hero-console{border:1px solid var(--line2);background:linear-gradient(180deg,var(--panel2),var(--panel));box-shadow:0 30px 90px var(--shadow)}
+.console-strip{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--panel3);font-size:.64rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+.status{color:var(--green)}.status:before{content:"●";margin-right:6px}
+.hero-grid{display:grid;grid-template-columns:1fr;min-height:420px}.hero-copy{padding:clamp(28px,6vw,68px);display:flex;flex-direction:column;justify-content:center;max-width:900px}
+.eyebrow{color:var(--green);font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;margin-bottom:16px}
+.hero-copy h1{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:clamp(2.55rem,6vw,5.4rem);line-height:.93;letter-spacing:-.055em;margin:0 0 24px}
+.dek{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--muted);font-size:clamp(1rem,1.8vw,1.28rem);line-height:1.55}
+.hero-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:26px}.hero-actions a{border:1px solid var(--line2);padding:10px 13px;color:var(--ink);text-decoration:none;font-size:.69rem;text-transform:uppercase;letter-spacing:.06em}.hero-actions a:hover{border-color:var(--green);color:var(--green)}.hero-actions .primary{border-color:var(--green);color:var(--green)}
+.hero-media{border-left:1px solid var(--line);background:#000;display:flex}.hero-video-frame{width:100%;display:flex;flex-direction:column;background:#000}.hero-video-frame video{width:100%;height:100%;min-height:440px;object-fit:cover}.hero-video-frame .media-caption{padding:8px 10px}
+.metrics{max-width:var(--max);margin:0 auto;padding:0 20px 24px;display:grid;grid-template-columns:repeat(4,1fr)}.metric{border:1px solid var(--line);border-left:0;background:var(--panel);padding:16px}.metric:first-child{border-left:1px solid var(--line)}.metric b{display:block;color:var(--green);font-size:1.05rem}.metric span{color:var(--muted);font-size:.63rem;text-transform:uppercase;letter-spacing:.08em}
+.page-grid{max-width:var(--max);margin:auto;padding:20px 20px 76px;display:grid;grid-template-columns:235px minmax(0,1fr);gap:32px;align-items:start}
+.toc{position:sticky;top:20px;border:1px solid var(--line);background:var(--panel)}.toc-title{padding:10px 12px;border-bottom:1px solid var(--line);font-size:.65rem;color:var(--muted);letter-spacing:.1em}.toc a{display:grid;grid-template-columns:28px 1fr;gap:8px;padding:8px 10px;text-decoration:none;color:var(--muted);font-size:.65rem;border-bottom:1px solid var(--line)}.toc a:hover,.toc a.active{color:var(--green);background:var(--panel3)}.toc-index{color:var(--green2)}
+.article{min-width:0}.article p,.article li{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:1rem}.article p{max-width:790px}.article h2{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:clamp(1.7rem,4vw,3rem);line-height:1.05;letter-spacing:-.035em;margin:48px 0 22px;padding-top:24px;border-top:1px solid var(--line);scroll-margin-top:96px}.article h2:first-of-type{margin-top:18px}.article h3{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.article blockquote{margin:24px 0;max-width:800px;padding:16px 19px;border:1px solid var(--line2);border-left:3px solid var(--green);background:var(--panel3)}.article hr{display:none}.article code{background:var(--panel3);border:1px solid var(--line);padding:.12em .34em}
+.media-block{margin:27px 0;border:1px solid var(--line2);background:#050706;padding:7px;transition:width .2s ease}.article>.media-block{width:50%;margin-left:auto;margin-right:auto}.article>.media-block.is-expanded{width:100%}.media-block img,.media-block video{display:block;width:100%;height:auto;background:#000}.media-block video{max-height:78vh;object-fit:contain}.media-caption{padding:8px 7px 1px;color:var(--muted);font-size:.62rem;text-transform:uppercase;letter-spacing:.05em}.media-expand{display:block;margin:8px 7px 3px auto;border:1px solid var(--line2);background:var(--panel3);color:var(--ink);padding:6px 9px;font:inherit;font-size:.6rem;letter-spacing:.06em;text-transform:uppercase;cursor:pointer}.media-expand:hover,.media-expand:focus-visible{border-color:var(--green);color:var(--green)}
+.media-gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:27px 0}.media-gallery .media-block{margin:0}.media-gallery .media-block:first-child,.media-gallery .media-block.is-expanded{grid-column:1/-1}.media-gallery img{aspect-ratio:4/3;object-fit:cover}.media-gallery.media-pair .media-block:first-child{grid-column:auto}.media-gallery.media-pair img{height:auto;aspect-ratio:auto;object-fit:contain}.image-needed,.update-needed{margin:18px 0;border:1px dashed var(--amber);background:color-mix(in srgb,var(--amber) 7%,var(--panel));color:var(--amber);padding:12px 14px}.image-needed span,.update-needed span{display:block;font-size:.58rem;letter-spacing:.11em;margin-bottom:4px}.image-needed strong,.update-needed strong{font-size:.73rem}.draft-note{max-width:var(--max);margin:0 auto;padding:0 20px}.draft-note div{border:1px solid var(--amber);background:color-mix(in srgb,var(--amber) 7%,var(--panel));color:var(--amber);padding:11px 14px;font-size:.68rem;letter-spacing:.05em}.resource-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:22px}.resource-grid a{display:flex;align-items:center;justify-content:center;min-height:48px;border:1px solid var(--line2);background:var(--panel3);color:var(--ink);text-decoration:none;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em}.resource-grid a:hover{border-color:var(--green);color:var(--green)}
+.closing{max-width:var(--max);margin:0 auto 72px;padding:0 20px}.closing-inner{border:1px solid var(--green);background:var(--panel);padding:clamp(28px,5vw,54px);text-align:center}.closing-inner .tiny{color:var(--muted);font-size:.64rem;letter-spacing:.13em;text-transform:uppercase}.closing-inner h2{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:clamp(2.4rem,7vw,5.7rem);line-height:.94;letter-spacing:-.05em;margin:12px 0 20px}.closing-inner p{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--muted);max-width:720px;margin:auto}
+footer{border-top:1px solid var(--line);padding:22px 20px;color:var(--muted);font-size:.62rem;text-transform:uppercase;letter-spacing:.08em;text-align:center}
+@media(max-width:900px){.hero-grid{grid-template-columns:1fr}.hero-media{border-left:0;border-top:1px solid var(--line)}.metrics{grid-template-columns:1fr 1fr}.page-grid{grid-template-columns:1fr}.toc{position:relative;top:auto;max-height:none}}
+@media(max-width:560px){.brand-sub,.site-link{display:none}.hero-shell{padding-top:22px}.hero-copy{padding:26px 21px}.hero-video-frame video{min-height:280px}.metric{padding:13px}.article>.media-block{width:100%}.media-expand{display:none}.media-gallery,.resource-grid{grid-template-columns:1fr}.media-gallery .media-block:first-child{grid-column:auto}}
+.release-story-page{font:16px/1.65 system-ui,sans-serif}
+.release-story-page .hero-shell{max-width:none;padding:26px 0 18px}
+.release-story-page .hero-console{overflow:hidden;border:2px solid #566251;border-radius:12px;background:linear-gradient(145deg,#1b211a,#10140f);box-shadow:inset 0 0 0 3px #0b0e0a,inset 0 0 18px #050605,0 5px 0 #090b08}
+.release-story-page .console-strip{border-color:#465142;background:#111510;color:#aaa98e}
+.release-story-page .metrics{max-width:none;padding:0 0 24px}
+.release-story-page .metric{border-color:#4d594a;background:linear-gradient(#1d231c,#141813);box-shadow:inset 0 0 0 2px #0d100c}
+.release-story-page .draft-note{max-width:none;padding:0}
+.release-story-page .draft-note div{border-radius:5px;background:#211d14;box-shadow:inset 0 0 12px #0007}
+.release-story-page .page-grid{max-width:none;padding:20px 0 64px;grid-template-columns:minmax(220px,290px) minmax(0,1fr);gap:34px}
+.release-story-page .toc{top:20px;padding:16px;border:2px solid #596451;border-radius:10px;background:linear-gradient(#242b22,#121611);box-shadow:inset 0 0 0 3px #0c0f0b,inset 0 0 18px #050605}
+.release-story-page .toc-title{margin:-2px 0 13px;padding:8px 9px;border:1px solid #66705f;border-radius:5px;color:#d9d2af;background:#171b15}
+.release-story-page .toc a{margin:2px 0;padding:5px 6px;border:1px solid transparent;border-radius:4px;color:#8ee474;background:transparent}
+.release-story-page .toc a:hover,.release-story-page .toc a.active{color:#efffe8;border-color:#719268;background:linear-gradient(90deg,#315331,#263b28);box-shadow:inset 3px 0 #8ee474,0 0 8px #69d34f24}
+.release-story-page .article{padding:clamp(20px,4vw,42px);border:1px solid #465142;border-radius:10px;background:#181d1785;box-shadow:inset 0 1px #ffffff09}
+.release-story-page .article h2{margin:48px 0 19px;padding:9px 12px;border:1px solid #5d6b58;border-radius:5px;color:#dfe7d8;background:#151a14;font:700 clamp(1rem,2.2vw,1.35rem)/1.35 "Courier New",monospace;letter-spacing:.035em;text-transform:uppercase}
+.release-story-page .article h2:first-of-type{margin-top:30px}
+.release-story-page .article a{color:#8ee474}
+.release-story-page .media-block{border:2px solid #4d594a;border-radius:12px;background:#0c0f0c;box-shadow:inset 0 0 12px #000}
+.release-story-page .media-block img,.release-story-page .media-block video{border:1px solid #333d31;border-radius:7px}
+.release-story-page .closing{max-width:none;padding:0}
+.release-story-page .closing-inner{border:2px solid #65725f;border-radius:10px;background:linear-gradient(145deg,#20271f,#10140f);box-shadow:inset 0 0 0 3px #0b0e0a,inset 0 0 18px #050605,0 5px 0 #090b08}
+.release-story-page footer{border-color:#596451;color:#aaa98e}
+body.light-machine.release-story-page .hero-console{border-color:#858780;background:linear-gradient(145deg,#dedfd9,#b7bab3);box-shadow:inset 0 0 0 3px #eceee8,inset 0 0 14px #999,0 5px 0 #777974}
+body.light-machine.release-story-page .console-strip{border-color:#999c95;background:#d8d9d3;color:#4f554d}
+body.light-machine.release-story-page .metric{border-color:#777974;background:linear-gradient(#e2e3dd,#c2c4bd);box-shadow:inset 0 0 0 2px #f0f1eb}
+body.light-machine.release-story-page .draft-note div{color:#5a4415;border-color:#a18b5b;background:#ede1c4;box-shadow:inset 0 0 8px #c9b98f}
+body.light-machine.release-story-page .toc{border-color:#777974;background:linear-gradient(#e1e2dc,#bfc1ba);box-shadow:inset 0 0 0 3px #f0f1eb,inset 0 0 12px #999}
+body.light-machine.release-story-page .toc-title{color:#292a26;border-color:#858780;background:#d8d9d3;text-shadow:0 1px #fff}
+body.light-machine.release-story-page .toc a{color:#245d2a}
+body.light-machine.release-story-page .toc a:hover,body.light-machine.release-story-page .toc a.active{color:#102b16;border-color:#527d50;background:linear-gradient(90deg,#b8d2aa,#d1dfca);box-shadow:inset 3px 0 #3e813a}
+body.light-machine.release-story-page .article{color:#20221e;border-color:#8b8d87;background:#eeefe9ad;box-shadow:inset 0 1px #fff}
+body.light-machine.release-story-page .article h2{color:#20231e!important;border-color:#777974;background:#dedfd9;text-shadow:0 1px #fff}
+body.light-machine.release-story-page .article a{color:#245d2a}
+body.light-machine.release-story-page .media-block{border-color:#777974;background:#b9bbb5;box-shadow:inset 0 0 8px #888}
+body.light-machine.release-story-page .closing-inner{border-color:#858780;background:linear-gradient(145deg,#dedfd9,#b7bab3);box-shadow:inset 0 0 0 3px #eceee8,inset 0 0 14px #999,0 5px 0 #777974}
+body.light-machine.release-story-page footer{color:#3f433d}
+@media(max-width:800px){.release-story-page .page-grid{display:block;padding-top:8px}.release-story-page .toc{display:none}.release-story-page .article{width:100%}}
+</style>
+</head>
+<body class="release-story-page">
+<div id="progress"></div>
+<section class="hero-shell">
+  <div class="hero-console">
+    <div class="console-strip"><span class="status">Release field report online</span><span>Experiment → Measure → Save → Compose</span></div>
+    <div class="hero-grid">
+      <div class="hero-copy">
+        <div class="eyebrow">MOPA Laser Rasterizer · Release Story</div>
+        <h1>I Need More Lasers.</h1>
+        <div class="dek">What started as a way to make MOPA color engraving less tedious became an image-to-physical-engraving toolkit for color discovery, diffraction, angle-dependent engraving workflows, depth, reusable palettes, and LightBurn project generation.</div>
+        <div class="hero-actions">
+          <a class="primary" href="#this-started-with-ben-krasnow">Read the story</a>
+          <a href="/docs">Open docs</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="metrics">
+  <div class="metric"><b>DISCOVER</b><span>Color + optical operating points</span></div>
+  <div class="metric"><b>MEASURE</b><span>Photographed physical results</span></div>
+  <div class="metric"><b>COMPOSE</b><span>Vectors · glyphs · gratings · depth</span></div>
+  <div class="metric"><b>ENGRAVE</b><span>SVG + LightBurn workflows</span></div>
+</div>
+
+<div class="page-grid">
+  <aside class="toc"><div class="toc-title">FIELD REPORT INDEX</div></aside>
+  <main class="article">
+<p>Not more lasers for me, unfortunately.</p>
+<p><strong>I need your lasers.</strong></p>
+<p>A while ago I started building a tool because I wanted to make MOPA color engraving less tedious.</p>
+<p>That tool got somewhat out of hand.</p>
+<p>What started as a way to take an image, reduce it to colors I could actually engrave, and generate a LightBurn project has gradually turned into a much larger experimental toolkit for answering a question I keep asking:</p>
+<blockquote><strong>What can this laser and this piece of material actually do, and how can I turn the answer into something reusable?</strong></blockquote>
+<p>Rasterizer can still turn ordinary artwork into color engravings.</p>
+<p>But it can now also generate glyph fields, halftones, hatch textures, diffraction geometry, depth maps and relief previews; discover colors experimentally; calibrate <strong>fauxlographic</strong> effects—laser-engraved diffraction effects that resemble hologram-like imagery and change color or appearance with the viewing angle, but are not true holograms—from photographs of real engravings; save the results as reusable palettes; generate LightBurn test coupons; and combine different physical engraving strategies inside the same image.</p>
+<p>And somewhere in the middle of building all of that, I found a diffraction effect on my own MOPA that I still cannot adequately explain.</p>
+<p>This is an example fauxlogram—the kind of result we will explain how to work toward throughout the rest of this article:</p>
+<div class="media-block video-block" data-media="Diffractionwiz.mp4"><video controls playsinline muted preload="metadata" poster="/release-story-media/20260903_205219102.jpeg"><source src="/release-story-media/Diffractionwiz.mp4" type="video/mp4">Your browser does not support this clip. <a href="/release-story-media/Diffractionwiz.mp4">Open or download the video</a>.</video><div class="media-caption">An example fauxlogram whose changing color and appearance become visible as the viewing angle changes</div></div>
+<p>At one angle it can look surprisingly close to an ordinary MOPA color engraving.</p>
+<p>Then you move it.</p>
+<p>And it goes completely psychedelic.</p>
+<p>The strange part is that the image doesn't simply disappear into rainbow noise. Essentially every region can change color, but the regions change differently enough — and coherently enough — that the image survives.</p>
+<p>I can reproduce this on <strong>my</strong> machine.</p>
+<p>What I don't know is how well it generalizes to yours.</p>
+<p>We'll get back to that.</p>
+<hr>
+<h2 id="this-started-with-ben-krasnow">This started with Ben Krasnow</h2>
+<p>Before anything else, I need to give proper credit to <strong>Ben Krasnow</strong>.</p>
+<p>A huge amount of this project exists because of the MOPA experiments, code, settings, microscopy and methodology he made public:</p>
+<ul>
+<li><a href="https://github.com/benkrasnow/MOPA_Laser_Stainless_Colors">MOPA Laser Stainless Colors</a></li>
+<li><a href="https://github.com/benkrasnow/MOPA_Laser_Diffraction_Gratings">MOPA Laser Diffraction Gratings</a></li>
+</ul>
+<p>If you have a MOPA laser and haven't looked through those repositories, you should.</p>
+<p>Ben basically left an entire box of MOPA laser tools and data sitting on GitHub with the lid open.</p>
+<p>I didn't start building Rasterizer because his approach wasn't working.</p>
+<p><strong>I started building it because it was working.</strong></p>
+<hr>
+<h2 id="originally-i-just-wanted-color-engraving">Originally, I just wanted color engraving</h2>
+<p>One of my early experiments using Ben's work was Mario:</p>
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/IMG_3477.jpeg" alt="Early MOPA color engraving"><div class="media-caption">Early MOPA color engraving</div></div>
+<p>The result was exciting.</p>
+<p>The workflow was not.</p>
+<p>Take an image.</p>
+<p>Reduce the colors.</p>
+<p>Figure out which colors I could actually produce.</p>
+<p>Trace regions.</p>
+<p>Get them into LightBurn.</p>
+<p>Assign the right settings.</p>
+<p>Repeat.</p>
+<p>Then another.</p>
+<p>Then another.</p>
+<p>So I started automating things.</p>
+<hr>
+<h2 id="why-not-just-generate-the-lightburn-file">"Why not just generate the LightBurn file?"</h2>
+<p>That question was probably the point of no return.</p>
+<p>Instead of generating an SVG and manually reconstructing the job, Rasterizer began generating <code>.lbrn2</code> projects directly.</p>
+<p>The basic idea was simple:</p>
+<p><strong>artwork → Rasterizer swatch → tested laser recipe → LightBurn layer</strong></p>
+<p>The recipes come from a LightBurn Material Library, so Rasterizer doesn't need to pretend that my settings are universal.</p>
+<p>Your laser settings remain <strong>your</strong> laser settings.</p>
+<p>That let me do things like this:</p>
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/IMG_4008.jpeg" alt="Old Man Yells at Cloud engraving"><div class="media-caption">Old Man Yells at Cloud engraving</div></div>
+<p>And, after changing how connected regions were handled:</p>
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/IMG_4983.jpeg" alt="Simpsons engraving"><div class="media-caption">Simpsons engraving</div></div>
+<p>At that stage I thought I was building a raster-to-vector/color tool.</p>
+<p>That description did not survive very long.</p>
+<hr>
+<h2 id="then-rasterizer-stopped-being-a-rasterizer">Then Rasterizer stopped being a rasterizer</h2>
+<p>The important change was separating two questions that I had originally treated as one:</p>
+<blockquote><strong>What should the image look like?</strong></blockquote>
+<p>and:</p>
+<blockquote><strong>What physical geometry should the laser engrave to represent it?</strong></blockquote>
+<p>Those are now independent decisions.</p>
+<p>Rasterizer can process artwork using conventional photographic and illustrated-image presets or reinterpret it through abstract transformations such as Structure Tensor Flow, Voronoi and Halftone Newsprint.</p>
+<p>But after the image is interpreted, its regions do not have to become ordinary vectors.</p>
+<p>They can become:</p>
+<ul>
+<li><strong>Normal vector geometry</strong></li>
+<li><strong>Glyph geometry</strong></li>
+<li><strong>Krasnow diffraction-grating geometry</strong></li>
+<li>Or <strong>different geometry for different swatches in the same image</strong></li>
+</ul>
+<p>That last one is where things get especially interesting.</p>
+<p>A magenta region can become diffraction geometry.</p>
+<p>A blue region can become glyphs.</p>
+<p>A yellow region can remain an ordinary vector.</p>
+<p>Or any other color-to-geometry-type arrangement. All inside the same piece of artwork.</p>
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/ui-rasterizer-image-and-geometry-controls.png" alt="Rasterizer Image Style and Geometry Style controls"><div class="media-caption">Image processing and output geometry are configured independently</div></div>
+<div class="media-gallery media-pair" aria-label="Skull source artwork and its glyph geometry output">
+  <div class="media-block image-block"><img loading="lazy" src="/release-story-media/glyph-skulls-source.png" alt="Color skull illustration used as source artwork for glyph processing"><div class="media-caption">Source artwork</div></div>
+  <div class="media-block image-block"><img loading="lazy" src="/release-story-media/glyph-skulls-lightburn.png" alt="Skull-shaped glyph geometry generated from the source artwork and displayed in LightBurn"><div class="media-caption">Skull glyph geometry in LightBurn</div></div>
+</div>
+<div class="media-block video-block" data-media="butterfly.mp4"><video controls playsinline muted preload="metadata" poster="/release-story-media/butterfly-poster.jpg"><source src="/release-story-media/butterfly.mp4" type="video/mp4">Your browser does not support embedded video. <a href="/release-story-media/butterfly.mp4">Open the video</a>.</video><div class="media-caption">Finished butterfly engraving combining swatch-specific geometry treatments</div></div>
+<p>At some point I realized I had stopped writing an image vectorizer and had started writing something closer to an <strong>image-to-physical-engraving compiler</strong>.</p>
+<hr>
+<h2 id="but-the-bigger-problem-wasn-t-processing-artwork">But the bigger problem wasn't processing artwork</h2>
+<p>Eventually I realized that generating increasingly elaborate artwork was only half the problem.</p>
+<p>The harder question was still:</p>
+<blockquote><strong>How do I discover what the laser can actually produce in the first place?</strong></blockquote>
+<p>That led to what I now think is the more important part of Rasterizer.</p>
+<p>Instead of only consuming laser settings, it can help <strong>discover them experimentally</strong>.</p>
+<p>The loop is becoming:</p>
+<blockquote><strong>Discover → Measure → Save → Compose → Engrave → Refine</strong></blockquote>
+<p>And this is where all those test grids finally started earning their keep.</p>
+<hr>
+<h2 id="color-lab-make-the-test-grid-part-of-the-software">Color Lab: make the test grid part of the software</h2>
+<p>Color Lab starts from a known LightBurn setting and lets you create controlled parameter sweeps.</p>
+<p>Rasterizer generates the LightBurn calibration grid.</p>
+<p>You engrave it.</p>
+<p>Then you photograph the physical result.</p>
+<p>The browser lets you align the photograph with the known grid geometry, then measures the resulting cells locally.</p>
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/ui-color-lab-discovery-grid-setup.png" alt="Color Lab discovery grid parameter controls"><div class="media-caption">Color Lab discovery-grid parameter sweep setup</div></div>
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/engraved-color-lab-grid.jpg" alt="Engraved Color Lab discovery grid on a metal test card"><div class="media-caption">A physical Color Lab discovery grid ready for photographing, measurement and refinement</div></div>
+<div class="media-gallery media-pair">
+  <div class="media-block image-block"><img loading="lazy" src="/release-story-media/ui-color-lab-photograph-alignment-blue.png" alt="Color Lab photograph alignment over a measured blue discovery grid"><div class="media-caption">Align the photographed grid and measure its cells in the browser</div></div>
+  <div class="media-block image-block"><img loading="lazy" src="/release-story-media/ui-color-lab-swatch-selection-blue.png" alt="Color Lab review screen showing measured blue swatches available for selection"><div class="media-caption">Review the measured candidates and choose the swatches worth keeping</div></div>
+</div>
+<p>The interesting cells can then be selected and saved as reusable colors.</p>
+<p>And if one area looks promising, you don't have to start another giant blind sweep.</p>
+<p>You can generate a <strong>refinement grid</strong> around that region and search more narrowly.</p>
+<p>So instead of:</p>
+<blockquote>engrave enormous grid → squint at stainless → write something in notebook → eventually lose notebook</blockquote>
+<p>the workflow becomes:</p>
+<blockquote>generate experiment → engrave → photograph → measure → keep the useful results → refine around them</blockquote>
+<p>This is much closer to how I actually want to experiment with a MOPA.</p>
+<hr>
+<h2 id="the-holographic-etching-lab-does-the-same-thing-to-diffraction">The Fauxlographic Etching Lab does the same thing to diffraction</h2>
+<p>The Fauxlographic Etching Lab grew from the same idea, except that it measures angle-dependent diffraction rather than ordinary MOPA color.</p>
+<p>Start with an iridescent setting.</p>
+<p>Generate a calibration grid that varies parameters such as grating interval and angle, with an optional laser-parameter sweep.</p>
+<p>Engrave it.</p>
+<p>Photograph it.</p>
+<p>Align it.</p>
+<p>Measure the cells.</p>
+<p>Pick the interesting ones.</p>
+<p>Name them.</p>
+<p>Save them.</p>
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/physical-holographic-calibration-grid.jpg" alt="Physical fauxlographic calibration grid showing different iridescent responses under direct light"><div class="media-caption">A physical fauxlographic calibration grid revealing different optical responses under direct light</div></div>
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/ui-holographic-calibration-setup.png?v=20260913" alt="Fauxlographic finished-grid photograph aligned for cell analysis"><div class="media-caption">Finished-grid capture, alignment and fauxlographic cell analysis</div></div>
+<p>The resulting <strong>Fauxlographic Palette</strong> stores the observed swatches together with the LightBurn layer settings used to produce them.</p>
+<p>That distinction matters.</p>
+<p>Rasterizer isn't just remembering:</p>
+<blockquote>"this looked purple."</blockquote>
+<p>It can remember:</p>
+<blockquote><strong>"this physical optical result came from this physical engraving recipe."</strong></blockquote>
+<p>Those measured results can then be fed back into Rasterizer and used to process arbitrary artwork.</p>
+<p>That closes the loop.</p>
+<hr>
+<h2 id="and-that-brings-us-back-to-the-oil-slick">And that brings us back to the oil slick</h2>
+<p>Long before the Fauxlographic Lab existed, I found this while doing ordinary MOPA experiments:</p>
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/IMG_4677.jpeg" alt="Oil-slick test grid"><div class="media-caption">Oil-slick test grid</div></div>
+<p>One setting produced an unusually strong iridescent/oil-slick response.</p>
+<p>I saved it because it was obviously doing something interesting.</p>
+<p>Later I went back to Ben's diffraction work and noticed a suspicious number.</p>
+<p>Ben documented a particularly interesting diffraction operating point at:</p>
+<p><strong>300 mm/s at 300 kHz</strong></p>
+<p>which corresponds to:</p>
+<p><strong>1.00 µm of travel per pulse.</strong></p>
+<p>My strongest independently discovered oil-slick setting works out to approximately:</p>
+<p><strong>1.14 µm per pulse.</strong></p>
+<p>That got my attention.</p>
+<p>It is also where I need to be very careful.</p>
+<p><strong>I do not know that approximately one micron is the reason this works.</strong></p>
+<p>Two interesting numbers do not make a law of physics.</p>
+<p>Pulse pitch may be important.</p>
+<p>Or it may be one variable hiding several other important variables.</p>
+<p>Source, lens, focus, material, finish, pulse width, power, frequency, line interval and other factors may all matter.</p>
+<p>At this stage I'd rather expose useful experimental variables than pretend I already know which ones matter.</p>
+<hr>
+<h2 id="same-image-very-different-result">Same image. Very different result.</h2>
+<p>This is a conventional MOPA color engraving of <em>Heads</em> by Ott:</p>
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/IMG_4580.jpeg" alt="Conventional Heads color engraving"><div class="media-caption">Conventional Heads color engraving</div></div>
+<p>Then I began applying the diffraction ideas that eventually became <strong>Krasnow Grating</strong>.</p>
+<div class="media-block video-block" data-media="IMG_4910.mp4"><video controls playsinline preload="metadata" poster="/release-story-media/IMG_4580.jpeg"><source src="/release-story-media/IMG_4910.mp4" type="video/mp4">Your browser does not support embedded video. <a href="/release-story-media/IMG_4910.mp4">Open the video</a>.</video><div class="media-caption">Heads transformed into changing diffraction regions</div></div>
+<p>That was when this stopped being merely another interesting surface finish.</p>
+<p>As the viewing geometry changes, essentially every region can shift color.</p>
+<p>But the image remains recognizable.</p>
+<p>I spent an embarrassing amount of time moving pieces of stainless under different lights.</p>
+<hr>
+<h2 id="what-krasnow-grating-is-doing">What Krasnow Grating is doing</h2>
+<p>The name is deliberate.</p>
+<p>It preserves the lineage back to Ben's diffraction-grating work; it does <strong>not</strong> mean the current Rasterizer implementation is simply Ben's algorithm.</p>
+<p>Rasterizer uses a tested fauxlographic setting as an anchor, then varies grating orientation and engraving speed to produce different calculated pulse pitches.</p>
+<p>These geometric differences are intended to give neighboring regions different angle-dependent responses.</p>
+<p>The goal isn't merely to make the whole surface iridescent.</p>
+<p>The interesting behavior happens when neighboring image regions remain <strong>optically distinguishable while all of them are changing</strong>.</p>
+<p>Up close, you can see the larger patch structure and different line orientations:</p>
+<div class="media-gallery" aria-label="Diffraction patch closeups">
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/20260903_205219102.jpeg" alt="Macro photograph of diffraction engraving patches and changing line directions"><div class="media-caption">Patch boundaries and changing grating directions</div></div>
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/20260903_205339703.jpeg" alt="Close view of adjacent diffraction grating cells"><div class="media-caption">Adjacent diffraction cells</div></div>
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/20260903_205425409.jpeg" alt="Close view showing oriented diffraction lines"><div class="media-caption">Oriented grating structure</div></div>
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/20260903_205455742.jpeg" alt="Close view of diffraction texture on stainless steel"><div class="media-caption">Surface texture under direct light</div></div>
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/20260903_205459605.jpeg" alt="Close view of multiple diffraction regions on stainless steel"><div class="media-caption">Multiple optical regions</div></div>
+</div>
+<p>These photographs do <strong>not</strong> resolve individual ~1 µm pulse structure.</p>
+<p>They show the larger physical regions and line orientations.</p>
+<p>Those region boundaries appear to matter optically: when the boundaries are less distinct, the overall effect is diminished, although I do not yet know exactly why.</p>
+<hr>
+<h2 id="was-heads-just-lucky">Was Heads just lucky?</h2>
+<p>That was my next question.</p>
+<p>So I started throwing other images at it.</p>
+<div class="media-block video-block" data-media="IMG_5686.mp4"><video controls playsinline preload="metadata" poster="/release-story-media/IMG_5686-poster.jpg"><source src="/release-story-media/IMG_5686.mp4" type="video/mp4">Your browser does not support embedded video. <a href="/release-story-media/IMG_5686.mp4">Open the video</a>.</video><div class="media-caption">Diffraction repeatability test</div></div>
+<div class="media-block video-block" data-media="IMG_5689.mp4"><video controls playsinline muted preload="metadata" poster="/release-story-media/IMG_5689-poster.jpg"><source src="/release-story-media/IMG_5689.mp4" type="video/mp4">Your browser does not support embedded video. <a href="/release-story-media/IMG_5689.mp4">Open the video</a>.</video><div class="media-caption">Additional diffraction repeatability test</div></div>
+<div class="media-block video-block" data-media="IMG_5693.mp4"><video controls playsinline muted preload="metadata" poster="/release-story-media/IMG_5693-poster.jpg"><source src="/release-story-media/IMG_5693.mp4" type="video/mp4">Your browser does not support embedded video. <a href="/release-story-media/IMG_5693.mp4">Open the video</a>.</video><div class="media-caption">Additional repeatability test under changing light</div></div>
+<div class="media-block video-block" data-media="IMG_5691.mp4"><video controls playsinline preload="metadata" poster="/release-story-media/IMG_5691-poster.jpg"><source src="/release-story-media/IMG_5691.mp4" type="video/mp4">Your browser does not support embedded video. <a href="/release-story-media/IMG_5691.mp4">Open the video</a>.</video><div class="media-caption">Another image retaining its structure while colors shift</div></div>
+<p>Different artwork.</p>
+<p>Same basic behavior.</p>
+<p>Then I started deliberately playing with the patch geometry:</p>
+<div class="media-block video-block" data-media="Triangles-spiritual.mp4"><video controls playsinline preload="metadata" poster="/release-story-media/Triangles-spiritual-poster.jpg"><source src="/release-story-media/Triangles-spiritual.mp4" type="video/mp4">Your browser does not support embedded video. <a href="/release-story-media/Triangles-spiritual.mp4">Open the video</a>.</video><div class="media-caption">Triangle-cell diffraction experiment</div></div>
+<p>And eventually:</p>
+<div class="media-block video-block" data-media="IMG_6062.mp4"><video controls playsinline muted preload="metadata" poster="/release-story-media/IMG_6062-poster.jpg"><source src="/release-story-media/IMG_6062.mp4" type="video/mp4">Your browser does not support embedded video. <a href="/release-story-media/IMG_6062.mp4">Open the video</a>.</video><div class="media-caption">Skull-cell diffraction experiment under changing light</div></div>
+<p>So... why not skulls?</p>
+<hr>
+<h2 id="holographic-palettes-and-krasnow-grating-are-not-the-same-thing">Fauxlographic Palettes and Krasnow Grating are not the same thing</h2>
+<p>This distinction has become important as Rasterizer has grown.</p>
+<p>A <strong>Fauxlographic Palette</strong> is measured experimental knowledge: optical swatches plus the physical LightBurn settings associated with them.</p>
+<p><strong>Fauxlographic artwork mapping</strong> can use those measured swatches to reproduce artwork.</p>
+<p><strong>Krasnow Grating</strong> is a generated diffraction-geometry technique.</p>
+<p>And because Image Style and Geometry Style are now independent, Krasnow geometry can also be selectively applied to parts of artwork rather than being the entire processing pipeline.</p>
+<p>The two versions in this video were intentionally designed to look different, but together they make the distinction visible.</p>
+<p>In the <strong>Fauxlographic Palette</strong> version, the broad optical gradient follows the original shapes and colors in the source artwork. Rasterizer maps those regions to the measured palette entries and uses their stored laser settings, interval and angle without rebuilding the image as shaped grating cells.</p>
+<p>In the <strong>Krasnow Grating</strong> version, Rasterizer places geometric patches of parallel grating lines using the selected cell shape and cell size.</p>
+<p>Put simply: Fauxlographic Palette artwork is driven by measured laser settings applied to source-color regions. Krasnow Grating combines laser settings with newly generated geometry.</p>
+<div class="media-block video-block" data-media="fauxlographic-vs-krasnow.mp4"><video controls playsinline muted preload="metadata"><source src="/release-story-media/fauxlographic-vs-krasnow.mp4" type="video/mp4">Your browser does not support embedded video. <a href="/release-story-media/fauxlographic-vs-krasnow.mp4">Open the video</a>.</video><div class="media-caption">The same source artwork rendered through Krasnow shaped grating cells and Fauxlographic Palette mapping</div></div>
+<p>That makes the diffraction system much less of a single "effect" and much more of a reusable physical engraving primitive.</p>
+<hr>
+<h2 id="hatch-palettes-color-can-mean-texture-instead-of-color">Hatch Palettes: color can mean texture instead of color</h2>
+<p>Another branch of the same idea is <strong>Hatch Palettes</strong>.</p>
+<p>A palette can start from one tested Fill/Offset Fill recipe and map Rasterizer swatches to different hatch angles and line intervals.</p>
+<p>So source colors don't necessarily mean:</p>
+<blockquote>engrave this region red and this one blue.</blockquote>
+<p>They can mean:</p>
+<blockquote>engrave these regions using different physical textures, directions, grain, reflectivity or angular response.</blockquote>
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/ui-hatch-palette-editor.png" alt="Hatch Palette generator controls in Swatch Palette Vault"><div class="media-caption">Hatch Palette generator in Swatch Palette Vault</div></div>
+<!-- Future media slot:
+<div class="image-needed"><span>MEDIA SLOT · NEEDED</span><strong>physical hatch engraving showing angle/texture differences</strong></div>
+-->
+<p>That makes the swatch system useful even when the desired result has little to do with conventional MOPA oxide color.</p>
+<hr>
+<h2 id="depthmap-relief-lab-the-image-can-become-relative-depth-data">Depthmap/Relief Lab: the image can become relative depth data</h2>
+<p>The Depthmap/Relief Lab is another area that grew far beyond the original Rasterizer.</p>
+<p>It can infer relative depth from an ordinary image using <strong>Depth Anything V2 Small</strong>, running locally in the browser.</p>
+<p>From there you can adjust the usable depth range, curve and direction, inspect a relief-style preview, paint manual corrections, and export 8-bit or 16-bit depth maps.</p>
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/ui-depthmap-source-depth-relief.png" alt="Bart source artwork beside its generated grayscale depthmap and relief projection"><div class="media-caption">Source artwork, inferred grayscale depth and relief projection generated in the browser</div></div>
+<p>The local-browser part is intentional: your source image doesn't need to be uploaded just to infer depth.</p>
+<p>But there's another piece I particularly like.</p>
+<hr>
+<h2 id="sometimes-the-ai-is-wrong-but-the-artist-already-told-us-the-answer">Sometimes the AI is wrong, but the artist already told us the answer</h2>
+<p>A <strong>Depth Palette</strong> lets source colors influence the inferred depth.</p>
+<p>A swatch can carry a target relative depth and an influence percentage.</p>
+<p>At 0%, the depth model wins.</p>
+<p>At 100%, the palette assignment wins.</p>
+<p>In between, they blend.</p>
+<p>That means artwork color can contain semantic information the depth model doesn't understand.</p>
+<p>If you already know that a particular color represents a foreground object, Rasterizer doesn't have to blindly trust the AI's interpretation.</p>
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/ui-depth-palette-editor.png" alt="Depth Palette editor with individual color controls"><div class="media-caption">A saved Depth Palette and its per-color controls</div></div>
+<!-- Future media slot:
+<div class="image-needed"><span>MEDIA SLOT · NEEDED</span><strong>before/after depth inference with palette guidance</strong></div>
+-->
+<hr>
+<h2 id="and-then-depth-turns-back-into-diffraction">And then depth turns back into diffraction</h2>
+<p>Because apparently every road in this project eventually leads back to diffraction.</p>
+<p>The Depthmap Lab also contains a parallax workflow derived from Ben Krasnow's depth-to-parallax experiments.</p>
+<p>An ordinary image can become:</p>
+<p><strong>source image → inferred/edited depth → directional parallax field → diffraction-grating geometry</strong></p>
+<p>The tool can show the depth map, the resulting parallax angle map and the regions that will remain unengraved, then export either the parallax angle map as a PNG or the corresponding diffraction-grating geometry as an SVG.</p>
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/ui-parallax-angle-map.png?v=20260913" alt="Depthmap Lab parallax controls, source depth, angle-map preview and engraving mask"><div class="media-caption">Parallax controls expose the source depth, angle map and unengraved mask together</div></div>
+<!-- Future media slot:
+<div class="image-needed"><span>MEDIA SLOT · NEEDED</span><strong>physical parallax/diffraction engraving</strong></div>
+-->
+<p>So something that began as "make a depth map" can end as a physical surface whose grating direction encodes depth.</p>
+<p>I did warn you that this got out of hand.</p>
+<hr>
+<h2 id="swatch-palette-vault-became-the-glue-holding-all-of-this-together">Swatch Palette Vault became the glue holding all of this together</h2>
+<p>As Rasterizer began storing more than conventional laser recipes, a LightBurn Material Library was no longer broad enough to describe everything in the system.</p>
+<p>Rasterizer now has several kinds of reusable knowledge.</p>
+<p><strong>Color / Material Palettes</strong> associate image swatches with physical laser settings.</p>
+<p><strong>Hatch Palettes</strong> associate swatches with directional hatch geometry.</p>
+<p><strong>Depth Palettes</strong> associate swatches with desired relative depth and influence.</p>
+<p><strong>Fauxlographic Palettes</strong> associate measured optical results with the effective engraving recipes that produced them.</p>
+<p>The <strong>Swatch Palette Vault</strong> manages these resources.</p>
+<p>It can also import LightBurn libraries, edit and reorganize settings, combine selected recipes, export <code>.clb</code> libraries and generate labeled LightBurn test coupons.</p>
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/ui-swatch-palette-vault-overview.png" alt="Swatch Palette Vault showing multiple palette types"><div class="media-caption">Swatch Palette Vault keeps color, hatch, depth and fauxlographic knowledge reusable</div></div>
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/lightburn-material-test-coupon.jpg" alt="Labeled stainless-steel material test coupon engraved from Rasterizer swatch settings"><div class="media-caption">A generated, labeled material test coupon turns reusable swatch settings into a physical reference</div></div>
+<p>So the experimental result doesn't have to die in a notebook.</p>
+<p>It can become an input to the next experiment.</p>
+<hr>
+<h2 id="community-set-somebody-else-s-recipe-is-a-hypothesis-not-a-promise">Community Set: somebody else's recipe is a hypothesis, not a promise</h2>
+<p>There is also now a <strong>Community Set</strong>.</p>
+<p>Users can voluntarily publish eligible settings so other people can use them as experimental starting points.</p>
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/ui-community-set-browser.png" alt="Community Set search and filtering interface"><div class="media-caption">Community Set filters shared experimental settings by machine, lens, material and color</div></div>
+<p>I want to be very explicit about the philosophy here:</p>
+<blockquote><strong>Somebody else's result is a hypothesis worth testing, not a guaranteed recipe for your machine.</strong></blockquote>
+<p>MOPA color in particular has taught me not to trust universal-setting claims.</p>
+<p>Different sources, lenses, focus positions, materials and finishes can behave differently.</p>
+<p>But a result from another machine can still be an extremely useful place to begin looking.</p>
+<p>Which brings the project right back to why I'm writing this post.</p>
+<hr>
+<h2 id="svg-only-mode-you-don-t-have-to-give-rasterizer-your-laser-recipes">SVG-only mode: you don't have to give Rasterizer your laser recipes</h2>
+<p>One other design decision is worth calling out.</p>
+<p>Rasterizer can operate in <strong>SVG-only mode</strong>.</p>
+<p>You can use the image-processing and geometry-generation system without uploading a LightBurn Material Library at all.</p>
+<p>That matters if your settings are proprietary, if you use a different downstream workflow, or if you simply want Rasterizer's geometry and plan to handle the machine settings yourself.</p>
+<p>LightBurn integration is extremely useful, but the processing system is no longer fundamentally dependent on LightBurn recipes.</p>
+<hr>
+<h2 id="quick-start-the-ordinary-rasterizer-workflow">Quick Start: the ordinary Rasterizer workflow</h2>
+<p>The complete documentation covers the different Labs and palette types, but the basic Material-Library-backed Rasterizer workflow is still straightforward.</p>
+<p>Rasterizer reduces artwork to named swatches.</p>
+<p>For a LightBurn-backed job, it looks inside the selected material for Material Library entries whose <strong>Description matches those swatch names</strong>.</p>
+<p>Those entries contain the actual laser settings.</p>
+<p>So:</p>
+<p><strong>artwork → Rasterizer swatch → matching Material Library Description → your tested settings → LightBurn layer</strong></p>
+<p>If you don't already have a Rasterizer-ready library, there is a Blank Rasterizer Palette generator:</p>
+<p><a href="https://www.mopa-laser-rasterizer.com/docs/blank-palette-library">Blank Rasterizer Palette Material Library</a></p>
+<p>The generated settings are deliberately disabled placeholders marked <code>UNCONFIGURED</code>.</p>
+<p>Replace each swatch you intend to use with a complete setting you have actually tested, remove <code>UNCONFIGURED</code> from its entry Description, and leave unused placeholders disabled or delete them.</p>
+<p>Rasterizer matches entries inside the selected material by their Description or cut-setting name, regardless of whether LightBurn stores them under a particular thickness. Each swatch label must appear only once in that material; duplicate labels at different thicknesses are still ambiguous.</p>
+<p>Existing LightBurn libraries can also be adapted by making their entry Descriptions agree with the Rasterizer swatch names.</p>
+<p>Full documentation:</p>
+<ul>
+<li><a href="https://www.mopa-laser-rasterizer.com/docs">Rasterizer documentation</a></li>
+<li><a href="https://www.mopa-laser-rasterizer.com/docs/blank-palette-library">Blank Palette Library</a></li>
+<li><a href="https://www.mopa-laser-rasterizer.com/docs/material-libraries">Material Libraries</a></li>
+<li><a href="https://www.mopa-laser-rasterizer.com/docs/hatch-palettes">Hatch Palettes</a></li>
+<li><a href="https://www.mopa-laser-rasterizer.com/docs/krasnow-grating-filter">Krasnow Grating</a></li>
+</ul>
+<hr>
+<h2 id="a-warning-before-you-turn-every-knob-to-maximum">A warning before you turn every knob to maximum</h2>
+<p>Rasterizer supports workflows where high processing dimensions are legitimate, so the maximum processing dimension can reach <strong>1600 pixels</strong>.</p>
+<p>That does not mean every geometry mode should be run at 1600.</p>
+<p>In particular, generated diffraction, glyph and other geometry-heavy jobs can create an absurd amount of vector data.</p>
+<p>For Krasnow experiments, I still strongly recommend beginning at <strong>400 pixels or below</strong>.</p>
+<p>Find out whether the optical effect works.</p>
+<p>Then increase resolution because you have a reason, not because the button exists.</p>
+<p>With the older diffraction jobs, I've seen 800-pixel projects reach roughly <strong>50–75 MB</strong>, with LightBurn spending <strong>15–30 minutes</strong> preparing them before framing.</p>
+<p>At 1600 pixels, generated <code>.lbrn2</code> projects can approach <strong>150 MB</strong>.</p>
+<p>That is not a 150 MB photograph.</p>
+<p>That is roughly 150 MB of vector geometry asking your computer whether it has made peace with its creator.</p>
+<p>Rasterizer-generated LightBurn projects automatically disable the expensive cut optimizations while retaining <strong>Order by Layer</strong>, so no manual optimization change is required.</p>
+<p>The button exists.</p>
+<p><strong>That is not the same thing as an endorsement.</strong></p>
+<hr>
+<h2 id="what-i-actually-know-about-the-diffraction-effect">What I actually know about the diffraction effect</h2>
+<p>On my particular laser:</p>
+<ul>
+<li>I have a repeatable operating region that produces unusually strong iridescence.</li>
+<li>My strongest independently discovered oil-slick setting corresponds to roughly <strong>1.14 µm pulse pitch</strong>.</li>
+<li>Rasterizer can use related settings and diffraction geometry to produce regions with different angular responses.</li>
+<li>Those regions can change color dramatically while the underlying image remains recognizable.</li>
+<li>I have reproduced the general behavior with multiple pieces of artwork.</li>
+<li>I have not reproduced the same strength at the other base speed/frequency combinations I have tested.</li>
+</ul>
+<p>That last point is why data from other machines matters so much.</p>
+<hr>
+<h2 id="what-i-suspect">What I suspect</h2>
+<p>I suspect the best operating point is <strong>laser/system dependent</strong>.</p>
+<p>Source.</p>
+<p>Lens.</p>
+<p>Focus.</p>
+<p>Material.</p>
+<p>Surface finish.</p>
+<p>Pulse width.</p>
+<p>Power.</p>
+<p>Frequency.</p>
+<p>Speed.</p>
+<p>Line interval.</p>
+<p>Probably variables I haven't thought about.</p>
+<p>I suspect pulse pitch is one useful way of describing the operating point.</p>
+<p>The fact that Ben documented strong diffraction behavior around <strong>1.00 µm</strong>, while my strongest independently discovered setting lands around <strong>1.14 µm</strong>, is interesting.</p>
+<p>It is not proof of a universal optimum.</p>
+<hr>
+<h2 id="what-i-absolutely-do-not-know">What I absolutely do NOT know</h2>
+<p>I do not know whether:</p>
+<ul>
+<li>every MOPA source has a similar sweet spot,</li>
+<li>that sweet spot is near 1 µm,</li>
+<li>1.14 µm is meaningful or coincidence,</li>
+<li>pulse pitch is the dominant variable,</li>
+<li>oxide formation is helping or hurting the optical effect,</li>
+<li>the same behavior appears on different stainless alloys or finishes,</li>
+<li>different lenses move the optimum,</li>
+<li>different focal positions move the optimum,</li>
+<li>or some combination of all of these is responsible.</li>
+</ul>
+<p>I have one fiber laser.</p>
+<p>That is a terrible sample size.</p>
+<p>Fortunately, Rasterizer now has considerably better tools for collecting the next sample.</p>
+<hr>
+<h2 id="i-need-your-magic-setting">I need YOUR magic setting</h2>
+<p>If you own a fiber laser, I would really like you to try this.</p>
+<p>But <strong>do not start by targeting my 1.14 µm number.</strong></p>
+<p>Find the strongest iridescent/oil-slick/rainbow setting you can produce on <strong>your own machine</strong>.</p>
+<p>Find it independently.</p>
+<p>Color Lab, Fauxlographic Lab and ordinary test grids can all help explore the machine, but the important thing is to start from something you have actually observed.</p>
+<p>Then calculate the pulse pitch:</p>
+<p><strong>pulse pitch = speed / pulse frequency</strong></p>
+<p>If speed is in mm/s and frequency is in kHz, the numerical result is conveniently in <strong>µm per pulse</strong>.</p>
+<p>For example:</p>
+<p><strong>300 mm/s / 300 kHz = 1.00 µm</strong></p>
+<p>Then use that experimentally discovered setting as the starting point for your diffraction work and tell me what happens.</p>
+<p>Maybe everyone's magic setting lands around the same place.</p>
+<p>Maybe they're all over the map.</p>
+<p>Maybe there are multiple useful operating regions.</p>
+<p>Maybe the lens matters enormously.</p>
+<p>Maybe some MOPA sources simply won't do this.</p>
+<p>Maybe nobody else can reproduce it and I'll be forced to conclude I own a magic laser.</p>
+<p>All of those results are useful.</p>
+<hr>
+<h2 id="if-you-test-this-please-report-back">If you test this, please report back</h2>
+<p>Useful information includes:</p>
+<ul>
+<li>Laser/source manufacturer and model</li>
+<li>Rated power</li>
+<li>Lens/focal length</li>
+<li>Stainless type if known</li>
+<li>Surface finish</li>
+<li>Focus position</li>
+<li>Power</li>
+<li>Pulse width</li>
+<li>Frequency</li>
+<li>Base speed</li>
+<li>Calculated pulse pitch</li>
+<li>Line spacing/interval</li>
+<li>Photos or, preferably, video under changing illumination</li>
+<li>Whether the image remains recognizable across viewing angles</li>
+</ul>
+<p>Failures matter too.</p>
+<p>If yours turns into rainbow soup:</p>
+<p><strong>please report the rainbow soup.</strong></p>
+<p>That tells us something.</p>
+<p>And now that Community Set and the calibration/palette tools exist, useful results can eventually become more than forum anecdotes. They can become starting points for other people's experiments.</p>
+<hr>
+<h2 id="for-my-fellow-it-nerds-how-i-tried-to-make-this-scale-for-pennies">For my fellow IT nerds: how I tried to make this scale for pennies</h2>
+<p>There is another rabbit hole behind Rasterizer that has absolutely nothing to do with lasers.</p>
+<p>Rasterizer originally ran on <strong>Kubernetes inside WSL on the Intel NUC sitting in my house</strong>, which I use considerably more like a headless server than an actual PC.</p>
+<p>That was fine while I was the only person abusing it.</p>
+<p>Once I reached the dangerous stage of development where I thought, "I might actually let other people use this," I needed somewhere public to run it.</p>
+<p>Naturally, my first solution was:</p>
+<p><strong>More Kubernetes.</strong></p>
+<p>I built a k3s cluster on EC2, deployed Rasterizer with one web pod and two worker pods, and had a real Internet-accessible application.</p>
+<p>It cost roughly <strong>$170/month</strong>.</p>
+<p>And for my $170, this magnificent distributed-computing platform could process a whopping...</p>
+<p><strong>two jobs simultaneously.</strong></p>
+<p>That was clearly not sustainable for something I wanted to leave online indefinitely and give away for free.</p>
+<p>So I started learning the rest of AWS.</p>
+<p>The requirement became:</p>
+<blockquote><strong>When nobody is using Rasterizer, I want to pay for almost nothing. When everybody decides to use it at once, I want AWS to figure it out.</strong></blockquote>
+<p>The production Rasterizer now uses a mostly serverless design.</p>
+<p>The browser application is static content behind <strong>CloudFront and private S3</strong>.</p>
+<p>The authenticated API runs in <strong>ARM Lambda behind API Gateway</strong>.</p>
+<p>Large artwork uploads go <strong>directly from the browser to private S3 using short-lived presigned uploads</strong> rather than being shoved through Lambda.</p>
+<p>Job/account state lives in <strong>DynamoDB on-demand</strong>.</p>
+<p>Processing jobs enter <strong>SQS</strong> and are orchestrated through <strong>EventBridge Pipes and Step Functions</strong>.</p>
+<p>The expensive raster work happens in <strong>one-shot ECS Fargate tasks</strong>.</p>
+<p>There is no permanently running raster worker.</p>
+<p>A worker exists because somebody submitted a job.</p>
+<p>It appears, downloads its inputs, does the expensive work, writes the results back to S3, updates job state and disappears.</p>
+<p>The workflow tries <strong>Fargate Spot twice</strong> because it is cheaper, then automatically falls back to ordinary on-demand Fargate if Spot doesn't cooperate. If all attempts fail, the task ends up in a dead-letter queue instead of evaporating somewhere inside AWS.</p>
+<p>Grossly simplified:</p>
+<p><strong>browser → API/S3 → DynamoDB/SQS → orchestration → disposable Fargate worker → S3</strong></p>
+<p>Temporary job artifacts expire automatically, durable palettes remain, DynamoDB is pay-per-request, ECR images have lifecycle policies, and private S3/DynamoDB traffic uses Gateway VPC Endpoints instead of paying for a NAT Gateway just to talk to AWS.</p>
+<p>Every component eventually got the same question:</p>
+<blockquote><strong>What is the cheapest AWS service that can do this reliably without making the application suck?</strong></blockquote>
+<p>All of this ridiculous infrastructure work ultimately serves one requirement:</p>
+<p><strong>I want Rasterizer to stay free.</strong></p>
+<p>As long as it doesn't unexpectedly become the next big thing, I should be able to absorb the cost.</p>
+<p>And if thousands of people suddenly decide they desperately need to turn photographs into microscopic diffraction gratings on stainless steel...</p>
+<p>Well.</p>
+<p>That would be a much more entertaining scaling problem to have.</p>
+<div class="media-block image-block"><img loading="lazy" src="/release-story-media/mopa-laser-rasterizer-architecture.svg" alt="MOPA Laser Rasterizer serverless architecture showing the browser, API, job orchestration, Fargate workers, storage and generated output flow"><div class="media-caption">Rasterizer's scale-to-zero AWS architecture, from browser upload through disposable Fargate processing and secure artifact delivery</div></div>
+<hr>
+<h2 id="releasing-what-rasterizer-has-become">Releasing what Rasterizer has become</h2>
+<p>So after all of this, I'm releasing the application, MOPA-LASER-RASTERIZER.</p>
+<p>Calling it a rasterizer is increasingly questionable, but the name has stuck.</p>
+<p>It can still take an ordinary image and generate a LightBurn color engraving.</p>
+<p>But it can also help you <strong>discover</strong> what your laser does.</p>
+<p>It can <strong>measure</strong> the result of a physical experiment.</p>
+<p>It can <strong>save</strong> that result as reusable knowledge.</p>
+<p>It can <strong>compose</strong> new artwork from those measured behaviors.</p>
+<p>It can turn image regions into vectors, glyphs, halftones, hatch textures or diffraction gratings.</p>
+<p>It can infer and edit depth.</p>
+<p>It can turn depth into parallax geometry.</p>
+<p>It can spatially mix physical colors.</p>
+<p>It can generate calibration grids and LightBurn coupons.</p>
+<p>It can keep your experimentally discovered palettes organized.</p>
+<p>And it can give other MOPA owners a starting point for repeating an experiment without pretending that anybody's settings are universal.</p>
+<p>The shortest description I have for the philosophy now is:</p>
+<blockquote><strong>Discover → Measure → Save → Compose → Engrave → Refine</strong></blockquote>
+<p>This is not a polished commercial product built around a marketing plan.</p>
+<p>It is the software that accumulated because I kept asking increasingly inconvenient questions of a laser.</p>
+<p>And I have reached the point where the most interesting questions can't be answered with more software.</p>
+<p>They require different MOPA sources.</p>
+<p>Different lenses.</p>
+<p>Different power levels.</p>
+<p>Different stainless.</p>
+<p>Different focus positions.</p>
+<p>Different independently discovered colors.</p>
+<p>Different diffraction sweet spots.</p>
+<p>Different failures.</p>
+<p>Different rainbow soup.</p>
+<p>I can keep engraving more stainless on my machine.</p>
+<p>What I cannot manufacture is diversity of hardware.</p>
+<p>So if any of this sounds interesting, try it.</p>
+<p>Start small.</p>
+<p>Inspect every generated LightBurn setting before firing the laser.</p>
+<p>Treat other people's recipes as experimental starting points, not universal truth.</p>
+<p>Measure what your own machine actually does.</p>
+<p>Save the interesting things.</p>
+<p>Refine them.</p>
+<p>And please tell me what happens.</p>
+<p>If the diffraction relationship generalizes, I think that is extremely interesting.</p>
+<p>If the magic number moves all over the place, that is extremely interesting too.</p>
+<p>If Color Lab starts revealing patterns across different MOPA sources, I want to see them.</p>
+<p>If the Fauxlographic Lab finds completely different optical operating regions on different lenses, that's useful data.</p>
+<p>And if absolutely nobody can reproduce what my laser is doing...</p>
+<p>I suppose I will accept my new responsibility as caretaker of the magic laser.</p>
+<p>Either way:</p>
+<p><strong>I need your lasers.</strong></p>
+<p><strong>&mdash; The Wizzard of Awes</strong></p></main>
+</div>
+
+<section class="closing">
+  <div class="closing-inner">
+    <div class="tiny">NEXT DATASET REQUIRED</div>
+    <h2>I need your lasers.</h2>
+    <p>Different MOPA sources. Different lenses. Different materials. Different failures. Different rainbow soup. The next useful answers require diversity of hardware, not just more software.</p>
+    <p>Ready to make one? Start with the complete fauxlogram walkthrough, or follow the full multi-geometry workflow from Material Library preparation through crop, swatch routing and LightBurn inspection.</p>
+    <div class="resource-grid">
+      <a href="/docs/fauxlogram-tutorial">Make a laser fauxlogram</a>
+      <a href="/docs/multi-geometry-rasterizer-guide">Build a multi-geometry job</a>
+      <a href="/">Open Rasterizer</a>
+      <a href="/color-lab.html">Open Color Lab</a>
+      <a href="/fauxlographic.html">Fauxlographic Lab</a>
+      <a href="/depthmap.html">Depthmap Lab</a>
+      <a href="/community-set">Community Set</a>
+      <a href="/docs">Read the documentation</a>
+    </div>
+  </div>
+</section>
+
+<footer>Experimental output must be inspected before engraving · Follow your machine, material, extraction, fire-safety and supervision requirements</footer>
+<script>
+(function(){
+  const bar=document.getElementById('progress');
+  const update=()=>{const h=document.documentElement.scrollHeight-innerHeight;bar.style.width=(h?scrollY/h*100:0)+'%';};
+  addEventListener('scroll',update,{passive:true});update();
+  const toc=document.querySelector('.toc');
+  const headings=[...document.querySelectorAll('.article h2[id]')];
+  headings.forEach((heading,index)=>{
+    const link=document.createElement('a');
+    link.href=`#${heading.id}`;
+    link.dataset.target=heading.id;
+    link.innerHTML=`<span class="toc-index">${String(index+1).padStart(2,'0')}</span><span>${heading.textContent}</span>`;
+    toc.append(link);
+  });
+  const links=[...toc.querySelectorAll('a')];
+  const obs=new IntersectionObserver(entries=>{
+    const hit=entries.filter(e=>e.isIntersecting).sort((a,b)=>b.intersectionRatio-a.intersectionRatio)[0];
+    if(!hit)return;
+    links.forEach(a=>a.classList.toggle('active',a.dataset.target===hit.target.id));
+  },{rootMargin:'-18% 0px -68% 0px',threshold:[0,.1,.25,.5]});
+  links.forEach(a=>{const el=document.getElementById(a.dataset.target);if(el)obs.observe(el);});
+  document.querySelectorAll('video').forEach(video=>{
+    video.addEventListener('error',()=>{
+      const frame=video.closest('[data-media]');
+      const source=video.querySelector('source')?.src;
+      if(!frame||!source||frame.querySelector('.video-fallback'))return;
+      const fallback=document.createElement('p');
+      fallback.className='video-fallback';
+      fallback.innerHTML=`This browser could not play the embedded clip. <a href="${source}">Open or download the original video.</a>`;
+      frame.append(fallback);
+    });
+  });
+  document.querySelectorAll('.article .media-block').forEach(frame=>{
+    const button=document.createElement('button');
+    button.type='button';
+    button.className='media-expand';
+    button.textContent='Expand media';
+    button.setAttribute('aria-expanded','false');
+    button.addEventListener('click',()=>{
+      const expanded=frame.classList.toggle('is-expanded');
+      button.textContent=expanded?'Reduce media':'Expand media';
+      button.setAttribute('aria-expanded',String(expanded));
+      if(expanded)frame.scrollIntoView({behavior:'smooth',block:'nearest'});
+    });
+    frame.append(button);
+  });
+})();
+</script>
+</body>
+</html>

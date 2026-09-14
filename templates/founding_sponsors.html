@@ -1,0 +1,59 @@
+{% from "_machine_chrome.html" import machine_chrome %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Founding Sponsors | MOPA Laser Rasterizer</title>
+  <meta name="description" content="The founding manufacturers and material partners supporting MOPA Laser Rasterizer and its laser-operator workflows.">
+  <link rel="canonical" href="{{ canonical }}">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Founding Sponsors | MOPA Laser Rasterizer">
+  <meta property="og:description" content="Coming soon: the manufacturers and material partners helping build useful settings and resources for laser operators.">
+  <meta property="og:url" content="{{ canonical }}">
+  <style>
+    :root{--ink:#e4e3cf;--green:#8ee474;--line:#566251}*{box-sizing:border-box}html{min-height:100%;overflow-x:hidden;background:#11130f}body{max-width:1400px;margin:0;padding:38px;color:var(--ink);border:3px solid #777864;border-radius:30px;background:repeating-linear-gradient(90deg,rgba(255,255,255,.014) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 5%,#505443,#363a30 42%,#24271f 100%);box-shadow:inset 0 0 0 5px #1b1e18,inset 0 0 60px #10120e,0 0 0 1px #9a9a7e,0 20px 50px #000;font:16px/1.65 system-ui,sans-serif}main{min-width:0;max-width:1160px;margin:0 auto;overflow-wrap:anywhere}.hero,.section{border:1px solid var(--line);border-radius:12px;background:rgba(19,24,18,.82)}.hero{padding:clamp(28px,6vw,72px);text-align:center;box-shadow:inset 0 0 0 4px #292d24,inset 0 0 30px #050605,0 8px 0 #090b08}.eyebrow,.status{color:var(--green);font:700 .8rem "Courier New",monospace;letter-spacing:.13em;text-transform:uppercase}.hero h1{margin:.18em 0;font:500 clamp(2.5rem,7vw,5.5rem)/1 Impact,"Arial Narrow",system-ui,sans-serif;text-transform:uppercase;text-shadow:0 3px #000}.hero-copy{max-width:760px;margin:0 auto;color:#d2d2bd;font-size:1.17rem}.construction{display:inline-block;margin:28px 0 0;padding:8px 14px;border:1px solid #c8903b;border-radius:5px;color:#f0cf8b;background:#2b2112;font:700 .82rem "Courier New",monospace;letter-spacing:.08em;text-transform:uppercase}.section{margin:28px 0;padding:24px}.section h2{margin:0 0 10px;font:700 1.1rem "Courier New",monospace;letter-spacing:.05em;text-transform:uppercase}.section p{max-width:78ch}.sponsor-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:18px}.sponsor-card{min-width:0;padding:20px;border:1px solid #4c5948;border-radius:9px;background:linear-gradient(#20271f,#131712)}.sponsor-card img{display:block;max-width:180px;max-height:80px;margin:0 0 16px}.sponsor-card h3{margin:0 0 8px;color:var(--green)}.sponsor-card a{color:var(--green)}.placeholder{border-style:dashed;text-align:center}.button{display:inline-flex;align-items:center;justify-content:center;min-height:48px;margin-top:14px;padding:10px 18px;border:2px solid #8ba584;border-radius:7px;color:#f2ffe9;background:linear-gradient(#587150,#30472d);box-shadow:inset 0 1px rgba(255,255,255,.16),0 4px 0 #101a0f;font:700 .78rem "Courier New",monospace;letter-spacing:.06em;text-decoration:none;text-transform:uppercase}body.light-machine{--ink:#20221e;color:var(--ink);border-color:#777974;background:radial-gradient(circle at 50% 5%,#f0f0e9,#c8c9c3 48%,#9fa19c 100%);box-shadow:inset 0 0 0 5px #a6a8a3,inset 0 0 45px #777,0 0 0 1px #eee,0 20px 50px #000}body.light-machine .hero,body.light-machine .section{color:#20221e;border-color:#858780;background:rgba(225,226,220,.92)}body.light-machine .hero h1{text-shadow:0 1px #fff}body.light-machine .hero-copy{color:#343730}body.light-machine .sponsor-card{border-color:#858780;background:linear-gradient(#e2e3dd,#c2c4bd)}@media(min-width:900px) and (hover:hover){body{width:125vw;max-width:none;zoom:.8}}@media(max-width:850px){.sponsor-grid{grid-template-columns:minmax(0,1fr)}}@media(max-width:700px){body{width:auto;max-width:none;padding:18px}.hero,.section{padding:20px}}
+  </style>
+  <link rel="stylesheet" href="/static/machine_chrome.css?v=3">
+</head>
+<body>
+  {{ machine_chrome('sponsors', 'FOUNDING SPONSORS · SERIES 79', false) }}
+  <main>
+    <section class="hero">
+      <p class="eyebrow">Manufacturer and material partnerships</p>
+      <h1>Founding Sponsors</h1>
+      <p class="hero-copy">This page will recognize the manufacturers and material partners helping MOPA Laser Rasterizer provide useful machine settings, laser-safe material resources, and relevant equipment recommendations to laser operators.</p>
+      <p class="construction">Under construction - coming soon</p>
+    </section>
+
+    <section class="section">
+      <h2>Our founding partners</h2>
+      {% if sponsors %}
+      <div class="sponsor-grid">
+        {% for sponsor in sponsors %}
+        <article class="sponsor-card">
+          {% if sponsor.logo_url %}<img src="{{ sponsor.logo_url }}" alt="{{ sponsor.name }} logo">{% endif %}
+          <p class="status">Founding sponsor</p>
+          <h3>{{ sponsor.name }}</h3>
+          <p>{{ sponsor.description }}</p>
+          {% if sponsor.settings_library %}<p><strong>Provided resource:</strong> {{ sponsor.settings_library }}</p>{% endif %}
+          {% if sponsor.materials_url %}<p><a href="{{ sponsor.materials_url }}" rel="sponsored noopener" target="_blank">Explore laser-safe materials</a></p>{% endif %}
+          {% if sponsor.website_url %}<p><a href="{{ sponsor.website_url }}" rel="sponsored noopener" target="_blank">Visit {{ sponsor.name }}</a></p>{% endif %}
+        </article>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="sponsor-grid">
+        <article class="sponsor-card placeholder"><p class="status">Announcements pending</p><h3>Founding sponsor profiles are coming soon</h3><p>Confirmed partners, supplied settings libraries, compatible equipment, and laser-safe material resources will appear here.</p></article>
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="section">
+      <h2>What a founding sponsor can provide</h2>
+      <p>Future sponsor profiles are designed to document manufacturer-supplied machine settings, settings developed with provided equipment, suitable laser-safe materials, and the specific workflows those resources support. Sponsored resources and affiliate links will be identified clearly.</p>
+      <a class="button" href="/">Open the Rasterizer</a>
+    </section>
+  </main>
+</body>
+</html>

@@ -5,16 +5,60 @@ from dataclasses import dataclass
 import PIL
 import base64
 import io
+from xml.sax.saxutils import escape
 
 file_header = '''<?xml version="1.0" encoding="UTF-8"?>
 <LightBurnProject AppVersion="1.2.01" FormatVersion="1" MaterialHeight="0" MirrorX="False" MirrorY="True">
+    <UIPrefs>
+        <Optimize_ByLayer Value="0"/>
+        <Optimize_ByGroup Value="-1"/>
+        <Optimize_ByPriority Value="-1"/>
+        <Optimize_WhichDirection Value="0"/>
+        <Optimize_InnerToOuter Value="0"/>
+        <Optimize_ByDirection Value="0"/>
+        <Optimize_ReduceTravel Value="0"/>
+        <Optimize_HideBacklash Value="0"/>
+        <Optimize_ReduceDirChanges Value="0"/>
+        <Optimize_ChooseCorners Value="0"/>
+        <Optimize_AllowReverse Value="0"/>
+        <Optimize_RemoveOverlaps Value="0"/>
+        <Optimize_OptimalEntryPoint Value="0"/>
+        <Optimize_OverlapDist Value="0.025"/>
+    </UIPrefs>
 '''
 
 file_footer = '''</LightBurnProject>
 '''
 
+
+def _notes_element(text, show_on_load=True):
+    """Serialize LightBurn's project-notes element, preserving line breaks."""
+    normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    escaped = escape(
+        normalized,
+        {
+            '"': "&quot;",
+            "\n": "&#10;",
+            "\t": "&#9;",
+        },
+    )
+    return (
+        f'    <Notes ShowOnLoad="{1 if show_on_load else 0}" '
+        f'Notes="{escaped}"/>\n'
+    )
+
 class NotImplementedException(Exception):
     pass
+
+
+def parse_lightburn_bool(value):
+    """Accept both numeric and textual boolean values emitted by LightBurn."""
+    normalized = str(value or "").strip().casefold()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    return bool(int(normalized))
 
 
 class AffineTransform:
@@ -241,12 +285,16 @@ class Layer:
         self.maxPower2 = 100
         self.speed = 100
         self.frequency = 100
-        self.QPulseWidth = 200
+        self.QPulseWidth = None
         self.interval = .1
         self.angle = 0
         self.numPasses = 1
         self.anglePerPass = 0
         self.crossHatch = 0
+        self.bidir = 0
+        # LightBurn omits these elements for its default fill behavior.
+        self.scanOpt = None
+        self.floodFill = None
         self.hide = 0
         self.dotTime = 1
         self.priority = 0
@@ -259,15 +307,24 @@ class Layer:
                 f'        <index Value="{self.index}"/>\n'
                 f'        <name Value="{self.name}"/>\n'
                 f'        <minPower Value="{self.minPower}"/>\n'
-                f'        <maxPower Value="{self.maxPower}"/>\n'
-                f'        <maxPower2 Value="{self.maxPower2}"/>\n'
+                f'        <maxPower Value="{self.maxPower}"/>\n')
+        if self.maxPower2 is not None:
+            f.write(f'        <maxPower2 Value="{self.maxPower2}"/>\n')
+        f.write(
                 f'        <speed Value="{self.speed}"/>\n'
-                f'        <frequency Value="{self.frequency}"/>\n'      # if self.frequency not None else None
-                f'        <QPulseWidth Value="{self.QPulseWidth}"/>\n'  #if self.QPulseWidth not None else None
+                f'        <frequency Value="{self.frequency}"/>\n')
+        if self.QPulseWidth is not None:
+            f.write(f'        <QPulseWidth Value="{self.QPulseWidth}"/>\n')
+        if self.scanOpt is not None:
+            f.write(f'        <scanOpt Value="{self.scanOpt}"/>\n')
+        if self.floodFill is not None:
+            f.write(f'        <floodFill Value="{int(self.floodFill)}"/>\n')
+        f.write(
                 f'        <interval Value="{self.interval}"/>\n'        #if self.interval not None else None
                 f'        <angle Value="{self.angle}"/>\n'              #if self.angle not None else None
                 f'        <anglePerPass Value="{self.anglePerPass}"/>\n'
                 f'        <crossHatch Value="{int(self.crossHatch)}"/>\n'
+                f'        <bidir Value="{int(self.bidir)}"/>\n'
                 f'        <hide Value="{int(self.hide)}"/>\n'
                 f'        <dotTime Value="1"/>\n'
                 f'        <priority Value="0"/>\n'
@@ -298,7 +355,7 @@ class FillLayer(Layer):
         self.maxPower2 = maxPower2
         self.speed = speed
         self.frequency = frequency if frequency is not None else 100
-        self.QPulseWidth = qPulseWidth if qPulseWidth is not None else 200
+        self.QPulseWidth = qPulseWidth
         self.interval = interval if interval is not None else .1
         self.angle = angle if angle is not None else 0
         self.priority = priority if priority is not None else 0
@@ -349,6 +406,8 @@ class Lightburn:
         self.current = self.top
         self.objects = self.top["objects"]
         self._layers = list()
+        self.notes = ""
+        self.show_notes_on_load = False
 
     def startgroup(self):
         self.current["children"].append(
@@ -377,12 +436,37 @@ class Lightburn:
     def add_layer(self, layer: Layer):
         self._layers.append(layer)
 
+    def set_notes(self, text, show_on_load=True):
+        self.notes = str(text or "")
+        self.show_notes_on_load = bool(show_on_load)
+
+    def _notes_tail(self):
+        note = (
+            _notes_element(self.notes, self.show_notes_on_load)
+            if self.notes
+            else ""
+        )
+        return note + file_footer
+
+    def replace_notes_tail(self, filename, text, show_on_load=True):
+        """Replace only the notes/footer tail without rewriting project geometry."""
+        old_tail = self._notes_tail().encode("utf-8")
+        with open(filename, "r+b") as f:
+            f.seek(-len(old_tail), io.SEEK_END)
+            if f.read() != old_tail:
+                raise ValueError("LightBurn project notes/footer tail did not match")
+            self.set_notes(text, show_on_load=show_on_load)
+            new_tail = self._notes_tail().encode("utf-8")
+            f.seek(-len(old_tail), io.SEEK_END)
+            f.truncate()
+            f.write(new_tail)
+
     def write(self, filename):
-        with open(filename, "w") as f:
+        with open(filename, "w", encoding="utf-8", newline="\n") as f:
             f.write(file_header)
             self.write_cuts(f)
             self.write_objects(f)
-            f.write(file_footer)
+            f.write(self._notes_tail())
             print(f"Wrote {filename}.  You can load it directly into LightBurn.", flush=True)
 
     def write_cuts(self, f):
@@ -430,6 +514,9 @@ class Lightburn:
             setting.type = setting_type
             setting.linkPath = None
             setting.subLayers = []
+            # Preserve whether the imported setting actually defines a
+            # secondary-output power. Layer defaults must not manufacture it.
+            setting.maxPower2 = None
 
             for child in element:
                 value = child.attrib.get("Value")
@@ -458,9 +545,11 @@ class Lightburn:
                 elif child.tag == "anglePerPass":
                     setting.anglePerPass = float(value)
                 elif child.tag == "crossHatch":
-                    setting.crossHatch = bool(int(value))
+                    setting.crossHatch = parse_lightburn_bool(value)
+                elif child.tag == "bidir":
+                    setting.bidir = parse_lightburn_bool(value)
                 elif child.tag == "hide":
-                    setting.hide = bool(int(value))
+                    setting.hide = parse_lightburn_bool(value)
                 elif child.tag == "priority":
                     setting.priority = int(value)
                 elif child.tag == "tabCount":
@@ -478,9 +567,9 @@ class Lightburn:
                 elif child.tag == "ditherMode":
                     setting.ditherMode = value
                 elif child.tag == "negative":
-                    setting.negative = bool(int(value))
+                    setting.negative = parse_lightburn_bool(value)
                 elif child.tag == "autoRotate":
-                    setting.autoRotate = bool(int(value))
+                    setting.autoRotate = parse_lightburn_bool(value)
                 elif child.tag == "globalRepeat":
                     setting.globalRepeat = int(value)
                 elif child.tag == "subname":
@@ -489,12 +578,14 @@ class Lightburn:
                     setting.cleanupPass = int(value)
                 elif child.tag == "scanOpt":
                     setting.scanOpt = value
+                elif child.tag == "floodFill":
+                    setting.floodFill = parse_lightburn_bool(value)
                 elif child.tag == "overscan":
                     setting.overscan = float(value)
                 elif child.tag == "overscanPercent":
                     setting.overscanPercent = float(value)
                 elif child.tag == "tabsEnabled":
-                    setting.tabsEnabled = bool(int(value))
+                    setting.tabsEnabled = parse_lightburn_bool(value)
                 elif child.tag == "tabSize":
                     setting.tabSize = float(value)
                 elif child.tag == "tabSpacing":

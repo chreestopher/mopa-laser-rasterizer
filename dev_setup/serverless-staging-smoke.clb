@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LightBurnLibrary DisplayName="Serverless Staging Smoke Test">
+  <Material name="staging-smoke">
+    <Entry Thickness="-1.0000" Desc="Black" NoThickTitle="acceptance">
+      <CutSetting type="Scan">
+        <minPower Value="10" />
+        <maxPower Value="10" />
+        <speed Value="1000" />
+        <frequency Value="20000" />
+        <interval Value="0.05" />
+        <bidir Value="1" />
+        <crossHatch Value="0" />
+      </CutSetting>
+    </Entry>
+    <Entry Thickness="-1.0000" Desc="Red" NoThickTitle="acceptance">
+      <CutSetting type="Scan">
+        <minPower Value="10" />
+        <maxPower Value="10" />
+        <speed Value="1000" />
+        <frequency Value="20000" />
+        <interval Value="0.05" />
+        <bidir Value="1" />
+        <crossHatch Value="0" />
+      </CutSetting>
+    </Entry>
+  </Material>
+</LightBurnLibrary>

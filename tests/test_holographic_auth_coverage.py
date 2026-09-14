@@ -56,7 +56,7 @@ class HolographicAuthenticationCoverageTests(unittest.TestCase):
         self.assertGreaterEqual(template.count("data.profile_url\n          ? downloadButtonList"), 3)
         self.assertIn("await loadSavedHolographicRecipes(data.saved_recipe_id || '')", template)
 
-    def test_guest_material_libraries_are_select_only_in_job_forms(self):
+    def test_guest_calibration_requires_a_new_upload(self):
         holographic_template = (
             ROOT / "templates" / "holographic_etching.html"
         ).read_text(encoding="utf-8")
@@ -65,37 +65,51 @@ class HolographicAuthenticationCoverageTests(unittest.TestCase):
             ROOT / "templates" / "material_libraries.html"
         ).read_text(encoding="utf-8")
 
-        self.assertEqual(2, holographic_template.count('name="guest_material_library_id"'))
+        self.assertEqual(1, holographic_template.count('name="guest_material_library_id"'))
         self.assertEqual(1, rasterizer_template.count('name="guest_material_library_id"'))
         self.assertIn("/browser-material-libraries", holographic_template)
         self.assertIn("/browser-material-libraries", rasterizer_template)
+        self.assertNotIn('id="guest_calibration_library_source"', holographic_template)
+        self.assertIn("Guests must upload a library for this calibration.", holographic_template)
         self.assertNotIn("guest_material_library_id", vault_template)
 
-    def test_holographic_forms_offer_upload_or_existing_library_to_every_user(self):
+    def test_saved_rasterizer_library_populates_its_material_name_selector(self):
+        template = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+
+        self.assertIn('id="saved_material_name"', template)
+        self.assertIn("library?.summary?.material_names", template)
+        self.assertIn("/account/material-libraries/${encodeURIComponent(libraryId)}", template)
+        self.assertIn("cache:'no-store'", template)
+        self.assertIn("showSavedLibraryMaterialNames(savedMaterialLibraryInput.value)", template)
+        self.assertIn("materialInput.value = savedMaterialNameInput.value", template)
+        self.assertIn("showManualMaterialName();", template)
+
+    def test_holographic_calibration_source_is_explicit_and_auth_aware(self):
         template = (
             ROOT / "templates" / "holographic_etching.html"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('id="calibration_material_upload_row" class="full-width"', template)
+        self.assertIn('id="calibration_library_source_mode"', template)
+        self.assertIn('value="upload">Upload a LightBurn Material Library', template)
+        self.assertIn("new Option('Use a saved Swatch Palette', 'saved')", template)
+        self.assertIn('id="calibration_material_upload_row" class="full-width" hidden', template)
         self.assertIn('id="artwork_material_upload_row" class="full-width"', template)
-        self.assertNotIn('id="calibration_material_upload_row" class="full-width" hidden', template)
         self.assertNotIn('id="artwork_material_upload_row" class="full-width" hidden', template)
-        self.assertIn("calibrationMaterialSettings.disabled = false;", template)
+        self.assertIn("calibrationMaterialSettings.disabled = useSavedPalette;", template)
+        self.assertIn("savedCalibrationLibrary.disabled = !useSavedPalette;", template)
+        self.assertIn("calibrationMaterialSettings.required = !useSavedPalette;", template)
+        self.assertIn("savedCalibrationLibrary.required = useSavedPalette;", template)
         self.assertIn("artworkMaterialSettings.disabled = false;", template)
-        self.assertIn("!savedCalibrationLibrary.value && !calibrationMaterialSettings.files.length", template)
+        self.assertIn("calibrationLibrarySourceMode.value === 'saved' && !savedCalibrationLibrary.value", template)
+        self.assertIn("calibrationLibrarySourceMode.value === 'upload' && !calibrationMaterialSettings.files.length", template)
         self.assertIn("!savedArtworkLibrary.value && !artworkMaterialSettings.files.length", template)
         self.assertNotIn("guest_calibration_library_upload", template)
         self.assertNotIn("guest_artwork_library_upload", template)
         self.assertIn(".calibration-form [hidden] { display:none !important; }", template)
         self.assertIn(
-            "guestCalibrationLibraryRow.hidden = operatorSignedIn || !guestMaterialLibraries.length;",
-            template,
-        )
-        self.assertIn(
             "guestArtworkLibraryRow.hidden = operatorSignedIn || !guestMaterialLibraries.length;",
             template,
         )
-        self.assertIn("guestCalibrationLibrarySource.disabled = operatorSignedIn", template)
         self.assertIn("guestArtworkLibrarySource.disabled = operatorSignedIn", template)
 
 

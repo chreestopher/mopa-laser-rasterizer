@@ -14,18 +14,19 @@ The application prepares artwork and project files; it does not control a laser 
 - Editable palette selection and Material Library description matching
 - Cartoon, Color Photo, and dithered Black and White Photo presets
 - Abstract vector filters with configurable controls
-- Material Vault for importing, editing, combining, and exporting saved libraries
+- Swatch Palette Vault for importing, editing, combining, and exporting saved libraries
+- Hatch Palettes that clone a base Fill or Offset Fill setting across LightBurn swatches and plan per-layer hatch angles and line intervals
 - Labeled LightBurn material-coupon generation
 - Color Discovery calibration, photo analysis, and recipe saving
 - Browser-session and account-backed job history
 - Community settings browser
-- Experimental Holographic Etching Lab for diffraction-grid calibration and artwork generation
+- Experimental Fauxlographic Etching Lab for diffraction-grid calibration and artwork generation
 - Public user documentation at `/docs`
 
 ## Rasterizer workflow
 
 1. Develop and verify color settings on the actual machine, lens, material, finish, and focus arrangement.
-2. Store the settings in a LightBurn Material Library. Setting descriptions should match Rasterizer palette names; palette labels can also be edited in the UI to match an existing library.
+2. Store the settings in a LightBurn Material Library. Material Library entry Descriptions should match Rasterizer palette names; palette labels can also be edited in the UI to match an existing library.
 3. Upload artwork and optionally select or upload the Material Library.
 4. Choose the material, processing dimensions, physical pixel size, palette, and image preset.
 5. Build the project and download the SVG or `.lbrn2` output.
@@ -37,41 +38,61 @@ Leaving the material blank and confirming SVG-only mode skips Material Library p
 
 ### Requirements
 
-- Python 3.11
-- pip
-- Native build tools and Potrace development libraries required by `pypotrace`
+- Ubuntu WSL
+- Python 3.11 or newer
 - Redis when exercising queued jobs or Redis-backed production behavior
 
 The Docker image installs the required Debian packages: `build-essential`, `libpotrace-dev`, `libagg-dev`, `pkg-config`, and `python3-dev`.
 
 ### Run the web application
 
+From the repository root inside Ubuntu WSL, install the native packages,
+create `.venv`, and install the application and test dependencies:
+
 ```bash
-python -m venv .venv
+bash dev_setup/setup-wsl.sh
 ```
 
-Activate the environment:
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-On Linux or macOS:
+Activate the environment in each new WSL shell:
 
 ```bash
 source .venv/bin/activate
 ```
 
-Install dependencies and start Flask:
+Start Flask:
 
 ```bash
-pip install -r requirements.txt
 python app.py
 ```
 
 Open `http://localhost:8000`.
 
 Local submissions run in background threads by default. Set `RASTER_JOB_QUEUE_ENABLED=true` and run `python worker.py` separately to use the Redis-backed worker path.
+
+Run the rasterizer command-line application through the WSL environment with:
+
+```bash
+bash run-cli.sh INPUT OUTPUT_BASE PIXEL_MM WIDTH HEIGHT MATERIAL_LIBRARY MATERIAL COLORS PRESET FILTER
+```
+
+Optional filter JSON, palette-name JSON, and SVG-only arguments are forwarded
+to `lib/Material_Library.py`. For example:
+
+```bash
+bash run-cli.sh input.png output/job 0.125 800 0 settings.clb "colors - stainless steel" "Red,Blue,Green" cartoon none '{}' '{}' false
+```
+
+For the repository's hardcoded sample configuration, place `test-input.png`
+and `tests.clb` in the repository root, then run:
+
+```bash
+bash run-sample.sh
+```
+
+The sample uses all 30 default swatches, the `colors - stainless steel`
+material, an 800-pixel target width, 0.125 mm pixel size, Cartoon processing,
+and a minimum island area of 50. Output is written under
+`uploads/cli-sample/`.
 
 ### Run with Docker
 
@@ -139,11 +160,11 @@ Run the test suite from the repository root:
 python -m unittest discover -s tests
 ```
 
-The tests cover vector export behavior, SVG-only jobs, authentication intent, job access and history, Material Library coupons, Color Discovery, palette generation, and Holographic Lab access paths.
+The tests cover vector export behavior, SVG-only jobs, authentication intent, job access and history, Material Library coupons, Color Discovery, palette generation, and Fauxlographic Lab access paths.
 
-## Holographic Etching Lab
+## Fauxlographic Etching Lab
 
-The Holographic Lab is an experimental calibration workflow for angle-dependent diffraction structures:
+The Fauxlographic Lab is an experimental calibration workflow for angle-dependent diffraction structures:
 
 1. Generate and engrave a grid that sweeps fill interval, angle, and optionally another laser parameter.
 2. Upload a controlled photograph of the finished grid.
@@ -154,6 +175,6 @@ Resolution grows project complexity quickly because each processed artwork pixel
 
 ## Safety and result variability
 
-MOPA color and diffraction results depend on the exact source, lens, focus, material alloy, finish, preparation, power, speed, frequency, pulse width, interval, scan direction, passes, and thermal history. A screen color or shared recipe does not guarantee a matching physical result.
+MOPA Laser color and diffraction results depend on the exact source, lens, focus, material alloy, finish, preparation, power, speed, frequency, pulse width, interval, scan direction, passes, and thermal history. A screen color or shared recipe does not guarantee a matching physical result.
 
 Use suitable materials, guarding, extraction, fixturing, and manufacturer-approved parameter ranges. Supervise every job and verify generated files in LightBurn before enabling output.

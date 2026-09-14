@@ -1,12 +1,27 @@
-.git
-.gitignore
+# Exclude everything by default. Explicitly include only production runtime files.
+*
+
+# Never copy workstation or deployment environment files into an image.
 .env*
-**/.env*
-__pycache__
-*.pyc
-.vscode
-.github
-README.md
-*.md
-.DS_Store
-uploads/
+
+!requirements.txt
+!app.py
+!services.py
+!worker.py
+!job_runtime.py
+
+!lib/
+!lib/**
+!routes/
+!routes/**
+!static/
+!static/**
+!templates/
+!templates/**
+
+# Development artifacts nested inside runtime directories remain excluded.
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+lib/run_filter_matrix.sh
+static/*_backup.lbrn2

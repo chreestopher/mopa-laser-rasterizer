@@ -1,0 +1,79 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Isolated serverless production queues using the existing durable production data stores.
+
+Parameters:
+  ArtifactBucketName:
+    Type: String
+    Description: Existing retained production artifact bucket.
+  RuntimeTableName:
+    Type: String
+    Description: Existing retained production account and job table.
+  JobQueueName:
+    Type: String
+    Default: mopa-rasterizer-serverless-production-jobs
+  DeadLetterQueueName:
+    Type: String
+    Default: mopa-rasterizer-serverless-production-jobs-dlq
+
+Resources:
+  StaticBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortIncompleteUploads
+            Status: Enabled
+            Prefix: ""
+            AbortIncompleteMultipartUpload: {DaysAfterInitiation: 1}
+
+  DeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Ref DeadLetterQueueName
+      SqsManagedSseEnabled: true
+      MessageRetentionPeriod: 1209600
+
+  JobQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Ref JobQueueName
+      SqsManagedSseEnabled: true
+      ReceiveMessageWaitTimeSeconds: 20
+      VisibilityTimeout: 7200
+      MessageRetentionPeriod: 604800
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  DlqPolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues: [!Ref DeadLetterQueue]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: sqs.amazonaws.com}
+            Action: sqs:SendMessage
+            Resource: !GetAtt DeadLetterQueue.Arn
+            Condition:
+              ArnEquals: {aws:SourceArn: !GetAtt JobQueue.Arn}
+
+Outputs:
+  ArtifactBucketName: {Value: !Ref ArtifactBucketName}
+  StaticBucketName: {Value: !Ref StaticBucket}
+  RuntimeTableName: {Value: !Ref RuntimeTableName}
+  JobQueueUrl: {Value: !Ref JobQueue}
+  JobQueueArn: {Value: !GetAtt JobQueue.Arn}
+  DeadLetterQueueUrl: {Value: !Ref DeadLetterQueue}
+  DeadLetterQueueArn: {Value: !GetAtt DeadLetterQueue.Arn}

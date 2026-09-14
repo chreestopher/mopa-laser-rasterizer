@@ -1,0 +1,313 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SQS-to-Fargate orchestration for one-shot MOPA rasterizer jobs.
+
+Parameters:
+  PipeName:
+    Type: String
+    Default: mopa-rasterizer-jobs-to-fargate
+  StateMachineName:
+    Type: String
+    Default: mopa-rasterizer-fargate-job
+  ClusterName:
+    Type: String
+  TaskDefinitionArn:
+    Type: String
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  WorkerSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+  AssignPublicIp:
+    Type: String
+    AllowedValues: [ENABLED, DISABLED]
+  TaskExecutionRoleArn:
+    Type: String
+  TaskRoleArn:
+    Type: String
+  SqsQueueArn:
+    Type: String
+  SqsDlqArn:
+    Type: String
+  SqsDlqUrl:
+    Type: String
+  RuntimeTableName:
+    Type: String
+  SpotWorkerAttempts:
+    Type: Number
+    Default: 2
+    MinValue: 1
+    MaxValue: 10
+
+Resources:
+  WorkflowRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: states.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: RunAndObserveRasterTasks
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecs:RunTask
+                Resource: !Ref TaskDefinitionArn
+              - Effect: Allow
+                Action: [ecs:DescribeTasks, ecs:StopTask]
+                Resource: "*"
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: [!Ref TaskExecutionRoleArn, !Ref TaskRoleArn]
+              - Effect: Allow
+                Action: [events:PutTargets, events:PutRule, events:DescribeRule]
+                Resource: !Sub arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForECSTaskRule
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !Ref SqsDlqArn
+              - Effect: Allow
+                Action: dynamodb:UpdateItem
+                Resource: !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RuntimeTableName}
+              - Effect: Allow
+                Action: dynamodb:GetItem
+                Resource: !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RuntimeTableName}
+
+  WorkerWorkflow:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Ref StateMachineName
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt WorkflowRole.Arn
+      Definition:
+        Comment: Run one task-addressed raster job and explicitly dead-letter exhausted failures.
+        StartAt: ParseMessage
+        States:
+          ParseMessage:
+            Type: Pass
+            Parameters:
+              event.$: States.StringToJson($[0].body)
+              spot_attempt: 1
+            Next: DetectMessageShape
+          DetectMessageShape:
+            Type: Choice
+            Choices:
+              - Variable: $.event.task_id
+                IsPresent: true
+                Next: SetDirectTaskId
+            Default: SplitDispatchKey
+          SetDirectTaskId:
+            Type: Pass
+            Parameters:
+              message:
+                task_id.$: $.event.task_id
+              spot_attempt.$: $.spot_attempt
+            Next: CheckServiceAvailability
+          SplitDispatchKey:
+            Type: Pass
+            Parameters:
+              key_parts.$: States.StringSplit($.event.Records[0].s3.object.key, '/')
+              spot_attempt.$: $.spot_attempt
+            Next: SetTaskId
+          SetTaskId:
+            Type: Pass
+            Parameters:
+              message:
+                task_id.$: $.key_parts[1]
+              spot_attempt.$: $.spot_attempt
+            Next: CheckServiceAvailability
+          CheckServiceAvailability:
+            Type: Task
+            Resource: arn:aws:states:::dynamodb:getItem
+            Parameters:
+              TableName: !Ref RuntimeTableName
+              ConsistentRead: true
+              Key:
+                pk: {S: "SYSTEM#SERVICE"}
+                sk: {S: "CONTROL"}
+            ResultPath: $.service_control
+            Next: IsServicePaused
+          IsServicePaused:
+            Type: Choice
+            Choices:
+              - And:
+                  - Variable: $.service_control.Item.status.S
+                    IsPresent: true
+                  - Variable: $.service_control.Item.status.S
+                    StringEquals: paused
+                Next: WaitForServiceResume
+            Default: RunSpotWorker
+          WaitForServiceResume:
+            Type: Wait
+            Seconds: 300
+            Next: CheckServiceAvailability
+          RunSpotWorker:
+            Type: Task
+            Resource: arn:aws:states:::ecs:runTask.sync
+            Parameters:
+              Cluster: !Ref ClusterName
+              TaskDefinition: !Ref TaskDefinitionArn
+              CapacityProviderStrategy:
+                - CapacityProvider: FARGATE_SPOT
+                  Weight: 1
+              NetworkConfiguration:
+                AwsvpcConfiguration:
+                  Subnets: !Ref SubnetIds
+                  SecurityGroups: [!Ref WorkerSecurityGroupId]
+                  AssignPublicIp: !Ref AssignPublicIp
+              Overrides:
+                ContainerOverrides:
+                  - Name: raster-worker
+                    Command.$: States.Array('python', '-u', 'worker.py', '--task-id', $.message.task_id)
+            ResultPath: $.ecs
+            Retry:
+              - ErrorEquals: [ECS.AmazonECSException, ECS.ServiceException, ECS.ThrottlingException]
+                IntervalSeconds: 10
+                BackoffRate: 2
+                MaxAttempts: 3
+            Catch:
+              - ErrorEquals: [States.ALL]
+                ResultPath: $.ecs_error
+                Next: RetrySpotWorker
+            Next: SpotWorkerExitCode
+          SpotWorkerExitCode:
+            Type: Choice
+            Choices:
+              - Variable: $.ecs.Containers[0].ExitCode
+                NumericEquals: 0
+                Next: JobSucceeded
+            Default: RetrySpotWorker
+          RetrySpotWorker:
+            Type: Choice
+            Choices:
+              - Variable: $.spot_attempt
+                NumericLessThan: !Ref SpotWorkerAttempts
+                Next: IncrementSpotAttempt
+            Default: RunOnDemandWorker
+          IncrementSpotAttempt:
+            Type: Pass
+            Parameters:
+              message.$: $.message
+              spot_attempt.$: States.MathAdd($.spot_attempt, 1)
+            Next: RunSpotWorker
+          RunOnDemandWorker:
+            Type: Task
+            Resource: arn:aws:states:::ecs:runTask.sync
+            Parameters:
+              Cluster: !Ref ClusterName
+              TaskDefinition: !Ref TaskDefinitionArn
+              CapacityProviderStrategy:
+                - CapacityProvider: FARGATE
+                  Weight: 1
+              NetworkConfiguration:
+                AwsvpcConfiguration:
+                  Subnets: !Ref SubnetIds
+                  SecurityGroups: [!Ref WorkerSecurityGroupId]
+                  AssignPublicIp: !Ref AssignPublicIp
+              Overrides:
+                ContainerOverrides:
+                  - Name: raster-worker
+                    Command.$: States.Array('python', '-u', 'worker.py', '--task-id', $.message.task_id)
+            ResultPath: $.ecs
+            Retry:
+              - ErrorEquals: [ECS.AmazonECSException, ECS.ServiceException, ECS.ThrottlingException]
+                IntervalSeconds: 10
+                BackoffRate: 2
+                MaxAttempts: 3
+            Catch:
+              - ErrorEquals: [States.ALL]
+                ResultPath: $.ecs_error
+                Next: MarkJobFailed
+            Next: OnDemandWorkerExitCode
+          OnDemandWorkerExitCode:
+            Type: Choice
+            Choices:
+              - Variable: $.ecs.Containers[0].ExitCode
+                NumericEquals: 0
+                Next: JobSucceeded
+            Default: MarkJobFailed
+          MarkJobFailed:
+            Type: Task
+            Resource: arn:aws:states:::dynamodb:updateItem
+            Parameters:
+              TableName: !Ref RuntimeTableName
+              Key:
+                pk:
+                  S.$: States.Format('JOB#{}', $.message.task_id)
+                sk:
+                  S: RUNTIME
+              UpdateExpression: "SET #status = :failed, error_message = :error"
+              ConditionExpression: "#status = :pending"
+              ExpressionAttributeNames:
+                "#status": status
+              ExpressionAttributeValues:
+                ":failed":
+                  S: failed
+                ":pending":
+                  S: pending
+                ":error":
+                  S: Worker orchestration could not launch a task after Spot and on-demand attempts were exhausted.
+            ResultPath: $.failure_status
+            Catch:
+              - ErrorEquals: [States.ALL]
+                ResultPath: $.status_update_error
+                Next: SendToDlq
+            Next: SendToDlq
+          SendToDlq:
+            Type: Task
+            Resource: arn:aws:states:::aws-sdk:sqs:sendMessage
+            Parameters:
+              QueueUrl: !Ref SqsDlqUrl
+              MessageBody.$: $.message.task_id
+            Next: JobFailed
+          JobFailed:
+            Type: Fail
+            Error: RasterWorkerFailed
+            Cause: Spot attempts and on-demand fallback exhausted; task ID sent to the DLQ.
+          JobSucceeded:
+            Type: Succeed
+
+  PipeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: pipes.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ConsumeRasterQueueAndStartWorkflow
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [sqs:ReceiveMessage, sqs:DeleteMessage, sqs:GetQueueAttributes, sqs:ChangeMessageVisibility]
+                Resource: !Ref SqsQueueArn
+              - Effect: Allow
+                Action: states:StartExecution
+                Resource: !Ref WorkerWorkflow
+
+  RasterQueuePipe:
+    Type: AWS::Pipes::Pipe
+    Properties:
+      Name: !Ref PipeName
+      Description: Start one completion-aware Fargate workflow per raster task ID.
+      DesiredState: RUNNING
+      RoleArn: !GetAtt PipeRole.Arn
+      Source: !Ref SqsQueueArn
+      SourceParameters:
+        SqsQueueParameters:
+          BatchSize: 1
+          MaximumBatchingWindowInSeconds: 0
+      Target: !Ref WorkerWorkflow
+      TargetParameters:
+        StepFunctionStateMachineParameters:
+          InvocationType: FIRE_AND_FORGET
+
+Outputs:
+  PipeArn:
+    Value: !GetAtt RasterQueuePipe.Arn
+  StateMachineArn:
+    Value: !Ref WorkerWorkflow

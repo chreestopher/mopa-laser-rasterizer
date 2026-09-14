@@ -1,0 +1,177 @@
+{% from "_machine_chrome.html" import machine_chrome %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Depthmap and Relief Engraving Lab | MOPA Laser Rasterizer</title>
+  <meta name="description" content="Experimentally estimate relative depth from one image in your browser and export an adjustable depth PNG, parallax angle map, or parallax grating SVG.">
+  <link rel="canonical" href="{{ canonical }}">
+  <style>
+    :root{--ink:#e4e3cf;--green:#8ee474;--line:#566251;--warn:#e4b45e}*{box-sizing:border-box}html{min-height:100%;overflow-x:hidden;background:#11130f}body{max-width:1400px;margin:0;padding:38px;color:var(--ink);border:3px solid #777864;border-radius:30px;background:repeating-linear-gradient(90deg,rgba(255,255,255,.014) 0 1px,transparent 1px 4px),radial-gradient(circle at 50% 5%,#505443,#363a30 42%,#24271f 100%);box-shadow:inset 0 0 0 5px #1b1e18,inset 0 0 60px #10120e,0 0 0 1px #9a9a7e,0 20px 50px #000;font:16px/1.55 system-ui,sans-serif}main{min-width:0;max-width:1180px;margin:0 auto}.panel{margin:24px 0;padding:24px;border:1px solid var(--line);border-radius:12px;background:rgba(19,24,18,.84)}.hero{text-align:center}.eyebrow,.status-label{color:var(--green);font:700 .8rem "Courier New",monospace;letter-spacing:.12em;text-transform:uppercase}.hero h1{margin:.15em 0;font:500 clamp(2.3rem,7vw,5rem)/1 Impact,"Arial Narrow",system-ui,sans-serif;text-transform:uppercase;text-shadow:0 3px #000}.hero p{max-width:800px;margin:12px auto}.experimental{display:inline-block;padding:7px 12px;border:1px solid var(--warn);border-radius:5px;color:#ffe2a7;background:#2b2112;font:700 .78rem "Courier New",monospace;text-transform:uppercase}.upload{display:grid;place-items:center;min-height:170px;padding:24px;border:2px dashed #71806b;border-radius:10px;text-align:center;background:#111610}.upload.is-dragging{border-color:var(--green);background:#172116}.upload input{max-width:100%}.actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:16px}.button{min-height:44px;padding:9px 16px;border:2px solid #8ba584;border-radius:7px;color:#f2ffe9;background:linear-gradient(#587150,#30472d);box-shadow:inset 0 1px rgba(255,255,255,.16),0 4px 0 #101a0f;font:700 .76rem "Courier New",monospace;letter-spacing:.05em;text-transform:uppercase;cursor:pointer}.button.secondary{border-color:#6d725d;background:linear-gradient(#41483c,#282e25)}.button:disabled{cursor:not-allowed;filter:grayscale(1);opacity:.48}.progress{width:100%;height:14px;margin-top:16px;accent-color:#70c95f}.workspace{display:grid;width:100%;min-width:0;grid-template-columns:minmax(240px,.7fr) minmax(0,2fr);gap:20px}.workspace>*{min-width:0}.controls{display:grid;align-content:start;gap:15px}.control label{display:flex;justify-content:space-between;gap:10px;font-weight:700}.control input[type=range]{width:100%;accent-color:var(--green)}.dimensions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.dimensions.single{grid-template-columns:minmax(0,1fr)}.dimensions label{font-weight:700}.dimensions input,.dimensions select{width:100%;min-width:0;margin-top:4px;padding:8px;border:1px solid #667060;border-radius:5px;color:inherit;background:#111510}.previews{display:grid;width:100%;min-width:0;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}.preview-card{width:100%;min-width:0;max-width:100%;overflow:hidden;padding:12px;border:1px solid #4c5948;border-radius:8px;background:#111510}.preview-card h3{margin:0 0 9px;font:700 .78rem "Courier New",monospace;letter-spacing:.06em;text-transform:uppercase}.preview-card canvas,.preview-card img{display:block;width:100%;max-width:100%;height:auto;min-height:150px;border-radius:4px;background:repeating-conic-gradient(#242820 0 25%,#1a1d17 0 50%) 0/20px 20px;object-fit:contain}.note{border-left:5px solid var(--warn)}.error{color:#ffaaa0}.fine-print{color:#c5c7b5;font-size:.91rem}body.light-machine{--ink:#20221e;color:var(--ink);border-color:#777974;background:radial-gradient(circle at 50% 5%,#f0f0e9,#c8c9c3 48%,#9fa19c 100%)}body.light-machine .panel{color:#20221e;border-color:#858780;background:rgba(225,226,220,.93)}body.light-machine .hero h1{text-shadow:0 1px #fff}body.light-machine .upload,body.light-machine .preview-card,body.light-machine .dimensions input,body.light-machine .dimensions select{border-color:#858780;background:#d9dbd4}@media(min-width:900px) and (hover:hover){body{width:125vw;max-width:none;zoom:.8}}@media(max-width:900px){.workspace{grid-template-columns:minmax(0,1fr)}.previews{grid-template-columns:minmax(0,1fr)}}@media(max-width:700px){body{width:auto;max-width:none;padding:16px}.panel{padding:18px}}
+  </style>
+  <style>
+    #depth_input {
+      display:block;
+      width:100%;
+      min-width:0;
+      max-width:100%;
+      padding:5px;
+      overflow:hidden;
+      border:2px solid #777b65;
+      color:#eee5c3;
+      background:#343a2e;
+      box-shadow:inset 0 2px 7px #000;
+      font-family:"Courier New",monospace;
+      white-space:nowrap;
+      text-overflow:ellipsis;
+      cursor:pointer;
+    }
+    #depth_input:focus-visible {border-color:#91a477;outline:2px solid rgba(131,240,106,.35);outline-offset:2px}
+    #depth_input::file-selector-button,
+    #depth_input::-webkit-file-upload-button {
+      margin-right:12px;
+      padding:9px 14px;
+      border:2px solid #9ba89f;
+      border-radius:7px;
+      color:#fff1cd;
+      background:linear-gradient(#66766d,#34443e);
+      box-shadow:inset 0 1px rgba(255,255,255,.3),0 3px 0 #18221e;
+      font:700 12px system-ui,sans-serif;
+      text-transform:uppercase;
+      letter-spacing:.06em;
+      cursor:pointer;
+    }
+    #depth_input::file-selector-button:hover,
+    #depth_input::-webkit-file-upload-button:hover {background:linear-gradient(#7e9388,#426052)}
+    #depth_input::file-selector-button:active,
+    #depth_input::-webkit-file-upload-button:active {transform:translateY(2px);box-shadow:inset 0 1px rgba(255,255,255,.2),0 1px 0 #18221e}
+    body.light-machine #depth_input {color:#171815;border-color:#777974;background:#dedfd9;box-shadow:inset 0 1px 5px #999}
+    body.light-machine #depth_input::file-selector-button,
+    body.light-machine #depth_input::-webkit-file-upload-button {color:#171815;border-color:#69756e;background:linear-gradient(#e1e4df,#aeb6af);box-shadow:inset 0 1px rgba(255,255,255,.8),0 3px 0 #737a74}
+    .upload-source-preview{margin-top:18px}.relief-preview{grid-column:1/-1}.parallax-preview-summary{grid-column:1/-1;margin:0;color:#c5c7b5;font-size:.86rem}body.light-machine .parallax-preview-summary{color:#343730}
+    .depth-generate-stage{margin-top:22px;padding-top:20px;border-top:1px solid #566251}.depth-generate-stage h2{margin-top:0}.depth-workflow{margin-top:24px}.depth-section{margin-top:18px}.depth-section-heading{margin-top:0}.source-depth-previews{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px;margin-top:18px}.source-depth-previews .preview-card{margin-top:0}.source-depth-previews canvas,.section-preview canvas,.depth-section .previews canvas{max-height:340px;min-height:120px;object-fit:contain}.section-preview{margin-top:20px;max-width:720px}.depth-section .previews{grid-template-columns:repeat(3,minmax(0,1fr))}.depth-section .previews .relief-preview{grid-column:auto}.depth-stage-exports{margin-top:20px}.depth-stage-exports .fine-print{margin-bottom:0}body.light-machine .depth-generate-stage{border-color:#858780}@media(max-width:900px){.depth-section .previews{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:620px){.source-depth-previews,.depth-section .previews{grid-template-columns:minmax(0,1fr)}.source-depth-previews canvas,.section-preview canvas,.depth-section .previews canvas{max-height:280px}}
+    #depth_map_canvas.is-editable {cursor:crosshair;touch-action:none;user-select:none}
+    .brush-depth-display{display:grid;place-items:center;min-height:82px;margin-top:8px}.brush-depth-swatch{display:block;width:18px;height:18px;border:3px solid #8f957f;border-radius:50%;background:#000;box-shadow:inset 0 0 0 2px rgba(255,255,255,.18),0 2px 6px #000;transition:width .08s linear,height .08s linear,background-color .08s linear}body.light-machine .brush-depth-swatch{border-color:#6e746a;box-shadow:inset 0 0 0 2px rgba(255,255,255,.6),0 2px 5px #777}
+    .guidance-header{display:flex;align-items:start;justify-content:space-between;gap:16px;flex-wrap:wrap}.guidance-header h2{margin:0}.depth-palette-picker{display:grid;gap:4px;min-width:min(100%,280px);font-weight:700}.depth-palette-picker select{width:100%;padding:9px;border:2px solid #5e6853;border-radius:5px;color:var(--green);background:#11170f}.color-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:16px 10px;margin-top:18px}.color-card{display:flex;min-width:0;flex-direction:column;align-items:center;text-align:center}.color-name{width:100%;margin-bottom:3px;overflow:hidden;color:#bdb99c;font-size:.65rem;font-weight:500;line-height:1.2;text-overflow:ellipsis;white-space:nowrap}.color-square{width:100%;aspect-ratio:1/1;border:0;border-radius:4px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.3);transition:transform .1s ease,opacity .1s ease;cursor:pointer}.color-square:hover,.color-square:focus-visible{transform:scale(1.08);outline:2px solid var(--green);outline-offset:2px}.color-square.selected{box-shadow:inset 0 0 0 999px rgba(128,128,128,.65),inset 0 0 0 1px rgba(0,0,0,.2);opacity:.5;transform:scale(.95)}.color-hex{margin-top:3px;color:#7f9b70;font-size:.6rem}.awaiting-depth-palette .color-grid{grid-template-columns:repeat(auto-fill,32px);justify-content:start;gap:7px}.awaiting-depth-palette .color-card{width:32px}.awaiting-depth-palette .color-name,.awaiting-depth-palette .color-hex{display:none}.awaiting-depth-palette .color-square{width:32px;height:32px;pointer-events:none;cursor:default}.awaiting-depth-palette .color-square:hover{transform:none;outline:0}.guidance-scale{display:flex;justify-content:space-between;color:#aaa991;font-size:.72rem}.guidance-tools{display:grid;grid-template-columns:minmax(220px,1fr) auto;align-items:end;gap:14px;margin-top:16px}.guidance-empty{color:#c5c7b5}.vault-depth-link{color:var(--green);font-weight:700}body.light-machine .guidance-scale,body.light-machine .guidance-empty{color:#343730}body.light-machine .depth-palette-picker select{color:#171815;border-color:#777974;background:#dedfd9}@media(max-width:900px){.color-grid{grid-template-columns:repeat(6,minmax(0,1fr))}}@media(max-width:620px){.color-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.guidance-tools{grid-template-columns:minmax(0,1fr)}}
+  </style>
+  <style>
+    .depth-process-schematic{margin:24px 0;padding:16px;border:2px solid #73745f;border-radius:16px;background:rgba(17,20,15,.5);box-shadow:inset 0 0 0 4px #292d24,inset 0 0 25px rgba(0,0,0,.65),0 6px 0 #161813}.depth-schematic-title{margin:0 0 14px;color:var(--green);font:700 clamp(10px,1.5vw,13px) "Courier New",monospace;letter-spacing:.12em;text-align:center}.depth-schematic-flow{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:8px}.depth-schematic-node{min-height:116px;padding:13px 9px 10px;border:1px solid #7a876e;border-radius:7px;background:linear-gradient(145deg,rgba(78,93,73,.58),rgba(21,27,20,.72));box-shadow:inset 0 0 0 2px rgba(12,15,11,.7);text-align:center}.depth-schematic-node span{display:inline-grid;place-items:center;width:23px;height:23px;margin-bottom:6px;border:1px solid #b9d8a9;border-radius:50%;color:#10140f;background:#9bd77f;font:700 11px "Courier New",monospace}.depth-schematic-node strong,.depth-schematic-node small{display:block}.depth-schematic-node strong{color:#eee7c8;font:700 11px "Courier New",monospace;text-transform:uppercase}.depth-schematic-node small{margin-top:6px;color:#aaa98e;font:10px/1.35 "Courier New",monospace}.depth-schematic-arrow{color:#98c889;font:700 24px "Courier New",monospace}.depth-schematic-loop{margin-top:13px;padding-top:10px;border-top:1px dashed #6c765e;color:#d6d0aa;font:700 11px/1.45 "Courier New",monospace;text-align:center}.depth-schematic-loop span{color:#efb94f;font-size:18px;vertical-align:-2px}body.light-machine .depth-process-schematic{border-color:#777974;background:rgba(220,221,216,.62);box-shadow:inset 0 0 0 4px #b1b3ae,inset 0 0 20px #888,0 6px 0 #686a66}body.light-machine .depth-schematic-title{color:#245d2a}body.light-machine .depth-schematic-node{border-color:#717c71;background:linear-gradient(#e4e6df,#bfc7be);box-shadow:inset 0 0 0 2px #f0f1eb}body.light-machine .depth-schematic-node strong{color:#171815}body.light-machine .depth-schematic-node small,body.light-machine .depth-schematic-loop{color:#343530}body.light-machine .depth-schematic-loop{border-color:#777974}@media(max-width:900px){.depth-schematic-flow{grid-template-columns:1fr}.depth-schematic-arrow{justify-self:center;transform:rotate(90deg)}}
+  </style>
+  <link rel="stylesheet" href="/static/machine_chrome.css?v=3">
+</head>
+<body>
+  {{ machine_chrome('experimental', 'EXPERIMENTAL DEPTH ANALYSIS · SERIES 79', false) }}
+  <main>
+    <section class="panel hero">
+      <p class="eyebrow">Client-side monocular depth estimation</p>
+      <h1>Depth Map Generator</h1>
+      <p>Estimate relative scene depth from a single image, inspect a relief-style projection, adjust the usable range, and export grayscale depth maps for further preparation. <a class="vault-depth-link" href="/docs/depthmap-generator">Read the complete Depthmap Generator guide.</a></p>
+      <span class="experimental">Experimental - active development</span>
+    </section>
+
+    <section class="depth-process-schematic" aria-labelledby="depth_process_schematic_title">
+      <div id="depth_process_schematic_title" class="depth-schematic-title">DEPTHMAP / RELIEF ENGRAVING, PROCESS SIGNAL FLOW</div>
+      <div class="depth-schematic-flow">
+        <div class="depth-schematic-node"><span>01</span><strong>Choose Source</strong><small>Load and inspect the original image in the browser.</small></div>
+        <div class="depth-schematic-arrow" aria-hidden="true">→</div>
+        <div class="depth-schematic-node"><span>02</span><strong>Initialize Depthmap</strong><small>Run the depth model to create the grayscale base.</small></div>
+        <div class="depth-schematic-arrow" aria-hidden="true">→</div>
+        <div class="depth-schematic-node"><span>03</span><strong>Guide with Color</strong><small>Optionally apply a Depth Palette and choose active swatches.</small></div>
+        <div class="depth-schematic-arrow" aria-hidden="true">→</div>
+        <div class="depth-schematic-node"><span>04</span><strong>Adjust + Paint</strong><small>Set range, curve, size, border, and manual depth corrections.</small></div>
+        <div class="depth-schematic-arrow" aria-hidden="true">→</div>
+        <div class="depth-schematic-node"><span>05</span><strong>Review + Export</strong><small>Compare previews, then download an 8-bit, 16-bit, or Krasnow-style parallax PNG.</small></div>
+      </div>
+      <div class="depth-schematic-loop"><span aria-hidden="true">↺</span> Iterate color guidance, adjustments, and painted corrections until the grayscale depth and relief projection describe the intended form.</div>
+    </section>
+
+    <aside class="panel note"><strong>Desktop browser recommended:</strong> initializing a depth map requires substantial memory and CPU resources, particularly with source images larger than 500 × 500 pixels. This feature typically requires a desktop or laptop web browser. Most phones do not have enough browser memory for the in-browser depth model and may enter a reload loop, where the page reloads each time depth processing is attempted.</aside>
+
+    <section class="panel">
+      <div class="dimensions single"><label for="depth_input_mode">Input type<select id="depth_input_mode"><option value="photo">Generate depth from a photograph or illustration</option><option value="depthmap">Use an existing grayscale depthmap</option></select></label></div>
+      <p id="depth_input_mode_help" class="fine-print">Uses browser-based AI to estimate relative depth from an ordinary photograph or illustration.</p>
+      <div id="depth_drop_zone" class="upload">
+        <div><h2>Choose an image</h2><p id="depth_upload_prompt">Drop a PNG, JPEG, WebP, BMP, or TIFF here, or select one from your device.</p><input id="depth_input" type="file" accept="image/png,image/jpeg,image/webp,image/bmp,image/tiff" aria-label="Source image file"></div>
+      </div>
+      <div class="actions"><button id="depth_reset" class="button secondary" type="button" disabled>Reset</button></div>
+      <p id="depth_status" class="status-label" role="status" aria-live="polite">Waiting for an image.</p>
+      <p id="depth_error" class="error" role="alert" hidden></p>
+      <div id="depth_processing_panel" class="depth-generate-stage" hidden>
+        <h2>Generate depth map</h2>
+        <div class="actions"><button id="depth_generate" class="button" type="button" disabled>Initialize Depthmap</button></div>
+        <progress id="depth_progress" class="progress" max="100" value="0" hidden></progress>
+        <p id="depth_processing_status" class="status-label" role="status" aria-live="polite">Depth processing has not started.</p>
+        <p id="depth_processing_error" class="error" role="alert" hidden></p>
+      </div>
+      <div class="source-depth-previews">
+        <div id="depth_source_preview" class="preview-card upload-source-preview" hidden><h3>Source image</h3><canvas id="depth_source_canvas"></canvas></div>
+        <div id="depth_base_preview" class="preview-card upload-source-preview" hidden><h3>Generated depthmap</h3><canvas id="depth_base_preview_canvas" aria-label="Read-only generated depthmap preview"></canvas></div>
+      </div>
+    </section>
+
+    <div id="depth_workspace" class="depth-workflow" hidden>
+    <section id="depth_tab_depthmap" class="panel workspace depth-section" aria-labelledby="depthmap_section_heading">
+      <div class="controls">
+        <h2 id="depthmap_section_heading" class="depth-section-heading">Depthmap</h2>
+        <div class="control"><label for="depth_near">Near clip <output id="depth_near_value">0%</output></label><input id="depth_near" type="range" min="0" max="95" value="0"></div>
+        <div class="control"><label for="depth_far">Far clip <output id="depth_far_value">100%</output></label><input id="depth_far" type="range" min="5" max="100" value="100"></div>
+        <div class="control"><label for="depth_gamma">Depth curve <output id="depth_gamma_value">1.00</output></label><input id="depth_gamma" type="range" min="25" max="300" value="100"></div>
+        <label><input id="depth_invert" type="checkbox"> Invert depth (black becomes near)</label>
+        <div>
+          <h3>Final canvas size</h3>
+          <div class="dimensions"><label for="depth_output_width">Width (px)<input id="depth_output_width" type="number" min="32" max="8192" step="1"></label><label for="depth_output_height">Height (px)<input id="depth_output_height" type="number" min="32" max="8192" step="1"></label></div>
+          <div class="dimensions single"><label for="depth_border_padding">Far-depth border on every side (px)<input id="depth_border_padding" type="number" min="0" max="2048" step="1" value="0"></label></div>
+          <div class="control"><label for="depth_perimeter_depth">Perimeter padding depth <output id="depth_perimeter_depth_value">Lowest point</output></label><input id="depth_perimeter_depth" type="range" min="0" max="100" step="0.1" value="0"><div class="dimensions" aria-hidden="true"><span>Farther</span><span style="text-align:right">Closer</span></div></div>
+          <p class="fine-print">Width and height are linked artwork dimensions. Editing either dimension automatically recalculates the other. Border padding initially extends the image's lowest existing height around all four sides. Moving Perimeter Padding Depth overrides that automatic value.</p>
+        </div>
+        <div>
+          <h3>Paint depth</h3>
+          <div class="control"><label for="depth_brush_size">Brush size <output id="depth_brush_size_value">20 px</output></label><input id="depth_brush_size" type="range" min="1" max="200" value="20"><div class="dimensions" aria-hidden="true"><span>Smaller</span><span style="text-align:right">Bigger</span></div></div>
+          <div class="control"><label for="depth_brush_depth">Brush depth <output id="depth_brush_depth_value">Farther</output></label><input id="depth_brush_depth" type="range" min="0" max="100" step="0.1" value="0"><div class="dimensions" aria-hidden="true"><span>Farther</span><span style="text-align:right">Closer</span></div><div class="brush-depth-display"><span id="depth_brush_preview" class="brush-depth-swatch" role="img" aria-label="Brush grayscale preview"></span></div></div>
+          <p class="fine-print">Click or drag directly on the grayscale depth preview to replace an area with the selected relative depth.</p>
+          <button id="depth_clear_paint" class="button secondary" type="button">Clear painted edits</button>
+        </div>
+        <div class="depth-stage-exports"><div class="actions"><button id="depth_export_8" class="button" type="button">Download 8-bit PNG</button><button id="depth_export_16" class="button secondary" type="button">Download 16-bit PNG</button></div><p class="fine-print">An 8-bit image contains 256 gray levels. The 16-bit export contains 65,536 levels and preserves smoother gradients for compatible downstream software.</p></div>
+      </div>
+      <div class="previews">
+        <div class="preview-card"><h3>Grayscale depth - drag to paint depth</h3><canvas id="depth_map_canvas" class="is-editable" aria-label="Editable grayscale depth map"></canvas></div>
+        <div class="preview-card relief-preview"><h3>Relief projection</h3><canvas id="depth_relief_canvas"></canvas></div>
+        <div class="preview-card"><h3>Depth convention</h3><canvas id="depth_legend_canvas" width="640" height="360"></canvas></div>
+      </div>
+    </section>
+
+    <section id="color_guidance_panel" class="panel depth-section awaiting-depth-palette" aria-labelledby="color_guidance_heading">
+      <div class="guidance-header"><div><p class="eyebrow">Optional interpretation layer</p><h2 id="color_guidance_heading">Color-Guided Depthmap</h2><p>Choose a saved Depth Palette, then toggle the swatches that should influence this image. Artificial depths and influence values are configured only in <a class="vault-depth-link" href="/material-libraries">Swatch Palette Vault</a>.</p></div><label id="depth_palette_picker" class="depth-palette-picker" hidden>Depth Palette<select id="saved_depth_palette"><option value="">Choose a saved Depth Palette</option></select></label></div>
+      <p id="depth_palette_required" class="guidance-empty">Color-guided depth is optional. <a class="vault-depth-link" href="/login">Sign up or sign in</a> to access Swatch Palette Vault, where you can create a Depth Palette that maps colors to artificial depth and perspective influence.</p>
+      <div id="depth_guidance_tools" class="guidance-tools" hidden><div class="control"><label for="depth_guidance_feather">Boundary feathering <output id="depth_guidance_feather_value">2 px</output></label><input id="depth_guidance_feather" type="range" min="0" max="20" step="1" value="2"><div class="guidance-scale"><span>Sharper</span><span>Smoother</span></div></div><p id="depth_guidance_status" class="guidance-empty">All swatches currently follow perspective depth.</p></div>
+      <div id="depth_swatch_grid" class="color-grid"></div>
+      <div class="preview-card section-preview"><h3>Color-guided depthmap preview</h3><canvas id="depth_guidance_preview_canvas" aria-label="Preview of the depthmap after color guidance"></canvas></div>
+    </section>
+
+    <section id="depth_tab_parallax" class="panel workspace depth-section" aria-labelledby="parallax_section_heading">
+      <div class="controls">
+        <div><p class="eyebrow">Directional engraving preparation</p><h2 id="parallax_section_heading" class="depth-section-heading">Parallax</h2><p>Convert the current depthmap into Krasnow-style horizontal angle ramps, inspect exactly what will remain unengraved, and export raster or grating geometry.</p></div>
+        <div class="control"><label for="depth_parallax_scale">Parallax strength <output id="depth_parallax_scale_value">0.06</output></label><input id="depth_parallax_scale" type="range" min="0.01" max="0.50" step="0.01" value="0.06"><div class="dimensions" aria-hidden="true"><span>Shorter ramps</span><span style="text-align:right">Longer ramps</span></div></div>
+        <div class="control"><label for="depth_parallax_background">Far-depth background cutoff <output id="depth_parallax_background_value">1.0%</output></label><input id="depth_parallax_background" type="range" min="0" max="20" step="0.5" value="1"><div class="dimensions" aria-hidden="true"><span>Exact far only</span><span style="text-align:right">More background</span></div></div>
+        <div class="dimensions"><label for="depth_parallax_patch_size">SVG cell size (mm)<input id="depth_parallax_patch_size" type="number" min="0.01" max="10" step="0.01" value="0.4"></label><label for="depth_parallax_line_spacing">SVG line spacing (mm)<input id="depth_parallax_line_spacing" type="number" min="0.001" max="1" step="0.001" value="0.06"></label></div>
+        <div class="dimensions"><label for="depth_parallax_stroke_width">SVG stroke width (mm)<input id="depth_parallax_stroke_width" type="number" min="0.001" max="1" step="0.001" value="0.01"></label><label>SVG physical size<output id="depth_parallax_physical_size">Generate a depthmap first</output></label></div>
+        <p class="fine-print">The parallax export applies Ben Krasnow's horizontal depth-edge conversion in this browser. The cutoff marks the farthest portion of an AI-generated map as unengraved background; strength controls the length of the angle ramps at its boundaries. Existing depthmaps use their explicit pure-white or transparent background instead.</p>
+        <div class="actions"><button id="depth_export_parallax" class="button" type="button">Download Parallax PNG</button><button id="depth_export_parallax_svg" class="button secondary" type="button">Download Parallax SVG</button></div>
+        <p class="fine-print">The Parallax PNG is an 8-bit angle map. The Parallax SVG converts that map into black, square-cell grating geometry but does not embed laser settings.</p>
+      </div>
+      <div class="previews">
+        <div class="preview-card"><h3>Depthmap used for Parallax</h3><canvas id="depth_parallax_source_canvas" aria-label="Current depthmap supplied to the parallax conversion"></canvas></div>
+        <div class="preview-card"><h3>Parallax angle-map preview</h3><canvas id="depth_parallax_preview_canvas" aria-label="Preview of the downloadable parallax angle map"></canvas></div>
+        <div class="preview-card"><h3>Parallax engraving mask - white is unengraved</h3><canvas id="depth_parallax_mask_canvas" aria-label="Final parallax engraving mask; white areas will not be engraved"></canvas></div>
+        <p id="depth_parallax_preview_summary" class="parallax-preview-summary" aria-live="polite">Generate a depthmap to inspect the parallax conversion.</p>
+      </div>
+    </section>
+    </div>
+
+    <aside class="panel note"><strong>Important limitation:</strong> a single photograph cannot provide measured physical depth. The model infers relative depth from visual cues and can misread reflections, transparency, shadows, abstract artwork, or unfamiliar objects. Always inspect and edit the result before using it for relief engraving. The uploaded image is processed locally; the browser downloads the AI model from Hugging Face when first used.</aside>
+  </main>
+  <script id="depth_palette_data" type="application/json">{{ depth_palette|tojson }}</script>
+  <script type="module" src="/static/depthmap_generator.js?v=9"></script>
+</body>
+</html>

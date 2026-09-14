@@ -19,10 +19,11 @@ body.machine-facade.light-machine { color:var(--machine-facade-light-text,#17181
 .theme-toggle input:focus-visible + .toggle-track { outline:2px solid #8ee474; outline-offset:3px; }
 .machine-brand-header { width:100%; display:flex; flex-direction:column; margin:0 0 14px; text-align:center; }
 .machine-brand-title { width:100%; margin:0; color:#d9d2af; font:500 clamp(25px,4.2vw,42px) Impact,"Arial Narrow",sans-serif; text-align:center; text-shadow:0 3px #111; }
-.machine-brand-home { display:block; color:inherit; text-decoration:none; cursor:pointer; }
+.machine-brand-home { display:flex; align-items:center; justify-content:center; gap:clamp(8px,1.5vw,18px); color:inherit; text-decoration:none; cursor:pointer; }
+.machine-brand-logo { display:block; flex:0 0 auto; width:clamp(42px,6vw,74px); height:clamp(42px,6vw,74px); object-fit:contain; filter:drop-shadow(0 3px 3px rgba(0,0,0,.65)); }
 .machine-brand-home:focus-visible { outline:2px solid #83f06a; outline-offset:5px; border-radius:4px; }
 .auth-machine-switch:not(.is-on)::after { top:14px; bottom:auto; height:12px; border-radius:1px 1px 3px 3px; transform:none; transform-origin:50% 0; }
-.machine-brand-letters { width:100%; display:flex; align-items:center; justify-content:space-between; white-space:nowrap; }
+.machine-brand-letters { width:auto; min-width:0; flex:1 1 auto; display:flex; align-items:center; justify-content:space-between; white-space:nowrap; }
 .machine-status-line { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); align-items:center; width:100%; margin-top:7px; padding:0 22px; }
 .machine-console-subtitle { grid-column:2; justify-self:center; color:#bdb58f; font:700 clamp(8px,1.7vw,12px) "Courier New",monospace; letter-spacing:clamp(.04em,.7vw,.16em); white-space:nowrap; text-align:center; }
 .machine-status-lamps { grid-column:1; justify-self:center; display:flex; align-items:center; justify-content:center; min-width:0; gap:clamp(4px,1.3vw,12px); color:#bdb58f; font:700 clamp(7px,1.2vw,9px) "Courier New",monospace; letter-spacing:clamp(.02em,.35vw,.11em); text-transform:uppercase; white-space:nowrap; }

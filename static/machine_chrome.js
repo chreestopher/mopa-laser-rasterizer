@@ -1,4 +1,11 @@
 (() => {
+  if (!document.querySelector('link[rel~="icon"]')) {
+    const icon = document.createElement('link');
+    icon.rel = 'icon';
+    icon.type = 'image/png';
+    icon.href = '/static/docs/wizardlogo.png';
+    document.head.append(icon);
+  }
   const themeSwitch = document.getElementById('theme_switch');
   const loginLink = document.getElementById('login_link');
   const loginLabel = loginLink?.querySelector('span:last-child');

@@ -1,0 +1,47 @@
+{% from "_machine_chrome.html" import machine_chrome %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Rasterizer Administration</title>
+  <link rel="stylesheet" href="/static/machine_chrome.css?v=3">
+  <link rel="stylesheet" href="/static/admin.css?v=2">
+</head>
+<body class="machine-facade">
+  {{ machine_chrome('', 'PRIVATE OPERATIONS CONSOLE · SERIES 79', false, '', 'compact') }}
+  <main class="admin-console">
+    <section class="admin-panel">
+      <div class="admin-panel-heading"><div><span class="admin-kicker">AUTHORIZED OPERATOR</span><h2>Seven-day job activity</h2></div><span class="admin-email">{{ admin_email }}</span></div>
+      <label class="admin-search">Task ID / Job ID
+        <input id="job_filter" type="search" autocomplete="off" placeholder="Type any part of a task ID">
+      </label>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead><tr><th>Task ID / Job ID</th><th>Launched</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="job_rows">
+          {% for job in jobs %}
+            <tr class="admin-job-row" data-task-id="{{ job.task_id|lower }}" tabindex="0" aria-expanded="false">
+              <td><code>{{ job.task_id }}</code></td>
+              <td>{% if job.created_at %}<time data-epoch="{{ job.created_at }}">{{ job.created_at }}</time>{% else %}Active before index{% endif %}</td>
+              <td><span class="admin-status admin-status--{{ job.status }}">{{ job.status }}</span></td>
+              <td class="admin-actions"><button type="button" data-logs="{{ job.task_id }}">View logs</button><button type="button" class="danger" data-delete="{{ job.task_id }}"{% if not job.queued %} disabled title="Only waiting jobs can be deleted from the queue"{% endif %}>Delete from queue</button></td>
+            </tr>
+            <tr class="admin-job-detail" data-detail-for="{{ job.task_id|lower }}" hidden><td colspan="4"><dl><div><dt>Source</dt><dd>{{ job.source_name or '—' }}</dd></div><div><dt>Operator</dt><dd>{{ 'Guest' if job.user_id == 'guest' else job.user_id }}</dd></div><div><dt>Material</dt><dd>{{ job.material_name or '—' }}</dd></div><div><dt>Preset</dt><dd>{{ job.image_preset or '—' }}</dd></div></dl></td></tr>
+          {% else %}<tr><td colspan="4">No jobs are currently indexed for this seven-day window.</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="admin-pagination"><button id="jobs_previous" type="button">Previous</button><span id="jobs_page"></span><button id="jobs_next" type="button">Next</button></div>
+    </section>
+    <section class="admin-panel admin-users">
+      <div class="admin-panel-heading"><div><span class="admin-kicker">COGNITO DIRECTORY</span><h2>Signed-up users</h2></div><strong id="user_count" class="admin-count">Loading…</strong></div>
+      <div id="admin_user_list" class="admin-user-list"><p>The directory is loading separately so it cannot delay the jobs console.</p></div>
+    </section>
+    <dialog id="log_dialog"><form method="dialog"><button class="dialog-close">Close</button></form><h2 id="log_title">Job logs</h2><pre id="log_output"></pre></dialog>
+    <p id="admin_message" role="status"></p>
+  </main>
+  <script>window.ADMIN_CSRF={{ csrf_token|tojson }};</script>
+  <script src="/static/admin.js?v=1"></script>
+</body>
+</html>

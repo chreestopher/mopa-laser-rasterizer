@@ -43,6 +43,59 @@ def color_laser_engraving_tool():
     )
 
 
+@routes.route("/laser-engraving-tool")
+def laser_engraving_tool():
+    return render_template(
+        "laser_engraving_tool.html",
+        canonical=f"{_public_url()}/laser-engraving-tool",
+    )
+
+
+@routes.route("/depthmap-relief-engraving-tool")
+def depthmap_relief_engraving_tool():
+    return render_template(
+        "depthmap_relief_engraving_tool.html",
+        canonical=f"{_public_url()}/depthmap-relief-engraving-tool",
+    )
+
+
+@routes.route("/founding-sponsors")
+def founding_sponsors():
+    """Recognize the manufacturers supporting the project's early growth."""
+    # Add confirmed sponsors here. Keeping the records structured makes it
+    # straightforward to add logos, links, supplied libraries, and materials
+    # without redesigning the page.
+    sponsors = []
+    return render_template(
+        "founding_sponsors.html",
+        canonical=f"{_public_url()}/founding-sponsors",
+        sponsors=sponsors,
+    )
+
+
+@routes.route("/experimental-laboratories")
+def experimental_laboratories():
+    """Introduce the application's experimental engraving workspaces."""
+    return render_template(
+        "experimental_laboratories.html",
+        canonical=f"{_public_url()}/experimental-laboratories",
+    )
+
+
+@routes.route("/depthmap-generator")
+def depthmap_generator():
+    """Client-side experimental depth-map workspace."""
+    depth_palette = [
+        {"name": name, "hex": color_hex}
+        for color_hex, name in LIGHTBURN_PALETTE_NAMES.items()
+    ]
+    return render_template(
+        "depthmap_generator.html",
+        canonical=f"{_public_url()}/depthmap-generator",
+        depth_palette=depth_palette,
+    )
+
+
 @routes.route("/login")
 def login():
     """ALB authenticates this route before returning users to the app home."""
@@ -88,7 +141,7 @@ def logout():
     return response
 
 
-@routes.route("/holographic-etching")
+@routes.route("/fauxlographic-etching")
 def holographic_etching():
     """Dedicated workspace for the structural-color engraving workflow."""
     palette = [
@@ -102,6 +155,17 @@ def holographic_etching():
     )
 
 
+@routes.route("/holographic-etching")
+def legacy_holographic_etching():
+    """Redirect the classic public URL without breaking saved links."""
+    query = f"?{request.query_string.decode('latin-1')}" if request.query_string else ""
+    return redirect(f"/fauxlographic-etching{query}", code=308)
+
+
 @routes.route("/material-libraries")
 def material_library_manager():
-    return render_template("material_libraries.html")
+    depth_palette = [
+        {"name": name, "hex": color_hex}
+        for color_hex, name in LIGHTBURN_PALETTE_NAMES.items()
+    ]
+    return render_template("material_libraries.html", depth_palette=depth_palette)

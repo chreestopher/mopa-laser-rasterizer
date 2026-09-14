@@ -3,8 +3,9 @@
 import math
 
 from shapely.affinity import translate
-from shapely.geometry import box
+from shapely.geometry import GeometryCollection, box
 from shapely.ops import unary_union
+from shapely.strtree import STRtree
 
 from .common import number
 
@@ -33,6 +34,19 @@ CONTROLS = (
 )
 
 _FIBONACCI = (1, 1, 2, 3, 5, 8, 13, 21)
+
+
+def _polygonal_parts(geometry):
+    if geometry.is_empty:
+        return []
+    if geometry.geom_type == "Polygon":
+        return [geometry]
+    if hasattr(geometry, "geoms"):
+        parts = []
+        for item in geometry.geoms:
+            parts.extend(_polygonal_parts(item))
+        return parts
+    return []
 
 
 def _noise(value):
@@ -95,3 +109,73 @@ def apply(geometry, settings):
         row += 1
 
     return unary_union(pieces) if pieces else geometry.intersection(box(0, 0, 0, 0))
+
+
+def apply_source_black(geometries, settings):
+    """Apply one shared Glitch field while preserving hole-free Black pieces."""
+    geometries = list(geometries)
+    if not geometries:
+        return []
+
+    source = GeometryCollection(geometries)
+    source_index = STRtree(geometries)
+    x1, y1, x2, y2 = settings.get("_canvas_bounds") or source.bounds
+    slice_height = number(settings.get("slice_height"), 18, 1, 1000)
+    fragment_width = number(settings.get("fragment_width"), 70, 1, 10000)
+    shift_amount = number(settings.get("shift_amount"), 28, 0, 10000)
+    echo_count = int(number(settings.get("echo_count"), 2, 0, 12))
+    echo_spacing = number(settings.get("echo_spacing"), 9, 0, 10000)
+    density = number(settings.get("density"), .55, 0, 1)
+    fibonacci_stride = int(number(settings.get("fibonacci_stride"), 2, 1, 32))
+    vertical_jitter = number(settings.get("vertical_jitter"), 3, 0, 10000)
+    seed = int(number(settings.get("seed"), 1, 0, 9999999))
+
+    pieces = []
+    row = 0
+    y = y1
+    while y < y2:
+        column = 0
+        x = x1
+        while x < x2:
+            fragment_box = box(
+                x, y, min(x + fragment_width, x2), min(y + slice_height, y2)
+            )
+            fragment_parts = []
+            candidate_indexes = sorted(
+                int(index)
+                for index in source_index.query(fragment_box, predicate="intersects")
+            )
+            for candidate_index in candidate_indexes:
+                fragment_parts.extend(_polygonal_parts(
+                    geometries[candidate_index].intersection(fragment_box)
+                ))
+            if fragment_parts:
+                index = row * 4099 + column * 131 + seed
+                if _noise(index) <= density:
+                    fib_cycle = len(_FIBONACCI) * 2 - 2
+                    fib_index = (row * fibonacci_stride + column + seed) % fib_cycle
+                    if fib_index >= len(_FIBONACCI):
+                        fib_index = fib_cycle - fib_index
+                    scale = _FIBONACCI[fib_index] / _FIBONACCI[-1]
+                    direction = -1 if (row + column + seed) % 2 else 1
+                    x_offset = direction * shift_amount * scale
+                    y_offset = (_noise(index + 17) - .5) * vertical_jitter
+                    for part in fragment_parts:
+                        pieces.append(translate(part, xoff=x_offset, yoff=y_offset))
+                        for echo in range(1, echo_count + 1):
+                            pieces.append(translate(
+                                part,
+                                xoff=(
+                                    x_offset
+                                    + direction * echo * echo_spacing * scale
+                                ),
+                                yoff=y_offset,
+                            ))
+                else:
+                    pieces.extend(fragment_parts)
+            x += fragment_width
+            column += 1
+        y += slice_height
+        row += 1
+
+    return pieces

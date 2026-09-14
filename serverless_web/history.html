@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Job History · MOPA Laser Rasterizer</title>
+  <script>document.documentElement.classList.add('staging-shell-pending');setTimeout(()=>document.documentElement.classList.remove('staging-shell-pending'),3000)</script>
+  <link rel="stylesheet" href="/machine_chrome.css?v=3">
+  <link rel="stylesheet" href="/staging-shell.css?v=1">
+  <link rel="stylesheet" href="/staging-pages.css?v=3">
+  <script src="/staging-shell.js?v=2" defer></script>
+  <style>
+    :root{color-scheme:dark;font:16px system-ui;background:#101419;color:#edf2f7}body{max-width:1050px;margin:35px auto;padding:0 20px}a{color:#7fc7ff}button{font:inherit;padding:8px 12px;border:1px solid #596474;border-radius:7px;color:inherit;background:#293746;cursor:pointer}.layout{display:block}.panel{padding:18px;border:1px solid #39424e;border-radius:12px;background:#171d24}.jobs{display:grid;gap:9px;padding:0;list-style:none}.job-record{min-width:0;border:1px solid #465260;border-radius:9px;background:#11171d;overflow:clip}.job{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;width:100%;box-sizing:border-box;border:0;border-radius:8px;text-align:left}.job-copy{min-width:0}.job strong,.job span{display:block}.job strong{overflow-wrap:anywhere}.job span{color:#b9c4cf;font-size:.82rem}.job-indicator{color:#8ee474!important;font:700 1.2rem "Courier New",monospace;transition:transform .15s}.job[aria-expanded=true]{position:sticky;top:8px;z-index:3;border:1px solid #7fc7ff;background:#21405a;box-shadow:0 7px 18px #05080b99}.job[aria-expanded=true] .job-indicator{transform:rotate(45deg)}.job-details{min-width:0;padding:8px 16px 18px}.job-details[hidden]{display:none!important}.job-details-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:10px 24px;align-items:start}.job-details-grid>*{min-width:0}.job-details h3{margin:18px 0 7px}.job-details-grid h3{margin-top:0}.job-details h3[data-job-source]{overflow-wrap:anywhere}.status{font-weight:700;text-transform:uppercase}.outputs a{display:block;margin:8px 0;overflow-wrap:anywhere}dt{margin-top:7px;font-weight:700;text-transform:capitalize;overflow-wrap:anywhere}dd{margin-left:0;color:#c9d1d9;overflow-wrap:anywhere}.log-controls{display:flex;align-items:center;flex-wrap:wrap;gap:9px;margin:8px 0 12px}.log-note{color:#b9c4cf;font-size:.82rem}.job-log-list{display:grid;gap:9px}.job-log-message{padding-bottom:9px;border-bottom:1px solid #39424e;white-space:pre-wrap;overflow-wrap:anywhere}.job-log-message:last-child{padding-bottom:0;border-bottom:0}@media(min-width:800px){.job-details-grid{grid-template-columns:minmax(0,1.25fr) repeat(2,minmax(0,1fr));padding-top:10px}.job-details-column{padding-left:20px;border-left:1px solid #465260}}@media(max-width:799px){.job-details-column{padding-top:12px;border-top:1px solid #465260}}@media(max-width:600px){.panel{padding:12px}.job{padding:10px}.job-details{padding:6px 11px 15px}}
+    .job{border-left:5px solid transparent!important}
+    .job-record.status-completed>.job{border-left-color:#4f9b62!important;background:linear-gradient(#304d37,#1d3425)!important}
+    .job-record.status-pending>.job{border-left-color:#a8eb7c!important;background:linear-gradient(#526f40,#324d2d)!important}
+    .job-record.status-active>.job{border-left-color:#92d46f!important;background:linear-gradient(#4b6a3d,#30492d)!important}
+    .job-record.status-pending>.job,.job-record.status-active>.job{animation:active-job-pulse 1.15s ease-in-out infinite alternate}
+    .job-record.status-failed>.job{border-left-color:#e16b70!important;background:linear-gradient(#69383b,#442326)!important}
+    .job-record.status-active>.job .job-indicator{color:#c0ff9e!important}
+    .job-record.status-pending>.job .job-indicator{color:#d8ffb8!important}
+    .job-record.status-failed>.job .job-indicator{color:#ffacae!important}
+    @keyframes active-job-pulse{from{filter:brightness(.82);box-shadow:inset 0 0 0 1px rgba(168,235,124,.08)}to{filter:brightness(1.2);box-shadow:inset 0 0 0 1px rgba(216,255,184,.65),0 0 12px rgba(142,228,116,.32)}}
+    @media(prefers-reduced-motion:reduce){.job-record.status-pending>.job,.job-record.status-active>.job{animation:none;filter:none}}
+    .job-delete-actions{display:flex;flex-direction:column;align-items:flex-end;gap:12px;margin-top:22px;padding-top:14px;border-top:1px solid #39424e}.retention-warning{align-self:stretch;margin:0;padding:11px 13px;border:1px solid #8a7441;border-radius:7px;background:#3e351f;color:#f1dfad;line-height:1.45}.job-delete-actions .danger{border-color:#a84e54;background:#6b282e;color:#fff}
+    @media(min-width:800px){.job-details-grid{grid-template-columns:minmax(0,1.25fr) repeat(3,minmax(0,1fr))}.job-details-column{padding-top:clamp(2.15rem,4vw,2.85rem)}.job-swatch-settings{grid-column:span 2}.job-swatch-settings [data-job-vault-settings] dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:1fr;gap:0 20px;margin-right:0}.job-swatch-settings .detail-pair:nth-child(even){padding-left:20px;border-left:1px solid #465260}}
+    .job-swatch-material{display:flex;gap:8px;align-items:baseline;margin:.35rem 0 .65rem}.job-swatch-material strong{flex:0 0 auto}.job-swatch-material span{min-width:0;overflow-wrap:anywhere}.job-mini-swatch-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.job-mini-swatch{display:flex;min-width:0;min-height:50px;flex-direction:column;justify-content:space-between;overflow:hidden;border:1px solid #778078;border-radius:6px;background:var(--job-swatch-color);box-shadow:inset 0 1px #ffffff45}.job-mini-swatch-hex,.job-mini-swatch-name{display:block;padding:3px 6px;color:#fff!important;background:#080b09b8;text-shadow:0 1px #000}.job-mini-swatch-hex{align-self:flex-start;border-radius:0 0 4px 0;font:700 .62rem/1.2 "Courier New",monospace;letter-spacing:.02em}.job-mini-swatch-name{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font:700 .68rem/1.25 system-ui,sans-serif}@media(min-width:800px){.job-mini-swatch-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}@media(max-width:430px){.job-mini-swatch-grid{grid-template-columns:minmax(0,1fr)}}
+    @media(min-width:800px){.job-log-list{gap:0}.job-log-message{padding-bottom:0;border-bottom:0}}
+    .job-log-list{box-sizing:border-box;width:100%;min-width:0;max-width:100%}.job-log-message{min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word}
+    .job-primary-downloads{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px!important}.job-primary-downloads p{display:grid;gap:5px;margin:0!important;text-align:center}.job-primary-downloads a{display:flex!important;box-sizing:border-box;width:100%;height:60px;align-items:center;justify-content:center;overflow:hidden;margin:0!important;padding:10px 13px;overflow-wrap:anywhere}.job-primary-downloads .output-size{color:#b9c4cf!important;font-size:.74rem}.light-machine .job-primary-downloads .output-size{color:#343530!important}
+  </style>
+</head>
+<body>
+  <h1>Job History</h1>
+  <p>Account-owned jobs and retained downloads. Job artifacts expire after seven days.</p>
+  <section id="registeredAccess" class="registered-access-message" hidden>
+    <h2>Keep track of your processing jobs</h2>
+    <p>Sign in or create an account to review your retained jobs, processing status, logs, parameters, and downloads.</p>
+    <div class="registered-access-actions"><a class="staging-action-button" href="/" data-registered-access-login>Sign in or register</a><a class="staging-action-button" href="/docs/job-history">Read the Job History documentation</a></div>
+  </section>
+  <div id="registeredContent" class="layout registered-only-content" hidden>
+    <section class="recent-jobs-section"><h2>Recent jobs</h2><p id="notice">Loading…</p><ul id="jobs" class="jobs"></ul></section>
+  </div>
+  <script type="module" src="/history.js?v=8"></script>
+</body>
+</html>

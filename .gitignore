@@ -1,3 +1,48 @@
+outputs/
+scratch/
 uploads/
 k8s/deployment.local.yaml
 __pycache__/
+.venv/
+.pytest_cache/
+*.py[cod]
+
+# Local environment and runtime secrets
+.env
+.env.*
+!.env.example
+!.env.aws.example
+*.secret.env
+*.secrets.env
+
+# AWS CLI credentials, SSO caches, and local configuration
+.aws/
+**/.aws/
+aws_credentials
+aws-credentials
+
+# Kubernetes and K3s client credentials
+.kube/
+**/.kube/
+kubeconfig
+kubeconfig.*
+*.kubeconfig
+k3s.yaml
+**/k3s.yaml
+
+# Docker registry authentication
+.docker/config.json
+**/.docker/config.json
+docker-config.json
+
+# Secret-bearing Kubernetes manifests. Use these suffixes for local exports.
+*.secret.yaml
+*.secret.yml
+*.secrets.yaml
+*.secrets.yml
+k8s/secrets.local.yaml
+k8s/secrets.local.yml
+
+# Locally exported application/authentication secrets
+cognito-client-secret*
+flask-session-secret*

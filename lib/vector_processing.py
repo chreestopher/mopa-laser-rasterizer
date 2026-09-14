@@ -5,13 +5,14 @@ import json
 from PIL import Image
 import colorsys
 import math
+from concurrent.futures import ThreadPoolExecutor
 import cv2
 import numpy as np 
 import svgwrite
 import potrace
 import xml.etree.ElementTree as ET
 from collections import defaultdict
-from shapely.geometry import Polygon, box, Point, MultiPoint, LineString, MultiLineString, GeometryCollection
+from shapely.geometry import Polygon, box, Point, MultiPoint, LineString, GeometryCollection
 from shapely.ops import unary_union, voronoi_diagram, transform
 from shapely.affinity import scale, affine_transform
 from shapely.validation import make_valid
@@ -25,6 +26,19 @@ from abstract_filters import (
     settings as registered_filter_settings,
 )
 from abstract_filters.common import number as _number
+import geometry_styles
+
+
+SOURCE_BLACK_PROGRESS_BATCHES = 6
+SOURCE_BLACK_PROGRESS_MIN_COMPONENTS = 1000
+LARGE_LIGHTBURN_PROJECT_BYTES = 50_000_000
+LARGE_LIGHTBURN_PROJECT_WARNING = (
+    "WARNING: This LightBurn project is larger than 50 MB and contains a large "
+    "amount of geometry. Rasterizer has disabled the expensive cut-path "
+    "optimizations and left only Order by Layer enabled. LightBurn may appear frozen or not responding after "
+    "you press Frame, Send, or Start. Please be patient; LightBurn will typically "
+    "become usable again after it finishes its calculations."
+)
 
 # from vector_processing import raster_to_puzzle_and_lightburn
 
@@ -74,6 +88,119 @@ def log_job_settings(**settings):
     for line in _yaml_lines(settings):
         printLogMessage(line)
     printLogMessage("--- end job_settings.yaml ---")
+
+
+def _project_note_label(value):
+    return str(value or "none").replace("_", " ").strip().title()
+
+
+def _project_note_value(value):
+    if isinstance(value, bool):
+        return "On" if value else "Off"
+    if value is None or value == "":
+        return "None"
+    if isinstance(value, float):
+        return f"{value:g}"
+    if isinstance(value, (dict, list, tuple)):
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+    return str(value)
+
+
+def _summarize_project_geometry(value):
+    """Keep paint operations out of LightBurn Notes while recording their intent."""
+    if not isinstance(value, dict):
+        return value
+    summarized = {}
+    for key, item in value.items():
+        if key == "fauxlogram_flow" and isinstance(item, dict):
+            strokes = item.get("strokes") or []
+            summarized[key] = {
+                "enabled": bool(item.get("enabled")),
+                "regions": len(item.get("regions") or []),
+                "painted_shapes": sum(not stroke.get("erase") for stroke in strokes),
+                "eraser_strokes": sum(bool(stroke.get("erase")) for stroke in strokes),
+            }
+        elif isinstance(item, dict):
+            summarized[key] = _summarize_project_geometry(item)
+        else:
+            summarized[key] = item
+    return summarized
+
+
+def build_rasterizer_project_note(
+    *,
+    image_preset,
+    width,
+    height,
+    scale_factor,
+    quantize_colors,
+    min_island_area,
+    simplification_factor,
+    smoothing_radius,
+    abstract_filter,
+    abstract_filter_parameters,
+    color_matching,
+    job_settings,
+    target_colors,
+    geometry_style="vectors",
+    geometry_style_parameters=None,
+):
+    """Build the human-readable Notes text embedded in every Rasterizer project."""
+    job_settings = dict(job_settings or {})
+    color_matching = dict(color_matching or {})
+    public_filter_parameters = {
+        key: value
+        for key, value in dict(abstract_filter_parameters or {}).items()
+        if not str(key).startswith("_")
+    }
+    public_geometry_parameters = _summarize_project_geometry({
+        key: value
+        for key, value in dict(geometry_style_parameters or {}).items()
+        if not str(key).startswith("_")
+    })
+    job_type = "Fauxlographic" if image_preset == "holographic_artwork" else "Rasterizer"
+    swatch_names = [
+        str(metadata[2])
+        for metadata in target_colors.values()
+        if len(metadata) > 2 and str(metadata[2]).strip()
+    ]
+
+    lines = [
+        "Rasterizer Parameters",
+        f"Job type: {job_type}",
+        f"Image preset: {_project_note_label(image_preset)}",
+        f"Material: {_project_note_value(job_settings.get('selected_material'))}",
+        f"Output dimensions: {width} x {height} pixels",
+        f"Pixel size: {_project_note_value(scale_factor)} mm",
+        f"Swatches: {', '.join(swatch_names) if swatch_names else 'None'}",
+        f"Quantized colors: {_project_note_value(quantize_colors)}",
+        f"Minimum island area: {_project_note_value(min_island_area)}",
+        f"Simplification factor: {_project_note_value(simplification_factor)}",
+        f"Smoothing radius: {_project_note_value(smoothing_radius)}",
+        f"Color matching mode: {_project_note_label(color_matching.get('color_matching_mode', 'balanced'))}",
+        f"Color matching hue weight: {_project_note_value(color_matching.get('color_matching_hue_weight', 4.0))}",
+        f"Color matching saturation weight: {_project_note_value(color_matching.get('color_matching_saturation_weight', 1.0))}",
+        f"Color matching lightness weight: {_project_note_value(color_matching.get('color_matching_lightness_weight', 1.0))}",
+        "",
+        f"Abstract filter: {_project_note_label(abstract_filter)}",
+        "Abstract filter parameters:",
+    ]
+    if public_filter_parameters:
+        lines.extend(
+            f"- {_project_note_label(key)}: {_project_note_value(value)}"
+            for key, value in sorted(public_filter_parameters.items())
+        )
+    else:
+        lines.append("- None")
+    lines.extend(["", f"Geometry style: {_project_note_label(geometry_style)}", "Geometry style parameters:"])
+    if public_geometry_parameters:
+        lines.extend(
+            f"- {_project_note_label(key)}: {_project_note_value(value)}"
+            for key, value in sorted(public_geometry_parameters.items())
+        )
+    else:
+        lines.append("- None")
+    return "\n".join(lines)
 
 
 PHOTO_TYPE_PRESETS = {
@@ -133,6 +260,170 @@ found_lb_hex = {}
 # Settings-only palette entries may be loaded as LightBurn layers but must
 # never become a raster-color destination.
 NON_IMAGE_SWATCHES = set()
+
+# LightBurn's native layer indexes keep their official color identities even
+# when a user assigns a differently named Material Library setting to them.
+OFFICIAL_LIGHTBURN_LAYER_NAMES = {
+    0: "Black", 1: "Blue", 2: "Red", 3: "Green", 4: "Yellow",
+    5: "Orange", 6: "Cyan", 7: "Magenta", 8: "Light-Gray",
+    9: "Dark-Blue", 10: "Dark-Red", 11: "Dark-Green",
+    12: "Dark-Yellow", 13: "Dark-Orange", 14: "Light-Blue",
+    15: "Dark-Magenta", 16: "Medium-Gray", 17: "Slate-Blue",
+    18: "Rose", 19: "Periwinkle-Blue", 20: "Raspberry",
+    21: "Sage-Green", 22: "Peach", 23: "Light-Pink",
+    24: "Orchid-Pink", 25: "Deep-Purple", 26: "Rust-Brown",
+    27: "Teal", 28: "Bright-Mint-Green", 29: "Light-Gold",
+}
+
+# Cell-clipping filters can temporarily expand one cleaned color layer into
+# thousands of pieces. Running two very large source layers at once needlessly
+# doubles that peak while providing little speedup inside GEOS. Above this
+# object count, stream those filters one layer at a time and release each
+# source batch as soon as its final geometry has been produced.
+MEMORY_INTENSIVE_FILTER_SERIAL_THRESHOLD = 1_000_000
+MEMORY_INTENSIVE_FILTERS = {
+    "mosaic", "crystal", "spiral", "glitch", "deep_fryer",
+}
+
+
+def lightburn_layer_display_name(layer_index, assigned_name):
+    """Show both the native color and an overridden library assignment."""
+    assigned_name = str(assigned_name or "").strip()
+    official_name = OFFICIAL_LIGHTBURN_LAYER_NAMES.get(int(layer_index), assigned_name)
+    if not assigned_name or assigned_name.casefold() == official_name.casefold():
+        return official_name
+    return f"{official_name} - {assigned_name}"
+
+LIGHTBURN_TEAL_RGB = (0, 71, 84)
+LIGHTBURN_TEAL_LUMINANCE = (
+    .2126 * LIGHTBURN_TEAL_RGB[0]
+    + .7152 * LIGHTBURN_TEAL_RGB[1]
+    + .0722 * LIGHTBURN_TEAL_RGB[2]
+)
+
+
+def source_black_cutoff_mask(source_img):
+    """Reserve source pixels strictly darker than LightBurn Teal for Black."""
+    pixels = np.asarray(source_img.convert("RGB"), dtype=np.float64)
+    luminance = (
+        .2126 * pixels[:, :, 0]
+        + .7152 * pixels[:, :, 1]
+        + .0722 * pixels[:, :, 2]
+    )
+    return luminance < LIGHTBURN_TEAL_LUMINANCE
+
+
+def load_resized_source_black_cutoff_mask(raster_image_path, output_size):
+    """Resize the source cutoff mask without interpolating its membership."""
+    with Image.open(raster_image_path) as source:
+        original_mask = source_black_cutoff_mask(source)
+    mask_image = Image.fromarray(original_mask.astype(np.uint8) * 255)
+    resized_mask = mask_image.resize(output_size, Image.Resampling.NEAREST)
+    return np.asarray(resized_mask, dtype=np.uint8) == 255
+
+
+def load_resized_artwork_alpha_mask(raster_image_path, output_size):
+    """Return all non-fully-transparent source pixels at processing size."""
+    with Image.open(raster_image_path) as source:
+        alpha = np.asarray(source.convert("RGBA").getchannel("A"), dtype=np.uint8)
+    mask_image = Image.fromarray((alpha > 0).astype(np.uint8) * 255)
+    resized_mask = mask_image.resize(output_size, Image.Resampling.NEAREST)
+    return np.asarray(resized_mask, dtype=np.uint8) == 255
+
+
+def restore_reserved_black(quantized_img, source_black_mask):
+    """Restore reserved source darkness after non-Black quantization."""
+    output = np.asarray(quantized_img.convert("RGB"), dtype=np.uint8).copy()
+    output[source_black_mask] = (0, 0, 0)
+    return Image.fromarray(output)
+
+
+def holographic_lab_black_mask(source_img):
+    """Return the Holographic Etching Lab's adaptive dark two-color mask."""
+    quantized = source_img.convert("RGB").quantize(colors=2, method=0).convert("RGB")
+    pixels = np.asarray(quantized, dtype=np.uint8)
+    palette_colors = {tuple(pixel) for pixel in pixels.reshape(-1, 3)}
+    if not palette_colors:
+        return np.zeros(pixels.shape[:2], dtype=bool)
+
+    def luminance(rgb):
+        return .2126 * rgb[0] + .7152 * rgb[1] + .0722 * rgb[2]
+
+    darkest_color = min(palette_colors, key=luminance)
+    if len(palette_colors) == 1 and luminance(darkest_color) >= 128:
+        return np.zeros(pixels.shape[:2], dtype=bool)
+    return np.all(pixels == darkest_color, axis=2)
+
+
+def _mask_to_merged_geometry(mask):
+    """Convert a boolean raster mask into coalesced rectangle geometry."""
+    height, width = mask.shape
+    visited = np.zeros((height, width), dtype=bool)
+    rectangles = []
+    for y in range(height):
+        for x in range(width):
+            if not mask[y, x] or visited[y, x]:
+                continue
+            rectangle_width = 1
+            while (
+                x + rectangle_width < width
+                and mask[y, x + rectangle_width]
+                and not visited[y, x + rectangle_width]
+            ):
+                rectangle_width += 1
+            rectangle_height = 1
+            while y + rectangle_height < height:
+                row = mask[y + rectangle_height, x:x + rectangle_width]
+                row_visited = visited[y + rectangle_height, x:x + rectangle_width]
+                if row_visited.any() or not np.all(row):
+                    break
+                rectangle_height += 1
+            visited[y:y + rectangle_height, x:x + rectangle_width] = True
+            rectangles.append(box(x, y, x + rectangle_width, y + rectangle_height))
+    return unary_union(rectangles) if rectangles else GeometryCollection()
+
+
+def artwork_crop_geometry(width, height, crop_shape):
+    """Return the exact output boundary for a browser-applied artwork crop."""
+    crop_shape = str(crop_shape or "").strip().lower()
+    if crop_shape not in {"", "rectangle", "square", "oval", "circle", "transparency"}:
+        raise ValueError("Choose a valid artwork crop shape")
+    if crop_shape not in {"oval", "circle"}:
+        return box(0, 0, width, height)
+    if crop_shape == "circle":
+        diameter = min(width, height)
+        center_x, center_y = width / 2, height / 2
+        return Point(center_x, center_y).buffer(diameter / 2, quad_segs=128)
+    unit_circle = Point(width / 2, height / 2).buffer(1, quad_segs=128)
+    return scale(unit_circle, xfact=width / 2, yfact=height / 2, origin=(width / 2, height / 2))
+
+
+def replace_krasnow_black_layer(
+    processed_layers,
+    black_hex,
+    source_img,
+    reserved_black_mask=None,
+):
+    """Restore reserved source Black and give it exclusive output ownership."""
+    output = dict(processed_layers)
+    black_mask = np.asarray(reserved_black_mask, dtype=bool)
+    expected_shape = (source_img.height, source_img.width)
+    if black_mask.shape != expected_shape:
+        raise ValueError(
+            "Krasnow reserved Black mask does not match the prepared artwork dimensions."
+        )
+    black_geometry = _mask_to_merged_geometry(black_mask)
+    for color_hex, geometry in list(output.items()):
+        if color_hex == black_hex or geometry.is_empty:
+            continue
+        # Geometry styles run after an abstract transform, so their open
+        # grating paths can cross back into source pixels reserved for Black.
+        # Layer ordering is not ownership: remove those path segments so a
+        # coordinate can never be engraved once by Black and again by a
+        # colored carrier.
+        output[color_hex] = geometry.difference(black_geometry)
+    output[black_hex] = black_geometry
+    return output
 
 
 def nearest_available_swatch(r, g, b, target_colors, prefer_non_black=True):
@@ -242,6 +533,7 @@ def parse_material_settings(
     material_name="stainless - steel",
     material_layer_report=None,
     required_setting_names=(),
+    required_setting_aliases=None,
     return_setting_layers=False,
 ):
     """
@@ -304,6 +596,18 @@ def parse_material_settings(
     required_names = {
         str(name).strip().casefold() for name in required_setting_names if str(name).strip()
     }
+    required_setting_aliases = required_setting_aliases or {}
+    aliases_by_required_name = {
+        required_name: {
+            required_name,
+            *(
+                str(alias).strip().casefold()
+                for alias in required_setting_aliases.get(required_name, ())
+                if str(alias).strip()
+            ),
+        }
+        for required_name in required_names
+    }
     required_layers = {}
     next_layer_index = max((metadata[1] for metadata in TARGET_COLORS.values()), default=-1) + 1
     selected_targets = {
@@ -311,6 +615,35 @@ def parse_material_settings(
         for color_hex, metadata in TARGET_COLORS.items()
         if metadata[2].casefold() in {str(color).strip().casefold() for color in limit_colors}
     }
+    settings_by_target = {}
+    for item in matching_settings:
+        labels = (getattr(item, "entryDesc", ""), getattr(item, "name", ""))
+        target = next(
+            (selected_targets.get(str(label or "").strip().casefold())
+             for label in labels
+             if str(label or "").strip().casefold() in selected_targets),
+            None,
+        )
+        if target is None:
+            continue
+        target_hex, target_metadata = target
+        settings_by_target.setdefault(target_hex, []).append(
+            str(getattr(item, "entryDesc", "") or getattr(item, "name", "") or target_metadata[2]).strip()
+        )
+    target_names_by_hex = {
+        color_hex: metadata[2] for color_hex, metadata in selected_targets.values()
+    }
+    duplicate_targets = [
+        target_names_by_hex[target_hex]
+        for target_hex, names in settings_by_target.items()
+        if len(names) > 1
+    ]
+    if duplicate_targets:
+        names = ", ".join(sorted(duplicate_targets, key=str.casefold))
+        raise ValueError(
+            f"Material '{material_name}' contains duplicate swatch name(s): {names}. "
+            "Each material may contain only one setting per swatch name."
+        )
     for item in matching_settings:
         # LightBurn stores both an Entry description and a cut-setting name.
         # Accept either as the library-side label, then make the editable
@@ -327,7 +660,10 @@ def parse_material_settings(
                 required_name
                 for required_name in required_names
                 if any(
-                    required_name in str(label or "").strip().casefold()
+                    any(
+                        alias in str(label or "").strip().casefold()
+                        for alias in aliases_by_required_name[required_name]
+                    )
                     for label in library_labels
                 )
             ),
@@ -364,7 +700,7 @@ def parse_material_settings(
 
         item.frequency = int(item.frequency)
         item.index = target_metadata[1]
-        item.name = target_metadata[2]
+        item.name = lightburn_layer_display_name(target_metadata[1], target_metadata[2])
         matched_settings[target_hex] = target_metadata
         if matching_required_name is not None:
             required_layers[matching_required_name] = target_metadata[1]
@@ -566,12 +902,279 @@ def find_black_layer(target_colors):
     return black_hex, black_layer_id
 
 
+def preserve_saturated_palette_colors(
+    source_img,
+    quantized_img,
+    target_colors,
+    source_saturation_threshold=0.50,
+    source_value_threshold=0.15,
+    neutral_saturation_threshold=0.15,
+    hue_weight=4.0,
+    saturation_weight=1.0,
+    value_weight=1.0,
+):
+    """Prevent saturated source colors from collapsing into neutral swatches.
+
+    Pillow's fixed-palette quantizer uses RGB proximity.  A bright, moderately
+    saturated blue can therefore be numerically closer to Light-Gray than to
+    any available chromatic swatch, especially when Light-Blue or Slate-Blue
+    is absent.  Reassign only those saturated pixels that the fixed-palette
+    pass sent to a non-Black neutral swatch.  Hue-aware HSV distance keeps the
+    replacement in the correct color family while still considering
+    saturation and brightness.  The returned pixels remain exact official
+    swatch RGB values, so all later geometry and LightBurn layer behavior is
+    unchanged.
+    """
+    source_rgb = np.asarray(source_img.convert("RGB"), dtype=np.uint8)
+    quantized_rgb = np.asarray(quantized_img.convert("RGB"), dtype=np.uint8).copy()
+    if source_rgb.shape != quantized_rgb.shape:
+        raise ValueError("Source and quantized palette images must have matching dimensions")
+
+    candidate_swatches = []
+    neutral_swatches = []
+    for color_hex in target_colors:
+        if color_hex.upper() in NON_IMAGE_SWATCHES:
+            continue
+        color_rgb = hex_to_rgb(color_hex)
+        hue, saturation, value = colorsys.rgb_to_hsv(
+            *(channel / 255.0 for channel in color_rgb)
+        )
+        swatch = (color_hex, color_rgb, hue * 360.0, saturation, value)
+        if value < source_value_threshold:
+            # Preserve intentional Black assignments; darkness is not a
+            # neutral-color collapse.
+            continue
+        if saturation < neutral_saturation_threshold:
+            neutral_swatches.append(swatch)
+        else:
+            candidate_swatches.append(swatch)
+
+    if not neutral_swatches or not candidate_swatches:
+        return quantized_img
+
+    source_hsv = cv2.cvtColor(source_rgb, cv2.COLOR_RGB2HSV)
+    source_hue = source_hsv[..., 0].astype(np.float32) * 2.0
+    source_saturation = source_hsv[..., 1].astype(np.float32) / 255.0
+    source_value = source_hsv[..., 2].astype(np.float32) / 255.0
+
+    neutral_assignment = np.zeros(source_hue.shape, dtype=bool)
+    for _, neutral_rgb, _, _, _ in neutral_swatches:
+        neutral_assignment |= np.all(quantized_rgb == neutral_rgb, axis=2)
+
+    correction_mask = (
+        neutral_assignment
+        & (source_saturation >= float(source_saturation_threshold))
+        & (source_value >= float(source_value_threshold))
+    )
+    flat_indexes = np.flatnonzero(correction_mask)
+    if not flat_indexes.size:
+        return quantized_img
+
+    affected_hue = source_hue.reshape(-1)[flat_indexes]
+    affected_saturation = source_saturation.reshape(-1)[flat_indexes]
+    affected_value = source_value.reshape(-1)[flat_indexes]
+    best_distance = np.full(flat_indexes.size, np.inf, dtype=np.float32)
+    best_rgb = np.zeros((flat_indexes.size, 3), dtype=np.uint8)
+
+    for _, color_rgb, hue, saturation, value in candidate_swatches:
+        hue_delta = np.abs(affected_hue - hue)
+        hue_delta = np.minimum(hue_delta, 360.0 - hue_delta) / 180.0
+        distance = (
+            float(hue_weight) * hue_delta * hue_delta
+            + float(saturation_weight) * (affected_saturation - saturation) ** 2
+            + float(value_weight) * (affected_value - value) ** 2
+        )
+        replace = distance < best_distance
+        best_distance[replace] = distance[replace]
+        best_rgb[replace] = color_rgb
+
+    quantized_rgb.reshape(-1, 3)[flat_indexes] = best_rgb
+    printLogMessage(
+        "Palette quantization preserved chroma for "
+        f"{flat_indexes.size} saturated source pixels initially assigned "
+        "to neutral swatches."
+    )
+    return Image.fromarray(quantized_rgb, mode="RGB")
+
+
+def distinguish_blue_palette_shades(
+    source_img,
+    quantized_img,
+    target_colors,
+    hue_weight=4.0,
+    saturation_weight=1.0,
+    lightness_weight=1.0,
+    source_saturation_threshold=0.20,
+    neutral_saturation_threshold=0.15,
+):
+    """Separate darker Blue from lighter Periwinkle within the blue family.
+
+    Fixed RGB palette quantization can prefer Periwinkle for nearly every blue
+    in an illustration because Periwinkle's red and green channels place it
+    closer to anti-aliased and moderately saturated source pixels.  Compare
+    pixels already assigned to a true-blue swatch in HSL space so saturation
+    and apparent tone can distinguish the active Blue and Periwinkle layers.
+
+    Cyan and Teal intentionally stay outside this pass: they represent a
+    different blue-green family and retain their existing assignments.
+    """
+    source_rgb = np.asarray(source_img.convert("RGB"), dtype=np.uint8)
+    quantized_rgb = np.asarray(quantized_img.convert("RGB"), dtype=np.uint8).copy()
+    if source_rgb.shape != quantized_rgb.shape:
+        raise ValueError("Source and quantized palette images must have matching dimensions")
+
+    blue_swatches = []
+    neutral_swatches = []
+    for color_hex in target_colors:
+        if color_hex.upper() in NON_IMAGE_SWATCHES:
+            continue
+        color_rgb = hex_to_rgb(color_hex)
+        hue, lightness, saturation = colorsys.rgb_to_hls(
+            *(channel / 255.0 for channel in color_rgb)
+        )
+        hue *= 360.0
+        # This range includes native Blue and Periwinkle while deliberately
+        # excluding Cyan/Teal and violet/purple layers.
+        if 210.0 <= hue <= 250.0 and saturation >= 0.15:
+            blue_swatches.append((color_rgb, hue, saturation, lightness))
+        elif saturation < neutral_saturation_threshold and lightness >= 0.15:
+            neutral_swatches.append(color_rgb)
+
+    if len(blue_swatches) < 2:
+        return quantized_img
+
+    blue_assignment = np.zeros(source_rgb.shape[:2], dtype=bool)
+    for color_rgb, _, _, _ in blue_swatches:
+        blue_assignment |= np.all(quantized_rgb == color_rgb, axis=2)
+    if not np.any(blue_assignment):
+        return quantized_img
+
+    source_hls = cv2.cvtColor(source_rgb, cv2.COLOR_RGB2HLS)
+    source_hue = source_hls[..., 0].astype(np.float32) * 2.0
+    source_lightness = source_hls[..., 1].astype(np.float32) / 255.0
+    source_saturation = source_hls[..., 2].astype(np.float32) / 255.0
+
+    # A fixed RGB palette can occasionally place a subtly cool white or gray
+    # on Periwinkle. Do not let the blue-family refinement lock those pixels
+    # into a chromatic layer. When an actual neutral layer is available, give
+    # low-saturation source pixels back to the nearest neutral RGB swatch.
+    neutral_source = blue_assignment & (
+        source_saturation < float(source_saturation_threshold)
+    )
+    neutral_indexes = np.flatnonzero(neutral_source)
+    if neutral_indexes.size and neutral_swatches:
+        source_flat = source_rgb.reshape(-1, 3).astype(np.float32)
+        neutral_pixels = source_flat[neutral_indexes]
+        neutral_palette = np.asarray(neutral_swatches, dtype=np.float32)
+        distances = np.sum(
+            (neutral_pixels[:, None, :] - neutral_palette[None, :, :]) ** 2,
+            axis=2,
+        )
+        quantized_rgb.reshape(-1, 3)[neutral_indexes] = neutral_palette[
+            np.argmin(distances, axis=1)
+        ].astype(np.uint8)
+        printLogMessage(
+            "Palette quantization restored "
+            f"{neutral_indexes.size} low-saturation source pixels from "
+            "blue-family assignments to neutral swatches."
+        )
+
+    chromatic_blue_assignment = blue_assignment & (
+        source_saturation >= float(source_saturation_threshold)
+    )
+    flat_indexes = np.flatnonzero(chromatic_blue_assignment)
+    if not flat_indexes.size:
+        return Image.fromarray(quantized_rgb, mode="RGB")
+
+    affected_hue = source_hue.reshape(-1)[flat_indexes]
+    affected_saturation = source_saturation.reshape(-1)[flat_indexes]
+    affected_lightness = source_lightness.reshape(-1)[flat_indexes]
+    best_distance = np.full(flat_indexes.size, np.inf, dtype=np.float32)
+    best_rgb = np.zeros((flat_indexes.size, 3), dtype=np.uint8)
+
+    for color_rgb, hue, saturation, lightness in blue_swatches:
+        hue_delta = np.abs(affected_hue - hue)
+        hue_delta = np.minimum(hue_delta, 360.0 - hue_delta) / 180.0
+        distance = (
+            float(hue_weight) * hue_delta * hue_delta
+            + float(saturation_weight) * (affected_saturation - saturation) ** 2
+            + float(lightness_weight) * (affected_lightness - lightness) ** 2
+        )
+        replace = distance < best_distance
+        best_distance[replace] = distance[replace]
+        best_rgb[replace] = color_rgb
+
+    output_flat = quantized_rgb.reshape(-1, 3)
+    changed = np.any(output_flat[flat_indexes] != best_rgb, axis=1)
+    output_flat[flat_indexes] = best_rgb
+    if np.any(changed):
+        printLogMessage(
+            "Palette quantization distinguished blue-family tone for "
+            f"{int(np.count_nonzero(changed))} source pixels."
+        )
+    return Image.fromarray(quantized_rgb, mode="RGB")
+
+
+def resolve_color_matching(settings=None):
+    """Resolve safe user-facing quantization presets into numeric weights."""
+    settings = settings or {}
+    mode = str(settings.get("color_matching_mode") or "balanced").strip().lower()
+    presets = {
+        "balanced": {
+            "preserve_chroma": True, "separate_blue_shades": True,
+            "hue_weight": 4.0, "saturation_weight": 1.0, "lightness_weight": 1.0,
+        },
+        "hue": {
+            "preserve_chroma": True, "separate_blue_shades": True,
+            "hue_weight": 8.0, "saturation_weight": 1.0, "lightness_weight": 1.0,
+        },
+        "shades": {
+            "preserve_chroma": True, "separate_blue_shades": True,
+            "hue_weight": 2.0, "saturation_weight": 1.0, "lightness_weight": 4.0,
+        },
+        "closest": {
+            "preserve_chroma": False, "separate_blue_shades": False,
+            "hue_weight": 0.0, "saturation_weight": 0.0, "lightness_weight": 0.0,
+        },
+    }
+    if mode in presets:
+        return {"mode": mode, **presets[mode]}
+    if mode != "custom":
+        mode = "balanced"
+        return {"mode": mode, **presets[mode]}
+
+    def weight(name, default):
+        try:
+            value = float(settings.get(name, default))
+        except (TypeError, ValueError):
+            value = default
+        if not math.isfinite(value):
+            value = default
+        return max(0.0, min(10.0, value))
+
+    resolved = {
+        "mode": "custom",
+        "preserve_chroma": True,
+        "separate_blue_shades": True,
+        "hue_weight": weight("color_matching_hue_weight", 4.0),
+        "saturation_weight": weight("color_matching_saturation_weight", 1.0),
+        "lightness_weight": weight("color_matching_lightness_weight", 1.0),
+    }
+    if not sum(resolved[key] for key in (
+        "hue_weight", "saturation_weight", "lightness_weight"
+    )):
+        return {"mode": "balanced", **presets["balanced"]}
+    return resolved
+
+
 def prepare_raster_image(
     raster_image_path,
     new_height,
     new_width,
     quantize_colors,
-    target_colors=None
+    target_colors=None,
+    prevent_palette_black=False,
+    color_matching=None,
 ):
     """
     Open, convert, resize, and optionally quantize the raster image.
@@ -614,8 +1217,41 @@ def prepare_raster_image(
             palette_values = []
             for color_hex in active_swatches[:256]:
                 palette_values.extend(hex_to_rgb(color_hex))
-            palette.putpalette(palette_values + [0] * (768 - len(palette_values)))
-            img = img.quantize(palette=palette, dither=Image.Dither.NONE).convert("RGB")
+            if prevent_palette_black:
+                final_swatch = palette_values[-3:]
+                padding_entries = 256 - len(active_swatches[:256])
+                palette.putpalette(palette_values + final_swatch * padding_entries)
+                source_img = img
+                img = img.quantize(
+                    colors=len(active_swatches[:256]),
+                    palette=palette,
+                    dither=Image.Dither.NONE,
+                ).convert("RGB")
+            else:
+                palette.putpalette(palette_values + [0] * (768 - len(palette_values)))
+                source_img = img
+                img = img.quantize(palette=palette, dither=Image.Dither.NONE).convert("RGB")
+            matching = resolve_color_matching(color_matching)
+            if matching["preserve_chroma"]:
+                img = preserve_saturated_palette_colors(
+                    source_img, img, target_colors or {},
+                    hue_weight=matching["hue_weight"],
+                    saturation_weight=matching["saturation_weight"],
+                    value_weight=matching["lightness_weight"],
+                )
+            if matching["separate_blue_shades"]:
+                img = distinguish_blue_palette_shades(
+                    source_img, img, target_colors or {},
+                    hue_weight=matching["hue_weight"],
+                    saturation_weight=matching["saturation_weight"],
+                    lightness_weight=matching["lightness_weight"],
+                )
+            printLogMessage(
+                f"Color matching mode: {matching['mode']} "
+                f"(hue={matching['hue_weight']:.3g}, "
+                f"saturation={matching['saturation_weight']:.3g}, "
+                f"shade={matching['lightness_weight']:.3g})."
+            )
             printLogMessage(
                 f"Using {len(active_swatches)} active LightBurn swatches as the quantization palette."
             )
@@ -636,7 +1272,8 @@ def classify_raster_pixels(
     include_black=False,
     transparent=False,
     transparent_rgb_values=None,
-    light_threshold=225
+    light_threshold=225,
+    include_mask=None,
 ):
     """
     Convert raster pixels into 1x1 Shapely boxes grouped by color.
@@ -646,6 +1283,12 @@ def classify_raster_pixels(
     """
 
     width, height = img.size
+    if include_mask is not None:
+        include_mask = np.asarray(include_mask, dtype=bool)
+        if include_mask.shape != (height, width):
+            raise ValueError(
+                "Artwork transparency mask does not match the prepared image dimensions."
+            )
 
     pixel_boxes_by_color = defaultdict(list)
 
@@ -656,6 +1299,9 @@ def classify_raster_pixels(
     for y in range(height):
 
         for x in range(width):
+
+            if include_mask is not None and not include_mask[y, x]:
+                continue
 
             pixel_rgb = img.getpixel(
                 (x, y)
@@ -706,79 +1352,226 @@ def classify_raster_pixels(
     return pixel_boxes_by_color
 
 
-def boxes_to_centerlines(boxes, settings):
-    """Reduce a raster color region to open, one-pixel-wide medial-axis paths."""
-    if not boxes:
-        return MultiLineString([])
-    min_x = math.floor(min(item.bounds[0] for item in boxes))
-    min_y = math.floor(min(item.bounds[1] for item in boxes))
-    max_x = math.ceil(max(item.bounds[2] for item in boxes))
-    max_y = math.ceil(max(item.bounds[3] for item in boxes))
-    mask = np.zeros((max_y - min_y + 2, max_x - min_x + 2), dtype=np.uint8)
-    for item in boxes:
-        x, y = int(item.bounds[0]) - min_x + 1, int(item.bounds[1]) - min_y + 1
-        mask[y, x] = 255
+def reassign_small_raster_islands(
+    pixel_boxes_by_color,
+    min_island_area,
+    color_order=(),
+    black_hex="#000000",
+    fallback_to_black=True,
+):
+    """Transfer small raster components to the color sharing most pixel edges.
 
-    # Morphological skeletonization uses only core OpenCV and converges to a
-    # true one-pixel center axis without requiring opencv-contrib/ximgproc.
-    skeleton = np.zeros_like(mask)
-    working = mask.copy()
-    element = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
-    while cv2.countNonZero(working):
-        eroded = cv2.erode(working, element)
-        opened = cv2.dilate(eroded, element)
-        skeleton = cv2.bitwise_or(skeleton, cv2.subtract(working, opened))
-        working = eroded
+    The ownership decision is made on the exact classified pixel grid before
+    smoothing, simplification, or abstract-filter geometry can introduce
+    numerical ambiguity. Each pixel belongs to exactly one output color, so
+    reclamation cannot create either a gap or a positive-area overlap.
+    """
+    empty_stats = {
+        "components": 0,
+        "pixels": 0,
+        "neighbor_components": 0,
+        "black_fallback_components": 0,
+        "discarded_components": 0,
+    }
+    if min_island_area <= 0:
+        return pixel_boxes_by_color, empty_stats
 
-    pixels = {(int(x), int(y)) for y, x in np.argwhere(skeleton > 0)}
-    if not pixels:
-        return MultiLineString([])
-    offsets = ((-1, -1), (0, -1), (1, -1), (-1, 0),
-               (1, 0), (-1, 1), (0, 1), (1, 1))
-    neighbors = {p: {q for dx, dy in offsets if (q := (p[0] + dx, p[1] + dy)) in pixels}
-                 for p in pixels}
+    owner_by_cell = {}
+    box_by_cell = {}
+    passthrough = defaultdict(list)
+    ordered_colors = list(dict.fromkeys((*color_order, *pixel_boxes_by_color.keys())))
+    color_rank = {color: index for index, color in enumerate(ordered_colors)}
+
+    for color_hex, boxes in pixel_boxes_by_color.items():
+        for item in boxes:
+            min_x, min_y, max_x, max_y = item.bounds
+            x = int(round(min_x))
+            y = int(round(min_y))
+            if (
+                abs(min_x - x) > 1e-7
+                or abs(min_y - y) > 1e-7
+                or abs((max_x - min_x) - 1.0) > 1e-7
+                or abs((max_y - min_y) - 1.0) > 1e-7
+                or (x, y) in owner_by_cell
+            ):
+                # The production classifier emits unique unit boxes. Preserve
+                # non-raster caller input rather than guessing its grid sides.
+                passthrough[color_hex].append(item)
+                continue
+            owner_by_cell[(x, y)] = color_hex
+            box_by_cell[(x, y)] = item
+
     visited = set()
-    lines = []
+    stats = dict(empty_stats)
+    directions = ((-1, 0), (1, 0), (0, -1), (0, 1))
 
-    def edge(a, b):
-        return tuple(sorted((a, b)))
-
-    def follow(start, nxt):
-        path = [start, nxt]
-        visited.add(edge(start, nxt))
-        previous, current = start, nxt
-        while len(neighbors[current]) == 2:
-            candidates = [p for p in neighbors[current] if p != previous]
-            if not candidates or edge(current, candidates[0]) in visited:
-                break
-            previous, current = current, candidates[0]
-            path.append(current)
-            visited.add(edge(previous, current))
-        return path
-
-    endpoints = [p for p in pixels if len(neighbors[p]) != 2]
-    for start in endpoints:
-        for nxt in neighbors[start]:
-            if edge(start, nxt) not in visited:
-                lines.append(follow(start, nxt))
-    # Closed loops have no endpoint/junction, so collect their remaining edge.
-    for start in pixels:
-        for nxt in neighbors[start]:
-            if edge(start, nxt) not in visited:
-                lines.append(follow(start, nxt))
-
-    tolerance = _number(settings.get("line_simplification"), .35, 0, 10)
-    minimum = _number(settings.get("min_branch_length"), 2, 0, 1000)
-    result = []
-    for points in lines:
-        if len(points) < 2:
+    component_by_cell = {}
+    component_colors = []
+    component_areas = []
+    component_pixels = []
+    for start_cell, source_color in owner_by_cell.items():
+        if start_cell in visited:
             continue
-        line = LineString([(x + min_x - .5, y + min_y - .5) for x, y in points])
-        if tolerance:
-            line = line.simplify(tolerance, preserve_topology=False)
-        if line.length >= minimum and len(line.coords) >= 2:
-            result.append(line)
-    return MultiLineString(result) if result else MultiLineString([])
+        stack = [start_cell]
+        visited.add(start_cell)
+        component = []
+        while stack:
+            cell = stack.pop()
+            component.append(cell)
+            x, y = cell
+            for dx, dy in directions:
+                neighbor = (x + dx, y + dy)
+                if (
+                    neighbor not in visited
+                    and owner_by_cell.get(neighbor) == source_color
+                ):
+                    visited.add(neighbor)
+                    stack.append(neighbor)
+
+        for cell in component:
+            component_by_cell[cell] = len(component_colors)
+        component_colors.append(source_color)
+        component_areas.append(sum(box_by_cell[cell].area for cell in component))
+        component_pixels.append(len(component))
+
+    original_component_colors = tuple(component_colors)
+    original_component_pixels = tuple(component_pixels)
+    parents = list(range(len(component_colors)))
+    component_neighbors = [defaultdict(int) for _ in component_colors]
+
+    # Count shared sides between the original components once. The component
+    # graph is contracted below as small regions change ownership, avoiding
+    # repeated full-image connected-component scans.
+    for (x, y), component_id in component_by_cell.items():
+        for neighbor_cell in ((x + 1, y), (x, y + 1)):
+            neighbor_id = component_by_cell.get(neighbor_cell)
+            if neighbor_id is None or neighbor_id == component_id:
+                continue
+            component_neighbors[component_id][neighbor_id] += 1
+            component_neighbors[neighbor_id][component_id] += 1
+
+    def find(component_id):
+        while parents[component_id] != component_id:
+            parents[component_id] = parents[parents[component_id]]
+            component_id = parents[component_id]
+        return component_id
+
+    def normalized_neighbors(component_id):
+        component_id = find(component_id)
+        neighbors = defaultdict(int)
+        for neighbor_id, shared_side_count in component_neighbors[component_id].items():
+            neighbor_root = find(neighbor_id)
+            if neighbor_root != component_id:
+                neighbors[neighbor_root] += shared_side_count
+        component_neighbors[component_id] = neighbors
+        return neighbors
+
+    def contract(component_ids, target_color):
+        roots = sorted({find(component_id) for component_id in component_ids})
+        survivor = roots[0]
+        root_set = set(roots)
+        external_neighbors = defaultdict(int)
+        for component_id in roots:
+            for neighbor_id, shared_side_count in component_neighbors[component_id].items():
+                neighbor_root = find(neighbor_id)
+                if neighbor_root not in root_set:
+                    external_neighbors[neighbor_root] += shared_side_count
+        for component_id in roots[1:]:
+            parents[component_id] = survivor
+        component_colors[survivor] = target_color
+        component_areas[survivor] = sum(component_areas[item] for item in roots)
+        component_pixels[survivor] = sum(component_pixels[item] for item in roots)
+        component_neighbors[survivor] = external_neighbors
+        return survivor
+
+    # Process the component graph deterministically. Every neighboring-color
+    # transfer immediately contracts the source with all touching components
+    # of the chosen target color. A later transfer therefore moves the whole
+    # merged region instead of leaving behind pixels from an earlier transfer.
+    # Each such operation removes at least one graph component, so adjacent
+    # small components cannot swap colors forever or create new tiny islands.
+    pending = list(range(len(component_colors)))
+    pending_index = 0
+    while pending_index < len(pending):
+        component_id = find(pending[pending_index])
+        pending_index += 1
+
+        neighbors = normalized_neighbors(component_id)
+        same_color_neighbors = [
+            neighbor_id for neighbor_id in neighbors
+            if component_colors[neighbor_id] == component_colors[component_id]
+        ]
+        while same_color_neighbors:
+            component_id = contract(
+                [component_id, *same_color_neighbors],
+                component_colors[component_id],
+            )
+            neighbors = normalized_neighbors(component_id)
+            same_color_neighbors = [
+                neighbor_id for neighbor_id in neighbors
+                if component_colors[neighbor_id] == component_colors[component_id]
+            ]
+
+        if component_areas[component_id] >= min_island_area:
+            continue
+
+        source_color = component_colors[component_id]
+        shared_sides = defaultdict(int)
+        for neighbor_id, shared_side_count in neighbors.items():
+            neighbor_color = component_colors[neighbor_id]
+            if neighbor_color != source_color:
+                shared_sides[neighbor_color] += shared_side_count
+
+        if shared_sides:
+            target_color = min(
+                shared_sides,
+                key=lambda color: (
+                    -shared_sides[color],
+                    color_rank.get(color, len(color_rank)),
+                    color,
+                ),
+            )
+            target_neighbors = [
+                neighbor_id for neighbor_id in neighbors
+                if component_colors[neighbor_id] == target_color
+            ]
+            component_id = contract(
+                [component_id, *target_neighbors],
+                target_color,
+            )
+            stats["neighbor_components"] += 1
+            if component_areas[component_id] < min_island_area:
+                pending.append(component_id)
+        elif fallback_to_black and source_color != black_hex:
+            component_colors[component_id] = black_hex
+            stats["black_fallback_components"] += 1
+        elif not fallback_to_black:
+            component_colors[component_id] = None
+            stats["discarded_components"] += 1
+
+    changed_components = []
+    for component_id, original_color in enumerate(original_component_colors):
+        final_color = component_colors[find(component_id)]
+        if final_color != original_color:
+            changed_components.append(component_id)
+    stats["components"] = len(changed_components)
+    stats["pixels"] = sum(
+        original_component_pixels[component_id]
+        for component_id in changed_components
+    )
+
+    reassigned = defaultdict(list)
+    for color_hex in ordered_colors:
+        reassigned[color_hex].extend(passthrough.get(color_hex, ()))
+    for cell, source_color in owner_by_cell.items():
+        target_color = component_colors[find(component_by_cell[cell])]
+        if target_color is not None:
+            reassigned[target_color].append(box_by_cell[cell])
+
+    return defaultdict(
+        list,
+        {color: boxes for color, boxes in reassigned.items() if boxes},
+    ), stats
 
 
 def retain_dominant_foreground(pixel_boxes_by_color, img, settings):
@@ -895,6 +1688,26 @@ def remove_small_islands(
     return geometry
 
 
+def partition_small_islands(geometry, min_island_area):
+    """Return retained geometry and the exact islands removed by cleanup."""
+    empty = GeometryCollection()
+    if min_island_area <= 0 or geometry.is_empty:
+        return geometry, empty
+    if geometry.geom_type == "Polygon":
+        return (geometry, empty) if geometry.area >= min_island_area else (empty, geometry)
+    if geometry.geom_type in ("MultiPolygon", "GeometryCollection"):
+        retained = []
+        removed = []
+        for item in geometry.geoms:
+            destination = retained if item.area >= min_island_area else removed
+            destination.append(item)
+        return (
+            unary_union(retained) if retained else empty,
+            unary_union(removed) if removed else empty,
+        )
+    return geometry, empty
+
+
 def _geometry_object_count(geometry):
     """Count geometry components without logging individual objects."""
     if geometry is None or geometry.is_empty:
@@ -914,6 +1727,7 @@ def process_color_geometry(
     abstract_filter,
     filter_parameters=None,
     progress_context=None,
+    collect_removed_islands=False,
 ):
     """Convert one color's pixel batch into finalized vector geometry."""
     filter_name, settings = normalize_abstract_settings(abstract_filter, filter_parameters)
@@ -927,14 +1741,6 @@ def process_color_geometry(
             f"batch objects {object_count}/{input_count} source objects."
         )
 
-    if filter_name == "centerline":
-        stage(1, "centerline tracing", "START", count=input_count)
-        result = ABSTRACT_FILTER_MODULES["centerline"].process_boxes(
-            boxes, settings, boxes_to_centerlines
-        )
-        stage(6, "centerline tracing and topology output", "DONE", geometry=result)
-        return result
-
     stage(1, "same-color pixel union", "START", count=input_count)
     welded_layer = unary_union(boxes)
     stage(1, "same-color pixel union", "DONE", geometry=welded_layer)
@@ -944,7 +1750,13 @@ def process_color_geometry(
     stage(2, "morphological smoothing", "DONE", geometry=final_geometry)
 
     stage(3, "small-island removal", "START", geometry=final_geometry)
-    final_geometry = remove_small_islands(final_geometry, min_island_area)
+    if collect_removed_islands:
+        final_geometry, removed_islands = partition_small_islands(
+            final_geometry, min_island_area
+        )
+    else:
+        final_geometry = remove_small_islands(final_geometry, min_island_area)
+        removed_islands = box(0, 0, 0, 0)
     stage(3, "small-island removal", "DONE", geometry=final_geometry)
 
     stage(4, "boundary simplification", "START", geometry=final_geometry)
@@ -966,60 +1778,312 @@ def process_color_geometry(
         final_geometry = make_valid(final_geometry)
     stage(6, "final topology validation", "DONE", geometry=final_geometry)
 
+    if collect_removed_islands:
+        return final_geometry, removed_islands
     return final_geometry
 
 
 def _raster_boxes_to_rectangles(boxes):
-    """Convert unit pixel boxes into exact, non-overlapping rectangles."""
-    remaining = set()
+    """Convert unit pixel boxes into deterministic, non-overlapping run rectangles.
+
+    Horizontal runs with identical extents are merged vertically. Every input
+    pixel is represented exactly once, so the result cannot turn an outlined
+    region into one enclosing filled polygon.
+    """
+    rows = defaultdict(list)
     for item in boxes:
         min_x, min_y, max_x, max_y = item.bounds
         if max_x - min_x == 1 and max_y - min_y == 1:
-            remaining.add((int(round(min_x)), int(round(min_y))))
+            rows[int(round(min_y))].append(int(round(min_x)))
 
-    rectangles = []
-    while remaining:
-        x, y = min(remaining, key=lambda point: (point[1], point[0]))
-        width = 1
-        while (x + width, y) in remaining:
-            width += 1
-        height = 1
-        while all((x + offset, y + height) in remaining for offset in range(width)):
-            height += 1
-        for row in range(height):
-            for column in range(width):
-                remaining.remove((x + column, y + row))
-        rectangles.append((x, y, width, height))
+    active = {}
+    completed = []
+    previous_y = None
+    for y in sorted(rows):
+        x_values = sorted(set(rows[y]))
+        runs = []
+        if x_values:
+            run_start = run_end = x_values[0]
+            for x in x_values[1:]:
+                if x == run_end + 1:
+                    run_end = x
+                else:
+                    runs.append((run_start, run_end + 1))
+                    run_start = run_end = x
+            runs.append((run_start, run_end + 1))
 
-    def merge_rows(items):
-        merged = []
-        for item in sorted(items, key=lambda value: (value[1], value[3], value[0])):
-            if merged:
-                px, py, pw, ph = merged[-1]
-                x, y, width, height = item
-                if y == py and height == ph and x == px + pw:
-                    merged[-1] = (px, py, pw + width, height)
-                    continue
-            merged.append(item)
-        return merged
+        if previous_y is None or y != previous_y + 1:
+            completed.extend(active.values())
+            active = {}
 
-    def merge_columns(items):
-        merged = []
-        for item in sorted(items, key=lambda value: (value[0], value[2], value[1])):
-            if merged:
-                px, py, pw, ph = merged[-1]
-                x, y, width, height = item
-                if x == px and width == pw and y == py + ph:
-                    merged[-1] = (px, py, width, ph + height)
-                    continue
-            merged.append(item)
-        return merged
+        next_active = {}
+        for run in runs:
+            if run in active:
+                x_start, y_start, x_end, _ = active[run]
+                next_active[run] = (x_start, y_start, x_end, y + 1)
+            else:
+                next_active[run] = (run[0], y, run[1], y + 1)
+        completed.extend(
+            rectangle for run, rectangle in active.items() if run not in next_active
+        )
+        active = next_active
+        previous_y = y
 
-    while True:
-        previous_count = len(rectangles)
-        rectangles = merge_columns(merge_rows(rectangles))
-        if len(rectangles) == previous_count:
-            return [box(x, y, x + width, y + height) for x, y, width, height in rectangles]
+    completed.extend(active.values())
+    return [
+        box(x_start, y_start, x_end, y_end)
+        for x_start, y_start, x_end, y_end in completed
+    ]
+
+
+def build_source_black_component_layer(
+    black_pixel_boxes,
+    processed_layers,
+    black_hex,
+    worker_count=None,
+    precision_grid=0.001,
+    abstract_filter="none",
+    filter_parameters=None,
+    black_rectangles=None,
+):
+    """Build sparse source-derived Black geometry without a synthetic canvas.
+
+    Black raster runs are deliberately kept as separate, hole-free rectangles.
+    Filters that use one shared coordinate transform are applied to every Black
+    rectangle before intersections with already-processed non-Black layers are
+    removed concurrently. ``executor.map`` and source scan order make the
+    assembled output deterministic.
+    """
+    if black_rectangles is None:
+        black_rectangles = _raster_boxes_to_rectangles(black_pixel_boxes)
+    else:
+        black_rectangles = list(black_rectangles)
+    if not black_rectangles:
+        return GeometryCollection()
+
+    def bounds_intersect(left, right):
+        return not (
+            left[2] < right[0] or right[2] < left[0]
+            or left[3] < right[1] or right[3] < left[1]
+        )
+
+    def repair(geometry):
+        if geometry.is_empty:
+            return geometry
+        if not geometry.is_valid:
+            geometry = make_valid(geometry)
+        return geometry.buffer(0)
+
+    def polygonal_parts(geometry):
+        if geometry.is_empty:
+            return []
+        if geometry.geom_type == "Polygon":
+            return [geometry]
+        if hasattr(geometry, "geoms"):
+            parts = []
+            for item in geometry.geoms:
+                parts.extend(polygonal_parts(item))
+            return parts
+        return []
+
+    # Some clipping filters can leave zero-area line or point artifacts beside
+    # their valid polygons. GEOS precision-grid overlay rejects such mixed-
+    # dimension operands. Black subtraction only concerns filled area, so use
+    # a polygon-only copy for overlap math while leaving the exported colored
+    # layer geometry itself untouched.
+    colored_entries = []
+    for color_hex, geometry in processed_layers.items():
+        if color_hex == black_hex or geometry.is_empty:
+            continue
+        parts = polygonal_parts(geometry)
+        if not parts:
+            continue
+        polygonal_geometry = repair(unary_union(parts))
+        if not polygonal_geometry.is_empty:
+            colored_entries.append((color_hex, polygonal_geometry))
+    colored_geometries = [geometry for _, geometry in colored_entries]
+    colored_bounds = [geometry.bounds for geometry in colored_geometries]
+
+    def subtract_color_overlaps(result):
+        result = repair(result)
+        for color_geometry, color_bounds in zip(colored_geometries, colored_bounds):
+            if result.is_empty or not bounds_intersect(result.bounds, color_bounds):
+                continue
+            if not result.intersects(color_geometry):
+                continue
+            result = result.difference(color_geometry, grid_size=precision_grid)
+            result = repair(result)
+        return result
+
+    def remove_color_overlaps(rectangle):
+        return subtract_color_overlaps(apply_abstract_filter(
+            rectangle, abstract_filter, filter_parameters
+        ))
+
+    def process_component_batches(items, operation):
+        """Process components in stable chunks with restrained progress logs."""
+        items = list(items)
+        item_count = len(items)
+        if not items:
+            return []
+
+        show_batch_progress = item_count >= SOURCE_BLACK_PROGRESS_MIN_COMPONENTS
+        batch_count = (
+            min(SOURCE_BLACK_PROGRESS_BATCHES, item_count)
+            if show_batch_progress
+            else 1
+        )
+        batch_size = math.ceil(item_count / batch_count)
+        results = []
+
+        executor = None
+        if worker_count > 1:
+            executor = ThreadPoolExecutor(
+                max_workers=worker_count, thread_name_prefix="source-black"
+            )
+        try:
+            for batch_index, start in enumerate(
+                range(0, item_count, batch_size), start=1
+            ):
+                batch = items[start:start + batch_size]
+                if show_batch_progress:
+                    printLogMessage(
+                        f"Source-derived Black batch {batch_index}/{batch_count} "
+                        f"START: processing {len(batch)} component(s)."
+                    )
+                if executor is not None:
+                    batch_results = list(executor.map(operation, batch))
+                else:
+                    batch_results = [operation(item) for item in batch]
+                results.extend(batch_results)
+                if show_batch_progress:
+                    printLogMessage(
+                        f"Source-derived Black batch {batch_index}/{batch_count} "
+                        f"DONE: processed {len(results)}/{item_count} component(s)."
+                    )
+        finally:
+            if executor is not None:
+                executor.shutdown(wait=True)
+        return results
+
+    if worker_count is None:
+        try:
+            worker_count = int(os.environ.get("RASTER_WORKER_PROCESSES", "1"))
+        except (TypeError, ValueError):
+            worker_count = 1
+    worker_count = max(
+        1, min(int(worker_count), os.cpu_count() or 1, len(black_rectangles))
+    )
+    printLogMessage(
+        f"Source-derived Black: processing {len(black_rectangles)} exact raster "
+        f"run rectangles through abstract filter '{abstract_filter or 'none'}' "
+        f"with {worker_count} CPU worker(s)."
+    )
+    filter_name, _normalized_filter_settings = normalize_abstract_settings(
+        abstract_filter, filter_parameters
+    )
+    filter_module = ABSTRACT_FILTER_MODULES.get(filter_name)
+    source_black_transform = getattr(filter_module, "apply_source_black", None)
+    if callable(source_black_transform):
+        printLogMessage(
+            f"Source-derived Black: applying one shared '{abstract_filter}' "
+            "fragment field before parallel color-overlap subtraction."
+        )
+        transformed_components = list(source_black_transform(
+            black_rectangles, filter_parameters or {}
+        ))
+        printLogMessage(
+            f"Source-derived Black: shared '{abstract_filter}' fragment field "
+            f"complete with {len(transformed_components)} component(s)."
+        )
+        results = process_component_batches(
+            transformed_components, subtract_color_overlaps
+        )
+    else:
+        results = process_component_batches(
+            black_rectangles, remove_color_overlaps
+        )
+
+    components = []
+    for result in results:
+        components.extend(polygonal_parts(result))
+    output = GeometryCollection(components)
+
+    printLogMessage(
+        "Source-derived Black overlap validation START: checking the assembled "
+        f"Black layer against {len(colored_geometries)} non-Black layer(s)."
+    )
+    overlap_parts = []
+    for color_geometry, color_bounds in zip(colored_geometries, colored_bounds):
+        if bounds_intersect(output.bounds, color_bounds):
+            overlap = output.intersection(color_geometry)
+            if not overlap.is_empty and overlap.area > 0:
+                overlap_parts.extend(polygonal_parts(overlap))
+
+    overlap_geometry = unary_union(overlap_parts) if overlap_parts else GeometryCollection()
+    overlap_area = overlap_geometry.area
+    overlap_tolerance = precision_grid * precision_grid
+    printLogMessage(
+        "Source-derived Black overlap validation DONE: initial overlap area is "
+        f"{overlap_area:.6f} square coordinate units."
+    )
+
+    if overlap_area > overlap_tolerance:
+        if filter_name == "mosaic":
+            printLogMessage(
+                "Source-derived Black found a color overlap of "
+                f"{overlap_area:.6f} square coordinate units; Mosaic assigns it "
+                "to Black and removes it from the colored layers."
+            )
+            # Mosaic's independently clipped tiles produced visible seams when
+            # the residual was removed from Black. Retain its tested ownership
+            # rule, including the one-grid cutout that keeps Black continuous.
+            overlap_cutout = repair(overlap_geometry.buffer(precision_grid))
+            corrected_entries = []
+            for color_hex, color_geometry in colored_entries:
+                if bounds_intersect(color_geometry.bounds, overlap_cutout.bounds):
+                    color_geometry = repair(color_geometry.difference(overlap_cutout))
+                processed_layers[color_hex] = color_geometry
+                if not color_geometry.is_empty:
+                    corrected_entries.append((color_hex, color_geometry))
+
+            colored_entries = corrected_entries
+            colored_geometries = [geometry for _, geometry in colored_entries]
+            colored_bounds = [geometry.bounds for geometry in colored_geometries]
+        else:
+            printLogMessage(
+                "Source-derived Black found a color overlap of "
+                f"{overlap_area:.6f} square coordinate units; preserving color "
+                "and removing only the exact residual from Black."
+            )
+            # The residual is a numerical overlay artifact after the initial
+            # color subtraction. Expanding it before cutting color creates a
+            # visible seam, especially at ordinary cartoon boundaries. Remove
+            # precisely the measured conflict from Black instead.
+            output = repair(output.difference(overlap_geometry))
+
+        remaining_parts = []
+        for color_geometry, color_bounds in zip(colored_geometries, colored_bounds):
+            if output.is_empty or not bounds_intersect(output.bounds, color_bounds):
+                continue
+            remaining = output.intersection(color_geometry)
+            if not remaining.is_empty and remaining.area > 0:
+                remaining_parts.extend(polygonal_parts(remaining))
+        remaining_overlap = (
+            unary_union(remaining_parts).area if remaining_parts else 0.0
+        )
+        if remaining_overlap > overlap_tolerance:
+            raise ValueError(
+                "source-derived Black residual-overlap correction failed: "
+                f"{remaining_overlap}"
+            )
+        printLogMessage("Source-derived Black residual-overlap correction passed.")
+
+    printLogMessage(
+        "Source-derived Black validation passed: no positive-area overlap "
+        f"with {len(colored_geometries)} non-Black layer(s)."
+    )
+    return output
 
 
 def process_color_layers(
@@ -1030,6 +2094,7 @@ def process_color_layers(
     smoothing_radius,
     abstract_filter,
     filter_parameters=None,
+    collect_removed_islands=False,
 ):
     """
     Convert all raster color groups into finalized Shapely geometries.
@@ -1060,11 +2125,8 @@ def process_color_layers(
         f"{total_source_objects} source objects..."
     )
 
-    for idx, (color_hex, boxes) in enumerate(
-        pixel_boxes_by_color.items(),
-        1
-    ):
-
+    layer_jobs = []
+    for idx, (color_hex, boxes) in enumerate(pixel_boxes_by_color.items(), 1):
         if not boxes:
             continue
 
@@ -1084,13 +2146,6 @@ def process_color_layers(
         layer_id = layer_meta[1]
         layer_color_name = layer_meta[2]
 
-        printLogMessage(
-            f" -> Merging color boundaries... "
-            f"(Layer math step {idx}/"
-            f"{total_layers} - "
-            f"Layer: {layer_id} "
-            f"[{layer_color_name}])"
-        )
         progress_context = (
             f"Color {idx}/{total_layers} {color_hex} / "
             f"Layer {layer_id} {layer_color_name}"
@@ -1099,7 +2154,19 @@ def process_color_layers(
         layer_filter = abstract_filter
         if light_layers_only and not is_light_swatch(color_hex):
             layer_filter = "none"
-        final_geometry = process_color_geometry(
+        layer_jobs.append((
+            idx, color_hex, boxes, layer_filter, progress_context,
+            layer_id, layer_color_name,
+        ))
+
+    def process_layer(job):
+        idx, color_hex, boxes, layer_filter, progress_context, layer_id, layer_color_name = job
+        printLogMessage(
+            f" -> Merging color boundaries... "
+            f"(Layer math step {idx}/{total_layers} - "
+            f"Layer: {layer_id} [{layer_color_name}])"
+        )
+        processed_result = process_color_geometry(
             boxes=boxes,
             min_island_area=min_island_area,
             simplification_factor=simplification_factor,
@@ -1107,15 +2174,73 @@ def process_color_layers(
             abstract_filter=layer_filter,
             filter_parameters=filter_parameters,
             progress_context=progress_context,
+            collect_removed_islands=collect_removed_islands,
         )
+        if collect_removed_islands:
+            final_geometry, removed_islands = processed_result
+        else:
+            final_geometry, removed_islands = processed_result, None
+        return color_hex, final_geometry, removed_islands, progress_context, len(boxes)
 
-        processed_layers[
-            color_hex
-        ] = final_geometry
+    try:
+        configured_workers = int(os.environ.get("RASTER_WORKER_PROCESSES", "1"))
+    except (TypeError, ValueError):
+        configured_workers = 1
+    worker_count = max(
+        1, min(configured_workers, os.cpu_count() or 1, len(layer_jobs) or 1)
+    )
+    if (
+        worker_count > 1
+        and filter_name in MEMORY_INTENSIVE_FILTERS
+        and total_source_objects >= MEMORY_INTENSIVE_FILTER_SERIAL_THRESHOLD
+    ):
+        printLogMessage(
+            f"Memory safeguard: processing {filter_name} layers serially because "
+            f"{total_source_objects} source objects meet the "
+            f"{MEMORY_INTENSIVE_FILTER_SERIAL_THRESHOLD} object threshold."
+        )
+        worker_count = 1
+
+    # Jobs now own the source batches; discard the mapping's duplicate list
+    # references before geometry work begins.
+    pixel_boxes_by_color.clear()
+
+    removed_island_geometries = []
+    if worker_count > 1:
+        printLogMessage(
+            f"Processing {len(layer_jobs)} independent color layers with "
+            f"{worker_count} CPU workers."
+        )
+        with ThreadPoolExecutor(
+            max_workers=worker_count, thread_name_prefix="raster-layer"
+        ) as executor:
+            completed_layers = list(executor.map(process_layer, layer_jobs))
+    else:
+        completed_layers = []
+        for job_index, job in enumerate(layer_jobs):
+            color_hex, final_geometry, removed_islands, progress_context, input_count = process_layer(job)
+            processed_layers[color_hex] = final_geometry
+            if removed_islands is not None and not removed_islands.is_empty:
+                removed_island_geometries.append(removed_islands)
+            printLogMessage(
+                f"[{progress_context}] LAYER DONE: "
+                f"{_geometry_object_count(final_geometry)} output objects from "
+                f"{input_count} source objects."
+            )
+            # Release this potentially huge list of source pixel polygons
+            # before starting the next layer.
+            layer_jobs[job_index] = None
+
+    # ``executor.map`` preserves submission order, keeping export and
+    # serialization order identical to the former serial path.
+    for color_hex, final_geometry, removed_islands, progress_context, input_count in completed_layers:
+        processed_layers[color_hex] = final_geometry
+        if removed_islands is not None and not removed_islands.is_empty:
+            removed_island_geometries.append(removed_islands)
         printLogMessage(
             f"[{progress_context}] LAYER DONE: "
             f"{_geometry_object_count(final_geometry)} output objects from "
-            f"{len(boxes)} source objects."
+            f"{input_count} source objects."
         )
 
     # A small number of filters need the complete set of cleaned color layers
@@ -1124,11 +2249,14 @@ def process_color_layers(
     remap_layers = getattr(filter_module, "remap_layers", None)
     if callable(remap_layers):
         printLogMessage(f"Applying cross-layer mapping for abstract filter '{filter_name}'...")
+        settings["_progress_logger"] = printLogMessage
         processed_layers = remap_layers(processed_layers, target_colors, settings)
         printLogMessage(
             f"Cross-layer mapping produced {len(processed_layers)} calibrated output layers."
         )
 
+    if collect_removed_islands:
+        return processed_layers, removed_island_geometries
     return processed_layers
 
 
@@ -1184,20 +2312,39 @@ def build_punched_black_layer(
             printLogMessage(f"Topology cleanup warning for {label}: {error}")
             return geometry
 
-    for color_hex, geometry in processed_layers.items():
+    cleanup_jobs = [
+        (color_hex, geometry)
+        for color_hex, geometry in processed_layers.items()
+        if color_hex != black_hex and not geometry.is_empty
+    ]
 
-        if color_hex == black_hex:
-            continue
+    def clean_color_geometry(job):
+        color_hex, geometry = job
+        return topology_safe(geometry, f"color {color_hex}")
 
-        if geometry.is_empty:
-            continue
+    try:
+        configured_workers = int(os.environ.get("RASTER_WORKER_PROCESSES", "1"))
+    except (TypeError, ValueError):
+        configured_workers = 1
+    cleanup_workers = max(
+        1, min(configured_workers, os.cpu_count() or 1, len(cleanup_jobs) or 1)
+    )
+    if cleanup_workers > 1:
+        printLogMessage(
+            f"Preparing {len(cleanup_jobs)} colored layers for black subtraction "
+            f"with {cleanup_workers} CPU workers."
+        )
+        with ThreadPoolExecutor(
+            max_workers=cleanup_workers, thread_name_prefix="black-cleanup"
+        ) as executor:
+            cleaned_geometries = list(executor.map(clean_color_geometry, cleanup_jobs))
+    else:
+        cleaned_geometries = [clean_color_geometry(job) for job in cleanup_jobs]
 
-        geometry = topology_safe(geometry, f"color {color_hex}")
-
-        if not geometry.is_empty:
-            colored_geometries.append(
-                geometry
-            )
+    # Preserve source-layer order because subtraction order affects topology.
+    colored_geometries.extend(
+        geometry for geometry in cleaned_geometries if not geometry.is_empty
+    )
 
     if not colored_geometries:
 
@@ -1263,34 +2410,39 @@ def create_svg_root(
     width,
     height,
     new_width,
-    new_height
+    new_height,
+    scale_factor=1.0,
 ):
     """
     Create the root SVG element.
 
-    The SVG namespace and dimensions intentionally match the
-    original function.
+    ``width`` and ``height`` are the processed raster dimensions. Exported
+    paths are scaled into millimetres, so the SVG viewport and physical size
+    must use those same scaled dimensions rather than the optional raw form
+    inputs (one of which is commonly blank or zero).
     """
 
     root = ET.Element(
         "svg",
-        xmlns="http://w3.org",
+        xmlns="http://www.w3.org/2000/svg",
         version="1.1"
     )
 
-    root.set(
-        "viewBox",
-        f"0 0 {new_width} {new_height}"
-    )
+    physical_width = float(width) * float(scale_factor)
+    physical_height = float(height) * float(scale_factor)
+    width_value = format(physical_width, ".12g")
+    height_value = format(physical_height, ".12g")
+
+    root.set("viewBox", f"0 0 {width_value} {height_value}")
 
     root.set(
         "width",
-        f"{str(width)}mm"
+        f"{width_value}mm"
     )
 
     root.set(
         "height",
-        f"{str(height)}mm"
+        f"{height_value}mm"
     )
 
     return root
@@ -1645,6 +2797,7 @@ def save_vector_output(
     output_svg_path,
     lb_project_instance,
     export_lightburn=True,
+    lightburn_note="",
 ):
     """
     Write SVG and LightBurn output files.
@@ -1685,9 +2838,20 @@ def save_vector_output(
         f"{lightburn_object_count}/{lightburn_object_count} LightBurn objects to "
         f"{output_svg_path}.lbrn2."
     )
-    lb_project_instance.write(
-        output_svg_path + ".lbrn2"
-    )
+    lightburn_path = output_svg_path + ".lbrn2"
+    lb_project_instance.set_notes(lightburn_note, show_on_load=True)
+    lb_project_instance.write(lightburn_path)
+    lightburn_size = os.path.getsize(lightburn_path)
+    if lightburn_size > LARGE_LIGHTBURN_PROJECT_BYTES:
+        lb_project_instance.replace_notes_tail(
+            lightburn_path,
+            f"{LARGE_LIGHTBURN_PROJECT_WARNING}\n\n{lightburn_note}",
+            show_on_load=True,
+        )
+        printLogMessage(
+            "Added the large-project LightBurn warning to project Notes "
+            f"because the file is {lightburn_size / 1_000_000:.2f} MB."
+        )
     printLogMessage(
         f"[File serialization 2/2] DONE: wrote "
         f"{lightburn_object_count}/{lightburn_object_count} LightBurn objects."
@@ -1719,8 +2883,12 @@ def raster_to_puzzle_and_lightburn(
     image_preset=None,
     abstract_filter=None,
     filter_parameters=None,
+    color_matching=None,
     job_settings=None,
     export_lightburn=True,
+    geometry_style="vectors",
+    geometry_style_parameters=None,
+    crop_shape="",
 ):
     """
     Parses a raster image, applies a structural vector scale_factor,
@@ -1814,6 +2982,64 @@ def raster_to_puzzle_and_lightburn(
     printLogMessage(
         "[Raster preparation 1/1] START: loading, resizing, and quantizing the source image."
     )
+    filter_parameters = dict(filter_parameters or {})
+    filter_name, normalized_filter_parameters = normalize_abstract_settings(
+        abstract_filter, filter_parameters
+    )
+    geometry_style, normalized_geometry_parameters = geometry_styles.normalize(
+        geometry_style, geometry_style_parameters, filter_name
+    )
+    routed_styles = geometry_styles.assigned_styles(
+        geometry_style, normalized_geometry_parameters
+    )
+    mixed_krasnow = (
+        geometry_style == geometry_styles.ROUTED_STYLE
+        and geometry_styles.KRASNOW_STYLE in routed_styles
+    )
+    krasnow_mode = (
+        filter_name == "krasnow_grating"
+        or geometry_style == geometry_styles.KRASNOW_STYLE
+        or mixed_krasnow
+    )
+    krasnow_parameters = (
+        geometry_styles.parameters_for_style(
+            geometry_style,
+            normalized_geometry_parameters,
+            geometry_styles.KRASNOW_STYLE,
+        )
+        if geometry_style in {
+            geometry_styles.KRASNOW_STYLE, geometry_styles.ROUTED_STYLE
+        }
+        else filter_parameters
+    )
+    # Choose-by-Swatch always routes Black to ordinary vector geometry. Let
+    # normal palette quantization decide which pixels Black owns in that mode;
+    # the dedicated Krasnow source-darkness mask would otherwise turn dark,
+    # chromatic artwork into Black before the swatch router sees it.
+    mixed_vector_black = mixed_krasnow
+    krasnow_preserve_black = (
+        krasnow_mode
+        and not mixed_krasnow
+        and bool(_number(krasnow_parameters.get("preserve_black", 1), 1, 0, 1))
+    )
+    krasnow_grate_black = (
+        krasnow_mode and not mixed_krasnow and not krasnow_preserve_black
+    )
+    if krasnow_preserve_black:
+        printLogMessage(
+            "Krasnow Color Grating: reserving below-Teal source darkness for "
+            "the later Black mask; Black will not become a grating carrier."
+        )
+    elif krasnow_grate_black:
+        printLogMessage(
+            "Krasnow Color Grating: Preserve Black is off; Black will be "
+            "quantized, grated, and assigned the Fauxlographic carrier recipe."
+        )
+    elif mixed_vector_black:
+        printLogMessage(
+            "Geometry Routing: Black uses normal palette quantization and "
+            "remains mutually-exclusive vector geometry."
+        )
     img = prepare_raster_image(
         raster_image_path=raster_image_path,
         new_height=new_height,
@@ -1824,11 +3050,40 @@ def raster_to_puzzle_and_lightburn(
         # actual source values. Every other preset uses real LightBurn swatches.
         target_colors=(None if image_preset == "bw_dither_photograph" else {
             color_hex: metadata for color_hex, metadata in TARGET_COLORS.items()
-            if color_hex.upper() not in NON_IMAGE_SWATCHES
-        })
+            if (
+                color_hex.upper() not in NON_IMAGE_SWATCHES
+                and (not krasnow_preserve_black or color_hex != black_hex)
+            )
+        }),
+        prevent_palette_black=krasnow_preserve_black,
+        color_matching=color_matching,
     )
 
+    if krasnow_preserve_black:
+        source_black_mask = load_resized_source_black_cutoff_mask(
+            raster_image_path, img.size
+        )
+        img = restore_reserved_black(img, source_black_mask)
+
     width, height = img.size
+    crop_shape = str(crop_shape or "").strip().lower()
+    transparency_mask = None
+    if crop_shape == "transparency":
+        transparency_mask = load_resized_artwork_alpha_mask(
+            raster_image_path, img.size
+        )
+        if not transparency_mask.any():
+            raise ValueError(
+                "Crop Transparency requires at least one non-transparent pixel."
+            )
+        crop_boundary = _mask_to_merged_geometry(transparency_mask)
+    else:
+        crop_boundary = artwork_crop_geometry(width, height, crop_shape)
+    if crop_shape:
+        printLogMessage(
+            f"Artwork crop active: preserving the applied {crop_shape} boundary "
+            "through SVG and LightBurn export."
+        )
     printLogMessage(
         f"[Raster preparation 1/1] DONE: prepared {width * height}/{width * height} "
         f"pixels at {width}x{height}."
@@ -1837,24 +3092,36 @@ def raster_to_puzzle_and_lightburn(
     # Every color layer must use the same radial center and extent.  Keeping
     # this internal value shared prevents independently warped layers from
     # crossing or drifting apart at formerly common boundaries.
-    filter_parameters = dict(filter_parameters or {})
     filter_parameters["_canvas_bounds"] = (0, 0, width, height)
     filter_parameters["_scale_factor"] = scale_factor
-    filter_name, _ = normalize_abstract_settings(
-        abstract_filter, filter_parameters
-    )
     filter_module = ABSTRACT_FILTER_MODULES.get(filter_name)
-    if bool(getattr(filter_module, "USES_SOURCE_LUMINANCE", False)):
-        filter_parameters["_angle_image"] = prepare_raster_image(
+    if bool(getattr(filter_module, "USES_SOURCE_COLOR", False)):
+        filter_parameters["_source_color_image"] = prepare_raster_image(
+            raster_image_path=raster_image_path,
+            new_height=new_height,
+            new_width=new_width,
+            quantize_colors=None,
+        ).convert("RGB")
+        printLogMessage(
+            f"{filter_name}: prepared the original source colors for optical mixing."
+        )
+    if (
+        bool(getattr(filter_module, "USES_SOURCE_LUMINANCE", False))
+        or geometry_styles.uses_source_luminance(
+            geometry_style, normalized_geometry_parameters
+        )
+    ):
+        source_luminance = prepare_raster_image(
             raster_image_path=raster_image_path,
             new_height=new_height,
             new_width=new_width,
             quantize_colors=None,
         ).convert("L")
+        filter_parameters["_angle_image"] = source_luminance
+        normalized_geometry_parameters["_angle_image"] = source_luminance
         printLogMessage(
-            "Krasnow Color Grating: prepared source luminance for per-patch line angles."
+            f"Prepared source luminance for {filter_name if bool(getattr(filter_module, 'USES_SOURCE_LUMINANCE', False)) else geometry_style}."
         )
-    centerline_mode = filter_name == "centerline"
     transparent_mode = (
         (image_preset == "bw_dither_photograph"
          and bool(filter_parameters.get("transparent", False)))
@@ -1867,10 +3134,42 @@ def raster_to_puzzle_and_lightburn(
     )
     filter_preserves_source_black = bool(
         getattr(filter_module, "PRESERVE_SOURCE_BLACK", False)
+    ) and not krasnow_grate_black
+    filter_preserves_source_black = (
+        filter_preserves_source_black
+        or geometry_styles.preserves_source_black(
+            geometry_style, normalized_geometry_parameters
+        )
     )
-    preserve_source_black = (
-        centerline_mode or transparent_mode or filter_preserves_source_black
+    preserve_source_black = transparent_mode or filter_preserves_source_black
+    source_black_requested = str_to_bool(
+        os.environ.get("RASTER_SOURCE_BLACK_COMPONENTS", "false")
     )
+    # These filters apply a deterministic, globally anchored transform to
+    # every layer. Mosaic and Crystal clip against grids anchored at the
+    # canvas origin, so processing the hole-free Black run rectangles yields
+    # the same cell boundaries used by the colored layers. Filters whose
+    # partition or displacement field depends on each geometry's bounds stay
+    # on the punched-canvas path until they can share one precomputed field.
+    source_black_compatible_filters = {
+        "none", "wave", "shear", "spiral", "ripple", "mosaic", "crystal",
+        "glitch", "deep_fryer",
+    }
+    source_black_mode = (
+        source_black_requested
+        and filter_name in source_black_compatible_filters
+        and not preserve_source_black
+    )
+    if (
+        source_black_requested
+        and not source_black_mode
+        and not filter_preserves_source_black
+    ):
+        printLogMessage(
+            f"Source-derived Black experiment is not compatible with the selected "
+            f"transparent or abstract-filter workflow '{filter_name}'; using the "
+            "established punched-canvas pipeline."
+        )
     transparent_rgb_values = None
     if image_preset == "bw_dither_photograph" and transparent_mode:
         # ``Image.quantize(colors=2)`` produces two exact source colors. Pick
@@ -1893,83 +3192,183 @@ def raster_to_puzzle_and_lightburn(
     # 4. Convert pixels into color geometry buckets
     # =========================================================================
 
-    if centerline_mode:
-        # Quantized filled color regions cannot produce faithful line art.
-        # Select dark source-image outlines first, then trace them only on the
-        # user's black LightBurn layer.
-        printLogMessage(
-            f"[Centerline source extraction 1/2] START: preparing "
-            f"{width * height}/{width * height} source pixels."
+    printLogMessage(
+        f"[Pixel classification 1/1] START: classifying "
+        f"{width * height}/{width * height} pixels into color-layer batches."
+    )
+    pixel_boxes_by_color = classify_raster_pixels(
+        img=img,
+        target_colors=TARGET_COLORS,
+        black_hex=black_hex,
+        ignore_background_hex=ignore_background_hex,
+        include_black=(
+            krasnow_grate_black
+            or
+            mixed_vector_black
+            or
+            (preserve_source_black and not krasnow_mode)
+            or source_black_mode
+            or (
+                min_island_area > 0
+                and not transparent_mode
+                and not filter_preserves_source_black
+            )
+        ),
+        transparent=transparent_mode,
+        transparent_rgb_values=transparent_rgb_values,
+        include_mask=transparency_mask,
+        light_threshold=_number(
+            filter_parameters.get(
+                "light_threshold",
+                128 if image_preset == "bw_dither_photograph" else 225
+            ),
+            225, 128, 255
         )
+    )
+    classified_count = sum(len(boxes) for boxes in pixel_boxes_by_color.values())
+    printLogMessage(
+        f"[Pixel classification 1/1] DONE: classified {width * height}/{width * height} "
+        f"pixels into {len(pixel_boxes_by_color)} layer batches containing "
+        f"{classified_count} geometry objects."
+    )
+
+    geometry_min_island_area = min_island_area
+    if min_island_area > 0 and not filter_preserves_source_black:
+        pixel_boxes_by_color, island_stats = reassign_small_raster_islands(
+            pixel_boxes_by_color=pixel_boxes_by_color,
+            min_island_area=min_island_area,
+            color_order=TARGET_COLORS.keys(),
+            black_hex=black_hex,
+            fallback_to_black=not transparent_mode,
+        )
+        # Cleanup is complete while ownership is still exact raster data.
+        # Running the older per-layer deletion afterward would discard the
+        # transferred footprint a second time.
+        geometry_min_island_area = 0
+        printLogMessage(
+            "Minimum Island Area reassigned "
+            f"{island_stats['pixels']} pixel(s) across "
+            f"{island_stats['components']} component(s): "
+            f"{island_stats['neighbor_components']} to the swatch sharing the "
+            "most sides, "
+            f"{island_stats['black_fallback_components']} to Black fallback, and "
+            f"{island_stats['discarded_components']} to transparent fallback."
+        )
+
+        # The ordinary and source-derived Black builders consume Black
+        # separately. It was included above only so it could participate in
+        # the exact shared-side ownership decision.
+        if (
+            not preserve_source_black
+            and not source_black_mode
+            and not krasnow_grate_black
+        ):
+            pixel_boxes_by_color.pop(black_hex, None)
+
+    # =========================================================================
+    # 5. Process every colored layer
+    # =========================================================================
+
+    source_black_boxes = []
+    source_black_pixel_count = 0
+    if source_black_mode:
+        raw_source_black_boxes = pixel_boxes_by_color.pop(black_hex, [])
+        source_black_pixel_count = len(raw_source_black_boxes)
+        source_black_boxes = _raster_boxes_to_rectangles(raw_source_black_boxes)
+        del raw_source_black_boxes
+        printLogMessage(
+            f"Source-derived Black experiment compressed {source_black_pixel_count} "
+            f"actual Black source pixels into {len(source_black_boxes)} exact run "
+            "rectangles before non-Black layer processing."
+        )
+
+    processed_result = process_color_layers(
+        pixel_boxes_by_color=pixel_boxes_by_color,
+        target_colors=TARGET_COLORS,
+        min_island_area=geometry_min_island_area,
+        simplification_factor=simplification_factor,
+        smoothing_radius=smoothing_radius,
+        abstract_filter=abstract_filter,
+        filter_parameters=filter_parameters,
+        collect_removed_islands=source_black_mode,
+    )
+    if source_black_mode:
+        processed_layers, removed_island_geometries = processed_result
+        if removed_island_geometries:
+            removed_area = sum(item.area for item in removed_island_geometries)
+            source_black_boxes.extend(removed_island_geometries)
+            printLogMessage(
+                "Source-derived Black: reclaiming "
+                f"{len(removed_island_geometries)} small-island cleanup batch(es) "
+                f"covering {removed_area:.6f} square coordinate units."
+            )
+    else:
+        processed_layers = processed_result
+
+    if geometry_style != geometry_styles.NORMAL_STYLE:
+        normalized_geometry_parameters.update({
+            "_canvas_bounds": (0, 0, width, height),
+            "_scale_factor": scale_factor,
+            "_progress_logger": printLogMessage,
+        })
+        processed_layers = geometry_styles.apply(
+            processed_layers,
+            TARGET_COLORS,
+            geometry_style,
+            normalized_geometry_parameters,
+            filter_name,
+        )
+
+    if krasnow_preserve_black:
         source_img = prepare_raster_image(
             raster_image_path=raster_image_path,
             new_height=new_height,
             new_width=new_width,
             quantize_colors=None,
         )
+        processed_layers = replace_krasnow_black_layer(
+            processed_layers,
+            black_hex,
+            source_img,
+            reserved_black_mask=source_black_mask,
+        )
         printLogMessage(
-            f"[Centerline source extraction 1/2] DONE: prepared "
-            f"{source_img.width * source_img.height}/{source_img.width * source_img.height} pixels."
+            "Krasnow Color Grating: preserved only the source pixels reserved "
+            "before quantization as normal Black geometry."
         )
-        printLogMessage("[Centerline source extraction 2/2] START: locating dark line-art pixels.")
-        pixel_boxes_by_color = {
-            black_hex: ABSTRACT_FILTER_MODULES["centerline"].line_art_boxes(
-                source_img, filter_parameters
-            )
-        }
-        centerline_count = sum(len(boxes) for boxes in pixel_boxes_by_color.values())
-        printLogMessage(
-            f"[Centerline source extraction 2/2] DONE: produced "
-            f"{centerline_count}/{centerline_count} line-art source objects."
-        )
-    else:
-        printLogMessage(
-            f"[Pixel classification 1/1] START: classifying "
-            f"{width * height}/{width * height} pixels into color-layer batches."
-        )
-        pixel_boxes_by_color = classify_raster_pixels(
-            img=img,
-            target_colors=TARGET_COLORS,
-            black_hex=black_hex,
-            ignore_background_hex=ignore_background_hex,
-            include_black=preserve_source_black,
-            transparent=transparent_mode,
-            transparent_rgb_values=transparent_rgb_values,
-            light_threshold=_number(
-                filter_parameters.get(
-                    "light_threshold",
-                    128 if image_preset == "bw_dither_photograph" else 225
-                ),
-                225, 128, 255
-            )
-        )
-        classified_count = sum(len(boxes) for boxes in pixel_boxes_by_color.values())
-        printLogMessage(
-            f"[Pixel classification 1/1] DONE: classified {width * height}/{width * height} "
-            f"pixels into {len(pixel_boxes_by_color)} layer batches containing "
-            f"{classified_count} geometry objects."
-        )
-
-    # =========================================================================
-    # 5. Process every colored layer
-    # =========================================================================
-
-    processed_layers = process_color_layers(
-        pixel_boxes_by_color=pixel_boxes_by_color,
-        target_colors=TARGET_COLORS,
-        min_island_area=min_island_area,
-        simplification_factor=simplification_factor,
-        smoothing_radius=smoothing_radius,
-        abstract_filter=abstract_filter,
-        filter_parameters=filter_parameters,
-    )
 
     # =========================================================================
     # 6. Build the BLACK layer around the colored geometry
     # =========================================================================
 
     black_lightburn_geometry = None
-    if not preserve_source_black:
+    source_black_active = False
+    if source_black_mode:
+        try:
+            processed_layers[black_hex] = build_source_black_component_layer(
+                black_pixel_boxes=(),
+                black_rectangles=source_black_boxes,
+                processed_layers=processed_layers,
+                black_hex=black_hex,
+                abstract_filter=abstract_filter,
+                filter_parameters=filter_parameters,
+            )
+            source_black_active = True
+            printLogMessage(
+                "Source-derived Black experiment active: synthetic Black canvas "
+                "and full-canvas punch-through skipped."
+            )
+        except Exception as error:
+            printLogMessage(
+                "Source-derived Black validation failed; automatically reverting "
+                f"this job to the established punched-canvas pipeline: {error}"
+            )
+
+    if (
+        not preserve_source_black
+        and not source_black_active
+        and not krasnow_grate_black
+    ):
         black_lightburn_geometry = build_black_canvas(
             width=width,
             height=height,
@@ -1985,16 +3384,36 @@ def raster_to_puzzle_and_lightburn(
             filter_parameters=filter_parameters,
         )
 
-    elif centerline_mode:
-        printLogMessage("Centerline Drawing: exporting dark source-image outlines as thin closed black ribbons.")
     elif transparent_mode:
         printLogMessage(
             "Transparent mode: light source areas remain transparent; no black canvas added."
         )
     elif filter_preserves_source_black:
+        preservation_name = (
+            geometry_styles.style_label(geometry_style)
+            if geometry_styles.preserves_source_black(
+                geometry_style, normalized_geometry_parameters
+            ) else filter_name
+        )
         printLogMessage(
-            f"{filter_name}: preserving source-derived Black geometry; "
+            f"{preservation_name}: preserving source-derived Black geometry; "
             "no synthetic Black canvas or punch-through added."
+        )
+    elif krasnow_grate_black:
+        printLogMessage(
+            "Krasnow Color Grating: Black is a normal Holographic grating "
+            "carrier; no Black canvas or punch-through added."
+        )
+
+    if crop_shape:
+        processed_layers = {
+            color_hex: geometry.intersection(crop_boundary)
+            for color_hex, geometry in processed_layers.items()
+        }
+        if black_lightburn_geometry is not None:
+            black_lightburn_geometry = black_lightburn_geometry.intersection(crop_boundary)
+        printLogMessage(
+            f"Artwork crop: clipped every output layer to the {crop_shape} boundary."
         )
 
     # =========================================================================
@@ -2005,7 +3424,8 @@ def raster_to_puzzle_and_lightburn(
         width=width,
         height=height,
         new_width=new_width,
-        new_height=new_height
+        new_height=new_height,
+        scale_factor=scale_factor,
     )
 
     # =========================================================================
@@ -2019,7 +3439,11 @@ def raster_to_puzzle_and_lightburn(
         scale_factor=scale_factor,
         root=root,
         lb_project_instance=lb_project_instance,
-        punch_through_black=not preserve_source_black,
+        punch_through_black=(
+            not preserve_source_black
+            and not source_black_active
+            and not krasnow_grate_black
+        ),
         black_lightburn_geometry=black_lightburn_geometry,
         export_lightburn=export_lightburn,
     )
@@ -2028,11 +3452,30 @@ def raster_to_puzzle_and_lightburn(
     # 9. Save output files
     # =========================================================================
 
+    lightburn_note = build_rasterizer_project_note(
+        image_preset=image_preset,
+        width=width,
+        height=height,
+        scale_factor=scale_factor,
+        quantize_colors=quantize_colors,
+        min_island_area=min_island_area,
+        simplification_factor=simplification_factor,
+        smoothing_radius=smoothing_radius,
+        abstract_filter=filter_name,
+        abstract_filter_parameters=normalized_filter_parameters,
+        color_matching=color_matching,
+        job_settings=job_settings,
+        target_colors=TARGET_COLORS,
+        geometry_style=geometry_style,
+        geometry_style_parameters=normalized_geometry_parameters,
+    )
+
     save_vector_output(
         root=root,
         output_svg_path=output_svg_path,
         lb_project_instance=lb_project_instance,
         export_lightburn=export_lightburn,
+        lightburn_note=lightburn_note,
     )
 
 
