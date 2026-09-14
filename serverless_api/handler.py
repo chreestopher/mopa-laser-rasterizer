@@ -486,6 +486,35 @@ def community_public_settings(settings):
     }
 
 
+def community_setting_identity(laser_source, lens, entry):
+    """Identify a Community Set entry solely by machine context and public cut parameters."""
+    return (
+        community_normalized(laser_source),
+        community_normalized(lens),
+        community_normalized(entry.get("material")),
+        community_normalized(entry.get("type")),
+        json.dumps(community_public_settings(entry.get("settings")), sort_keys=True, separators=(",", ":")),
+    )
+
+
+def existing_community_setting_identities():
+    identities = set()
+    options = {"KeyConditionExpression": Key("pk").eq("LASER_COMMUNITY")}
+    while True:
+        result = table.query(**options)
+        for community in result.get("Items", []):
+            summary = community.get("summary") if isinstance(community.get("summary"), dict) else {}
+            for entry in summary.get("entries") or []:
+                if isinstance(entry, dict):
+                    identities.add(community_setting_identity(
+                        community.get("laser_source"), community.get("lens_field_of_view"), entry,
+                    ))
+        last_key = result.get("LastEvaluatedKey")
+        if not last_key:
+            return identities
+        options["ExclusiveStartKey"] = last_key
+
+
 def community_material_swatch(preferences, library_id, entry):
     assignments = preferences.get("material_library_color_assignments") if isinstance(preferences, dict) else {}
     mapping = assignments.get(library_id) if isinstance(assignments, dict) else {}
@@ -589,12 +618,30 @@ def publish_community_palette(event):
                 "settings": community_public_settings(snapshot.get("settings")),
             })
 
+    existing_identities = existing_community_setting_identities()
+    submitted_identities = set()
+    unique_entries = []
+    for entry in entries:
+        identity = community_setting_identity(laser_source, lens, entry)
+        if identity in existing_identities or identity in submitted_identities:
+            continue
+        submitted_identities.add(identity)
+        unique_entries.append(entry)
+    duplicate_count = len(entries) - len(unique_entries)
+    entries = unique_entries
+
     materials = []
     for entry in entries:
         if entry["material"] and entry["material"] not in materials:
             materials.append(entry["material"])
     # The public record intentionally has no owner-derived or source-palette-derived
     # identifier. It cannot be joined back to the private account record in DynamoDB.
+    if not entries:
+        return response(200, {
+            "published": False, "palette_name": palette_name, "palette_type": palette_type,
+            "setting_count": 0, "duplicate_count": duplicate_count,
+        })
+
     publication_id = str(uuid.uuid4())
     now = int(time.time())
     table.put_item(Item={
@@ -619,7 +666,7 @@ def publish_community_palette(event):
     )
     return response(201, {
         "published": True, "palette_name": palette_name, "palette_type": palette_type,
-        "setting_count": len(entries),
+        "setting_count": len(entries), "duplicate_count": duplicate_count,
     })
 
 
@@ -3726,8 +3773,10 @@ def submit_job(event, task_id, guest=False):
     # otherwise valid Rasterizer job.
     geometry_parameters = dict(geometry_parameters)
     geometry_parameters.pop("posterize_colors", None)
-    if len(geometry_parameters) > 16:
+    if len(geometry_parameters) > 24:
         return response(400, {"message": "Geometry style settings must be a small object"})
+    if len(json.dumps(geometry_parameters, separators=(",", ":"))) > 120000:
+        return response(400, {"message": "Geometry style settings are too large"})
     numeric_geometry_parameters = {
         "cell_size_mm", "minimum_glyph_ratio", "maximum_glyph_ratio",
         "non_black_glyph_density", "tone_curve", "contrast", "grid_angle",
@@ -3754,8 +3803,54 @@ def submit_job(event, task_id, guest=False):
         "top_to_bottom", "bottom_to_top", "left_to_right", "right_to_left",
         "center_to_edge", "edge_to_center",
     }
+    def validate_fauxlogram_flow(value):
+        if not isinstance(value, dict):
+            raise ValueError("Fauxlogram Flow Painter settings must be an object")
+        regions = value.get("regions") or []
+        strokes = value.get("strokes") or []
+        if not isinstance(regions, list) or not 1 <= len(regions) <= 8:
+            raise ValueError("Fauxlogram Flow Painter supports 1-8 regions")
+        if not isinstance(strokes, list) or len(strokes) > 256:
+            raise ValueError("Fauxlogram Flow Painter has too many brush strokes")
+        point_count = 0
+        for region in regions:
+            if not isinstance(region, dict):
+                raise ValueError("A Fauxlogram Flow Painter region is invalid")
+            if str(region.get("scope") or "combined_region") not in {
+                "combined_region", "each_shape", "entire_artwork",
+            }:
+                raise ValueError("A Fauxlogram Flow Painter scope is invalid")
+            if str(region.get("guide_type") or "linear") not in {"linear", "radial"}:
+                raise ValueError("A Fauxlogram Flow Painter guide is invalid")
+            if str(region.get("orientation") or "parallel") not in {
+                "parallel", "perpendicular", "fixed", "offset",
+            }:
+                raise ValueError("A Fauxlogram Flow Painter orientation is invalid")
+            for point in (region.get("start", [.25, .5]), region.get("end", [.75, .5])):
+                if not isinstance(point, list) or len(point) != 2 or any(
+                    isinstance(item, bool) or not isinstance(item, (int, float))
+                    or not math.isfinite(item) or not 0 <= item <= 1 for item in point
+                ):
+                    raise ValueError("A Fauxlogram Flow Painter guide point is invalid")
+        for stroke in strokes:
+            points = stroke.get("points") if isinstance(stroke, dict) else None
+            region_index = stroke.get("region") if isinstance(stroke, dict) else None
+            if (
+                not isinstance(region_index, int) or not 0 <= region_index < len(regions)
+                or not isinstance(points, list) or not 1 <= len(points) <= 512
+            ):
+                raise ValueError("A Fauxlogram Flow Painter stroke is invalid")
+            point_count += len(points)
+            if point_count > 4000:
+                raise ValueError("Fauxlogram Flow Painter has too many brush points")
+            for point in points:
+                if not isinstance(point, list) or len(point) != 2 or any(
+                    isinstance(item, bool) or not isinstance(item, (int, float))
+                    or not math.isfinite(item) or not 0 <= item <= 1 for item in point
+                ):
+                    raise ValueError("A Fauxlogram Flow Painter stroke point is invalid")
     def validate_geometry_section(section):
-        if not isinstance(section, dict) or len(section) > 16:
+        if not isinstance(section, dict) or len(section) > 24:
             raise ValueError("Geometry style settings must be a small object")
         for key, value in section.items():
             valid = (
@@ -3766,6 +3861,7 @@ def submit_job(event, task_id, guest=False):
                     key == "fauxlogram_gradient_direction"
                     and value in gradient_directions
                 )
+                or (key == "fauxlogram_flow" and isinstance(value, dict))
                 or (key in toggle_geometry_parameters and isinstance(value, (bool, int)) and value in {0, 1})
                 or (
                     key in numeric_geometry_parameters
@@ -3776,6 +3872,8 @@ def submit_job(event, task_id, guest=False):
             )
             if not valid:
                 raise ValueError(f"Geometry style setting '{key}' is invalid")
+            if key == "fauxlogram_flow":
+                validate_fauxlogram_flow(value)
         if section.get("invert_fill") and section.get("black_only"):
             raise ValueError("Invert Fill cannot be combined with Black Only")
 

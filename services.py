@@ -107,9 +107,6 @@ HISTORY_SESSION_RE = re.compile(r"^[a-f0-9-]{32,36}$")
 HISTORY_TTL_SECONDS = 7 * 24 * 60 * 60
 GUEST_MATERIAL_LIBRARY_LIMIT = 12
 DAILY_JOB_LIMIT = max(1, int(os.environ.get("DAILY_JOB_LIMIT", "3")))
-COMMUNITY_CONTRIBUTOR_SECRET = os.environ.get(
-    "COMMUNITY_CONTRIBUTOR_SECRET", os.environ.get("APP_SESSION_SECRET", "local-development-only-secret")
-).encode("utf-8")
 manager = multiprocessing.Manager()
 tasks = manager.dict()
 job_runtime = create_job_runtime(redis_client, HISTORY_TTL_SECONDS, RASTER_JOB_PAYLOAD_PREFIX)
@@ -578,6 +575,22 @@ def _community_exact_match(value, query):
     return not query or _community_normalized_value(value) == _community_normalized_value(query)
 
 
+COMMUNITY_PUBLIC_SETTING_FIELDS = (
+    "speed", "minPower", "maxPower", "frequency", "QPulseWidth", "interval",
+    "angle", "numPasses", "anglePerPass", "bidir", "crossHatch", "type",
+)
+
+
+def _community_public_settings(settings):
+    """Strip private LightBurn metadata before a setting enters Community Set."""
+    settings = settings if isinstance(settings, dict) else {}
+    return {
+        field: settings[field]
+        for field in COMMUNITY_PUBLIC_SETTING_FIELDS
+        if field in settings and not isinstance(settings[field], (dict, list))
+    }
+
+
 def _community_filter_partitions(laser_source, lens_field_of_view, materials):
     dimensions = {
         "laser": _community_filter_value(laser_source),
@@ -689,14 +702,15 @@ def query_laser_community(laser_source="", lens_field_of_view="", material="", c
         raise RuntimeError("Could not query Comunity Set settings.") from error
 
 
-def _anonymous_community_contributor(user_id):
-    """Return a stable, non-public token used only for distinct-contributor counts."""
-    return hmac.new(COMMUNITY_CONTRIBUTOR_SECRET, user_id.encode("utf-8"), hashlib.sha256).hexdigest()
-
-
 def _write_laser_community_record(table, user_id, library_id, summary, laser_source,
                                   lens_field_of_view, notes):
     """Write the anonymous canonical record and all seven possible filter indexes."""
+    summary = dict(summary or {})
+    summary["entries"] = [
+        {**entry, "settings": _community_public_settings(entry.get("settings"))}
+        for entry in summary.get("entries", [])
+        if isinstance(entry, dict)
+    ]
     summary = _annotate_community_swatches(user_id, summary)
     canonical_key = {"pk": "LASER_COMMUNITY", "sk": f"MATERIAL#{library_id}"}
     old_item = table.get_item(Key=canonical_key).get("Item") or {}
@@ -716,7 +730,6 @@ def _write_laser_community_record(table, user_id, library_id, summary, laser_sou
         "index_keys": index_keys,
         "updated_at": updated_at,
     }
-    contributor = _anonymous_community_contributor(user_id)
     with table.batch_writer() as batch:
         for old_key in old_item.get("index_keys", []):
             if isinstance(old_key, dict) and old_key.get("pk") and old_key.get("sk"):
@@ -732,38 +745,6 @@ def _write_laser_community_record(table, user_id, library_id, summary, laser_sou
                 "material_names": summary.get("material_names", []),
                 "updated_at": updated_at,
             })
-        for entry in summary.get("entries", []):
-            entry_id = entry.get("entry_id")
-            if entry_id is None or not isinstance(entry.get("settings"), dict):
-                continue
-            setting_key = {
-                "pk": "LASER_COMMUNITY_SETTINGS",
-                "sk": f"SETTING#{library_id}#{entry_id}",
-            }
-            swatch_hex, official_color = _official_community_swatch(entry)
-            batch.put_item(Item={
-                **setting_key,
-                "community_pk": canonical_key["pk"],
-                "community_sk": canonical_key["sk"],
-                "contributor": contributor,
-                "laser_source": laser_source,
-                "lens_field_of_view": lens_field_of_view,
-                "material": entry.get("material", ""),
-                "description": official_color,
-                "swatch_hex": swatch_hex,
-                "source_description": entry.get("description", ""),
-                "type": entry.get("type", ""),
-                "settings": _dynamodb_values(entry["settings"]),
-                "updated_at": updated_at,
-            })
-            color_key = _community_filter_value(official_color)
-            if color_key:
-                batch.put_item(Item={
-                    "pk": f"LASER_COMMUNITY_COLOR_INDEX#color={color_key}",
-                    "sk": f"UPDATED#{time.time_ns():019d}#SETTING#{library_id}#{entry_id}",
-                    "setting_pk": setting_key["pk"],
-                    "setting_sk": setting_key["sk"],
-                })
 
 
 def rename_user_material_library(user_id, library_id, display_name, laser_source=None,
@@ -1533,7 +1514,7 @@ def parse_geometry_style_parameters(raw_value):
     # make an otherwise valid job fail.
     parameters = dict(parameters)
     parameters.pop("posterize_colors", None)
-    if len(parameters) > 16:
+    if len(parameters) > 24:
         raise ValueError("Geometry style settings must be a small object")
     if any(key in parameters for key in ("assignments", "glyphs", "krasnow_grating")):
         if set(parameters) - {"assignments", "glyphs", "krasnow_grating"}:
@@ -1599,6 +1580,88 @@ def parse_geometry_style_parameters(raw_value):
             clean[key] = value
         elif key == "fauxlogram_gradient_direction" and value in gradient_directions:
             clean[key] = value
+        elif key == "fauxlogram_flow":
+            if not isinstance(value, dict):
+                raise ValueError("Fauxlogram Flow Painter settings must be an object")
+            regions = value.get("regions") or []
+            strokes = value.get("strokes") or []
+            if not isinstance(regions, list) or not 1 <= len(regions) <= 8:
+                raise ValueError("Fauxlogram Flow Painter supports 1-8 regions")
+            if not isinstance(strokes, list) or len(strokes) > 256:
+                raise ValueError("Fauxlogram Flow Painter has too many brush strokes")
+            def flow_number(candidate, default, minimum, maximum):
+                try:
+                    candidate = float(candidate)
+                except (TypeError, ValueError):
+                    candidate = default
+                if not math.isfinite(candidate):
+                    candidate = default
+                return min(maximum, max(minimum, candidate))
+            clean_regions = []
+            for region in regions:
+                if not isinstance(region, dict):
+                    raise ValueError("A Fauxlogram Flow Painter region is invalid")
+                scope = str(region.get("scope") or "combined_region")
+                guide_type = str(region.get("guide_type") or "linear")
+                orientation = str(region.get("orientation") or "parallel")
+                if scope not in {"combined_region", "each_shape", "entire_artwork"}:
+                    raise ValueError("A Fauxlogram Flow Painter scope is invalid")
+                if guide_type not in {"linear", "radial"}:
+                    raise ValueError("A Fauxlogram Flow Painter guide is invalid")
+                if orientation not in {"parallel", "perpendicular", "fixed", "offset"}:
+                    raise ValueError("A Fauxlogram Flow Painter orientation is invalid")
+                def point(name, fallback):
+                    candidate = region.get(name, fallback)
+                    if not isinstance(candidate, list) or len(candidate) != 2:
+                        raise ValueError("A Fauxlogram Flow Painter guide point is invalid")
+                    numbers = [float(item) for item in candidate]
+                    if any(not math.isfinite(item) or not 0 <= item <= 1 for item in numbers):
+                        raise ValueError("A Fauxlogram Flow Painter guide point is invalid")
+                    return numbers
+                clean_regions.append({
+                    "name": str(region.get("name") or f"Region {len(clean_regions)+1}")[:40],
+                    "scope": scope, "guide_type": guide_type,
+                    "orientation": orientation,
+                    "start": point("start", [.25, .5]), "end": point("end", [.75, .5]),
+                    "gradient_start": flow_number(region.get("gradient_start"), 165, 0, 255),
+                    "gradient_end": flow_number(region.get("gradient_end"), 90, 0, 255),
+                    "curve": flow_number(region.get("curve"), 1, .2, 5),
+                    "fixed_angle": flow_number(region.get("fixed_angle"), 0, -180, 180),
+                    "angle_offset": flow_number(region.get("angle_offset"), 0, -180, 180),
+                    "reverse": bool(region.get("reverse")),
+                })
+            clean_strokes, point_count = [], 0
+            for stroke in strokes:
+                if not isinstance(stroke, dict):
+                    raise ValueError("A Fauxlogram Flow Painter stroke is invalid")
+                region_index = stroke.get("region")
+                points = stroke.get("points") or []
+                if not isinstance(region_index, int) or not 0 <= region_index < len(clean_regions):
+                    raise ValueError("A Fauxlogram Flow Painter stroke region is invalid")
+                if not isinstance(points, list) or not 1 <= len(points) <= 512:
+                    raise ValueError("A Fauxlogram Flow Painter stroke is invalid")
+                clean_points = []
+                for candidate in points:
+                    if not isinstance(candidate, list) or len(candidate) != 2:
+                        raise ValueError("A Fauxlogram Flow Painter stroke point is invalid")
+                    coordinates = [float(item) for item in candidate]
+                    if any(not math.isfinite(item) or not 0 <= item <= 1 for item in coordinates):
+                        raise ValueError("A Fauxlogram Flow Painter stroke point is invalid")
+                    clean_points.append(coordinates)
+                point_count += len(clean_points)
+                if point_count > 4000:
+                    raise ValueError("Fauxlogram Flow Painter has too many brush points")
+                clean_strokes.append({
+                    "region": region_index,
+                    "erase": bool(stroke.get("erase")),
+                    "width": flow_number(stroke.get("width"), .08, .002, .5),
+                    "points": clean_points,
+                })
+            clean[key] = {
+                "enabled": bool(value.get("enabled", True)),
+                "regions": clean_regions,
+                "strokes": clean_strokes,
+            }
         elif key in toggles and isinstance(value, bool):
             clean[key] = int(value)
         elif key in toggles and isinstance(value, int) and value in {0, 1}:

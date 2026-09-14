@@ -35,8 +35,7 @@ LARGE_LIGHTBURN_PROJECT_BYTES = 50_000_000
 LARGE_LIGHTBURN_PROJECT_WARNING = (
     "WARNING: This LightBurn project is larger than 50 MB and contains a large "
     "amount of geometry. Rasterizer has disabled the expensive cut-path "
-    "optimizations and left only Order by Layer enabled. Keep those optimization "
-    "settings before using Frame, Send, or Start. LightBurn may appear frozen or not responding after "
+    "optimizations and left only Order by Layer enabled. LightBurn may appear frozen or not responding after "
     "you press Frame, Send, or Start. Please be patient; LightBurn will typically "
     "become usable again after it finishes its calculations."
 )
@@ -107,6 +106,27 @@ def _project_note_value(value):
     return str(value)
 
 
+def _summarize_project_geometry(value):
+    """Keep paint operations out of LightBurn Notes while recording their intent."""
+    if not isinstance(value, dict):
+        return value
+    summarized = {}
+    for key, item in value.items():
+        if key == "fauxlogram_flow" and isinstance(item, dict):
+            strokes = item.get("strokes") or []
+            summarized[key] = {
+                "enabled": bool(item.get("enabled")),
+                "regions": len(item.get("regions") or []),
+                "painted_shapes": sum(not stroke.get("erase") for stroke in strokes),
+                "eraser_strokes": sum(bool(stroke.get("erase")) for stroke in strokes),
+            }
+        elif isinstance(item, dict):
+            summarized[key] = _summarize_project_geometry(item)
+        else:
+            summarized[key] = item
+    return summarized
+
+
 def build_rasterizer_project_note(
     *,
     image_preset,
@@ -133,11 +153,11 @@ def build_rasterizer_project_note(
         for key, value in dict(abstract_filter_parameters or {}).items()
         if not str(key).startswith("_")
     }
-    public_geometry_parameters = {
+    public_geometry_parameters = _summarize_project_geometry({
         key: value
         for key, value in dict(geometry_style_parameters or {}).items()
         if not str(key).startswith("_")
-    }
+    })
     job_type = "Fauxlographic" if image_preset == "holographic_artwork" else "Rasterizer"
     swatch_names = [
         str(metadata[2])

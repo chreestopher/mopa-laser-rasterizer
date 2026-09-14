@@ -1,4 +1,11 @@
 (() => {
+  if (!document.querySelector('link[rel~="icon"]')) {
+    const icon = document.createElement("link");
+    icon.rel = "icon";
+    icon.type = "image/png";
+    icon.href = "/static/docs/wizardlogo.png";
+    document.head.append(icon);
+  }
   const isStagingEnvironment = location.hostname.includes("serverless-staging");
   const environmentBadge = isStagingEnvironment ? "Staging" : "Production";
   for (const key of ["id_token", "refresh_token"]) {
@@ -88,7 +95,7 @@
         <div class="theme-toggle machine-theme-toggle"><label aria-label="Use light or dark theme"><span>Dark</span><input id="theme_switch" type="checkbox"><span class="toggle-track"></span><span>Light</span></label></div>
       </div>
       <div class="machine-brand-header">
-        <h1 class="machine-brand-title"><a class="machine-brand-home" href="/" aria-label="Return to MOPA Laser Rasterizer home"><span class="machine-brand-letters" aria-hidden="true">${[...brand].map(letter => `<span>${letter}</span>`).join("")}</span></a></h1>
+        <h1 class="machine-brand-title"><a class="machine-brand-home" href="/" aria-label="Return to MOPA Laser Rasterizer home"><img class="machine-brand-logo" src="/static/docs/wizardlogo.png" alt=""><span class="machine-brand-letters" aria-hidden="true">${[...brand].map(letter => `<span>${letter}</span>`).join("")}</span></a></h1>
         <div class="machine-status-line">
           <div class="machine-status-lamps" role="status" aria-label="MOPA laser system indicators"><span class="machine-status-lamp machine-lamp-mopa">MOPA</span><span class="machine-status-lamp machine-lamp-laser">Laser</span><span class="machine-status-lamp machine-lamp-power">Power</span></div>
           <span class="machine-console-subtitle">SERVERLESS ${isStagingEnvironment ? "TEST" : "PRODUCTION"} CONSOLE · SERIES 79</span>

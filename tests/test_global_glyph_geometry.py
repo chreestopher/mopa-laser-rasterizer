@@ -524,7 +524,7 @@ def test_staging_ui_exposes_an_independent_compatible_geometry_section():
     assert "geometry_style:effectiveGeometryStyle()" in page
     assert "geometry_style_parameters:JSON.stringify(geometryStyleParameters())" in page
     assert "if(used.has('glyphs'))parameters.glyphs=" in page
-    assert "if(used.has('krasnow_grating'))parameters.krasnow_grating=" in page
+    assert "if(used.has('krasnow_grating'))parameters.krasnow_grating=krasnowGeometryValues()" in page
     assert "['invert_fill',false]" in page
     assert "syncGeometryToggleCompatibility" in page
     assert "Every output layer is made mutually exclusive before export." in page
@@ -551,3 +551,64 @@ def test_staging_ui_exposes_an_independent_compatible_geometry_section():
 def test_serverless_api_discards_retired_posterize_from_cached_submissions():
     handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
     assert 'geometry_parameters.pop("posterize_colors", None)' in handler
+
+
+def _flow_settings(scope="combined_region", guide_type="linear"):
+    settings = {
+        **krasnow_grating.DEFAULTS,
+        "fauxlogram_flow": {
+            "enabled": True,
+            "regions": [{
+                "name": "Shared islands", "scope": scope,
+                "guide_type": guide_type, "orientation": "perpendicular",
+                "start": [.1, .5], "end": [.9, .5],
+                "gradient_start": 20, "gradient_end": 220, "curve": 1,
+                "fixed_angle": 0, "angle_offset": 0, "reverse": False,
+            }],
+            "strokes": [
+                {"region": 0, "erase": False, "width": .2,
+                 "points": [[.1, .5], [.35, .5]]},
+                {"region": 0, "erase": False, "width": .2,
+                 "points": [[.65, .5], [.9, .5]]},
+            ],
+        },
+    }
+    settings["_compiled_fauxlogram_flow"] = (
+        krasnow_grating._prepare_fauxlogram_flow(settings)
+    )
+    return settings
+
+
+def test_fauxlogram_flow_combines_disconnected_strokes_into_one_gradient():
+    settings = _flow_settings("combined_region")
+    first = krasnow_grating._painted_flow_controls(20, 50, (0, 0, 100, 100), settings)
+    second = krasnow_grating._painted_flow_controls(80, 50, (0, 0, 100, 100), settings)
+    assert first is not None and second is not None
+    assert first[0] < second[0]
+    assert first[1] == second[1] == 90
+
+
+def test_fauxlogram_flow_each_shape_restarts_for_disconnected_strokes():
+    settings = _flow_settings("each_shape")
+    first = krasnow_grating._painted_flow_controls(20, 50, (0, 0, 100, 100), settings)
+    second = krasnow_grating._painted_flow_controls(75, 50, (0, 0, 100, 100), settings)
+    assert first is not None and second is not None
+    assert abs(first[0] - second[0]) < 1e-9
+
+
+def test_fauxlogram_flow_does_not_affect_unpainted_cells():
+    settings = _flow_settings()
+    assert krasnow_grating._painted_flow_controls(
+        50, 10, (0, 0, 100, 100), settings
+    ) is None
+
+
+def test_staging_ui_exposes_fauxlogram_flow_painter():
+    page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+    assert 'id="openFlowPainter"' in page
+    assert 'id="flowCanvas"' in page
+    assert "values.fauxlogram_flow=structuredClone(fauxlogramFlow)" in page
+    assert "Every Krasnow cell still belongs to one source layer and at most one painted region" in page
+    assert "function resizeFlowCanvas()" in page
+    assert "availableWidth/flowBitmap.width,availableHeight/flowBitmap.height" in page
+    assert "Math.min(1,960/flowBitmap.width,680/flowBitmap.height)" not in page

@@ -105,6 +105,12 @@ class ServerlessColorDiscoveryTests(unittest.TestCase):
         self.assertIn(".staging-action-button{border:2px solid #9ba89f!important", shared_styles)
         self.assertIn("body.light-machine .staging-action-button{color:#171815!important", shared_styles)
 
+    def test_measurement_canvas_preserves_photo_aspect_ratio(self):
+        self.assertIn(
+            ".capture{width:auto;height:auto;max-width:min(100%,850px);max-height:none}",
+            self.page,
+        )
+
     def test_previously_created_grid_can_be_loaded_by_short_or_full_id(self):
         self.assertIn('id="measurementGridId"', self.page)
         self.assertIn('id="recentGridSelect"', self.page)

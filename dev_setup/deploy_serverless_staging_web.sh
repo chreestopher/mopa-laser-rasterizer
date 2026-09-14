@@ -187,15 +187,15 @@ aws s3 cp "$REPO_ROOT/serverless_web/release-story.html" "s3://$STATIC_BUCKET/we
 for media_file in "$REPO_ROOT"/serverless_web/release-story-media/*; do
   media_name="$(basename "$media_file")"
   case "$media_name" in
-    *.jpeg|*.jpg) media_type="image/jpeg" ;;
-    *.png) media_type="image/png" ;;
-    *.svg) media_type="image/svg+xml" ;;
-    *.mp4) media_type="video/mp4" ;;
-    *.mov) media_type="video/quicktime" ;;
+    *.jpeg|*.jpg) media_type="image/jpeg"; media_cache_control="no-cache" ;;
+    *.png) media_type="image/png"; media_cache_control="no-cache" ;;
+    *.svg) media_type="image/svg+xml"; media_cache_control="no-cache" ;;
+    *.mp4) media_type="video/mp4"; media_cache_control="public,max-age=604800" ;;
+    *.mov) media_type="video/quicktime"; media_cache_control="public,max-age=604800" ;;
     *) continue ;;
   esac
   aws s3 cp "$media_file" "s3://$STATIC_BUCKET/web/release-story-media/$media_name" \
-    --region "$REGION" --content-type "$media_type" --cache-control "public,max-age=604800" --only-show-errors
+    --region "$REGION" --content-type "$media_type" --cache-control "$media_cache_control" --only-show-errors
 done
 for route in laser-engraving-tool color-laser-engraving-tool depthmap-relief-engraving-tool; do
   aws s3 cp "$BUILD_DIR/seo/$route" "s3://$STATIC_BUCKET/web/$route" \

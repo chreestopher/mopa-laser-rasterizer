@@ -14,15 +14,15 @@ What started as a way to take an image, reduce it to colors I could actually eng
 
 Rasterizer can still turn ordinary artwork into color engravings.
 
-But it can now also generate glyph fields, halftones, hatch textures, diffraction geometry, optical color mixtures, depth maps and relief previews; discover colors experimentally; calibrate holographic/diffraction effects from photographs of real engravings; save the results as reusable palettes; generate LightBurn test coupons; and combine different physical engraving strategies inside the same image.
+But it can now also generate glyph fields, halftones, hatch textures, diffraction geometry, depth maps and relief previews; discover colors experimentally; calibrate holographic/diffraction effects from photographs of real engravings; save the results as reusable palettes; generate LightBurn test coupons; and combine different physical engraving strategies inside the same image.
 
 And somewhere in the middle of building all of that, I found a diffraction effect on my own MOPA that I still cannot adequately explain.
 
-This is one of the engravings that sent me down that rabbit hole:
+This is an example fauxlogram—the kind of result we will explain how to work toward throughout the rest of this article:
 
 ![Representative frame from diffraction engraving](./serverless_web/release-story-media/20260903_205219102.jpeg)
 
-**Video:** [`Diffractionwiz.mp4`](./serverless_web/release-story-media/Diffractionwiz.mp4) — the diffraction engraving that sent this project down a new path.
+**Video:** [`Diffractionwiz.mp4`](./serverless_web/release-story-media/Diffractionwiz.mp4) — an example fauxlogram whose changing color and appearance become visible as the viewing angle changes.
 
 At one angle it can look surprisingly close to an ordinary MOPA color engraving.
 
@@ -51,7 +51,7 @@ A huge amount of this project exists because of the MOPA experiments, code, sett
 
 If you have a MOPA laser and haven't looked through those repositories, you should.
 
-Ben basically left an entire box of optical toys sitting on GitHub with the lid open.
+Ben basically left an entire box of MOPA laser tools and data sitting on GitHub with the lid open.
 
 I didn't start building Rasterizer because his approach wasn't working.
 
@@ -86,8 +86,6 @@ Repeat.
 Then another.
 
 Then another.
-
-MOPA owners seem destined to spend a significant portion of their lives engraving test grids.
 
 So I started automating things.
 
@@ -133,7 +131,7 @@ and:
 
 Those are now independent decisions.
 
-Rasterizer can process artwork using conventional photographic and illustrated-image presets or reinterpret it through abstract transformations such as Structure Tensor Flow, Voronoi, Halftone Newsprint and Optical Color Mix.
+Rasterizer can process artwork using conventional photographic and illustrated-image presets or reinterpret it through abstract transformations such as Structure Tensor Flow, Voronoi and Halftone Newsprint.
 
 But after the image is interpreted, its regions do not have to become ordinary vectors.
 
@@ -144,7 +142,7 @@ They can become:
 - **Krasnow diffraction-grating geometry**
 - Or **different geometry for different swatches in the same image**
 
-That last one is where things get especially strange.
+That last one is where things get especially interesting.
 
 A magenta region can become diffraction geometry.
 
@@ -152,61 +150,17 @@ A blue region can become glyphs.
 
 A yellow region can remain an ordinary vector.
 
-All inside the same piece of artwork.
+Or any other color-to-geometry-type arrangement. All inside the same piece of artwork.
 
 ![Rasterizer Image Style and Geometry Style controls](./serverless_web/release-story-media/ui-rasterizer-image-and-geometry-controls.png)
+
+| Source artwork | Skull glyph geometry in LightBurn |
+| --- | --- |
+| ![Color skull illustration used as source artwork for glyph processing](./serverless_web/release-story-media/glyph-skulls-source.png) | ![Skull-shaped glyph geometry generated from the source artwork and displayed in LightBurn](./serverless_web/release-story-media/glyph-skulls-lightburn.png) |
 
 **Video:** [`butterfly.mp4`](./serverless_web/release-story-media/butterfly.mp4) — finished butterfly engraving combining swatch-specific geometry treatments.
 
 At some point I realized I had stopped writing an image vectorizer and had started writing something closer to an **image-to-physical-engraving compiler**.
-
----
-
-# Yes, the vectors can become skulls
-
-Glyph Geometry replaces ordinary image regions with repeated shapes whose size/density follows the source artwork.
-
-The glyph set includes ordinary things like circles, squares, diamonds and triangles.
-
-It also includes stars, crosses, hexagons, hearts, Space Invaders, ghosts, bats, alien heads, paw prints, fish scales, puzzle pieces...
-
-...and skulls.
-
-Because apparently I cannot leave well enough alone.
-
-**[IMAGE NEEDED: source image + glyph preview + finished glyph engraving]**
-
-The important part is that these aren't just decorative shapes clipped inside a vector.
-
-The glyph field itself reconstructs the image.
-
-And the same machinery can be used by the halftone system, so the physical size and distribution of marks becomes part of the image.
-
----
-
-# A laser palette doesn't have to contain every color you want to see
-
-One of the newer experiments is **Optical Color Mix**.
-
-Ordinary color mapping asks:
-
-> Which color I know how to engrave is closest to this pixel?
-
-Optical Color Mix can instead ask:
-
-> Which **pair** of colors I know how to engrave could be spatially mixed to approximate this pixel?
-
-Rasterizer evaluates combinations of the palette's declared colors and generates deterministic spatial mixtures for physical testing.
-
-In other words, the laser doesn't necessarily need to produce the requested color directly.
-
-Two colors it **can** produce may be able to imply it together.
-
-**[IMAGE NEEDED: Optical Color Mix source/preview comparison]**
-
-**[IMAGE NEEDED: physical Optical Color Mix engraving under neutral lighting]**
-
-I am particularly interested in how far this can stretch a relatively small experimentally discovered MOPA palette.
 
 ---
 
@@ -246,7 +200,9 @@ The browser lets you align the photograph with the known grid geometry, then mea
 
 ![Engraved Color Lab discovery grid on a metal test card](./serverless_web/release-story-media/engraved-color-lab-grid.jpg)
 
-![Color Lab photograph alignment and measurement interface](./serverless_web/release-story-media/ui-color-lab-photograph-alignment.png)
+![Color Lab photograph alignment over a measured blue discovery grid](./serverless_web/release-story-media/ui-color-lab-photograph-alignment-blue.png)
+
+![Color Lab review screen showing measured blue swatches available for selection](./serverless_web/release-story-media/ui-color-lab-swatch-selection-blue.png)
 
 The interesting cells can then be selected and saved as reusable colors.
 
@@ -288,11 +244,9 @@ Name them.
 
 Save them.
 
-![Holographic Etching Lab calibration setup](./serverless_web/release-story-media/ui-holographic-calibration-setup.png)
-
 ![Physical holographic calibration grid showing different iridescent responses under direct light](./serverless_web/release-story-media/physical-holographic-calibration-grid.jpg)
 
-![Holographic finished-grid capture and swatch measurement interface](./serverless_web/release-story-media/ui-holographic-measured-swatches.png)
+![Fauxlographic finished-grid photograph aligned for cell analysis](./serverless_web/release-story-media/ui-holographic-calibration-setup.png?v=20260913)
 
 The resulting **Holographic Palette** stores the observed swatches together with the LightBurn layer settings used to produce them.
 
@@ -444,25 +398,33 @@ Then I started deliberately playing with the patch geometry:
 
 And eventually:
 
-![Representative frame from skull diffraction experiment](./_forum_video_frames/IMG_5743.jpg)
-
-**Video:** `IMG_5743.mp4`
+**Video:** [`IMG_6062.mp4`](./serverless_web/release-story-media/IMG_6062.mp4) — skull-cell diffraction experiment under changing light.
 
 So... why not skulls?
 
 ---
 
-# Holographic Palettes and Krasnow Grating are not the same thing
+# Fauxlographic Palettes and Krasnow Grating are not the same thing
 
 This distinction has become important as Rasterizer has grown.
 
-A **Holographic Palette** is measured experimental knowledge: optical swatches plus the physical LightBurn settings associated with them.
+A **Fauxlographic Palette** is measured experimental knowledge: optical swatches plus the physical LightBurn settings associated with them.
 
-**Holographic artwork mapping** can use those measured swatches to reproduce artwork.
+**Fauxlographic artwork mapping** can use those measured swatches to reproduce artwork.
 
 **Krasnow Grating** is a generated diffraction-geometry technique.
 
 And because Image Style and Geometry Style are now independent, Krasnow geometry can also be selectively applied to parts of artwork rather than being the entire processing pipeline.
+
+The two versions in this video were intentionally designed to look different, but together they make the distinction visible.
+
+In the **Fauxlographic Palette** version, the broad optical gradient follows the original shapes and colors in the source artwork. Rasterizer maps those regions to the measured palette entries and uses their stored laser settings, interval and angle without rebuilding the image as shaped grating cells.
+
+In the **Krasnow Grating** version, Rasterizer places geometric patches of parallel grating lines using the selected cell shape and cell size.
+
+Put simply: Fauxlographic Palette artwork is driven by measured laser settings applied to source-color regions. Krasnow Grating combines laser settings with newly generated geometry.
+
+**Video:** [`fauxlographic-vs-krasnow.mp4`](./serverless_web/release-story-media/fauxlographic-vs-krasnow.mp4) — the same source artwork rendered through Krasnow shaped grating cells and Fauxlographic Palette mapping.
 
 That makes the diffraction system much less of a single "effect" and much more of a reusable physical engraving primitive.
 
@@ -484,7 +446,7 @@ They can mean:
 
 ![Hatch Palette editor and generator](./serverless_web/release-story-media/ui-hatch-palette-editor.png)
 
-**[IMAGE NEEDED: physical hatch engraving showing angle/texture differences]**
+<!-- Future image: physical hatch engraving showing angle/texture differences -->
 
 That makes the swatch system useful even when the desired result has little to do with conventional MOPA oxide color.
 
@@ -524,7 +486,7 @@ If you already know that a particular color represents a foreground object, Rast
 
 ![Depth Palette editor](./serverless_web/release-story-media/ui-depth-palette-editor.png)
 
-**[IMAGE NEEDED: before/after depth inference with palette guidance]**
+<!-- Future image: before/after depth inference with palette guidance -->
 
 ---
 
@@ -540,9 +502,9 @@ An ordinary image can become:
 
 The tool can show the depth map, the resulting parallax angle map and the regions that will remain unengraved, then export either the parallax angle map as a PNG or the corresponding diffraction-grating geometry as an SVG.
 
-![Depthmap Lab parallax controls and angle-map preview](./serverless_web/release-story-media/ui-parallax-angle-map.png)
+![Depthmap Lab parallax controls and angle-map preview](./serverless_web/release-story-media/ui-parallax-angle-map.png?v=20260913)
 
-**[IMAGE NEEDED: physical parallax/diffraction engraving]**
+<!-- Future image: physical parallax/diffraction engraving -->
 
 So something that began as "make a depth map" can end as a physical surface whose grating direction encodes depth.
 
@@ -674,7 +636,7 @@ That is not a 150 MB photograph.
 
 That is roughly 150 MB of vector geometry asking your computer whether it has made peace with its creator.
 
-Rasterizer-generated LightBurn projects automatically disable the expensive cut optimizations while retaining **Order by Layer**. Verify these settings after opening the project, particularly if LightBurn replaces or modifies its saved preferences.
+Rasterizer-generated LightBurn projects automatically disable the expensive cut optimizations while retaining **Order by Layer**, so no manual optimization change is required.
 
 The button exists.
 
@@ -745,7 +707,7 @@ I do not know whether:
 - different focal positions move the optimum,
 - or some combination of all of these is responsible.
 
-I have one laser.
+I have one fiber laser.
 
 That is a terrible sample size.
 
@@ -755,7 +717,7 @@ Fortunately, Rasterizer now has considerably better tools for collecting the nex
 
 # I need YOUR magic setting
 
-If you own a MOPA fiber laser, I would still really like you to try this.
+If you own a fiber laser, I would really like you to try this.
 
 But **do not start by targeting my 1.14 µm number.**
 
@@ -906,7 +868,7 @@ That would be a much more entertaining scaling problem to have.
 
 # Releasing what Rasterizer has become
 
-So after all of this, I'm releasing the new Rasterizer.
+So after all of this, I'm releasing the application, MOPA-LASER-RASTERIZER.
 
 Calling it a rasterizer is increasingly questionable, but the name has stuck.
 
@@ -988,8 +950,6 @@ If the magic number moves all over the place, that is extremely interesting too.
 
 If Color Lab starts revealing patterns across different MOPA sources, I want to see them.
 
-If Optical Color Mix works brilliantly on one palette and terribly on another, I want to understand why.
-
 If the Holographic Lab finds completely different optical operating regions on different lenses, that's useful data.
 
 And if absolutely nobody can reproduce what my laser is doing...
@@ -999,3 +959,5 @@ I suppose I will accept my new responsibility as caretaker of the magic laser.
 Either way:
 
 **I need your lasers.**
+
+**— The Wizzard of Awes**

@@ -9,6 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 class ServerlessCommunityPublishTests(unittest.TestCase):
     def setUp(self):
         self.handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
+        self.services = (ROOT / "services.py").read_text(encoding="utf-8")
+        self.copy_script = (ROOT / "dev_setup" / "copy_user_data_to_serverless_staging.py").read_text(encoding="utf-8")
         self.page = (ROOT / "serverless_web" / "vault.html").read_text(encoding="utf-8")
         self.client = (ROOT / "serverless_web" / "vault.js").read_text(encoding="utf-8")
         self.infrastructure = (ROOT / "ecs" / "serverless-staging-web.yaml").read_text(encoding="utf-8")
@@ -64,6 +66,26 @@ class ServerlessCommunityPublishTests(unittest.TestCase):
         ]
         for private_field in ("overscan", "priority", "tabsEnabled", "hide", "LinkPath"):
             self.assertNotIn(f'"{private_field}"', definition)
+
+    def test_every_community_storage_path_strips_private_lightburn_metadata(self):
+        ast.parse(self.services)
+        ast.parse(self.copy_script)
+        self.assertIn("def _community_public_settings(settings):", self.services)
+        self.assertIn('"settings": _community_public_settings(entry.get("settings"))', self.services)
+        community_writer = self.services[
+            self.services.index("def _write_laser_community_record"):
+            self.services.index("def rename_user_material_library")
+        ]
+        self.assertNotIn("LASER_COMMUNITY_SETTINGS", community_writer)
+        self.assertNotIn("LASER_COMMUNITY_COLOR_INDEX", community_writer)
+        self.assertIn("def compact_community_item(item):", self.copy_script)
+        self.assertIn("compact_community_item(item)", self.copy_script)
+
+    def test_new_publications_skip_existing_cut_parameter_duplicates(self):
+        self.assertIn("def community_setting_identity", self.handler)
+        self.assertIn("def existing_community_setting_identities", self.handler)
+        self.assertIn("identity in existing_identities or identity in submitted_identities", self.handler)
+        self.assertIn('"duplicate_count": duplicate_count', self.handler)
 
     def test_only_color_palette_cards_expose_community_action(self):
         self.assertIn('data-community-kind="material"', self.client)

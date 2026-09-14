@@ -1,3 +1,4 @@
+import ast
 import subprocess
 import sys
 import tempfile
@@ -27,6 +28,7 @@ class RecentFeatureDocumentationTests(unittest.TestCase):
             geometry = (output / "geometry-styles").read_text(encoding="utf-8")
             krasnow = (output / "krasnow-grating-filter").read_text(encoding="utf-8")
             export = (output / "lightburn-export").read_text(encoding="utf-8")
+            color_layers = (output / "color-layers").read_text(encoding="utf-8")
 
             self.assertIn('href="/docs/artwork-cropping"', index)
             self.assertIn('href="/docs/geometry-styles"', index)
@@ -40,11 +42,34 @@ class RecentFeatureDocumentationTests(unittest.TestCase):
             self.assertIn("vertically, horizontally, or radially", geometry)
             self.assertFalse((output / "glyph-mosaic-filter").exists())
             self.assertIn("Preserve Black disabled", krasnow)
-            self.assertIn("parent Fauxlographic CutSetting", krasnow)
+            self.assertIn("uses the Fauxlographic setting as the authoritative template", krasnow)
+            self.assertIn("Additional sublayers, if present, are ignored", krasnow)
             self.assertIn("Fauxlogram Gradient controls in Geometry Style", krasnow)
             self.assertIn("whole-artwork radial layouts", krasnow)
             self.assertIn("50,000,000 bytes", export)
             self.assertIn("Geometry Style and its parameters", export)
+            self.assertNotIn("synthetic full-canvas shape", color_layers)
+
+            handler_tree = ast.parse(
+                (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
+            )
+            palette = next(
+                ast.literal_eval(node.value)
+                for node in handler_tree.body
+                if isinstance(node, ast.Assign)
+                and any(
+                    isinstance(target, ast.Name) and target.id == "PALETTE"
+                    for target in node.targets
+                )
+            )
+            self.assertEqual(len(palette), 30)
+            positions = []
+            for index, (name, color) in enumerate(palette):
+                row = f"<td><code>C{index:02d}</code></td><td>{name}</td>"
+                self.assertIn(row, color_layers)
+                self.assertIn(f"background-color:{color}", color_layers)
+                positions.append(color_layers.index(row))
+            self.assertEqual(positions, sorted(positions))
 
 
 if __name__ == "__main__":

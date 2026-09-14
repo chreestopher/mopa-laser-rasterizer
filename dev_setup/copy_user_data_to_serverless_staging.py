@@ -17,6 +17,10 @@ from urllib.parse import quote, urlencode
 
 
 TEMP_FILES = []
+COMMUNITY_PUBLIC_SETTING_FIELDS = (
+    "speed", "minPower", "maxPower", "frequency", "QPulseWidth", "interval",
+    "angle", "numPasses", "anglePerPass", "bidir", "crossHatch", "type",
+)
 
 
 @atexit.register
@@ -79,6 +83,27 @@ def ordinary(value):
 
 def item_value(item, key, default=None):
     return ordinary(item[key]) if key in item else default
+
+
+def compact_community_item(item):
+    """Copy Community Set records without private LightBurn metadata."""
+    plain = {key: ordinary(value) for key, value in item.items()}
+    summary = plain.get("summary") if isinstance(plain.get("summary"), dict) else {}
+    entries = []
+    for entry in summary.get("entries", []):
+        if not isinstance(entry, dict):
+            continue
+        settings = entry.get("settings") if isinstance(entry.get("settings"), dict) else {}
+        entries.append({
+            **entry,
+            "settings": {
+                field: settings[field]
+                for field in COMMUNITY_PUBLIC_SETTING_FIELDS
+                if field in settings and not isinstance(settings[field], (dict, list))
+            },
+        })
+    plain["summary"] = {**summary, "entries": entries, "entry_count": len(entries)}
+    return {key: attribute_value(value) for key, value in plain.items()}
 
 
 def json_argument(value):
@@ -239,7 +264,7 @@ def main():
     if args.include_community_set:
         community_items = query_partition(args.profile, args.region, args.source_table, "LASER_COMMUNITY")
         for item in community_items:
-            put_item(args.profile, args.region, args.destination_table, item)
+            put_item(args.profile, args.region, args.destination_table, compact_community_item(item))
 
     materials = categories["material_libraries"]
     print(f"Cognito user: {args.account} ({user_id})")

@@ -373,6 +373,148 @@ def _source_angle(x, y, bounds, settings):
     return angle_min + (value / 255) * (angle_max - angle_min)
 
 
+def _distance_to_stroke(x, y, stroke):
+    """Return the normalized distance to a painted polyline."""
+    points = stroke.get("points") or []
+    if not points:
+        return float("inf")
+    if len(points) == 1:
+        return math.hypot(x - points[0][0], y - points[0][1])
+    closest = float("inf")
+    for first, second in zip(points, points[1:]):
+        ax, ay = first
+        bx, by = second
+        dx, dy = bx - ax, by - ay
+        length_squared = dx * dx + dy * dy
+        amount = 0 if length_squared <= 1e-12 else min(
+            1, max(0, ((x - ax) * dx + (y - ay) * dy) / length_squared)
+        )
+        closest = min(closest, math.hypot(x - (ax + amount * dx), y - (ay + amount * dy)))
+    return closest
+
+
+def _stroke_bounds(stroke):
+    points = stroke.get("points") or []
+    if not points:
+        return (0, 0, 1, 1)
+    radius = number(stroke.get("width"), .08, .002, .5) / 2
+    xs = [point[0] for point in points]
+    ys = [point[1] for point in points]
+    return (
+        max(0, min(xs) - radius), max(0, min(ys) - radius),
+        min(1, max(xs) + radius), min(1, max(ys) + radius),
+    )
+
+
+def _prepare_fauxlogram_flow(settings):
+    """Compile the small browser-authored flow plan for repeated cell sampling."""
+    plan = settings.get("fauxlogram_flow")
+    if not isinstance(plan, dict) or not plan.get("enabled"):
+        return None
+    regions = plan.get("regions") or []
+    strokes = plan.get("strokes") or []
+    if not regions or not strokes:
+        return None
+    region_bounds = {}
+    for index in range(len(regions)):
+        painted = [
+            _stroke_bounds(stroke) for stroke in strokes
+            if stroke.get("region") == index and not stroke.get("erase")
+        ]
+        if painted:
+            region_bounds[index] = (
+                min(item[0] for item in painted), min(item[1] for item in painted),
+                max(item[2] for item in painted), max(item[3] for item in painted),
+            )
+    return {"regions": regions, "strokes": strokes, "bounds": region_bounds}
+
+
+def _flow_scope_bounds(region, matched_stroke, compiled):
+    scope = region.get("scope", "combined_region")
+    if scope == "entire_artwork":
+        return (0, 0, 1, 1)
+    if scope == "each_shape":
+        return _stroke_bounds(matched_stroke)
+    return compiled["bounds"].get(matched_stroke.get("region"), (0, 0, 1, 1))
+
+
+def _flow_position(x, y, region, scope_bounds, combined_bounds):
+    guide_start = region.get("start") or [.25, .5]
+    guide_end = region.get("end") or [.75, .5]
+    dx = guide_end[0] - guide_start[0]
+    dy = guide_end[1] - guide_start[1]
+    if abs(dx) + abs(dy) <= 1e-9:
+        dx = 1
+    if region.get("guide_type") == "radial":
+        combined_width = max(combined_bounds[2] - combined_bounds[0], 1e-9)
+        combined_height = max(combined_bounds[3] - combined_bounds[1], 1e-9)
+        center_fraction_x = (guide_start[0] - combined_bounds[0]) / combined_width
+        center_fraction_y = (guide_start[1] - combined_bounds[1]) / combined_height
+        center_x = scope_bounds[0] + center_fraction_x * (scope_bounds[2] - scope_bounds[0])
+        center_y = scope_bounds[1] + center_fraction_y * (scope_bounds[3] - scope_bounds[1])
+        radius_x = (
+            (guide_end[0] - guide_start[0]) / combined_width
+            * (scope_bounds[2] - scope_bounds[0])
+        )
+        radius_y = (
+            (guide_end[1] - guide_start[1]) / combined_height
+            * (scope_bounds[3] - scope_bounds[1])
+        )
+        radius = max(math.hypot(radius_x, radius_y), 1e-9)
+        position = math.hypot(x - center_x, y - center_y) / max(radius, 1e-9)
+        gradient_angle = math.degrees(math.atan2(y - center_y, x - center_x))
+    else:
+        corners = (
+            (scope_bounds[0], scope_bounds[1]), (scope_bounds[2], scope_bounds[1]),
+            (scope_bounds[0], scope_bounds[3]), (scope_bounds[2], scope_bounds[3]),
+        )
+        projections = [px * dx + py * dy for px, py in corners]
+        projection = x * dx + y * dy
+        position = (projection - min(projections)) / max(max(projections) - min(projections), 1e-9)
+        gradient_angle = math.degrees(math.atan2(dy, dx))
+    if region.get("reverse"):
+        position = 1 - position
+    return min(1, max(0, position)), gradient_angle
+
+
+def _painted_flow_controls(x, y, bounds, settings):
+    """Return a painted cell's carrier control and grating angle, if any."""
+    compiled = settings.get("_compiled_fauxlogram_flow")
+    if not compiled:
+        return None
+    min_x, min_y, max_x, max_y = bounds
+    nx = (x - min_x) / max(max_x - min_x, 1e-9)
+    ny = (y - min_y) / max(max_y - min_y, 1e-9)
+    matched = None
+    for stroke in reversed(compiled["strokes"]):
+        if _distance_to_stroke(nx, ny, stroke) <= number(stroke.get("width"), .08, .002, .5) / 2:
+            if stroke.get("erase"):
+                return None
+            matched = stroke
+            break
+    if matched is None:
+        return None
+    region_index = matched.get("region")
+    if not isinstance(region_index, int) or not 0 <= region_index < len(compiled["regions"]):
+        return None
+    region = compiled["regions"][region_index]
+    combined_bounds = compiled["bounds"].get(region_index, (0, 0, 1, 1))
+    scope_bounds = _flow_scope_bounds(region, matched, compiled)
+    position, gradient_angle = _flow_position(nx, ny, region, scope_bounds, combined_bounds)
+    curve = number(region.get("curve"), settings.get("gradient_curve", 1), .2, 5)
+    start = number(region.get("gradient_start"), settings.get("gradient_top", 165), 0, 255)
+    end = number(region.get("gradient_end"), settings.get("gradient_bottom", 90), 0, 255)
+    control = start + (end - start) * (position ** curve)
+    orientation = region.get("orientation", "parallel")
+    if orientation == "perpendicular":
+        angle = gradient_angle + 90
+    elif orientation == "fixed":
+        angle = number(region.get("fixed_angle"), 0, -180, 180)
+    else:
+        angle = gradient_angle + number(region.get("angle_offset"), 0, -180, 180)
+    return control, angle
+
+
 def _line_parts(geometry):
     if geometry.is_empty:
         return []
@@ -801,15 +943,29 @@ def _process_layer_patches(layer_plan, grating_swatches, bounds, settings,
                 center_y = (patch.bounds[1] + patch.bounds[3]) / 2
             else:
                 center_x, center_y = patch.centroid.coords[0]
-            level = _level_at_position(
-                source_hex,
-                center_x,
-                center_y,
-                gradient_bounds,
-                settings,
-                len(grating_swatches),
+            painted = _painted_flow_controls(
+                center_x, center_y, bounds, settings
             )
-            angle = _source_angle(center_x, center_y, bounds, settings)
+            if painted is None:
+                level = _level_at_position(
+                    source_hex,
+                    center_x,
+                    center_y,
+                    gradient_bounds,
+                    settings,
+                    len(grating_swatches),
+                )
+                angle = _source_angle(center_x, center_y, bounds, settings)
+            else:
+                control, angle = painted
+                control = min(
+                    255.0,
+                    max(0.0, control + _hue_offset(source_hex, settings)),
+                )
+                level = min(
+                    len(grating_swatches) - 1,
+                    math.floor(control / 256 * len(grating_swatches)),
+                )
             layer_pieces[grating_swatches[level]].extend(
                 _patch_lines(region, patch, angle, line_spacing)
             )
@@ -832,6 +988,8 @@ def remap_layers(processed_layers, target_colors, settings):
         if callable(progress):
             progress(message)
 
+    settings = dict(settings or {})
+    settings["_compiled_fauxlogram_flow"] = _prepare_fauxlogram_flow(settings)
     bounds = settings.get("_canvas_bounds")
     if not bounds or len(bounds) != 4:
         nonempty = [geometry for geometry in processed_layers.values() if not geometry.is_empty]
