@@ -40,6 +40,11 @@ class ServerlessPaletteMappingEditorTests(unittest.TestCase):
         self.assertIn('Move it to', self.client)
         self.assertIn('library.library_intent==="hatch_palette"?"":mappingPicker', self.client)
 
+    def test_import_reports_automatic_description_repairs(self):
+        self.assertIn("function showImportAdjustments(result", self.client)
+        self.assertIn("duplicate or missing setting description", self.client)
+        self.assertIn("Review and reassign those settings below", self.client)
+
     def test_rename_preserves_explicit_assignment(self):
         function = next(
             node for node in ast.parse(self.handler).body

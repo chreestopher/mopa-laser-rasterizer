@@ -2961,6 +2961,46 @@ def material_summary(contents):
     return {"entry_count": len(entries), "material_names": names, "entries": entries}
 
 
+def normalize_imported_material_descriptions(contents):
+    """Give imported entries stable, unique labels before they reach the editor."""
+    root = ET.fromstring(contents)
+    adjustments = []
+    for material in root.findall("./Material"):
+        used = set()
+        next_suffix = {}
+        for entry_number, entry in enumerate(material.findall("./Entry"), start=1):
+            original = str(entry.get("Desc") or "").strip()
+            base = original or "Unnamed setting"
+            description = base
+            normalized = description.casefold()
+            if normalized in used:
+                suffix = max(2, next_suffix.get(base.casefold(), 2))
+                while True:
+                    suffix_text = f"-{suffix}"
+                    candidate = f"{base[:160 - len(suffix_text)]}{suffix_text}"
+                    if candidate.casefold() not in used:
+                        description = candidate
+                        normalized = candidate.casefold()
+                        next_suffix[base.casefold()] = suffix + 1
+                        break
+                    suffix += 1
+            used.add(normalized)
+            next_suffix.setdefault(base.casefold(), 2)
+            if description == original:
+                continue
+            entry.set("Desc", description)
+            cut = entry.find("./CutSetting")
+            name = cut.find("./name") if cut is not None else None
+            if name is not None and str(name.get("Value") or "").strip().casefold() == original.casefold():
+                name.set("Value", description)
+            adjustments.append({
+                "entry": entry_number,
+                "from": original,
+                "to": description,
+            })
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True), adjustments
+
+
 def retain_selected_material(contents, selected_name):
     root = ET.fromstring(contents)
     if root.tag != "LightBurnLibrary":
@@ -3075,6 +3115,7 @@ def finalize_import(event, import_id):
                     start_angle=pending.get("start_angle"), angular_span=pending.get("angular_span"),
                     first_interval=pending.get("first_interval"), last_interval=pending.get("last_interval"),
                 )
+            contents, import_adjustments = normalize_imported_material_descriptions(contents)
             summary = material_summary(contents)
             filename = pending["filename"]
             destination = f"users/{owner}/materials/{asset_id}/{filename}"
@@ -3084,7 +3125,8 @@ def finalize_import(event, import_id):
                     "library_intent": pending.get("library_intent") or "color_palette",
                     "summary": dynamo_value(summary), "s3_key": destination, "created_at": now}
             response_body = {"material_library": public_library_summary(summary) | {
-                "library_id": asset_id, "name": item["name"], "library_intent": item["library_intent"]}}
+                "library_id": asset_id, "name": item["name"], "library_intent": item["library_intent"]},
+                "import_adjustments": import_adjustments}
         else:
             recipe = json.loads(contents.decode("utf-8"))
             recipes = recipe.get("recipes") if isinstance(recipe, dict) else None

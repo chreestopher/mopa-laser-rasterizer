@@ -57,17 +57,42 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertIn("body.staging-home #materialUpload>label", shared_styles)
         self.assertIn("body.light-machine.staging-home fieldset>legend,body.light-machine.staging-home #statusHeading", shared_styles)
 
-    def test_material_import_reports_exact_description_conflicts_per_material(self):
-        handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
+    def test_material_import_normalizes_duplicate_and_missing_descriptions(self):
+        handler_path = ROOT / "serverless_api" / "handler.py"
+        tree = ast.parse(handler_path.read_text(encoding="utf-8"))
+        functions = [
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name in {
+                "effective_lightburn_settings", "material_summary",
+                "normalize_imported_material_descriptions",
+            }
+        ]
+        namespace = {"ET": ET}
+        exec(compile(ast.Module(body=functions, type_ignores=[]), str(handler_path), "exec"), namespace)
+        library = b'''<LightBurnLibrary><Material name="Steel">
+            <Entry Desc="white"><CutSetting><name Value="white"/></CutSetting></Entry>
+            <Entry Desc="white-2"><CutSetting><name Value="white-2"/></CutSetting></Entry>
+            <Entry Desc="White"><CutSetting><name Value="White"/></CutSetting></Entry>
+            <Entry><CutSetting><name Value="Custom"/></CutSetting></Entry>
+            <Entry><CutSetting><name Value=""/></CutSetting></Entry>
+        </Material></LightBurnLibrary>'''
 
-        self.assertIn('material_label = material_name or "(unnamed material)"', handler)
-        self.assertIn('descriptions = {}', handler)
-        self.assertIn('entry {entry_number} has no Description', handler)
-        self.assertIn("both use Description '{description}'", handler)
-        self.assertIn("unique within each material", handler)
-        self.assertIn("Staging import validation failed", handler)
-        self.assertIn('hashlib.sha256(owner.encode("utf-8")).hexdigest()[:12]', handler)
-        self.assertIn("intent={pending.get('library_intent')}", handler)
+        normalized, adjustments = namespace["normalize_imported_material_descriptions"](library)
+        root = ET.fromstring(normalized)
+        entries = root.findall("./Material/Entry")
+
+        self.assertEqual([entry.get("Desc") for entry in entries], [
+            "white", "white-2", "White-3", "Unnamed setting", "Unnamed setting-2",
+        ])
+        self.assertEqual(entries[2].find("./CutSetting/name").get("Value"), "White-3")
+        self.assertEqual(entries[3].find("./CutSetting/name").get("Value"), "Custom")
+        self.assertEqual(len(adjustments), 3)
+        summary = namespace["material_summary"](normalized)
+        self.assertEqual(summary["entry_count"], 5)
+        self.assertIn(
+            "contents, import_adjustments = normalize_imported_material_descriptions(contents)",
+            handler_path.read_text(encoding="utf-8"),
+        )
 
     def test_material_import_retains_only_the_selected_material(self):
         handler_path = ROOT / "serverless_api" / "handler.py"
