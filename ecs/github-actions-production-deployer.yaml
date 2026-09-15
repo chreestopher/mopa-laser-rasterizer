@@ -1,0 +1,239 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Update-only GitHub OIDC role for existing MOPA Laser Rasterizer production resources.
+
+Parameters:
+  GitHubOwner: {Type: String, Default: chreestopher}
+  GitHubOwnerId: {Type: String, Default: "6197770"}
+  GitHubRepository: {Type: String, Default: mopa-laser-rasterizer}
+  GitHubRepositoryId: {Type: String, Default: "1325278435"}
+  GitHubEnvironment: {Type: String, Default: serverless-production}
+  GitHubOidcProviderArn: {Type: String}
+  RoleName: {Type: String, Default: mopa-rasterizer-github-production-deployer}
+  ArtifactBucketName: {Type: String}
+  StaticBucketName: {Type: String}
+  RuntimeTableName: {Type: String}
+  DistributionId: {Type: String}
+  OriginAccessControlId: {Type: String}
+  ResponseHeadersPolicyId: {Type: String}
+  ApiGatewayId: {Type: String}
+  WorkerExecutionRoleName: {Type: String}
+  WorkerTaskRoleName: {Type: String}
+  PipeRoleName: {Type: String}
+  WorkflowRoleName: {Type: String}
+  ApiRoleName: {Type: String}
+  CognitoUserPoolId: {Type: String}
+
+Resources:
+  ProductionDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      MaxSessionDuration: 7200
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Federated: !Ref GitHubOidcProviderArn}
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOwner}@${GitHubOwnerId}/${GitHubRepository}@${GitHubRepositoryId}:environment:${GitHubEnvironment}
+      Policies:
+        - PolicyName: UpdateExistingServerlessProduction
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadDeploymentContext
+                Effect: Allow
+                Action:
+                  - sts:GetCallerIdentity
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeVpcs
+                  - logs:DescribeLogGroups
+                Resource: "*"
+              - Sid: ReadProductionFoundationOutputs
+                Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/mopa-rasterizer-serverless-production/*
+              - Sid: UpdateExistingProductionStacks
+                Effect: Allow
+                Action:
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:DescribeStacks
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:GetTemplate
+                  - cloudformation:ListStackResources
+                Resource:
+                  - !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/mopa-rasterizer-serverless-production-worker/*
+                  - !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/mopa-rasterizer-serverless-production-orchestration/*
+                  - !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/mopa-rasterizer-serverless-production-web/*
+              - Sid: ValidateTemplates
+                Effect: Allow
+                Action:
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:ValidateTemplate
+                Resource: "*"
+              - Sid: PassExistingProductionRoles
+                Effect: Allow
+                Action:
+                  - iam:GetRole
+                  - iam:PassRole
+                Resource:
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${WorkerExecutionRoleName}
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${WorkerTaskRoleName}
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${PipeRoleName}
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${WorkflowRoleName}
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ApiRoleName}
+              - Sid: UpdateProductionWorkflowInlinePolicy
+                Effect: Allow
+                Action:
+                  - iam:GetRolePolicy
+                  - iam:PutRolePolicy
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${WorkflowRoleName}
+              - Sid: UpdateProductionWorker
+                Effect: Allow
+                Action:
+                  - ecs:DeregisterTaskDefinition
+                  - ecs:DescribeClusters
+                  - ecs:DescribeTaskDefinition
+                  - ecs:TagResource
+                  - ecs:UntagResource
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/mopa-rasterizer-serverless-production
+                  - !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/mopa-rasterizer-serverless-production-worker:*
+              - Sid: RegisterTaskDefinition
+                Effect: Allow
+                Action: ecs:RegisterTaskDefinition
+                Resource: "*"
+              - Sid: UpdateProductionWorkerLogs
+                Effect: Allow
+                Action:
+                  - logs:ListTagsForResource
+                  - logs:PutRetentionPolicy
+                  - logs:TagResource
+                  - logs:UntagResource
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/mopa-rasterizer-serverless-production-worker:*
+              - Sid: UpdateProductionOrchestration
+                Effect: Allow
+                Action:
+                  - pipes:DescribePipe
+                  - pipes:StartPipe
+                  - pipes:StopPipe
+                  - pipes:TagResource
+                  - pipes:UntagResource
+                  - pipes:UpdatePipe
+                  - states:DescribeStateMachine
+                  - states:ListTagsForResource
+                  - states:TagResource
+                  - states:UntagResource
+                  - states:UpdateStateMachine
+                Resource:
+                  - !Sub arn:${AWS::Partition}:pipes:${AWS::Region}:${AWS::AccountId}:pipe/mopa-rasterizer-serverless-production-to-fargate
+                  - !Sub arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:mopa-rasterizer-serverless-production-job
+              - Sid: UpdateProductionApi
+                Effect: Allow
+                Action:
+                  - lambda:AddPermission
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                  - lambda:RemovePermission
+                  - lambda:TagResource
+                  - lambda:UntagResource
+                  - lambda:UpdateFunctionCode
+                  - lambda:UpdateFunctionConfiguration
+                Resource: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:mopa-rasterizer-serverless-production-api
+              - Sid: UpdateProductionApiLogs
+                Effect: Allow
+                Action:
+                  - logs:ListTagsForResource
+                  - logs:PutRetentionPolicy
+                  - logs:TagResource
+                  - logs:UntagResource
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/mopa-rasterizer-serverless-production-api:*
+              - Sid: UpdateExistingProductionHttpApi
+                Effect: Allow
+                Action: apigateway:*
+                Resource:
+                  - !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}::/apis/${ApiGatewayId}
+                  - !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}::/apis/${ApiGatewayId}/*
+              - Sid: UpdateProductionCognitoClient
+                Effect: Allow
+                Action:
+                  - cognito-idp:DescribeUserPoolClient
+                  - cognito-idp:UpdateUserPoolClient
+                Resource: !Sub arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${CognitoUserPoolId}
+              - Sid: UpdateProductionCloudFront
+                Effect: Allow
+                Action:
+                  - cloudfront:CreateInvalidation
+                  - cloudfront:GetDistribution
+                  - cloudfront:GetDistributionConfig
+                  - cloudfront:GetInvalidation
+                  - cloudfront:GetOriginAccessControl
+                  - cloudfront:GetResponseHeadersPolicy
+                  - cloudfront:ListTagsForResource
+                  - cloudfront:TagResource
+                  - cloudfront:UntagResource
+                  - cloudfront:UpdateDistribution
+                  - cloudfront:UpdateOriginAccessControl
+                  - cloudfront:UpdateResponseHeadersPolicy
+                Resource:
+                  - !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${DistributionId}
+                  - !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:origin-access-control/${OriginAccessControlId}
+                  - !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:response-headers-policy/${ResponseHeadersPolicyId}
+              - Sid: PublishProductionStaticAssets
+                Effect: Allow
+                Action:
+                  - s3:GetBucketLocation
+                  - s3:GetBucketPolicy
+                  - s3:ListBucket
+                  - s3:PutBucketPolicy
+                  - s3:PutObject
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::${StaticBucketName}
+                  - !Sub arn:${AWS::Partition}:s3:::${StaticBucketName}/*
+              - Sid: ConfigureProductionArtifactCors
+                Effect: Allow
+                Action:
+                  - s3:GetBucketCors
+                  - s3:PutBucketCors
+                Resource: !Sub arn:${AWS::Partition}:s3:::${ArtifactBucketName}
+              - Sid: ReadProductionLambdaDeploymentPackages
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub arn:${AWS::Partition}:s3:::${StaticBucketName}/web-deploy/*
+              - Sid: MaintainProductionJobTtl
+                Effect: Allow
+                Action:
+                  - dynamodb:DescribeTable
+                  - dynamodb:DescribeTimeToLive
+                  - dynamodb:Scan
+                  - dynamodb:UpdateTimeToLive
+                Resource: !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RuntimeTableName}
+              - Sid: PublishProductionWorkerImages
+                Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:CompleteLayerUpload
+                  - ecr:DescribeImages
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:InitiateLayerUpload
+                  - ecr:PutImage
+                  - ecr:UploadLayerPart
+                Resource: !Sub arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/mopa-laser-rasterizer
+              - Sid: AuthenticateToEcr
+                Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+
+Outputs:
+  RoleArn:
+    Description: Configure this as the AWS_PRODUCTION_DEPLOY_ROLE_ARN GitHub environment variable.
+    Value: !GetAtt ProductionDeployRole.Arn
