@@ -2,8 +2,21 @@
 # Shared fail-closed checks for production serverless deployment entry points.
 
 serverless_production_guard() {
-  local repo_root expected_commit actual_commit dirty untracked
+  local repo_root expected_commit actual_commit current_branch dirty untracked
   repo_root="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
+
+  if [ "${GITHUB_ACTIONS:-false}" = "true" ]; then
+    [ "${GITHUB_REF:-}" = "refs/heads/main" ] || {
+      echo "Refusing production deployment from a GitHub ref other than main." >&2
+      return 2
+    }
+  else
+    current_branch="$(git -C "$repo_root" symbolic-ref --quiet --short HEAD || true)"
+    [ "$current_branch" = "main" ] || {
+      echo "Refusing production deployment from a local branch other than main." >&2
+      return 2
+    }
+  fi
 
   [ -n "${SERVERLESS_PRODUCTION_RELEASE_COMMIT:-}" ] || {
     echo "SERVERLESS_PRODUCTION_RELEASE_COMMIT is required." >&2
