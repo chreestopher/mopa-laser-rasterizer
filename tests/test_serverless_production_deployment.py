@@ -40,6 +40,8 @@ def test_production_enables_selective_job_ttl_with_durable_asset_guard():
     ttl = read("dev_setup/ensure_dynamodb_job_ttl.sh")
 
     assert 'ensure_dynamodb_job_ttl.sh" --apply "$DYNAMODB_TABLE_NAME"' in production
+    assert "configure_aws_deployment_credentials" in ttl
+    assert 'export AWS_PROFILE="${DEPLOY_AWS_PROFILE:-mopa-admin}"' not in ttl
     assert 'TTL_ATTRIBUTE="expires_at"' in ttl
     assert "begins_with(#sk,:material)" in ttl
     assert "begins_with(#sk,:depth)" in ttl

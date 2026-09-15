@@ -12,7 +12,7 @@ if [ "${1:-}" != "--apply" ]; then
 fi
 
 REGION="${AWS_REGION:-us-east-2}"
-export AWS_PROFILE="${DEPLOY_AWS_PROFILE:-mopa-admin}"
+configure_aws_deployment_credentials
 TABLE_NAME="${2:-${DYNAMODB_TABLE_NAME:-}}"
 TTL_ATTRIBUTE="expires_at"
 
