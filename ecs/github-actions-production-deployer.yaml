@@ -90,12 +90,14 @@ Resources:
                   - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${PipeRoleName}
                   - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${WorkflowRoleName}
                   - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ApiRoleName}
-              - Sid: UpdateProductionWorkflowInlinePolicy
+              - Sid: UpdateProductionInlinePolicies
                 Effect: Allow
                 Action:
                   - iam:GetRolePolicy
                   - iam:PutRolePolicy
-                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${WorkflowRoleName}
+                Resource:
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${WorkflowRoleName}
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ApiRoleName}
               - Sid: UpdateProductionWorker
                 Effect: Allow
                 Action:
