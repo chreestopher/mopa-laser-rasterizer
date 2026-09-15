@@ -1,0 +1,30 @@
+name: Require staging promotion
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+permissions:
+  contents: read
+
+jobs:
+  require-staging-source:
+    name: Production changes came through staging
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require the staging branch as the pull request source
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          TARGET_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "${HEAD_REPOSITORY}" != "${TARGET_REPOSITORY}" || "${HEAD_REF}" != "staging" ]]; then
+            echo "::error::Production pull requests must originate from this repository's protected staging branch."
+            exit 1
+          fi

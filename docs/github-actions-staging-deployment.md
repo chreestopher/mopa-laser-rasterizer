@@ -43,13 +43,23 @@ and require the audience `sts.amazonaws.com`.
 
 ## Running a deployment
 
-Open **Actions → Deploy serverless staging → Run workflow**, select the Git revision and one target:
+Merging a pull request into the protected `staging` branch automatically deploys a complete staging release. For a targeted or repeat deployment, open **Actions → Deploy serverless staging → Run workflow**, select the Git revision and one target:
 
 - `web-api`: Lambda API, static frontend, documentation, and media.
 - `worker`: worker image and orchestration task reference.
 - `release`: existing worker/orchestration resources followed by the API and frontend.
 
 Only one staging deployment runs at a time. A queued run will not cancel an active deployment. Every run validates shell syntax and passes the regression suite before AWS credentials are requested.
+
+## Production promotion policy
+
+All production changes must pass through staging. Develop on a feature branch, open a pull request into the protected `staging` branch, and complete staging acceptance after the automatic deployment succeeds. Production promotion is a pull request from `staging` to the protected `main` branch.
+
+The `Require staging promotion` workflow rejects a pull request into `main` when its source is anything other than this repository's `staging` branch. Configure the `main` ruleset to require its **Production changes came through staging** status check, require a pull request, block force pushes and deletions, and disallow bypass for normal development. Configure the `staging` ruleset to require pull requests and staging test checks while blocking force pushes and deletions.
+
+If an emergency production correction is ever merged to `main`, immediately merge `main` back into `staging` before accepting more feature work. This keeps the environments from drifting.
+
+The workstation production scripts remain available for AWS SSO deployment, but their fail-closed guard permits production deployment only from a clean local checkout of `main` at the explicitly supplied release commit. A GitHub-hosted production workflow is similarly restricted to `refs/heads/main`. Because the protected `main` ruleset accepts changes only through the required staging-promotion check, both deployment paths consume code that followed the same promotion route.
 
 The GitHub path deliberately does not create foundational infrastructure, create or delete application IAM roles, delete staging objects, modify the shared ECR repository or lifecycle policy, update Cognito, or apply managed-login branding. It can update only the existing staging workflow role's inline policy because each immutable worker task-definition revision changes that policy's `ecs:RunTask` resource. It publishes worker images to a staging-only ECR repository. Structural infrastructure changes, cleanup operations, identity changes, and account-level maintenance remain available from the workstation path.
 

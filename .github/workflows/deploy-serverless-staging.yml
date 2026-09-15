@@ -1,6 +1,9 @@
 name: Deploy serverless staging
 
 on:
+  push:
+    branches:
+      - staging
   workflow_dispatch:
     inputs:
       target:
@@ -92,15 +95,15 @@ jobs:
           aws sts get-caller-identity
 
       - name: Deploy web and API
-        if: inputs.target == 'web-api'
+        if: github.event_name == 'workflow_dispatch' && inputs.target == 'web-api'
         run: bash dev_setup/deploy_serverless_staging_web.sh
 
       - name: Deploy worker
-        if: inputs.target == 'worker'
+        if: github.event_name == 'workflow_dispatch' && inputs.target == 'worker'
         run: bash dev_setup/deploy_serverless_staging_worker_only.sh
 
       - name: Deploy staging release
-        if: inputs.target == 'release'
+        if: github.event_name == 'push' || inputs.target == 'release'
         run: bash dev_setup/deploy_serverless_staging_release.sh
 
       - name: Verify staging endpoint

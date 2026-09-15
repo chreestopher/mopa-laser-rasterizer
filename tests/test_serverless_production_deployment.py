@@ -16,6 +16,9 @@ def test_production_deployment_requires_explicit_apply_and_clean_release():
     assert '"${1:-}" != "--apply"' in worker
     assert '"${1:-}" != "--apply"' in web
     assert "SERVERLESS_PRODUCTION_RELEASE_COMMIT" in guard
+    assert '"${GITHUB_REF:-}" = "refs/heads/main"' in guard
+    assert '"$current_branch" = "main"' in guard
+    assert "Refusing production deployment from a local branch other than main" in guard
     assert "git -C \"$repo_root\" status --porcelain --untracked-files=all" in guard
     assert "git -C \"$repo_root\" ls-files --others --exclude-standard" in guard
     assert "git -C \"$repo_root\" diff --cached --quiet" in guard
