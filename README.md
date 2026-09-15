@@ -128,6 +128,8 @@ Worker lease and recovery timing can be tuned with `RASTER_JOB_LEASE_SECONDS`, `
 
 Production infrastructure and deployment instructions are maintained in [README-K8S.md](README-K8S.md).
 
+Serverless staging can be deployed either from a workstation with AWS SSO or manually through GitHub Actions. See [GitHub Actions staging deployment](docs/github-actions-staging-deployment.md) for the dual-authentication setup and required staging environment values.
+
 ## Project structure
 
 ```text

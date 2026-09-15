@@ -1,0 +1,203 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Update-only GitHub OIDC role for existing MOPA Laser Rasterizer staging resources.
+
+Parameters:
+  GitHubOwner: {Type: String, Default: chreestopher}
+  GitHubRepository: {Type: String, Default: mopa-laser-rasterizer}
+  GitHubEnvironment: {Type: String, Default: serverless-staging}
+  RoleName: {Type: String, Default: mopa-rasterizer-github-staging-deployer}
+  ArtifactBucketName: {Type: String}
+  DistributionId: {Type: String}
+  OriginAccessControlId: {Type: String}
+  ResponseHeadersPolicyId: {Type: String}
+  ApiGatewayId: {Type: String}
+  WorkerExecutionRoleName: {Type: String}
+  WorkerTaskRoleName: {Type: String}
+  PipeRoleName: {Type: String}
+  WorkflowRoleName: {Type: String}
+  ApiRoleName: {Type: String}
+
+Resources:
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+      # AWS validates GitHub through its trusted CA library; IAM retains this
+      # compatibility value but does not use it for this provider.
+      ThumbprintList: [6938fd4d98bab03faadb97b34396831e3780aea1]
+
+  StagingDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      MaxSessionDuration: 7200
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Federated: !Ref GitHubOidcProvider}
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOwner}/${GitHubRepository}:environment:${GitHubEnvironment}
+      Policies:
+        - PolicyName: UpdateExistingServerlessStaging
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadDeploymentContext
+                Effect: Allow
+                Action:
+                  - sts:GetCallerIdentity
+                  - ec2:DescribeSubnets
+                  - acm:ListCertificates
+                  - logs:DescribeLogGroups
+                Resource: "*"
+              - Sid: UpdateExistingStagingStacks
+                Effect: Allow
+                Action:
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:DescribeStacks
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:GetTemplate
+                  - cloudformation:ListStackResources
+                Resource:
+                  - !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/mopa-rasterizer-serverless-staging-worker/*
+                  - !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/mopa-rasterizer-serverless-staging-orchestration/*
+                  - !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/mopa-rasterizer-serverless-staging-web/*
+              - Sid: ValidateTemplates
+                Effect: Allow
+                Action:
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:ValidateTemplate
+                Resource: "*"
+              - Sid: UpdateExistingStagingRoles
+                Effect: Allow
+                Action:
+                  - iam:GetRole
+                  - iam:PassRole
+                Resource:
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${WorkerExecutionRoleName}
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${WorkerTaskRoleName}
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${PipeRoleName}
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${WorkflowRoleName}
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ApiRoleName}
+              - Sid: UpdateStagingWorker
+                Effect: Allow
+                Action:
+                  - ecs:DeregisterTaskDefinition
+                  - ecs:DescribeClusters
+                  - ecs:DescribeTaskDefinition
+                  - ecs:TagResource
+                  - ecs:UntagResource
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/mopa-rasterizer-serverless-staging
+                  - !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/mopa-rasterizer-serverless-staging-worker:*
+              - Sid: RegisterTaskDefinition
+                Effect: Allow
+                Action: ecs:RegisterTaskDefinition
+                Resource: "*"
+              - Sid: UpdateWorkerLogs
+                Effect: Allow
+                Action:
+                  - logs:ListTagsForResource
+                  - logs:PutRetentionPolicy
+                  - logs:TagResource
+                  - logs:UntagResource
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/mopa-rasterizer-serverless-staging-worker:*
+              - Sid: UpdateStagingOrchestration
+                Effect: Allow
+                Action:
+                  - pipes:DescribePipe
+                  - pipes:StartPipe
+                  - pipes:StopPipe
+                  - pipes:TagResource
+                  - pipes:UntagResource
+                  - pipes:UpdatePipe
+                  - states:DescribeStateMachine
+                  - states:ListTagsForResource
+                  - states:TagResource
+                  - states:UntagResource
+                  - states:UpdateStateMachine
+                Resource:
+                  - !Sub arn:${AWS::Partition}:pipes:${AWS::Region}:${AWS::AccountId}:pipe/mopa-rasterizer-serverless-staging-to-fargate
+                  - !Sub arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:mopa-rasterizer-serverless-staging-job
+              - Sid: UpdateStagingApi
+                Effect: Allow
+                Action:
+                  - lambda:AddPermission
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                  - lambda:RemovePermission
+                  - lambda:TagResource
+                  - lambda:UntagResource
+                  - lambda:UpdateFunctionCode
+                  - lambda:UpdateFunctionConfiguration
+                Resource: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:mopa-rasterizer-serverless-staging-api
+              - Sid: UpdateExistingStagingHttpApi
+                Effect: Allow
+                Action: apigateway:*
+                Resource:
+                  - !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}::/apis/${ApiGatewayId}
+                  - !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}::/apis/${ApiGatewayId}/*
+              - Sid: UpdateStagingCloudFront
+                Effect: Allow
+                Action:
+                  - cloudfront:CreateInvalidation
+                  - cloudfront:DescribeFunction
+                  - cloudfront:GetDistribution
+                  - cloudfront:GetDistributionConfig
+                  - cloudfront:GetFunction
+                  - cloudfront:GetInvalidation
+                  - cloudfront:GetOriginAccessControl
+                  - cloudfront:GetResponseHeadersPolicy
+                  - cloudfront:ListTagsForResource
+                  - cloudfront:PublishFunction
+                  - cloudfront:TagResource
+                  - cloudfront:UntagResource
+                  - cloudfront:UpdateDistribution
+                  - cloudfront:UpdateFunction
+                  - cloudfront:UpdateOriginAccessControl
+                  - cloudfront:UpdateResponseHeadersPolicy
+                Resource:
+                  - !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${DistributionId}
+                  - !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:function/mopa-rasterizer-serverless-staging-access-gate
+                  - !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:origin-access-control/${OriginAccessControlId}
+                  - !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:response-headers-policy/${ResponseHeadersPolicyId}
+              - Sid: PublishStagingStaticAssets
+                Effect: Allow
+                Action:
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                  - s3:PutObject
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::${ArtifactBucketName}
+                  - !Sub arn:${AWS::Partition}:s3:::${ArtifactBucketName}/*
+              - Sid: PublishStagingWorkerImages
+                Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:CompleteLayerUpload
+                  - ecr:DescribeImages
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:InitiateLayerUpload
+                  - ecr:PutImage
+                  - ecr:UploadLayerPart
+                Resource: !Sub arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/mopa-laser-rasterizer-staging
+              - Sid: AuthenticateToEcr
+                Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+
+Outputs:
+  RoleArn:
+    Description: Configure this as the AWS_STAGING_DEPLOY_ROLE_ARN GitHub environment variable.
+    Value: !GetAtt StagingDeployRole.Arn
+  OidcProviderArn: {Value: !Ref GitHubOidcProvider}

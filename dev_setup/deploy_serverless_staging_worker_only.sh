@@ -6,7 +6,7 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/load-aws-env.sh"
 REGION="${AWS_REGION:-us-east-2}"
-export AWS_PROFILE="${DEPLOY_AWS_PROFILE:-mopa-admin}"
+configure_aws_deployment_credentials
 WORKER_STACK="mopa-rasterizer-serverless-staging-worker"
 ORCHESTRATION_STACK="mopa-rasterizer-serverless-staging-orchestration"
 REPOSITORY="${ECR_REPOSITORY:-mopa-laser-rasterizer}"
