@@ -27,6 +27,7 @@ esac
 
 export SERVERLESS_ENVIRONMENT_LABEL="Serverless production"
 export SERVERLESS_FOUNDATION_STACK="${SERVERLESS_PRODUCTION_FOUNDATION_STACK:-mopa-rasterizer-serverless-production}"
+export SERVERLESS_WORKER_STACK="${SERVERLESS_PRODUCTION_WORKER_STACK:-mopa-rasterizer-serverless-production-worker}"
 export SERVERLESS_ORCHESTRATION_STACK="${SERVERLESS_PRODUCTION_ORCHESTRATION_STACK:-mopa-rasterizer-serverless-production-orchestration}"
 export SERVERLESS_WEB_STACK="${SERVERLESS_PRODUCTION_WEB_STACK:-mopa-rasterizer-serverless-production-web}"
 export SERVERLESS_DEPLOYMENT_NAME="${SERVERLESS_PRODUCTION_DEPLOYMENT_NAME:-mopa-rasterizer-serverless-production}"
