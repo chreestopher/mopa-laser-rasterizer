@@ -9,7 +9,8 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/load-aws-env.sh"
 
 REGION="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-2}}"
-PROFILE="${DEPLOY_AWS_PROFILE:-${AWS_PROFILE:-}}"
+configure_aws_deployment_credentials
+PROFILE="${AWS_PROFILE:-}"
 USER_POOL_ID="${COGNITO_USER_POOL_ID:-${COGNITO_POOL_ID:-}}"
 COGNITO_DOMAIN_VALUE="${COGNITO_DOMAIN:-}"
 DOMAIN_PREFIX="${COGNITO_DOMAIN_PREFIX:-}"
@@ -34,18 +35,26 @@ require_value() {
   fi
 }
 
-require_value "DEPLOY_AWS_PROFILE (or AWS_PROFILE)" "$PROFILE"
 require_value "COGNITO_POOL_ID (or COGNITO_USER_POOL_ID)" "$USER_POOL_ID"
 require_value "COGNITO_DOMAIN (or COGNITO_DOMAIN_PREFIX)" "$DOMAIN_PREFIX"
-require_value "COGNITO_CLIENT_ID (or COGNITO_PRODUCTION_CLIENT_ID)" "$PRODUCTION_CLIENT_ID"
-require_value "COGNITO_STAGING_CLIENT_ID (or the first command argument)" "$STAGING_CLIENT_ID"
+if [[ "${COGNITO_APPLY_PRODUCTION_BRANDING:-true}" == "true" ]]; then
+  require_value "COGNITO_CLIENT_ID (or COGNITO_PRODUCTION_CLIENT_ID)" "$PRODUCTION_CLIENT_ID"
+fi
+if [[ "${COGNITO_APPLY_STAGING_BRANDING:-true}" == "true" ]]; then
+  require_value "COGNITO_STAGING_CLIENT_ID (or the first command argument)" "$STAGING_CLIENT_ID"
+fi
 
-aws_args=(--profile "$PROFILE" --region "$REGION")
+aws_args=(--region "$REGION")
+if [[ -n "$PROFILE" ]]; then
+  aws_args=(--profile "$PROFILE" "${aws_args[@]}")
+fi
 
-aws cognito-idp update-user-pool-domain "${aws_args[@]}" \
-  --user-pool-id "$USER_POOL_ID" \
-  --domain "$DOMAIN_PREFIX" \
-  --managed-login-version 2 >/dev/null
+if [[ "${COGNITO_UPDATE_DOMAIN:-true}" == "true" ]]; then
+  aws cognito-idp update-user-pool-domain "${aws_args[@]}" \
+    --user-pool-id "$USER_POOL_ID" \
+    --domain "$DOMAIN_PREFIX" \
+    --managed-login-version 2 >/dev/null
+fi
 
 apply_client_branding() {
   local client_id="$1"
@@ -72,13 +81,21 @@ apply_client_branding() {
   echo "Managed login branding applied to client $client_id ($branding_id)"
 }
 
-if aws cognito-idp describe-user-pool-client "${aws_args[@]}" \
-    --user-pool-id "$USER_POOL_ID" --client-id "$PRODUCTION_CLIENT_ID" >/dev/null 2>&1; then
-  apply_client_branding "$PRODUCTION_CLIENT_ID"
-else
-  echo "Skipping stale Cognito production client ID; client no longer exists."
+if [[ "${COGNITO_APPLY_PRODUCTION_BRANDING:-true}" == "true" ]]; then
+  if aws cognito-idp describe-user-pool-client "${aws_args[@]}" \
+      --user-pool-id "$USER_POOL_ID" --client-id "$PRODUCTION_CLIENT_ID" >/dev/null 2>&1; then
+    apply_client_branding "$PRODUCTION_CLIENT_ID"
+  else
+    echo "Skipping stale Cognito production client ID; client no longer exists."
+  fi
 fi
-apply_client_branding "$STAGING_CLIENT_ID"
+if [[ "${COGNITO_APPLY_STAGING_BRANDING:-true}" == "true" ]]; then
+  apply_client_branding "$STAGING_CLIENT_ID"
+fi
 
 echo "Cognito domain $DOMAIN_PREFIX is using managed login version 2."
-echo "Rollback command: aws cognito-idp update-user-pool-domain --profile $PROFILE --region $REGION --user-pool-id $USER_POOL_ID --domain $DOMAIN_PREFIX --managed-login-version 1"
+if [[ -n "$PROFILE" ]]; then
+  echo "Rollback command: aws cognito-idp update-user-pool-domain --profile $PROFILE --region $REGION --user-pool-id $USER_POOL_ID --domain $DOMAIN_PREFIX --managed-login-version 1"
+else
+  echo "Rollback command: aws cognito-idp update-user-pool-domain --region $REGION --user-pool-id $USER_POOL_ID --domain $DOMAIN_PREFIX --managed-login-version 1"
+fi

@@ -7,7 +7,7 @@ REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/load-aws-env.sh"
 
 REGION="${AWS_REGION:-us-east-2}"
-export AWS_PROFILE="${DEPLOY_AWS_PROFILE:-mopa-admin}"
+configure_aws_deployment_credentials
 ENVIRONMENT_NAME="${SERVERLESS_ENVIRONMENT_NAME:-serverless-staging}"
 ENVIRONMENT_LABEL="${SERVERLESS_ENVIRONMENT_LABEL:-Serverless staging}"
 FOUNDATION_STACK="${SERVERLESS_FOUNDATION_STACK:-${SERVERLESS_STAGING_FOUNDATION_STACK:-mopa-rasterizer-serverless-staging}}"
@@ -96,9 +96,11 @@ LIFECYCLE_POLICY="$SCRIPT_DIR/ecr-lifecycle-policy.json"
 # Reconcile separate production and staging retention pools before publishing
 # a staging image. This prevents frequent staging builds from expiring an image
 # still referenced by a production ECS task definition or k3s deployment.
-aws ecr put-lifecycle-policy --region "$REGION" \
-  --repository-name "$REPOSITORY" \
-  --lifecycle-policy-text "file://${LIFECYCLE_POLICY}" >/dev/null
+if [ "${SERVERLESS_RECONCILE_ECR_LIFECYCLE:-true}" = "true" ]; then
+  aws ecr put-lifecycle-policy --region "$REGION" \
+    --repository-name "$REPOSITORY" \
+    --lifecycle-policy-text "file://${LIFECYCLE_POLICY}" >/dev/null
+fi
 
 if [ -n "${SERVERLESS_IMAGE_URI:-${SERVERLESS_STAGING_IMAGE_URI:-}}" ]; then
   IMAGE_URI="${SERVERLESS_IMAGE_URI:-$SERVERLESS_STAGING_IMAGE_URI}"

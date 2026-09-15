@@ -6,7 +6,7 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/load-aws-env.sh"
 REGION="${AWS_REGION:-us-east-2}"
-export AWS_PROFILE="${DEPLOY_AWS_PROFILE:-mopa-admin}"
+configure_aws_deployment_credentials
 ENVIRONMENT_LABEL="${SERVERLESS_ENVIRONMENT_LABEL:-Serverless staging}"
 FOUNDATION_STACK="${SERVERLESS_FOUNDATION_STACK:-${SERVERLESS_STAGING_FOUNDATION_STACK:-mopa-rasterizer-serverless-staging}}"
 WORKER_STACK="${SERVERLESS_WORKER_STACK:-${SERVERLESS_STAGING_WORKER_STACK:-mopa-rasterizer-serverless-staging-worker}}"
@@ -211,8 +211,10 @@ aws s3 cp "$BUILD_DIR/docs/" "s3://$STATIC_BUCKET/web/docs/" --recursive --exclu
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
 # Explicitly remove retired documentation routes. Recursive copy does not delete
 # objects that are no longer present in the generated documentation catalog.
-aws s3 rm "s3://$STATIC_BUCKET/web/docs/glyph-mosaic-filter" \
-  --region "$REGION" --only-show-errors
+if [ "${SERVERLESS_REMOVE_RETIRED_DOCS:-true}" = "true" ]; then
+  aws s3 rm "s3://$STATIC_BUCKET/web/docs/glyph-mosaic-filter" \
+    --region "$REGION" --only-show-errors
+fi
 aws s3 cp "$REPO_ROOT/static/docs/" "s3://$STATIC_BUCKET/web/static/docs/" --recursive \
   --region "$REGION" --cache-control no-cache --only-show-errors
 aws s3 cp "$BUILD_DIR/config.json" "s3://$STATIC_BUCKET/web/config.json" \

@@ -1,0 +1,110 @@
+name: Deploy serverless staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Staging components to deploy
+        required: true
+        default: release
+        type: choice
+        options:
+          - web-api
+          - worker
+          - release
+
+permissions:
+  contents: read
+
+concurrency:
+  group: serverless-staging-deployment
+  cancel-in-progress: false
+
+jobs:
+  test-and-deploy:
+    name: Test and deploy staging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment:
+      name: serverless-staging
+      url: https://serverless-staging.mopa-laser-rasterizer.com/
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-2' }}
+      COGNITO_POOL_ID: ${{ vars.COGNITO_POOL_ID }}
+      COGNITO_DOMAIN: ${{ vars.COGNITO_DOMAIN }}
+      IDENTITY_CENTER_ADMIN_EMAIL: ${{ vars.IDENTITY_CENTER_ADMIN_EMAIL }}
+      SERVERLESS_STAGING_ACCESS_GATE_AUTHORIZATION: ${{ secrets.SERVERLESS_STAGING_ACCESS_GATE_AUTHORIZATION }}
+      SERVERLESS_STAGING_ALLOWED_USER_SUB: ${{ vars.SERVERLESS_STAGING_ALLOWED_USER_SUB }}
+      SERVERLESS_STAGING_GUEST_ACCESS_ENABLED: ${{ vars.SERVERLESS_STAGING_GUEST_ACCESS_ENABLED || 'false' }}
+      SERVERLESS_STAGING_HOSTNAME: ${{ vars.SERVERLESS_STAGING_HOSTNAME }}
+      SERVERLESS_STAGING_CERTIFICATE_ARN: ${{ vars.SERVERLESS_STAGING_CERTIFICATE_ARN }}
+      SERVERLESS_RECONCILE_ECR_LIFECYCLE: "false"
+      SERVERLESS_REMOVE_RETIRED_DOCS: "false"
+      ECR_REPOSITORY: mopa-laser-rasterizer-staging
+      COGNITO_UPDATE_DOMAIN: "false"
+      COGNITO_APPLY_PRODUCTION_BRANDING: "false"
+      COGNITO_APPLY_STAGING_BRANDING: "false"
+
+    steps:
+      - name: Check out selected revision
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install native dependencies
+        run: sudo apt-get update && sudo apt-get install --yes libagg-dev libpotrace-dev pkg-config
+
+      - name: Install Python dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements-dev.txt
+
+      - name: Validate deployment scripts
+        run: >-
+          bash -n
+          dev_setup/load-aws-env.sh
+          dev_setup/apply_cognito_managed_branding.sh
+          dev_setup/deploy_serverless_staging.sh
+          dev_setup/deploy_serverless_staging_web.sh
+          dev_setup/deploy_serverless_staging_worker_only.sh
+          dev_setup/deploy_serverless_staging_release.sh
+
+      - name: Run regression tests
+        run: python -m unittest discover -s tests
+
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.4
+        with:
+          role-to-assume: ${{ vars.AWS_STAGING_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-staging-deploy-${{ github.run_id }}
+          allowed-account-ids: "401716294893"
+
+      - name: Verify staging deployment identity
+        run: |
+          set -euo pipefail
+          test -n "${{ vars.AWS_STAGING_DEPLOY_ROLE_ARN }}"
+          aws sts get-caller-identity
+
+      - name: Deploy web and API
+        if: inputs.target == 'web-api'
+        run: bash dev_setup/deploy_serverless_staging_web.sh
+
+      - name: Deploy worker
+        if: inputs.target == 'worker'
+        run: bash dev_setup/deploy_serverless_staging_worker_only.sh
+
+      - name: Deploy staging release
+        if: inputs.target == 'release'
+        run: bash dev_setup/deploy_serverless_staging_release.sh
+
+      - name: Verify staging endpoint
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --head --max-time 30 \
+            https://serverless-staging.mopa-laser-rasterizer.com/ >/dev/null
