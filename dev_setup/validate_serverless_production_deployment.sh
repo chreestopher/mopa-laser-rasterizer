@@ -12,8 +12,10 @@ scripts=(
   "$SCRIPT_DIR/deploy_serverless_production.sh"
   "$SCRIPT_DIR/deploy_serverless_production_web.sh"
   "$SCRIPT_DIR/deploy_serverless_production_application.sh"
+  "$SCRIPT_DIR/deploy_serverless_production_release.sh"
   "$SCRIPT_DIR/ensure_dynamodb_job_ttl.sh"
   "$SCRIPT_DIR/inspect_serverless_production_readiness.sh"
+  "$SCRIPT_DIR/deploy_github_actions_production_deployer.sh"
 )
 for script in "${scripts[@]}"; do
   bash -n "$script"
@@ -45,6 +47,7 @@ for template_path in (
     root / "ecs/serverless-staging-web.yaml",
     root / "ecs/rasterizer-worker.yaml",
     root / "ecs/rasterizer-orchestration.yaml",
+    root / "ecs/github-actions-production-deployer.yaml",
 ):
     with template_path.open(encoding="utf-8") as stream:
         template = yaml.load(stream, Loader=CloudFormationLoader)
@@ -56,6 +59,7 @@ foundation = (root / "ecs/serverless-production-foundation.yaml").read_text(enco
 web = (root / "ecs/serverless-staging-web.yaml").read_text(encoding="utf-8")
 worker = (root / "dev_setup/deploy_serverless_production.sh").read_text(encoding="utf-8")
 application = (root / "dev_setup/deploy_serverless_production_application.sh").read_text(encoding="utf-8")
+release = (root / "dev_setup/deploy_serverless_production_release.sh").read_text(encoding="utf-8")
 
 checks = {
     "production foundation reuses named durable stores": (
@@ -74,6 +78,10 @@ checks = {
     "application deployment is sequential": (
         application.index("deploy_serverless_production.sh")
         < application.index("deploy_serverless_production_web.sh")
+    ),
+    "CI release excludes account-level cost guard": (
+        "deploy_serverless_cost_guard.sh" not in release
+        and "SERVERLESS_SKIP_FOUNDATION_DEPLOY=true" in release
     ),
 }
 failed = [name for name, passed in checks.items() if not passed]
