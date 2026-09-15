@@ -3,7 +3,9 @@ Description: Update-only GitHub OIDC role for existing MOPA Laser Rasterizer sta
 
 Parameters:
   GitHubOwner: {Type: String, Default: chreestopher}
+  GitHubOwnerId: {Type: String, Default: "6197770"}
   GitHubRepository: {Type: String, Default: mopa-laser-rasterizer}
+  GitHubRepositoryId: {Type: String, Default: "1325278435"}
   GitHubEnvironment: {Type: String, Default: serverless-staging}
   RoleName: {Type: String, Default: mopa-rasterizer-github-staging-deployer}
   ArtifactBucketName: {Type: String}
@@ -41,7 +43,7 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOwner}/${GitHubRepository}:environment:${GitHubEnvironment}
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOwner}@${GitHubOwnerId}/${GitHubRepository}@${GitHubRepositoryId}:environment:${GitHubEnvironment}
       Policies:
         - PolicyName: UpdateExistingServerlessStaging
           PolicyDocument:
@@ -51,7 +53,9 @@ Resources:
                 Effect: Allow
                 Action:
                   - sts:GetCallerIdentity
+                  - ec2:DescribeSecurityGroups
                   - ec2:DescribeSubnets
+                  - ec2:DescribeVpcs
                   - acm:ListCertificates
                   - logs:DescribeLogGroups
                 Resource: "*"
@@ -77,6 +81,10 @@ Resources:
                   - cloudformation:GetTemplateSummary
                   - cloudformation:ValidateTemplate
                 Resource: "*"
+              - Sid: ReadStagingFoundationOutputs
+                Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/mopa-rasterizer-serverless-staging/*
               - Sid: UpdateExistingStagingRoles
                 Effect: Allow
                 Action:
@@ -88,6 +96,12 @@ Resources:
                   - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${PipeRoleName}
                   - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${WorkflowRoleName}
                   - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ApiRoleName}
+              - Sid: UpdateStagingWorkflowInlinePolicy
+                Effect: Allow
+                Action:
+                  - iam:GetRolePolicy
+                  - iam:PutRolePolicy
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${WorkflowRoleName}
               - Sid: UpdateStagingWorker
                 Effect: Allow
                 Action:
@@ -179,6 +193,10 @@ Resources:
                 Resource:
                   - !Sub arn:${AWS::Partition}:s3:::${ArtifactBucketName}
                   - !Sub arn:${AWS::Partition}:s3:::${ArtifactBucketName}/*
+              - Sid: ReadStagingLambdaDeploymentPackages
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub arn:${AWS::Partition}:s3:::${ArtifactBucketName}/web-deploy/*
               - Sid: PublishStagingWorkerImages
                 Effect: Allow
                 Action:

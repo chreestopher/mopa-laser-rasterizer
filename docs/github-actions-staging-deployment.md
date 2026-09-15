@@ -31,10 +31,12 @@ Secret:
 
 - `SERVERLESS_STAGING_ACCESS_GATE_AUTHORIZATION`
 
-The AWS role trust policy must restrict the GitHub OIDC subject to:
+Store only the Base64-encoded `username:password` payload in this secret. Do not include the `Basic ` authentication-scheme prefix; the deployment template and endpoint verification add that prefix where required.
+
+This repository uses GitHub's immutable owner and repository IDs in its customized OIDC subject. The AWS role trust policy must restrict the subject to:
 
 ```text
-repo:chreestopher/mopa-laser-rasterizer:environment:serverless-staging
+repo:chreestopher@6197770/mopa-laser-rasterizer@1325278435:environment:serverless-staging
 ```
 
 and require the audience `sts.amazonaws.com`.
@@ -49,7 +51,7 @@ Open **Actions → Deploy serverless staging → Run workflow**, select the Git 
 
 Only one staging deployment runs at a time. A queued run will not cancel an active deployment. Every run validates shell syntax and passes the regression suite before AWS credentials are requested.
 
-The GitHub path deliberately does not create foundational infrastructure, mutate application IAM policies, delete staging objects, modify the shared ECR repository or lifecycle policy, update Cognito, or apply managed-login branding. It publishes worker images to a staging-only ECR repository. Structural infrastructure changes, cleanup operations, identity changes, and account-level maintenance remain available from the workstation path.
+The GitHub path deliberately does not create foundational infrastructure, create or delete application IAM roles, delete staging objects, modify the shared ECR repository or lifecycle policy, update Cognito, or apply managed-login branding. It can update only the existing staging workflow role's inline policy because each immutable worker task-definition revision changes that policy's `ecs:RunTask` resource. It publishes worker images to a staging-only ECR repository. Structural infrastructure changes, cleanup operations, identity changes, and account-level maintenance remain available from the workstation path.
 
 ## Workstation fallback
 
