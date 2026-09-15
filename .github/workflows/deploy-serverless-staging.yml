@@ -107,5 +107,5 @@ jobs:
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --head --max-time 30 \
-            --header "Authorization: ${SERVERLESS_STAGING_ACCESS_GATE_AUTHORIZATION}" \
+            --header "Authorization: Basic ${SERVERLESS_STAGING_ACCESS_GATE_AUTHORIZATION}" \
             https://serverless-staging.mopa-laser-rasterizer.com/ >/dev/null
