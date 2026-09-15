@@ -60,6 +60,59 @@ def test_production_application_deploys_components_sequentially():
     )
 
 
+def test_github_production_release_is_application_only_and_sequential():
+    release = read("dev_setup/deploy_serverless_production_release.sh")
+
+    worker = release.index('bash "$SCRIPT_DIR/deploy_serverless_production.sh"')
+    web = release.index('bash "$SCRIPT_DIR/deploy_serverless_production_web.sh"')
+    assert worker < web
+    assert "SERVERLESS_SKIP_FOUNDATION_DEPLOY=true" in release
+    assert "deploy_serverless_cost_guard.sh" not in release
+    assert "COGNITO_UPDATE_DOMAIN=false" in release
+
+
+def test_github_production_workflow_uses_main_oidc_and_immutable_image():
+    workflow = read(".github/workflows/deploy-serverless-production.yml")
+
+    assert "branches:\n      - main" in workflow
+    assert "name: serverless-production" in workflow
+    assert "id-token: write" in workflow
+    assert "AWS_PRODUCTION_DEPLOY_ROLE_ARN" in workflow
+    assert 'allowed-account-ids: "401716294893"' in workflow
+    assert "SERVERLESS_PRODUCTION_RELEASE_COMMIT: ${{ github.sha }}" in workflow
+    assert "@${DIGEST}" in workflow
+    assert "deploy_serverless_production_release.sh --apply" in workflow
+    assert "deploy_serverless_cost_guard" not in workflow
+    assert "AWS_ACCESS_KEY_ID" not in workflow
+
+
+def test_github_production_role_is_environment_bound_and_update_only():
+    template = read("ecs/github-actions-production-deployer.yaml")
+
+    assert "GitHubOidcProviderArn" in template
+    assert "AWS::IAM::OIDCProvider" not in template
+    assert "environment:${GitHubEnvironment}" in template
+    assert "serverless-production" in template
+    assert "serverless-staging" not in template
+    assert "cloudformation:CreateStack" not in template
+    assert "cloudformation:DeleteStack" not in template
+    assert "iam:CreateRole" not in template
+    assert "iam:DeleteRole" not in template
+    assert "budgets:" not in template
+    assert "mopa-laser-rasterizer-staging" not in template
+
+
+def test_production_role_bootstrap_discovers_existing_resource_ids():
+    bootstrap = read("dev_setup/deploy_github_actions_production_deployer.sh")
+
+    assert '"$WEB_STACK" DistributionOac' in bootstrap
+    assert '"$WEB_STACK" StaticSecurityHeadersPolicy' in bootstrap
+    assert '"$WEB_STACK" HttpApi' in bootstrap
+    assert '"$ORCHESTRATION_STACK" WorkflowRole' in bootstrap
+    assert "get-open-id-connect-provider" in bootstrap
+    assert "CAPABILITY_NAMED_IAM" in bootstrap
+
+
 def test_production_foundation_isolates_queue_and_static_bucket_only():
     foundation = read("ecs/serverless-production-foundation.yaml")
 

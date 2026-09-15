@@ -74,7 +74,12 @@ FOUNDATION_COMMAND=(aws cloudformation deploy --region "$REGION" --stack-name "$
 if [ "${#FOUNDATION_PARAMETERS[@]}" -gt 0 ]; then
   FOUNDATION_COMMAND+=(--parameter-overrides "${FOUNDATION_PARAMETERS[@]}")
 fi
-"${FOUNDATION_COMMAND[@]}"
+if [ "${SERVERLESS_SKIP_FOUNDATION_DEPLOY:-false}" = "true" ]; then
+  echo "Reusing existing $ENVIRONMENT_LABEL foundation stack: $FOUNDATION_STACK"
+  aws cloudformation describe-stacks --region "$REGION" --stack-name "$FOUNDATION_STACK" >/dev/null
+else
+  "${FOUNDATION_COMMAND[@]}"
+fi
 
 output() {
   aws cloudformation describe-stacks --region "$REGION" --stack-name "$1" \
