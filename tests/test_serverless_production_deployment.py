@@ -102,6 +102,13 @@ def test_github_production_role_is_environment_bound_and_update_only():
     assert "iam:DeleteRole" not in template
     assert "budgets:" not in template
     assert "mopa-laser-rasterizer-staging" not in template
+    inline_policy = template[
+        template.index("- Sid: UpdateProductionInlinePolicies") :
+        template.index("- Sid: UpdateProductionWorker")
+    ]
+    assert "iam:PutRolePolicy" in inline_policy
+    assert "${WorkflowRoleName}" in inline_policy
+    assert "${ApiRoleName}" in inline_policy
 
 
 def test_production_role_bootstrap_discovers_existing_resource_ids():
