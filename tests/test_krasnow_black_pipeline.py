@@ -3,6 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 from PIL import Image
 from shapely.geometry import LineString, box
 from shapely.ops import unary_union
@@ -66,6 +67,77 @@ def test_krasnow_accepts_fauxlographic_and_classic_holographic_setting_names():
         assert matched == {}
         assert required == {"fauxlographic": 1}
         assert library.layers == [setting]
+
+
+def test_material_swatch_matching_ignores_stale_cut_setting_names():
+    class MaterialLibrary:
+        def __init__(self, settings):
+            self.settings = settings
+            self.layers = []
+
+        def parse_material_library(self, _path):
+            return self.settings
+
+        def add_layer(self, layer):
+            self.layers.append(layer)
+
+    teal = SimpleNamespace(
+        materialName="Stainless-2", entryDesc="Teal", name="Teal",
+        frequency=120000, minPower=10, maxPower=20, speed=1000,
+        QPulseWidth=100,
+    )
+    light_blue_with_stale_name = SimpleNamespace(
+        materialName="Stainless-2", entryDesc="Light-Blue", name="Teal",
+        frequency=120000, minPower=10, maxPower=20, speed=1000,
+        QPulseWidth=100,
+    )
+    library = MaterialLibrary([teal, light_blue_with_stale_name])
+
+    matched = vector_processing.parse_material_settings(
+        library,
+        "unused.clb",
+        ["Teal"],
+        {"#004754": (0, 27, "Teal")},
+        material_name="Stainless-2",
+    )
+
+    assert matched == {"#004754": (0, 27, "Teal")}
+    assert library.layers == [teal]
+    assert light_blue_with_stale_name.name == "Teal"
+
+
+def test_required_setting_matching_ignores_cut_setting_name():
+    class MaterialLibrary:
+        def __init__(self, setting):
+            self.setting = setting
+            self.layers = []
+
+        def parse_material_library(self, _path):
+            return [self.setting]
+
+        def add_layer(self, layer):
+            self.layers.append(layer)
+
+    setting = SimpleNamespace(
+        materialName="Stainless-2",
+        entryDesc="Light-Blue",
+        name="Fauxlographic",
+        frequency=120000,
+    )
+    library = MaterialLibrary(setting)
+
+    with pytest.raises(ValueError, match="required filter setting: fauxlographic"):
+        vector_processing.parse_material_settings(
+            library,
+            "unused.clb",
+            [],
+            {"#000000": (0, 0, "Black")},
+            material_name="Stainless-2",
+            required_setting_names=["fauxlographic"],
+            return_setting_layers=True,
+        )
+
+    assert library.layers == []
 
 
 def test_krasnow_output_layers_use_parent_recipe_not_offset_sublayer():

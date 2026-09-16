@@ -1,9 +1,11 @@
+import base64
 import os
 import sys
 from pathlib import Path
 from unittest.mock import patch
 
 from PIL import Image
+import numpy as np
 import pytest
 from shapely.geometry import box
 
@@ -16,6 +18,7 @@ os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-2")
 
 import geometry_styles
 import glyph_geometry
+from custom_shape import decode_grayscale_mask, mask_to_unit_geometry
 import vector_processing
 from abstract_filters import halftone_newsprint, krasnow_grating
 from services import parse_geometry_style_parameters
@@ -608,7 +611,154 @@ def test_staging_ui_exposes_fauxlogram_flow_painter():
     assert 'id="openFlowPainter"' in page
     assert 'id="flowCanvas"' in page
     assert "values.fauxlogram_flow=structuredClone(fauxlogramFlow)" in page
-    assert "Every Krasnow cell still belongs to one source layer and at most one painted region" in page
+    assert "Paint regions manually, upload a grayscale or transparent mask, or combine both." in page
     assert "function resizeFlowCanvas()" in page
     assert "availableWidth/flowBitmap.width,availableHeight/flowBitmap.height" in page
     assert "Math.min(1,960/flowBitmap.width,680/flowBitmap.height)" not in page
+
+
+def _compact_mask(values):
+    values = np.asarray(values, dtype=np.uint8)
+    return {
+        "width": values.shape[1],
+        "height": values.shape[0],
+        "data": base64.b64encode(values.tobytes()).decode("ascii"),
+    }
+
+
+def test_custom_glyph_mask_decodes_and_traces_a_normalized_shape():
+    values = np.zeros((16, 16), dtype=np.uint8)
+    values[2:14, 6:10] = 255
+    values[6:10, 2:14] = 255
+    spec = _compact_mask(values)
+
+    assert np.array_equal(decode_grayscale_mask(spec), values)
+    geometry = mask_to_unit_geometry(spec, threshold=.5, padding=.05)
+
+    assert not geometry.is_empty
+    assert max(geometry.bounds[2] - geometry.bounds[0], geometry.bounds[3] - geometry.bounds[1]) <= .91
+    assert geometry.area < .5
+
+
+def test_custom_glyph_geometry_renders_uploaded_silhouette():
+    values = np.zeros((16, 16), dtype=np.uint8)
+    values[2:14, 6:10] = 255
+    values[6:10, 2:14] = 255
+    rendered = glyph_geometry.remap_layers(
+        {"#FF0000": box(0, 0, 3, 3)},
+        TARGET_COLORS,
+        glyph_parameters(
+            glyph_shape="custom",
+            custom_glyph_mask=_compact_mask(values),
+            custom_glyph_threshold=.5,
+            custom_glyph_padding=.05,
+        ),
+    )
+
+    assert "#FF0000" in rendered
+    assert not rendered["#FF0000"].is_empty
+
+
+def test_geometry_parameter_parser_preserves_custom_glyph_mask():
+    values = np.zeros((16, 16), dtype=np.uint8)
+    values[3:13, 3:13] = 255
+    mask = _compact_mask(values)
+
+    parsed = parse_geometry_style_parameters({
+        "glyph_shape": "custom",
+        "custom_glyph_mask": mask,
+        "custom_glyph_threshold": .4,
+        "custom_glyph_padding": .08,
+        "custom_glyph_invert": 0,
+    })
+
+    assert parsed["custom_glyph_mask"] == mask
+    assert parsed["glyph_shape"] == "custom"
+
+
+def test_fauxlogram_flow_accepts_a_mask_without_painted_strokes():
+    values = np.zeros((16, 16), dtype=np.uint8)
+    values[:, :8] = 255
+    settings = {
+        **krasnow_grating.DEFAULTS,
+        "fauxlogram_flow": {
+            "enabled": True,
+            "regions": [{
+                "name": "Masked", "scope": "combined_region",
+                "guide_type": "linear", "orientation": "parallel",
+                "start": [.1, .5], "end": [.9, .5],
+                "gradient_start": 20, "gradient_end": 220, "curve": 1,
+                "fixed_angle": 0, "angle_offset": 0, "reverse": False,
+                "mask": _compact_mask(values),
+                "mask_mode": "silhouette",
+                "mask_threshold": .5,
+            }],
+            "strokes": [],
+        },
+    }
+    settings["_compiled_fauxlogram_flow"] = krasnow_grating._prepare_fauxlogram_flow(settings)
+
+    assert krasnow_grating._painted_flow_controls(20, 50, (0, 0, 100, 100), settings) is not None
+    assert krasnow_grating._painted_flow_controls(80, 50, (0, 0, 100, 100), settings) is None
+
+
+def test_geometry_parameter_parser_preserves_flow_region_mask():
+    values = np.zeros((16, 16), dtype=np.uint8)
+    values[:, :8] = 255
+    mask = _compact_mask(values)
+    parsed = parse_geometry_style_parameters({
+        "fauxlogram_flow": {
+            "enabled": True,
+            "regions": [{
+                "name": "Masked", "scope": "combined_region",
+                "guide_type": "radial", "orientation": "parallel",
+                "start": [.5, .5], "end": [.9, .5],
+                "mask": mask, "mask_name": "star.png",
+                "mask_mode": "grayscale", "mask_threshold": .25,
+                "mask_invert": True, "mask_offset": [.2, -.1],
+            }],
+            "strokes": [],
+        },
+    })
+
+    region = parsed["fauxlogram_flow"]["regions"][0]
+    assert region["mask"] == mask
+    assert region["mask_mode"] == "grayscale"
+    assert region["mask_invert"] is True
+    assert region["mask_offset"] == [.2, -.1]
+
+
+def test_fauxlogram_flow_mask_offset_repositions_the_active_area():
+    values = np.zeros((16, 16), dtype=np.uint8)
+    values[:, :8] = 255
+    settings = {
+        **krasnow_grating.DEFAULTS,
+        "fauxlogram_flow": {
+            "enabled": True,
+            "regions": [{
+                "name": "Moved", "scope": "combined_region",
+                "guide_type": "linear", "orientation": "parallel",
+                "start": [.1, .5], "end": [.9, .5],
+                "gradient_start": 20, "gradient_end": 220, "curve": 1,
+                "fixed_angle": 0, "angle_offset": 0, "reverse": False,
+                "mask": _compact_mask(values), "mask_mode": "silhouette",
+                "mask_threshold": .5, "mask_offset": [.5, 0],
+            }],
+            "strokes": [],
+        },
+    }
+    settings["_compiled_fauxlogram_flow"] = krasnow_grating._prepare_fauxlogram_flow(settings)
+
+    assert krasnow_grating._painted_flow_controls(20, 50, (0, 0, 100, 100), settings) is None
+    assert krasnow_grating._painted_flow_controls(70, 50, (0, 0, 100, 100), settings) is not None
+
+
+def test_staging_ui_exposes_custom_glyph_and_flow_mask_uploads():
+    page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+    assert "['custom','Custom Uploaded Glyph']" in page
+    assert "data-custom-glyph-file" in page
+    assert 'id="flowMaskFile"' in page
+    assert "flowHasContent()" in page
+    assert "normalizeShapeImage" in page
+    assert 'data-flow-tool="move"' in page
+    assert "mask_offset" in page
