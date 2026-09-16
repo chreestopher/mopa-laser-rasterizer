@@ -239,7 +239,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertLess(page.index("<h2>Color Lab</h2>"), page.index("<h2>Depthmap/Relief Engraving Lab</h2>"))
         self.assertIn('href="/color-discovery">Open Color Lab</a>', page)
         self.assertIn("'href=\"/color-discovery\"', 'href=\"/color-lab.html\"'", builder)
-        self.assertIn('serverless_web/color-lab.html', deploy)
+        self.assertIn('$BUILD_DIR/seo/color-lab.html', deploy)
         self.assertIn('"/color-lab.html"', shell)
         self.assertIn("Color Discovery Workflow", color_lab)
         self.assertIn("body.staging-experimental .lab-card h2{color:#e4e3cf!important", styles)

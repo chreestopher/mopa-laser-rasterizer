@@ -4,12 +4,14 @@
 import re
 import sys
 from pathlib import Path
+from urllib.parse import urljoin
 
 
 source = Path(sys.argv[1]).read_text(encoding="utf-8")
+canonical = urljoin(sys.argv[3].rstrip("/") + "/", "depthmap.html") if len(sys.argv) > 3 else "/depthmap.html"
 source = source.replace('{% from "_machine_chrome.html" import machine_chrome %}\n', "", 1)
 source = source.replace('<link rel="canonical" href="{{ canonical }}">',
-                        '<link rel="canonical" href="/depthmap.html">')
+                        f'<link rel="canonical" href="{canonical}">')
 source = source.replace('  <link rel="stylesheet" href="/static/machine_chrome.css?v=3">\n', "")
 source = source.replace(
     "</head>",

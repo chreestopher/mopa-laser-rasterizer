@@ -4,12 +4,14 @@
 import re
 import sys
 from pathlib import Path
+from urllib.parse import urljoin
 
 
 source = Path(sys.argv[1]).read_text(encoding="utf-8")
+canonical = urljoin(sys.argv[3].rstrip("/") + "/", "experimental-laboratories") if len(sys.argv) > 3 else "/experimental-laboratories"
 source = source.replace('{% from "_machine_chrome.html" import machine_chrome %}\n', "", 1)
 source = source.replace('<link rel="canonical" href="{{ canonical }}">',
-                        '<link rel="canonical" href="/experimental-laboratories">')
+                        f'<link rel="canonical" href="{canonical}">')
 source = source.replace('  <link rel="stylesheet" href="/static/machine_chrome.css?v=3">\n', "")
 source = re.sub(r"\s*\{\{ machine_chrome\([^\n]+\) \}\}\n", "\n", source, count=1)
 source = re.sub(
