@@ -489,6 +489,29 @@ def _flow_mask_value(mask, x, y):
     return float(values[row, column])
 
 
+def _flow_mask_gradient_angle(mask, x, y, bounds):
+    """Use a grayscale mask's local dark-to-light slope as its direction."""
+    values = mask["values"]
+    if min(values.shape) < 2:
+        return None
+    offset_x, offset_y = mask.get("offset", (0, 0))
+    local_x = x - offset_x
+    local_y = y - offset_y
+    column = min(values.shape[1] - 1, max(0, round(local_x * (values.shape[1] - 1))))
+    row = min(values.shape[0] - 1, max(0, round(local_y * (values.shape[0] - 1))))
+    left = max(0, column - 1)
+    right = min(values.shape[1] - 1, column + 1)
+    top = max(0, row - 1)
+    bottom = min(values.shape[0] - 1, row + 1)
+    width = max(bounds[2] - bounds[0], 1e-9)
+    height = max(bounds[3] - bounds[1], 1e-9)
+    slope_x = (values[row, right] - values[row, left]) * (values.shape[1] - 1) / max(right - left, 1) / width
+    slope_y = (values[bottom, column] - values[top, column]) * (values.shape[0] - 1) / max(bottom - top, 1) / height
+    if math.hypot(slope_x, slope_y) < 1e-3:
+        return None
+    return math.degrees(math.atan2(slope_y, slope_x))
+
+
 def _flow_position(x, y, region, scope_bounds, combined_bounds):
     guide_start = region.get("start") or [.25, .5]
     guide_end = region.get("end") or [.75, .5]
@@ -567,6 +590,9 @@ def _painted_flow_controls(x, y, bounds, settings):
     mask = compiled["masks"].get(region_index)
     if matched is None and mask is not None and mask.get("mode") == "grayscale":
         position = mask_value
+        mask_angle = _flow_mask_gradient_angle(mask, nx, ny, bounds)
+        if mask_angle is not None:
+            gradient_angle = mask_angle
         if region.get("reverse"):
             position = 1 - position
     curve = number(region.get("curve"), settings.get("gradient_curve", 1), .2, 5)
