@@ -41,7 +41,7 @@ def static_template(source):
         "  <script>document.documentElement.classList.add('staging-shell-pending');setTimeout(()=>document.documentElement.classList.remove('staging-shell-pending'),3000)</script>\n"
         '  <link rel="stylesheet" href="/machine_chrome.css?v=3">\n'
         '  <link rel="stylesheet" href="/staging-shell.css?v=1">\n'
-        '  <script src="/staging-shell.js?v=2" defer></script>\n'
+        '  <script src="/staging-shell.js?v=3" defer></script>\n'
         "</head>",
         1,
     )
