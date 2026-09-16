@@ -8,6 +8,10 @@ The application prepares artwork and project files; it does not control a laser,
 - Public documentation: <https://mopa-laser-rasterizer.com/docs>
 - Experimental laboratories: <https://mopa-laser-rasterizer.com/experimental-laboratories>
 
+## Acknowledgment
+
+Thank you to [@benkrasnow](https://github.com/benkrasnow) for sharing his [MOPA Laser Stainless Colors](https://github.com/benkrasnow/MOPA_Laser_Stainless_Colors) and [MOPA Laser Diffraction Gratings](https://github.com/benkrasnow/MOPA_Laser_Diffraction_Gratings) experiments, tools, and data. His public work sparked the exploration that grew into Rasterizer.
+
 ## Current capabilities
 
 ### Rasterizer
