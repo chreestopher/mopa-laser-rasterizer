@@ -702,6 +702,34 @@ def test_fauxlogram_flow_accepts_a_mask_without_painted_strokes():
     assert krasnow_grating._painted_flow_controls(80, 50, (0, 0, 100, 100), settings) is None
 
 
+def test_grayscale_flow_mask_supplies_gradient_and_direction_without_painting():
+    values = np.tile(np.linspace(0, 255, 32, dtype=np.uint8)[:, None], (1, 32))
+    settings = {
+        **krasnow_grating.DEFAULTS,
+        "fauxlogram_flow": {
+            "enabled": True,
+            "regions": [{
+                "name": "Masked", "scope": "combined_region",
+                "guide_type": "linear", "orientation": "parallel",
+                "start": [.1, .5], "end": [.9, .5],
+                "gradient_start": 20, "gradient_end": 220, "curve": 1,
+                "fixed_angle": 0, "angle_offset": 0, "reverse": False,
+                "mask": _compact_mask(values), "mask_mode": "grayscale",
+                "mask_threshold": .1,
+            }],
+            "strokes": [],
+        },
+    }
+    settings["_compiled_fauxlogram_flow"] = krasnow_grating._prepare_fauxlogram_flow(settings)
+
+    upper = krasnow_grating._painted_flow_controls(50, 25, (0, 0, 100, 100), settings)
+    lower = krasnow_grating._painted_flow_controls(50, 75, (0, 0, 100, 100), settings)
+    assert upper is not None and lower is not None
+    assert upper[0] < lower[0]
+    assert upper[1] == pytest.approx(90)
+    assert lower[1] == pytest.approx(90)
+
+
 def test_geometry_parameter_parser_preserves_flow_region_mask():
     values = np.zeros((16, 16), dtype=np.uint8)
     values[:, :8] = 255
