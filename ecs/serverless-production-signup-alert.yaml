@@ -1,0 +1,125 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Email on confirmed production managed-login signups using a single-region CloudTrail trail.
+
+Parameters:
+  UserPoolId: {Type: String}
+  ProductionClientId: {Type: String}
+  OperatorEmail: {Type: String}
+
+Resources:
+  TrailBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub mopa-rasterizer-signup-trail-${AWS::AccountId}-${AWS::Region}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireTrailLogs
+            Status: Enabled
+            ExpirationInDays: 30
+
+  TrailBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref TrailBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: CloudTrailAclCheck
+            Effect: Allow
+            Principal: {Service: cloudtrail.amazonaws.com}
+            Action: s3:GetBucketAcl
+            Resource: !GetAtt TrailBucket.Arn
+            Condition:
+              StringEquals:
+                aws:SourceArn: !Sub arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/mopa-rasterizer-production-signup-events
+          - Sid: CloudTrailWrite
+            Effect: Allow
+            Principal: {Service: cloudtrail.amazonaws.com}
+            Action: s3:PutObject
+            Resource: !Sub ${TrailBucket.Arn}/AWSLogs/${AWS::AccountId}/*
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: bucket-owner-full-control
+                aws:SourceArn: !Sub arn:${AWS::Partition}:cloudtrail:${AWS::Region}:${AWS::AccountId}:trail/mopa-rasterizer-production-signup-events
+
+  SignupEventTrail:
+    Type: AWS::CloudTrail::Trail
+    DependsOn: TrailBucketPolicy
+    Properties:
+      TrailName: mopa-rasterizer-production-signup-events
+      S3BucketName: !Ref TrailBucket
+      IsLogging: true
+      IsMultiRegionTrail: false
+      IncludeGlobalServiceEvents: false
+      EventSelectors:
+        - IncludeManagementEvents: true
+          ReadWriteType: WriteOnly
+
+  SignupAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: mopa-rasterizer-production-signups
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref OperatorEmail
+
+  SignupAlertTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref SignupAlertTopic]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowAccountAdministration
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+            Action: sns:*
+            Resource: !Ref SignupAlertTopic
+          # EventBridge-to-SNS does not support a SourceArn condition here.
+          # Publish is restricted to this one notification topic.
+          - Sid: AllowEventBridgePublish
+            Effect: Allow
+            Principal: {Service: events.amazonaws.com}
+            Action: sns:Publish
+            Resource: !Ref SignupAlertTopic
+
+  ConfirmedProductionSignup:
+    Type: AWS::Events::Rule
+    DependsOn: SignupAlertTopicPolicy
+    Properties:
+      Description: Successful managed-login signup confirmations for the production app client only.
+      State: ENABLED
+      EventPattern:
+        source: [aws.cognito-idp]
+        detail-type: [AWS Service Event via CloudTrail]
+        detail:
+          eventSource: [cognito-idp.amazonaws.com]
+          eventName: [signup_confirm_POST]
+          eventType: [AwsServiceEvent]
+          additionalEventData:
+            userPoolId: [!Ref UserPoolId]
+            clientId: [!Ref ProductionClientId]
+            responseParameters:
+              status: [204]
+      Targets:
+        - Id: OperatorEmail
+          Arn: !Ref SignupAlertTopic
+          InputTransformer:
+            InputPathsMap:
+              eventTime: $.detail.eventTime
+              eventId: $.detail.eventID
+            InputTemplate: '"A new MOPA Laser Rasterizer production account was confirmed at <eventTime>. Review the Cognito directory in https://mopa-laser-rasterizer.com/admin.html . CloudTrail event ID: <eventId>."'
+
+Outputs:
+  SignupAlertTopicArn: {Value: !Ref SignupAlertTopic}
+  ConfirmationRuleArn: {Value: !GetAtt ConfirmedProductionSignup.Arn}
+  TrailArn: {Value: !GetAtt SignupEventTrail.Arn}
