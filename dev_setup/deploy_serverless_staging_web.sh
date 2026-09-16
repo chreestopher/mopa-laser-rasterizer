@@ -8,6 +8,11 @@ source "$SCRIPT_DIR/load-aws-env.sh"
 REGION="${AWS_REGION:-us-east-2}"
 configure_aws_deployment_credentials
 ENVIRONMENT_LABEL="${SERVERLESS_ENVIRONMENT_LABEL:-Serverless staging}"
+export SERVERLESS_ENVIRONMENT_LABEL="$ENVIRONMENT_LABEL"
+if [ "$ENVIRONMENT_LABEL" = "Serverless staging" ]; then
+  export COGNITO_POOL_ID="${SERVERLESS_STAGING_COGNITO_POOL_ID:-${COGNITO_POOL_ID:-}}"
+  export COGNITO_DOMAIN="${SERVERLESS_STAGING_COGNITO_DOMAIN:-${COGNITO_DOMAIN:-}}"
+fi
 FOUNDATION_STACK="${SERVERLESS_FOUNDATION_STACK:-${SERVERLESS_STAGING_FOUNDATION_STACK:-mopa-rasterizer-serverless-staging}}"
 WORKER_STACK="${SERVERLESS_WORKER_STACK:-${SERVERLESS_STAGING_WORKER_STACK:-mopa-rasterizer-serverless-staging-worker}}"
 ORCHESTRATION_STACK="${SERVERLESS_ORCHESTRATION_STACK:-${SERVERLESS_STAGING_ORCHESTRATION_STACK:-mopa-rasterizer-serverless-staging-orchestration}}"
@@ -20,6 +25,24 @@ ALTERNATE_HOSTNAME="${SERVERLESS_ALTERNATE_HOSTNAME:-}"
 for name in COGNITO_POOL_ID COGNITO_DOMAIN; do
   [ -n "${!name:-}" ] || { echo "$name is required." >&2; exit 2; }
 done
+if [ "$ENVIRONMENT_LABEL" = "Serverless staging" ] && \
+   [ "${SERVERLESS_STAGING_REQUIRE_ISOLATED_COGNITO:-false}" = "true" ]; then
+  expected_pool="$(aws cloudformation describe-stacks --region "${AWS_REGION:-us-east-2}" \
+    --stack-name "${SERVERLESS_STAGING_IDENTITY_STACK:-mopa-rasterizer-serverless-staging-identity}" \
+    --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue | [0]" --output text)"
+  if [ -z "$expected_pool" ] || [ "$expected_pool" = "None" ] || \
+     [ "$COGNITO_POOL_ID" != "$expected_pool" ]; then
+    echo "Staging must use its dedicated Cognito pool." >&2
+    exit 2
+  fi
+  signup_policy="$(aws cognito-idp describe-user-pool --region "${AWS_REGION:-us-east-2}" \
+    --user-pool-id "$COGNITO_POOL_ID" \
+    --query 'UserPool.AdminCreateUserConfig.AllowAdminCreateUserOnly' --output text)"
+  if [ "$signup_policy" != "True" ]; then
+    echo "Staging Cognito pool must disable self-service signup." >&2
+    exit 2
+  fi
+fi
 ADMIN_EMAIL="${SERVERLESS_ADMIN_EMAIL:-${SERVERLESS_STAGING_ADMIN_EMAIL:-${IDENTITY_CENTER_ADMIN_EMAIL:-}}}"
 [ -n "$ADMIN_EMAIL" ] || { echo "SERVERLESS_ADMIN_EMAIL or IDENTITY_CENTER_ADMIN_EMAIL is required." >&2; exit 2; }
 if [ "${SERVERLESS_ACCESS_GATE_AUTHORIZATION+x}" = "x" ]; then
@@ -31,7 +54,7 @@ GUEST_ACCESS_ENABLED="${SERVERLESS_GUEST_ACCESS_ENABLED:-${SERVERLESS_STAGING_GU
 if [ "${SERVERLESS_ALLOWED_USER_SUB+x}" = "x" ]; then
   ALLOWED_USER_SUB="$SERVERLESS_ALLOWED_USER_SUB"
 else
-  ALLOWED_USER_SUB="${SERVERLESS_STAGING_ALLOWED_USER_SUB:-}"
+  ALLOWED_USER_SUB="${SERVERLESS_STAGING_ALLOWED_USER_SUB_OVERRIDE:-${SERVERLESS_STAGING_ALLOWED_USER_SUB:-}}"
 fi
 case "$GUEST_ACCESS_ENABLED" in
   true|false) ;;

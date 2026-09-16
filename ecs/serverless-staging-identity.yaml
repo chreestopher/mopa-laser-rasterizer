@@ -1,0 +1,42 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Dedicated admin-invite-only Cognito identity for serverless staging.
+
+Resources:
+  StagingUserPool:
+    Type: AWS::Cognito::UserPool
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      UserPoolName: mopa-rasterizer-serverless-staging-users
+      UserPoolTier: ESSENTIALS
+      DeletionProtection: ACTIVE
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          TemporaryPasswordValidityDays: 7
+
+  StagingUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      UserPoolId: !Ref StagingUserPool
+      Domain: !Sub mopa-rasterizer-staging-${AWS::AccountId}
+      ManagedLoginVersion: 2
+
+Outputs:
+  UserPoolId: {Value: !Ref StagingUserPool}
+  CognitoDomain:
+    Value: !Sub mopa-rasterizer-staging-${AWS::AccountId}.auth.${AWS::Region}.amazoncognito.com
