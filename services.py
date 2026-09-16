@@ -172,7 +172,7 @@ def resolve_material_setting_usage(material_settings_path, material_name, select
     """Resolve the exact settings a raster job will map to each palette swatch.
 
     This deliberately mirrors the production parser's exact, case-insensitive
-    material and Description/cut-setting matching rules.  It is telemetry only:
+    material and Entry Description matching rules.  It is telemetry only:
     a malformed or unusual library must never prevent the actual job from running.
     """
     names = dict(LIGHTBURN_PALETTE_NAMES)
@@ -189,17 +189,19 @@ def resolve_material_setting_usage(material_settings_path, material_name, select
     for setting in Lightburn().parse_material_library(material_settings_path):
         if str(getattr(setting, "materialName", "") or "").strip().casefold() != requested_material:
             continue
-        labels = {
-            str(getattr(setting, "entryDesc", "") or "").strip().casefold(),
-            str(getattr(setting, "name", "") or "").strip().casefold(),
-        }
+        description = str(getattr(setting, "entryDesc", "") or "").strip()
+        description_key = description.casefold()
         for swatch, swatch_name in names.items():
-            if swatch_name.casefold() in chosen and swatch_name.casefold() in labels and swatch not in matched:
+            if (
+                swatch_name.casefold() in chosen
+                and swatch_name.casefold() == description_key
+                and swatch not in matched
+            ):
                 matched[swatch] = {
                     "swatch_hex": swatch,
                     "swatch_name": swatch_name,
                     "material": str(getattr(setting, "materialName", "") or "").strip(),
-                    "description": str(getattr(setting, "entryDesc", "") or "").strip(),
+                    "description": description,
                     "type": str(getattr(setting, "type", "") or "").strip(),
                     "setting_values": _setting_values(setting),
                 }
@@ -1551,14 +1553,18 @@ def parse_geometry_style_parameters(raw_value):
         "gradient_bottom", "gradient_curve", "hue_rotation",
         "saturation_cutoff", "patch_size_mm", "line_spacing_mm",
         "hue_line_spacing_minimum_mm", "hue_line_spacing_maximum_mm",
-        "angle_min", "angle_max",
+        "angle_min", "angle_max", "custom_glyph_threshold",
+        "custom_glyph_padding",
     }
-    toggles = {"invert", "invert_fill", "black_only", "preserve_black"}
+    toggles = {
+        "invert", "invert_fill", "black_only", "preserve_black",
+        "custom_glyph_invert",
+    }
     shapes = {
         "circle", "square", "diamond", "triangle", "hexagon", "octagon",
         "star", "cross", "bar", "skull", "heart", "space_invader",
         "ghost", "bat", "alien_head", "paw_print", "fish_scale",
-        "puzzle_piece", "mixed",
+        "puzzle_piece", "mixed", "custom",
     }
     cell_shapes = {
         "square", "hexagon", "triangle", "diamond", "skull", "heart",
@@ -1571,6 +1577,25 @@ def parse_geometry_style_parameters(raw_value):
         "center_to_edge", "edge_to_center",
     }
     clean = {}
+    def compact_mask(candidate):
+        if not isinstance(candidate, dict) or set(candidate) != {"width", "height", "data"}:
+            raise ValueError("Custom shape mask is invalid")
+        width = candidate.get("width")
+        height = candidate.get("height")
+        encoded = candidate.get("data")
+        if (
+            isinstance(width, bool) or not isinstance(width, int) or not 8 <= width <= 128
+            or isinstance(height, bool) or not isinstance(height, int) or not 8 <= height <= 128
+            or not isinstance(encoded, str) or len(encoded) > 21856
+        ):
+            raise ValueError("Custom shape mask is invalid")
+        try:
+            decoded = base64.b64decode(encoded, validate=True)
+        except Exception as error:
+            raise ValueError("Custom shape mask is invalid") from error
+        if len(decoded) != width * height:
+            raise ValueError("Custom shape mask is invalid")
+        return {"width": width, "height": height, "data": encoded}
     for key, value in parameters.items():
         if key == "glyph_shape" and value in shapes:
             clean[key] = value
@@ -1618,7 +1643,7 @@ def parse_geometry_style_parameters(raw_value):
                     if any(not math.isfinite(item) or not 0 <= item <= 1 for item in numbers):
                         raise ValueError("A Fauxlogram Flow Painter guide point is invalid")
                     return numbers
-                clean_regions.append({
+                clean_region = {
                     "name": str(region.get("name") or f"Region {len(clean_regions)+1}")[:40],
                     "scope": scope, "guide_type": guide_type,
                     "orientation": orientation,
@@ -1629,7 +1654,26 @@ def parse_geometry_style_parameters(raw_value):
                     "fixed_angle": flow_number(region.get("fixed_angle"), 0, -180, 180),
                     "angle_offset": flow_number(region.get("angle_offset"), 0, -180, 180),
                     "reverse": bool(region.get("reverse")),
-                })
+                }
+                if region.get("mask") is not None:
+                    mode = str(region.get("mask_mode") or "silhouette")
+                    if mode not in {"silhouette", "grayscale"}:
+                        raise ValueError("A Fauxlogram Flow Painter mask mode is invalid")
+                    offset = region.get("mask_offset", [0, 0])
+                    if not isinstance(offset, list) or len(offset) != 2:
+                        raise ValueError("A Fauxlogram Flow Painter mask position is invalid")
+                    clean_region.update({
+                        "mask": compact_mask(region.get("mask")),
+                        "mask_name": str(region.get("mask_name") or "")[:120],
+                        "mask_mode": mode,
+                        "mask_threshold": flow_number(region.get("mask_threshold"), .5, 0, 1),
+                        "mask_invert": bool(region.get("mask_invert")),
+                        "mask_offset": [
+                            flow_number(offset[0], 0, -1, 1),
+                            flow_number(offset[1], 0, -1, 1),
+                        ],
+                    })
+                clean_regions.append(clean_region)
             clean_strokes, point_count = [], 0
             for stroke in strokes:
                 if not isinstance(stroke, dict):
@@ -1662,6 +1706,8 @@ def parse_geometry_style_parameters(raw_value):
                 "regions": clean_regions,
                 "strokes": clean_strokes,
             }
+        elif key == "custom_glyph_mask":
+            clean[key] = compact_mask(value)
         elif key in toggles and isinstance(value, bool):
             clean[key] = int(value)
         elif key in toggles and isinstance(value, int) and value in {0, 1}:
@@ -1674,6 +1720,8 @@ def parse_geometry_style_parameters(raw_value):
             raise ValueError(f"Geometry style setting '{key}' is invalid")
     if clean.get("invert_fill") and clean.get("black_only"):
         raise ValueError("Invert Fill cannot be combined with Black Only")
+    if clean.get("glyph_shape") == "custom" and not clean.get("custom_glyph_mask"):
+        raise ValueError("Upload a custom glyph image before submitting the job")
     return clean
 
 

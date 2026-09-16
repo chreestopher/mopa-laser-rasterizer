@@ -3826,14 +3826,17 @@ def submit_job(event, task_id, guest=False):
         "gradient_bottom", "gradient_curve", "hue_rotation",
         "saturation_cutoff", "patch_size_mm", "line_spacing_mm",
         "hue_line_spacing_minimum_mm", "hue_line_spacing_maximum_mm",
-        "angle_min", "angle_max",
+        "angle_min", "angle_max", "custom_glyph_threshold",
+        "custom_glyph_padding",
     }
-    toggle_geometry_parameters = {"invert", "invert_fill", "black_only", "preserve_black"}
+    toggle_geometry_parameters = {
+        "invert", "invert_fill", "black_only", "preserve_black", "custom_glyph_invert",
+    }
     glyph_shapes = {
         "circle", "square", "diamond", "triangle", "hexagon", "octagon",
         "star", "cross", "bar", "skull", "heart", "space_invader",
         "ghost", "bat", "alien_head", "paw_print", "fish_scale",
-        "puzzle_piece", "mixed",
+        "puzzle_piece", "mixed", "custom",
     }
     cell_shapes = {
         "square", "hexagon", "triangle", "diamond", "skull", "heart",
@@ -3845,6 +3848,22 @@ def submit_job(event, task_id, guest=False):
         "top_to_bottom", "bottom_to_top", "left_to_right", "right_to_left",
         "center_to_edge", "edge_to_center",
     }
+    def validate_compact_mask(value):
+        if not isinstance(value, dict) or set(value) != {"width", "height", "data"}:
+            raise ValueError("Custom shape mask is invalid")
+        width, height, encoded = value.get("width"), value.get("height"), value.get("data")
+        if (
+            isinstance(width, bool) or not isinstance(width, int) or not 8 <= width <= 128
+            or isinstance(height, bool) or not isinstance(height, int) or not 8 <= height <= 128
+            or not isinstance(encoded, str) or len(encoded) > 21856
+        ):
+            raise ValueError("Custom shape mask is invalid")
+        try:
+            decoded = base64.b64decode(encoded, validate=True)
+        except Exception as error:
+            raise ValueError("Custom shape mask is invalid") from error
+        if len(decoded) != width * height:
+            raise ValueError("Custom shape mask is invalid")
     def validate_fauxlogram_flow(value):
         if not isinstance(value, dict):
             raise ValueError("Fauxlogram Flow Painter settings must be an object")
@@ -3868,6 +3887,30 @@ def submit_job(event, task_id, guest=False):
                 "parallel", "perpendicular", "fixed", "offset",
             }:
                 raise ValueError("A Fauxlogram Flow Painter orientation is invalid")
+            mask = region.get("mask")
+            if mask is not None:
+                validate_compact_mask(mask)
+                if str(region.get("mask_mode") or "silhouette") not in {
+                    "silhouette", "grayscale",
+                }:
+                    raise ValueError("A Fauxlogram Flow Painter mask mode is invalid")
+                threshold = region.get("mask_threshold", 0.5)
+                if (
+                    isinstance(threshold, bool)
+                    or not isinstance(threshold, (int, float))
+                    or not math.isfinite(threshold)
+                    or not 0 <= threshold <= 1
+                ):
+                    raise ValueError("A Fauxlogram Flow Painter mask threshold is invalid")
+                if region.get("mask_invert", False) not in {False, True, 0, 1}:
+                    raise ValueError("A Fauxlogram Flow Painter mask inversion is invalid")
+                offset = region.get("mask_offset", [0, 0])
+                if not isinstance(offset, list) or len(offset) != 2 or any(
+                    isinstance(item, bool) or not isinstance(item, (int, float))
+                    or not math.isfinite(item) or not -1 <= item <= 1
+                    for item in offset
+                ):
+                    raise ValueError("A Fauxlogram Flow Painter mask position is invalid")
             for point in (region.get("start", [.25, .5]), region.get("end", [.75, .5])):
                 if not isinstance(point, list) or len(point) != 2 or any(
                     isinstance(item, bool) or not isinstance(item, (int, float))
@@ -3904,6 +3947,7 @@ def submit_job(event, task_id, guest=False):
                     and value in gradient_directions
                 )
                 or (key == "fauxlogram_flow" and isinstance(value, dict))
+                or (key == "custom_glyph_mask" and isinstance(value, dict))
                 or (key in toggle_geometry_parameters and isinstance(value, (bool, int)) and value in {0, 1})
                 or (
                     key in numeric_geometry_parameters
@@ -3916,8 +3960,12 @@ def submit_job(event, task_id, guest=False):
                 raise ValueError(f"Geometry style setting '{key}' is invalid")
             if key == "fauxlogram_flow":
                 validate_fauxlogram_flow(value)
+            elif key == "custom_glyph_mask":
+                validate_compact_mask(value)
         if section.get("invert_fill") and section.get("black_only"):
             raise ValueError("Invert Fill cannot be combined with Black Only")
+        if section.get("glyph_shape") == "custom" and not section.get("custom_glyph_mask"):
+            raise ValueError("Upload a custom glyph image before submitting the job")
 
     try:
         if geometry_style == "by_swatch":

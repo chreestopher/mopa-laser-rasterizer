@@ -2,6 +2,7 @@
 
 from abstract_filters.common import number
 from abstract_filters import halftone_newsprint
+from custom_shape import mask_to_unit_geometry
 
 
 USES_SOURCE_LUMINANCE = True
@@ -11,6 +12,7 @@ GLYPH_SHAPES = {
     "circle", "square", "diamond", "triangle", "hexagon", "octagon",
     "star", "cross", "bar", "skull", "heart", "space_invader", "ghost",
     "bat", "alien_head", "paw_print", "fish_scale", "puzzle_piece", "mixed",
+    "custom",
 }
 
 DEFAULTS = {
@@ -23,6 +25,9 @@ DEFAULTS = {
     "contrast": 2.0,
     "grid_angle": -45.0,
     "glyph_rotation": 0.0,
+    "custom_glyph_threshold": 0.5,
+    "custom_glyph_invert": 0,
+    "custom_glyph_padding": 0.06,
     "invert": 0,
     "black_only": 0,
     "seed": 1,
@@ -51,4 +56,11 @@ def remap_layers(processed_layers, target_colors, settings):
         "_glyph_seed": number(settings.get("seed"), 1, 0, 999999),
         "_progress_name": settings.get("_progress_name") or "Glyph Geometry Style",
     })
+    if shape == "custom":
+        translated["_custom_glyph_template"] = mask_to_unit_geometry(
+            settings.get("custom_glyph_mask"),
+            threshold=number(settings.get("custom_glyph_threshold"), 0.5, 0, 1),
+            invert=bool(settings.get("custom_glyph_invert")),
+            padding=number(settings.get("custom_glyph_padding"), 0.06, 0, 0.3),
+        )
     return halftone_newsprint.remap_layers(processed_layers, target_colors, translated)

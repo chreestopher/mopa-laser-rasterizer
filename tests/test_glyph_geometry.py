@@ -1,3 +1,4 @@
+import base64
 import sys
 from pathlib import Path
 
@@ -42,8 +43,15 @@ def test_all_exposed_shapes_emit_geometry():
     layers = {"#FF0000": box(0, 0, 8, 4)}
     target = {"#FF0000": TARGET_COLORS["#FF0000"]}
     for shape in glyph_geometry.GLYPH_SHAPES:
+        overrides = {"glyph_shape": shape, "grid_angle": 0}
+        if shape == "custom":
+            overrides["custom_glyph_mask"] = {
+                "width": 16,
+                "height": 16,
+                "data": base64.b64encode(bytes([255]) * 16 * 16).decode("ascii"),
+            }
         result = glyph_geometry.remap_layers(
-            layers, target, settings(glyph_shape=shape, grid_angle=0)
+            layers, target, settings(**overrides)
         )
         assert result["#FF0000"].area > 0, shape
 

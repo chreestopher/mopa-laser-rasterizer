@@ -615,7 +615,6 @@ class Lightburn:
                 setting_type = str(getattr(setting, "type", "") or "").strip().casefold()
                 setting_labels = {
                     str(getattr(setting, "entryDesc", "") or "").strip().casefold(),
-                    str(getattr(setting, "name", "") or "").strip().casefold(),
                 }
                 is_tool_layer = (
                     setting_type == "tool"
