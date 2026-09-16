@@ -18,6 +18,10 @@ Parameters:
   PipeRoleName: {Type: String}
   WorkflowRoleName: {Type: String}
   ApiRoleName: {Type: String}
+  StagingUserPoolId: {Type: String, Default: ""}
+
+Conditions:
+  HasIsolatedStagingPool: !Not [!Equals [!Ref StagingUserPoolId, ""]]
 
 Resources:
   GitHubOidcProvider:
@@ -85,6 +89,13 @@ Resources:
                 Effect: Allow
                 Action: cloudformation:DescribeStacks
                 Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/mopa-rasterizer-serverless-staging/*
+              - !If
+                - HasIsolatedStagingPool
+                - Sid: ReadIsolatedStagingIdentity
+                  Effect: Allow
+                  Action: cloudformation:DescribeStacks
+                  Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/mopa-rasterizer-serverless-staging-identity/*
+                - !Ref AWS::NoValue
               - Sid: UpdateExistingStagingRoles
                 Effect: Allow
                 Action:
@@ -160,6 +171,18 @@ Resources:
                 Resource:
                   - !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}::/apis/${ApiGatewayId}
                   - !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}::/apis/${ApiGatewayId}/*
+              - !If
+                - HasIsolatedStagingPool
+                - Sid: UpdateIsolatedStagingAppClient
+                  Effect: Allow
+                  Action:
+                    - cognito-idp:CreateUserPoolClient
+                    - cognito-idp:DeleteUserPoolClient
+                    - cognito-idp:DescribeUserPool
+                    - cognito-idp:DescribeUserPoolClient
+                    - cognito-idp:UpdateUserPoolClient
+                  Resource: !Sub arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${StagingUserPoolId}
+                - !Ref AWS::NoValue
               - Sid: UpdateStagingCloudFront
                 Effect: Allow
                 Action:
