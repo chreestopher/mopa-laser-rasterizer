@@ -304,9 +304,13 @@ async function load(){
   if(code){
     const verifier=sessionStorage.getItem('pkce_verifier');
     const redirectUri=sessionStorage.getItem('pkce_redirect_uri')||new URL('/',location.origin).href;
+    const discardCallback=()=>{sessionStorage.removeItem('pkce_verifier');sessionStorage.removeItem('pkce_redirect_uri');history.replaceState({},'',location.pathname)};
+    if(!verifier){discardCallback();throw new Error('Sign-in attempt expired or opened in another tab. Please sign in again.');}
     const body=new URLSearchParams({grant_type:'authorization_code',client_id:config.client_id,code,redirect_uri:redirectUri,code_verifier:verifier});
-    const result=await fetch(`https://${config.cognito_domain}/oauth2/token`,{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body}).then(r=>r.json());
-    if(!result.id_token)throw new Error(result.error_description||'Cognito token exchange failed');
+    let result,response;
+    try{response=await fetch(`https://${config.cognito_domain}/oauth2/token`,{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body});result=await response.json()}
+    catch(error){discardCallback();throw new Error('Cognito sign-in could not reach the token service. Please sign in again.');}
+    if(!response.ok||!result.id_token){const reason=result.error_description||result.error||`HTTP ${response.status}`;discardCallback();throw new Error(`Cognito sign-in could not complete (${reason}). Please sign in again.`)}
     sessionStorage.removeItem('pkce_verifier');sessionStorage.removeItem('pkce_redirect_uri');token=result.id_token;refreshToken=result.refresh_token||refreshToken;localStorage.setItem('id_token',token);if(refreshToken)localStorage.setItem('refresh_token',refreshToken);history.replaceState({},'',requestedTask?`${location.pathname}?task=${encodeURIComponent(requestedTask)}`:location.pathname);const postLoginPath=sessionStorage.getItem('post_login_path');if(postLoginPath&&postLoginPath!=='/'){sessionStorage.removeItem('post_login_path');location.replace(postLoginPath);return}
   }
   if(token&&tokenExpiresSoon()&&!await refreshSession())clearAuth();
@@ -411,6 +415,6 @@ async function poll(){
 function rasterOutputRank(output){const name=outputBasename(output).toLowerCase();return name.endsWith('.svg')?0:name.endsWith('.lbrn2')?1:2}
 function outputBasename(output){return String(output?.name||'download').replaceAll('\\','/').split('/').pop()||'download'}
 function renderRasterOutputs(outputs){const ordered=[...(outputs||[])].sort((left,right)=>rasterOutputRank(left)-rasterOutputRank(right)||outputBasename(left).localeCompare(outputBasename(right)));return `<div class="output-downloads">${ordered.map(output=>{const label=`Download ${outputBasename(output)}`;return `<p class="output-download-item"><a class="staging-action-button output-download-button" href="${esc(output.download_url)}" title="${esc(label)}">${esc(label)}</a><span class="output-download-size">${(Number(output.bytes||0)/1048576).toFixed(1)} MB</span></p>`}).join('')}</div>`}
-load().catch(error=>show(error.message==='Session expired. Sign in again.'?error.message:`Configuration error: ${error.message}`));
+load().catch(error=>{const message=error.message||'Unknown error';show(message==='Session expired. Sign in again.'||message.startsWith('Cognito sign-in')||message.startsWith('Sign-in attempt')?message:`Configuration error: ${message}`)});
 </script>
 </body></html>

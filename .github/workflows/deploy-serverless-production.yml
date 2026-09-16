@@ -83,6 +83,14 @@ jobs:
           test -n "${{ vars.AWS_PRODUCTION_DEPLOY_ROLE_ARN }}"
           aws sts get-caller-identity
 
+      - name: Guard production login configuration
+        run: |
+          set -euo pipefail
+          test -n "$SERVERLESS_PRODUCTION_CERTIFICATE_ARN"
+          test "$SERVERLESS_PRODUCTION_USE_CLOUDFRONT_CALLBACK" = false
+          test "${SERVERLESS_PRODUCTION_HOSTNAME:-mopa-laser-rasterizer.com}" = mopa-laser-rasterizer.com
+          test "${SERVERLESS_PRODUCTION_ALTERNATE_HOSTNAME:-www.mopa-laser-rasterizer.com}" = www.mopa-laser-rasterizer.com
+
       - name: Build and publish immutable worker image
         run: |
           set -euo pipefail
