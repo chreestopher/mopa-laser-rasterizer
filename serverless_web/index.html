@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/machine_chrome.css?v=3">
   <link rel="stylesheet" href="/staging-shell.css?v=1">
   <link rel="stylesheet" href="/staging-pages.css?v=1">
-  <script src="/staging-shell.js?v=2" defer></script>
+  <script src="/staging-shell.js?v=3" defer></script>
   <style>
     :root{color-scheme:dark;font:16px system-ui;background:#101419;color:#edf2f7}body{max-width:760px;margin:40px auto;padding:0 20px}
     fieldset{border:1px solid #39424e;border-radius:12px;padding:20px;margin:18px 0}label{display:block;margin:12px 0 5px}
@@ -295,10 +295,11 @@ async function load(){
   const requestedTask=params.get('task')||sessionStorage.getItem('pending_task');
   if(code){
     const verifier=sessionStorage.getItem('pkce_verifier');
-    const body=new URLSearchParams({grant_type:'authorization_code',client_id:config.client_id,code,redirect_uri:config.callback_url,code_verifier:verifier});
+    const redirectUri=sessionStorage.getItem('pkce_redirect_uri')||new URL('/',location.origin).href;
+    const body=new URLSearchParams({grant_type:'authorization_code',client_id:config.client_id,code,redirect_uri:redirectUri,code_verifier:verifier});
     const result=await fetch(`https://${config.cognito_domain}/oauth2/token`,{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body}).then(r=>r.json());
     if(!result.id_token)throw new Error(result.error_description||'Cognito token exchange failed');
-    token=result.id_token;refreshToken=result.refresh_token||refreshToken;localStorage.setItem('id_token',token);if(refreshToken)localStorage.setItem('refresh_token',refreshToken);history.replaceState({},'',requestedTask?`${location.pathname}?task=${encodeURIComponent(requestedTask)}`:location.pathname);const postLoginPath=sessionStorage.getItem('post_login_path');if(postLoginPath&&postLoginPath!=='/'){sessionStorage.removeItem('post_login_path');location.replace(postLoginPath);return}
+    sessionStorage.removeItem('pkce_verifier');sessionStorage.removeItem('pkce_redirect_uri');token=result.id_token;refreshToken=result.refresh_token||refreshToken;localStorage.setItem('id_token',token);if(refreshToken)localStorage.setItem('refresh_token',refreshToken);history.replaceState({},'',requestedTask?`${location.pathname}?task=${encodeURIComponent(requestedTask)}`:location.pathname);const postLoginPath=sessionStorage.getItem('post_login_path');if(postLoginPath&&postLoginPath!=='/'){sessionStorage.removeItem('post_login_path');location.replace(postLoginPath);return}
   }
   if(token&&tokenExpiresSoon()&&!await refreshSession())clearAuth();
   setAuthState(!!token);

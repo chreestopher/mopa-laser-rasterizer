@@ -158,6 +158,7 @@
     const beginLogin = async () => {
       try {
         const config = await fetch("/config.json", { cache: "no-store" }).then(response => response.json());
+        const redirectUri = new URL("/", location.origin).href;
         const requestedTask = new URLSearchParams(location.search).get("task");
         if (requestedTask) sessionStorage.setItem("pending_task", requestedTask);
         if (location.pathname !== "/") sessionStorage.setItem("post_login_path", location.pathname + location.search);
@@ -165,12 +166,13 @@
         const encode = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
         const verifier = encode(random);
         sessionStorage.setItem("pkce_verifier", verifier);
+        sessionStorage.setItem("pkce_redirect_uri", redirectUri);
         const challenge = encode(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
         const query = new URLSearchParams({
           client_id: config.client_id,
           response_type: "code",
           scope: "openid email",
-          redirect_uri: config.callback_url,
+          redirect_uri: redirectUri,
           code_challenge_method: "S256",
           code_challenge: challenge,
         });
@@ -199,9 +201,10 @@
       sessionStorage.clear();
       try {
         const config = await fetch("/config.json", { cache: "no-store" }).then(response => response.json());
+        const logoutUri = new URL("/", location.origin).href;
         const query = new URLSearchParams({
           client_id: config.client_id,
-          logout_uri: config.callback_url,
+          logout_uri: logoutUri,
         });
         location.href = `https://${config.cognito_domain}/logout?${query}`;
       } catch (_) {

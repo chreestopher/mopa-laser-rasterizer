@@ -46,6 +46,22 @@ def test_shell_migrates_existing_session_and_synchronizes_login_state():
     assert 'localStorage.removeItem("refresh_token")' in shell
 
 
+def test_login_keeps_pkce_verifier_and_redirect_on_the_same_origin():
+    shell = read("staging-shell.js")
+    index = read("index.html")
+
+    assert 'const redirectUri = new URL("/", location.origin).href' in shell
+    assert 'sessionStorage.setItem("pkce_redirect_uri", redirectUri)' in shell
+    assert 'redirect_uri: redirectUri' in shell
+    assert 'const logoutUri = new URL("/", location.origin).href' in shell
+    assert 'logout_uri: logoutUri' in shell
+    assert "sessionStorage.getItem('pkce_redirect_uri')||new URL('/',location.origin).href" in index
+    assert "redirect_uri:redirectUri" in index
+    assert "sessionStorage.removeItem('pkce_redirect_uri')" in index
+    assert "redirect_uri: config.callback_url" not in shell
+    assert "redirect_uri:config.callback_url" not in index
+
+
 def test_community_set_build_uses_shared_tokens_and_refreshes_expired_sessions():
     builder = (ROOT / "dev_setup" / "build_serverless_community.py").read_text(encoding="utf-8")
 
@@ -58,12 +74,12 @@ def test_community_set_build_uses_shared_tokens_and_refreshes_expired_sessions()
 
 def test_changed_auth_assets_have_cache_busting_revisions():
     expected = {
-        "index.html": ('/staging-shell.js?v=2',),
-        "vault.html": ('/staging-shell.js?v=2', '/vault.js?v=12'),
-        "history.html": ('/staging-shell.js?v=2', '/history.js?v=8'),
-        "admin.html": ('/staging-shell.js?v=2', '/admin.js?v=3'),
-        "color-lab.html": ('/staging-shell.js?v=2', '/color-lab.js?v=7'),
-        "holographic.html": ('/staging-shell.js?v=2', '/holographic.js?v=6'),
+        "index.html": ('/staging-shell.js?v=3',),
+        "vault.html": ('/staging-shell.js?v=3', '/vault.js?v=12'),
+        "history.html": ('/staging-shell.js?v=3', '/history.js?v=8'),
+        "admin.html": ('/staging-shell.js?v=3', '/admin.js?v=3'),
+        "color-lab.html": ('/staging-shell.js?v=3', '/color-lab.js?v=7'),
+        "holographic.html": ('/staging-shell.js?v=3', '/holographic.js?v=6'),
     }
 
     for filename, revisions in expected.items():
@@ -72,5 +88,5 @@ def test_changed_auth_assets_have_cache_busting_revisions():
             assert revision in page
 
     depthmap_builder = (ROOT / "dev_setup" / "build_serverless_depthmap.py").read_text(encoding="utf-8")
-    assert '/staging-shell.js?v=2' in depthmap_builder
+    assert '/staging-shell.js?v=3' in depthmap_builder
     assert '/depthmap_bootstrap.js?v=3' in depthmap_builder
