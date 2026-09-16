@@ -57,11 +57,6 @@ PIPE_NAME="${PIPE_ARN##*/}"
 BUILD_DIR="$(mktemp -d)"
 trap 'rm -rf -- "$BUILD_DIR"' EXIT
 cp "$REPO_ROOT/serverless_api/handler.py" "$BUILD_DIR/handler.py"
-python3 "$SCRIPT_DIR/build_serverless_depthmap.py" \
-  "$REPO_ROOT/templates/depthmap_generator.html" "$BUILD_DIR/depthmap.html"
-python3 "$SCRIPT_DIR/build_serverless_community.py" "$BUILD_DIR/community-set"
-python3 "$SCRIPT_DIR/build_serverless_experimental.py" \
-  "$REPO_ROOT/templates/experimental_laboratories.html" "$BUILD_DIR/experimental-laboratories"
 BUILD_DIR="$BUILD_DIR" python3 -c 'import os,zipfile
 root=os.environ["BUILD_DIR"]
 with zipfile.ZipFile(os.path.join(root,"function.zip"),"w",zipfile.ZIP_DEFLATED) as archive:
@@ -101,6 +96,11 @@ aws cloudformation deploy --region "$REGION" --stack-name "$WEB_STACK" \
 API_URL="$(output "$WEB_STACK" ApiUrl)"
 WEB_URL="$(output "$WEB_STACK" PublicUrl)"
 PUBLIC_BASE_URL="${SERVERLESS_PUBLIC_URL:-${SERVERLESS_STAGING_PUBLIC_URL:-$WEB_URL}}"
+python3 "$SCRIPT_DIR/build_serverless_depthmap.py" \
+  "$REPO_ROOT/templates/depthmap_generator.html" "$BUILD_DIR/depthmap.html" "$PUBLIC_BASE_URL"
+python3 "$SCRIPT_DIR/build_serverless_community.py" "$BUILD_DIR/community-set" "$PUBLIC_BASE_URL"
+python3 "$SCRIPT_DIR/build_serverless_experimental.py" \
+  "$REPO_ROOT/templates/experimental_laboratories.html" "$BUILD_DIR/experimental-laboratories" "$PUBLIC_BASE_URL"
 python3 "$SCRIPT_DIR/build_serverless_docs.py" "$BUILD_DIR/docs" "$PUBLIC_BASE_URL"
 python3 "$SCRIPT_DIR/build_serverless_seo.py" "$BUILD_DIR/seo" "$PUBLIC_BASE_URL"
 CLIENT_ID="$(output "$WEB_STACK" CognitoClientId)"
@@ -132,13 +132,13 @@ python3 -c 'import json,os; print(json.dumps({
   > "$BUILD_DIR/config.json"
 aws s3 cp "$BUILD_DIR/seo/index.html" "s3://$STATIC_BUCKET/web/index.html" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
-aws s3 cp "$REPO_ROOT/serverless_web/holographic.html" "s3://$STATIC_BUCKET/web/fauxlographic.html" \
+aws s3 cp "$BUILD_DIR/seo/fauxlographic.html" "s3://$STATIC_BUCKET/web/fauxlographic.html" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/holographic-redirect.html" "s3://$STATIC_BUCKET/web/holographic.html" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/holographic.js" "s3://$STATIC_BUCKET/web/holographic.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
-aws s3 cp "$REPO_ROOT/serverless_web/color-lab.html" "s3://$STATIC_BUCKET/web/color-lab.html" \
+aws s3 cp "$BUILD_DIR/seo/color-lab.html" "s3://$STATIC_BUCKET/web/color-lab.html" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/color-lab.js" "s3://$STATIC_BUCKET/web/color-lab.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors

@@ -73,6 +73,27 @@ home = home.replace(
 )
 (output_root / "index.html").write_text(home, encoding="utf-8")
 
+
+def write_static_page(filename, route, description=None):
+    html = (repo_root / "serverless_web" / filename).read_text(encoding="utf-8")
+    canonical_tag = f'<link rel="canonical" href="{urljoin(public_url, route)}">'
+    if '<link rel="canonical"' in html:
+        html = re.sub(r'<link rel="canonical" href="[^"]*">', canonical_tag, html, count=1)
+    else:
+        html = html.replace("</title>", f"</title>\n  {canonical_tag}", 1)
+    if description and '<meta name="description"' not in html:
+        html = html.replace(
+            "</title>", f'</title>\n  <meta name="description" content="{description}">', 1
+        )
+    (output_root / route).write_text(html, encoding="utf-8")
+
+
+write_static_page("holographic.html", "fauxlographic.html")
+write_static_page(
+    "color-lab.html", "color-lab.html",
+    "Explore laser color settings through test grids, photograph and measure the results, and save selected swatches to your palette.",
+)
+
 public_paths = [
     "",
     *pages,
