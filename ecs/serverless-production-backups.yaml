@@ -1,0 +1,153 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Production-only daily backup of durable account S3 assets.
+
+Parameters:
+  SourceBucketName: {Type: String}
+  LambdaCodeBucket: {Type: String}
+  LambdaCodeKey: {Type: String}
+  OperatorTopicArn: {Type: String}
+
+Resources:
+  DurableBackupBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub mopa-rasterizer-durable-backups-${AWS::AccountId}-${AWS::Region}
+      VersioningConfiguration: {Status: Enabled}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireSupersededVersionsAfter30Days
+            Status: Enabled
+            NoncurrentVersionExpiration: {NoncurrentDays: 30}
+          - Id: RemoveExpiredDeleteMarkers
+            Status: Enabled
+            ExpiredObjectDeleteMarker: true
+          - Id: AbortIncompleteUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload: {DaysAfterInitiation: 1}
+
+  BackupBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DurableBackupBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt DurableBackupBucket.Arn
+              - !Sub ${DurableBackupBucket.Arn}/*
+            Condition:
+              Bool: {aws:SecureTransport: false}
+
+  BackupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: CopyDurableAssetsOnly
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ListUserPrefixes
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::${SourceBucketName}
+                  - !GetAtt DurableBackupBucket.Arn
+                Condition:
+                  StringLike: {s3:prefix: "users/*"}
+              - Sid: ReadDurableSources
+                Effect: Allow
+                Action: s3:GetObject
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::${SourceBucketName}/users/*/materials/*
+                  - !Sub arn:${AWS::Partition}:s3:::${SourceBucketName}/users/*/holographic-recipes/*
+                  - !Sub arn:${AWS::Partition}:s3:::${SourceBucketName}/users/*/holographic-calibrations/*
+              - Sid: ReconcileDurableBackup
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
+                Resource:
+                  - !Sub ${DurableBackupBucket.Arn}/users/*/materials/*
+                  - !Sub ${DurableBackupBucket.Arn}/users/*/holographic-recipes/*
+                  - !Sub ${DurableBackupBucket.Arn}/users/*/holographic-calibrations/*
+
+  BackupFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: mopa-rasterizer-production-durable-backup
+      Runtime: python3.12
+      Handler: handler.handler
+      Role: !GetAtt BackupRole.Arn
+      MemorySize: 256
+      Timeout: 600
+      Code: {S3Bucket: !Ref LambdaCodeBucket, S3Key: !Ref LambdaCodeKey}
+      Environment:
+        Variables:
+          SOURCE_BUCKET: !Ref SourceBucketName
+          BACKUP_BUCKET: !Ref DurableBackupBucket
+
+  BackupLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${BackupFunction}
+      RetentionInDays: 14
+
+  DailyBackup:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Copy changed durable account assets to an isolated versioned bucket daily at 05:00 UTC.
+      ScheduleExpression: cron(0 5 * * ? *)
+      State: ENABLED
+      Targets:
+        - Id: DurableBackup
+          Arn: !GetAtt BackupFunction.Arn
+
+  AllowScheduledBackup:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref BackupFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt DailyBackup.Arn
+
+  BackupFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Production durable S3 backup Lambda failed. Inspect the backup log and confirm the last good recovery point.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - {Name: FunctionName, Value: !Ref BackupFunction}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref OperatorTopicArn]
+
+Outputs:
+  BackupBucketName: {Value: !Ref DurableBackupBucket}
+  BackupFunctionName: {Value: !Ref BackupFunction}
+  BackupScheduleArn: {Value: !GetAtt DailyBackup.Arn}
+  BackupAlarmName: {Value: !Ref BackupFailureAlarm}
