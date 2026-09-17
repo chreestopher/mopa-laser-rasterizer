@@ -1,6 +1,9 @@
 import ast
+import re
 import unittest
+import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from xml.etree import ElementTree as ET
 
 
@@ -26,6 +29,27 @@ class ServerlessColorDiscoveryTests(unittest.TestCase):
         self.assertIn("ListColorDiscoveryGridsRoute:", infrastructure)
         self.assertIn("RouteKey: \"GET /color-discovery/grids\"", infrastructure)
         self.assertIn("users/*/color-discovery/*", infrastructure)
+
+    def test_invalid_observed_color_identifies_the_cell_and_recovery(self):
+        tree = ast.parse(self.api)
+        save = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "save_color_discovery_palette")
+        grid_id = str(uuid.uuid4())
+        data = {
+            "grid_id": grid_id,
+            "palette_name": "Test palette",
+            "swatches": [{"index": 5, "observed_hex": "not-a-color", "rasterizer_hex": "#000000"}],
+        }
+        namespace = {
+            "body_json": lambda _event: data,
+            "user_id": lambda _event: "test-user",
+            "table": SimpleNamespace(get_item=lambda **_kwargs: {"Item": {"metadata": {"cells": [{"index": 5}]}}}),
+            "json_value": lambda value: value,
+            "uuid": uuid,
+            "re": re,
+        }
+        exec(compile(ast.Module(body=[save], type_ignores=[]), "handler.py", "exec"), namespace)
+        with self.assertRaisesRegex(ValueError, "Cell 5 has an invalid observed color.*Measure again or manually correct"):
+            namespace["save_color_discovery_palette"]({})
 
     def test_grid_is_gapless_automatic_and_capped(self):
         self.assertIn("rows, columns, cell_mm = color_grid_layout(width_mm, length_mm)", self.api)

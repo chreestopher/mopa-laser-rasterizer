@@ -12,6 +12,40 @@ import worker
 
 
 class WorkerTaskIdTests(unittest.TestCase):
+    def test_job_failure_summary_preserves_validation_message(self):
+        message = "No colors in the Material Library matched Rasterizer swatches."
+        self.assertEqual(message, services.summarize_job_failure(f"ValueError: {message}", 1))
+        self.assertEqual(message, services.summarize_job_failure(f"ValueError: {message}", 2))
+        self.assertEqual(message, services.summarize_job_failure(ValueError(message)))
+        self.assertEqual(message, services.summarize_job_failure(message, 2))
+
+    def test_job_failure_summary_gives_recovery_for_unexpected_exit(self):
+        summary = services.summarize_job_failure("RuntimeError: internal path /app/private", 1)
+        self.assertIn("Try again", summary)
+        self.assertNotIn("/app/private", summary)
+        memory_summary = services.summarize_job_failure("Killed", 137)
+        self.assertIn("smaller output size", memory_summary)
+
+    def test_internal_geometry_failure_keeps_details_in_logs_only(self):
+        raw = "ValueError: source-derived Black residual-overlap correction failed: 1.25"
+        summary = services.summarize_job_failure(raw, 1)
+        self.assertIn("couldn't safely separate the Black layer", summary)
+        self.assertIn("report the job ID", summary)
+        self.assertNotIn("residual-overlap", summary)
+
+    def test_worker_failure_keeps_raw_log_and_saves_summary(self):
+        runtime = MagicMock()
+        with patch.object(worker, "job_runtime", runtime), patch.object(
+            worker, "update_user_job"
+        ) as update_user_job:
+            worker.record_job_failure("task-123", RuntimeError("internal path /app/private"))
+        summary = update_user_job.call_args.kwargs["error_message"]
+        self.assertNotIn("/app/private", summary)
+        runtime.set_status.assert_called_once_with("task-123", "failed", error=summary)
+        runtime.append_log.assert_called_once_with(
+            "task-123", "ERROR: Raster worker failed: internal path /app/private"
+        )
+
     def test_enqueue_persists_addressable_payload_before_legacy_publish(self):
         redis_client = MagicMock()
         payload = {"task_id": "task-123", "image_key": "inputs/image.png"}

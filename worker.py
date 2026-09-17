@@ -24,6 +24,7 @@ from services import (
     sync_job_runtime,
     redis_client,
     secure_artifact_name,
+    summarize_job_failure,
     update_user_job,
     upload_task_artifact,
 )
@@ -204,13 +205,13 @@ def acknowledge_job(raw_payload, task_id):
 
 def record_job_failure(task_id, error):
     """Persist a terminal failure without letting a Redis blip kill the worker."""
-    message = f"Raster worker failed: {error}"
+    message = summarize_job_failure(error)
     try:
-        update_user_job(task_id, "failed", error_message=str(error))
+        update_user_job(task_id, "failed", error_message=message)
     except Exception as durable_error:
         print(f"[Raster-Worker] Could not persist durable failure for {task_id}: {durable_error}", flush=True)
     try:
-        job_runtime.append_log(task_id, f"ERROR: {message}")
+        job_runtime.append_log(task_id, f"ERROR: Raster worker failed: {error}")
     except Exception as log_error:
         print(f"[Raster-Worker] Could not persist failure log for {task_id}: {log_error}", flush=True)
     job_runtime.set_status(task_id, "failed", error=message)
