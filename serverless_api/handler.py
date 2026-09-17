@@ -3877,6 +3877,8 @@ def submit_job(event, task_id, guest=False):
         for region in regions:
             if not isinstance(region, dict):
                 raise ValueError("A Fauxlogram Flow Painter region is invalid")
+            if str(region.get("region_type") or "painted") not in {"painted", "image_mask"}:
+                raise ValueError("A Fauxlogram Flow Painter region type is invalid")
             if str(region.get("scope") or "combined_region") not in {
                 "combined_region", "each_shape", "entire_artwork",
             }:
