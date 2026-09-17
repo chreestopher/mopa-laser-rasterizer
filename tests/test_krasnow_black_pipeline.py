@@ -106,6 +106,34 @@ def test_material_swatch_matching_ignores_stale_cut_setting_names():
     assert light_blue_with_stale_name.name == "Teal"
 
 
+def test_material_with_no_matching_swatch_descriptions_reports_actionable_error():
+    class MaterialLibrary:
+        def __init__(self):
+            self.layers = []
+
+        def parse_material_library(self, _path):
+            return [
+                SimpleNamespace(materialName="Stainless", entryDesc="Magenta 210mm"),
+                SimpleNamespace(materialName="Stainless", entryDesc="Dark Blue on Stainless"),
+            ]
+
+        def add_layer(self, layer):
+            self.layers.append(layer)
+
+    library = MaterialLibrary()
+    with pytest.raises(ValueError, match="No colors in Material Library material 'stainless' matched.*Rasterizer swatch names") as error:
+        vector_processing.parse_material_settings(
+            library,
+            "unused.clb",
+            ["Black", "Blue"],
+            {"#000000": (0, 0, "Black"), "#0000FF": (240, 1, "Blue")},
+            material_name="stainless",
+        )
+
+    assert "LightBurn entry descriptions" in str(error.value)
+    assert library.layers == []
+
+
 def test_required_setting_matching_ignores_cut_setting_name():
     class MaterialLibrary:
         def __init__(self, setting):

@@ -710,6 +710,12 @@ def parse_material_settings(
     if missing_required:
         requested = ", ".join(sorted(missing_required))
         raise ValueError(f"Material settings file does not contain required filter setting: {requested}")
+    if not matched_settings and not required_layers:
+        raise ValueError(
+            f"No colors in Material Library material '{material_name}' matched the selected "
+            "Rasterizer swatch names. Rename the LightBurn entry descriptions to match "
+            "those swatch names, or select a material with matching entries."
+        )
     return (matched_settings, required_layers) if return_setting_layers else matched_settings
 
 
