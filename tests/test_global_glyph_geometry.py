@@ -1,4 +1,6 @@
+import ast
 import base64
+import math
 import os
 import sys
 from pathlib import Path
@@ -677,6 +679,25 @@ def test_geometry_parameter_parser_preserves_custom_glyph_mask():
     assert parsed["glyph_shape"] == "custom"
 
 
+def test_invalid_custom_glyph_mask_explains_how_to_replace_it():
+    with pytest.raises(ValueError, match="The custom glyph image couldn't be used") as error:
+        parse_geometry_style_parameters({"custom_glyph_mask": {}})
+
+    assert "PNG, JPEG, or WebP" in str(error.value)
+
+
+def test_invalid_flow_region_mask_explains_how_to_replace_it():
+    with pytest.raises(ValueError, match="Fauxlogram Flow Painter region 1's image mask couldn't be used") as error:
+        parse_geometry_style_parameters({
+            "fauxlogram_flow": {
+                "regions": [{"region_type": "image_mask", "mask": {}}],
+                "strokes": [],
+            },
+        })
+
+    assert "Remove the mask" in str(error.value)
+
+
 def test_fauxlogram_flow_accepts_a_mask_without_painted_strokes():
     values = np.zeros((16, 16), dtype=np.uint8)
     values[:, :8] = 255
@@ -831,6 +852,101 @@ def test_flow_painter_exposes_image_masks_as_separate_regions():
     assert "Flat-area fallback angle" in page
     assert "if they overlap, the later region takes precedence" in page
     assert "region.mask&&region.region_type!=='image_mask'" in page
+
+
+def test_flow_painter_region_errors_identify_position_and_recovery():
+    flow = {"regions": [{}, None], "strokes": []}
+    message = r"region 2 could not be read.*Reopen the painter.*Reset geometry settings"
+    with pytest.raises(ValueError, match=message):
+        parse_geometry_style_parameters({"fauxlogram_flow": flow})
+
+    handler = ROOT / "serverless_api" / "handler.py"
+    tree = ast.parse(handler.read_text(encoding="utf-8"))
+    submit = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "submit_job")
+    validate = next(node for node in submit.body if isinstance(node, ast.FunctionDef) and node.name == "validate_fauxlogram_flow")
+    validate_mask = next(node for node in submit.body if isinstance(node, ast.FunctionDef) and node.name == "validate_compact_mask")
+    namespace = {"base64": base64, "math": math}
+    exec(compile(ast.Module(body=[validate_mask, validate], type_ignores=[]), str(handler), "exec"), namespace)
+    with pytest.raises(ValueError, match=message):
+        namespace["validate_fauxlogram_flow"](flow)
+
+    unsupported_type = {"regions": [{}, {"region_type": "unknown"}], "strokes": []}
+    type_message = r"region 2 has an unsupported region type.*Reopen the painter.*Reset geometry settings"
+    with pytest.raises(ValueError, match=type_message):
+        parse_geometry_style_parameters({"fauxlogram_flow": unsupported_type})
+    with pytest.raises(ValueError, match=type_message):
+        namespace["validate_fauxlogram_flow"](unsupported_type)
+
+    bad_scope = {"regions": [{}, {"scope": "unknown"}], "strokes": []}
+    scope_message = (
+        r"region 2 has an invalid Gradient scope.*choose a valid Gradient scope"
+        r".*Reset geometry settings"
+    )
+    with pytest.raises(ValueError, match=scope_message):
+        parse_geometry_style_parameters({"fauxlogram_flow": bad_scope})
+    with pytest.raises(ValueError, match=scope_message):
+        namespace["validate_fauxlogram_flow"](bad_scope)
+
+    bad_guide = {"regions": [{}, {"guide_type": "unknown"}], "strokes": []}
+    guide_message = (
+        r"region 2 has an invalid Guide type.*choose Linear or Radial"
+        r".*Reset geometry settings"
+    )
+    with pytest.raises(ValueError, match=guide_message):
+        parse_geometry_style_parameters({"fauxlogram_flow": bad_guide})
+    with pytest.raises(ValueError, match=guide_message):
+        namespace["validate_fauxlogram_flow"](bad_guide)
+
+    bad_orientation = {"regions": [{}, {"orientation": "unknown"}], "strokes": []}
+    orientation_message = (
+        r"region 2 has an invalid Grating orientation.*choose a Grating orientation"
+        r".*Reset geometry settings"
+    )
+    with pytest.raises(ValueError, match=orientation_message):
+        parse_geometry_style_parameters({"fauxlogram_flow": bad_orientation})
+    with pytest.raises(ValueError, match=orientation_message):
+        namespace["validate_fauxlogram_flow"](bad_orientation)
+
+    bad_point = {"regions": [{}, {"start": ["invalid", 0.5]}], "strokes": []}
+    point_message = r"region 2 has an invalid guide position.*redraw that region's guide.*Reset geometry settings"
+    with pytest.raises(ValueError, match=point_message):
+        parse_geometry_style_parameters({"fauxlogram_flow": bad_point})
+    with pytest.raises(ValueError, match=point_message):
+        namespace["validate_fauxlogram_flow"](bad_point)
+
+    valid_mask = {"width": 8, "height": 8, "data": base64.b64encode(bytes(64)).decode("ascii")}
+    bad_mask_mode = {"regions": [{}, {"mask": valid_mask, "mask_mode": "unknown"}], "strokes": []}
+    mode_message = r"region 2 has an invalid mask Interpretation.*choose Grayscale gradient map or Silhouette"
+    with pytest.raises(ValueError, match=mode_message):
+        parse_geometry_style_parameters({"fauxlogram_flow": bad_mask_mode})
+    with pytest.raises(ValueError, match=mode_message):
+        namespace["validate_fauxlogram_flow"](bad_mask_mode)
+
+    bad_inversion = {"regions": [{}, {"mask": valid_mask, "mask_invert": []}], "strokes": []}
+    with pytest.raises(ValueError, match=r"region 2 has an invalid Invert mask setting"):
+        namespace["validate_fauxlogram_flow"](bad_inversion)
+
+    bad_mask = {"regions": [{}, {"mask": {}}], "strokes": []}
+    with pytest.raises(ValueError, match=r"region 2's image mask couldn't be used"):
+        parse_geometry_style_parameters({"fauxlogram_flow": bad_mask})
+    with pytest.raises(ValueError, match=r"region 2's image mask couldn't be used"):
+        namespace["validate_fauxlogram_flow"](bad_mask)
+
+    missing_region = {"regions": [{}], "strokes": [{"region": 7, "points": [[0.5, 0.5]]}]}
+    stroke_message = r"brush stroke 1 refers to a region that is no longer available.*Reset geometry settings"
+    with pytest.raises(ValueError, match=stroke_message):
+        parse_geometry_style_parameters({"fauxlogram_flow": missing_region})
+    with pytest.raises(ValueError, match=stroke_message):
+        namespace["validate_fauxlogram_flow"](missing_region)
+
+
+def test_invalid_swatch_geometry_identifies_the_swatch_and_valid_choices():
+    with pytest.raises(ValueError, match=r"routing for #FF0000 has an unsupported geometry.*Vectors, Glyphs, or Krasnow"):
+        parse_geometry_style_parameters({
+            "assignments": {"#FF0000": "unknown"},
+            "glyphs": {},
+            "krasnow_grating": {},
+        })
 
 
 def test_geometry_parameter_parser_preserves_flow_region_mask():

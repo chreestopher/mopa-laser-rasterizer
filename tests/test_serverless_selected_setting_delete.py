@@ -17,10 +17,12 @@ class ServerlessSelectedSettingDeleteTests(unittest.TestCase):
         self.client = (ROOT / "serverless_web" / "vault.js").read_text(encoding="utf-8")
 
     def delete_function(self, objects, material=None, recipe=None, preferences=None):
-        function = next(
+        functions = [
             node for node in ast.parse(self.handler).body
-            if isinstance(node, ast.FunctionDef) and node.name == "delete_selected_palette_settings"
-        )
+            if isinstance(node, ast.FunctionDef) and node.name in {
+                "delete_selected_palette_settings", "fauxlographic_schema_version",
+            }
+        ]
 
         class FakeS3:
             def __init__(self):
@@ -69,7 +71,7 @@ class ServerlessSelectedSettingDeleteTests(unittest.TestCase):
             "holographic_swatch_preview": lambda values: [item["observed_hex"] for item in values],
             "response": lambda status, body: {"statusCode": status, "body": json.dumps(body)},
         }
-        exec(compile(ast.Module(body=[function], type_ignores=[]), "handler.py", "exec"), namespace)
+        exec(compile(ast.Module(body=functions, type_ignores=[]), "handler.py", "exec"), namespace)
         return namespace["delete_selected_palette_settings"], fake_s3, fake_table
 
     def test_sources_parse_and_delete_uses_existing_authenticated_endpoint(self):

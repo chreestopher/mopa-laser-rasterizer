@@ -154,7 +154,7 @@ def test_required_setting_matching_ignores_cut_setting_name():
     )
     library = MaterialLibrary(setting)
 
-    with pytest.raises(ValueError, match="required filter setting: fauxlographic"):
+    with pytest.raises(ValueError, match="missing the cut setting required for this fauxlogram job") as error:
         vector_processing.parse_material_settings(
             library,
             "unused.clb",
@@ -165,6 +165,9 @@ def test_required_setting_matching_ignores_cut_setting_name():
             return_setting_layers=True,
         )
 
+    assert "Description is 'fauxlographic'" in str(error.value)
+    assert "'holographic' also works" in str(error.value)
+    assert "Cut mode" in str(error.value)
     assert library.layers == []
 
 

@@ -112,6 +112,16 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
 
         self.assertEqual(summary["material_names"], ["Steel"])
         self.assertEqual([entry["description"] for entry in summary["entries"]], ["Hatch"])
+        with self.assertRaisesRegex(ValueError, "selected material needs at least one laser setting entry"):
+            namespace["material_summary"](b'<LightBurnLibrary><Material name="Empty"/></LightBurnLibrary>')
+        with self.assertRaisesRegex(ValueError, "Available materials: Steel, Brass.*Choose a material name present in the library"):
+            namespace["retain_selected_material"](library, "Titanium")
+
+        duplicate_names = b'<LightBurnLibrary><Material name="Steel"/><Material name="Steel"/></LightBurnLibrary>'
+        with self.assertRaisesRegex(ValueError, "Give the materials distinct names in LightBurn"):
+            namespace["retain_selected_material"](duplicate_names, "Steel")
+        with self.assertRaisesRegex(ValueError, "LightBurn's Material Library.*setting descriptions.*start the import again"):
+            namespace["retain_selected_material"](b"<NotALightBurnLibrary/>", "Steel")
 
     def test_palette_vault_populates_material_names_from_selected_file(self):
         page = (ROOT / "serverless_web" / "vault.html").read_text(encoding="utf-8")

@@ -709,7 +709,19 @@ def parse_material_settings(
     missing_required = required_names.difference(required_layers)
     if missing_required:
         requested = ", ".join(sorted(missing_required))
-        raise ValueError(f"Material settings file does not contain required filter setting: {requested}")
+        if missing_required == {"fauxlographic"}:
+            raise ValueError(
+                f"The selected Material Library material '{material_name}' is missing the "
+                "cut setting required for this fauxlogram job. Add a LightBurn entry whose "
+                "Description is 'fauxlographic' (the older name 'holographic' also works), "
+                "set it to Cut mode, or choose a material that already has one. "
+                "Then submit the job again."
+            )
+        raise ValueError(
+            f"The selected Material Library material '{material_name}' is missing required "
+            f"cut setting(s): {requested}. Add entries with matching Descriptions or choose "
+            "a material that has them, then submit the job again."
+        )
     if not matched_settings and not required_layers:
         raise ValueError(
             f"No colors in Material Library material '{material_name}' matched the selected "
