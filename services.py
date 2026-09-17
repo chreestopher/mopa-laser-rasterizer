@@ -1627,8 +1627,11 @@ def parse_geometry_style_parameters(raw_value):
                 if not isinstance(region, dict):
                     raise ValueError("A Fauxlogram Flow Painter region is invalid")
                 scope = str(region.get("scope") or "combined_region")
+                region_type = str(region.get("region_type") or "painted")
                 guide_type = str(region.get("guide_type") or "linear")
                 orientation = str(region.get("orientation") or "parallel")
+                if region_type not in {"painted", "image_mask"}:
+                    raise ValueError("A Fauxlogram Flow Painter region type is invalid")
                 if scope not in {"combined_region", "each_shape", "entire_artwork"}:
                     raise ValueError("A Fauxlogram Flow Painter scope is invalid")
                 if guide_type not in {"linear", "radial"}:
@@ -1645,7 +1648,7 @@ def parse_geometry_style_parameters(raw_value):
                     return numbers
                 clean_region = {
                     "name": str(region.get("name") or f"Region {len(clean_regions)+1}")[:40],
-                    "scope": scope, "guide_type": guide_type,
+                    "region_type": region_type, "scope": scope, "guide_type": guide_type,
                     "orientation": orientation,
                     "start": point("start", [.25, .5]), "end": point("end", [.75, .5]),
                     "gradient_start": flow_number(region.get("gradient_start"), 165, 0, 255),

@@ -317,6 +317,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertIn('job-details-column job-swatch-settings', script)
         self.assertIn('Object.entries(parsedOverrides)', script)
         self.assertIn('job-mini-swatch-grid', script)
+
         self.assertIn('function displayedLogs(logs)', script)
         self.assertIn('"palette_names","material_library_layers","lightburn_layers","requested_limit_colors","effective_limit_colors"', script)
         self.assertIn("Material layer '.*' assigned to LightBurn layer", script)
@@ -329,6 +330,16 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertIn('<strong>Job type:</strong> <span data-job-type></span>', script)
         self.assertIn('holographic_artwork:"Fauxlographic Etching Lab"', script)
         self.assertIn('font-size:clamp(1.15rem,3vw,1.65rem)!important', styles)
+
+    def test_job_history_renders_compact_masks_as_thumbnails(self):
+        script = (ROOT / "serverless_web" / "history.js").read_text(encoding="utf-8")
+        page = (ROOT / "serverless_web" / "history.html").read_text(encoding="utf-8")
+        self.assertIn('function compactMaskThumbnailHtml(mask)', script)
+        self.assertIn('if(pixels.length!==width*height)', script)
+        self.assertIn('return compactMaskThumbnailHtml(parsed)', script)
+        self.assertIn('canvas.toDataURL("image/png")', script)
+        self.assertIn('class="job-mask-thumbnail"', script)
+        self.assertIn('.job-mask-thumbnail{', page)
 
     def test_rasterizer_pixel_size_accepts_four_decimals_down_to_point_zero_one(self):
         staging = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
@@ -524,7 +535,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertIn('<strong>Job Duration:</strong> <span data-job-duration></span>', script)
         self.assertIn('setText("[data-job-duration]",formatDuration(job))', script)
         self.assertIn('active?" (in progress)":""', script)
-        self.assertIn('src="/history.js?v=8"', page)
+        self.assertIn('src="/history.js?v=9"', page)
 
     def test_serverless_docs_rewrite_production_only_routes(self):
         builder = (ROOT / "dev_setup" / "build_serverless_docs.py").read_text(encoding="utf-8")

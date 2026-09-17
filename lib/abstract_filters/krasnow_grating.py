@@ -434,7 +434,7 @@ def _prepare_fauxlogram_flow(settings):
             if region.get("mask_invert"):
                 values = 1.0 - values
             threshold = number(region.get("mask_threshold"), 0.5, 0, 1)
-            active_y, active_x = (values >= threshold).nonzero()
+            active_y, active_x = ((values > 0) & (values >= threshold)).nonzero()
             if len(active_x):
                 width = max(image.shape[1] - 1, 1)
                 height = max(image.shape[0] - 1, 1)
@@ -559,26 +559,32 @@ def _painted_flow_controls(x, y, bounds, settings):
     min_x, min_y, max_x, max_y = bounds
     nx = (x - min_x) / max(max_x - min_x, 1e-9)
     ny = (y - min_y) / max(max_y - min_y, 1e-9)
+    hit_strokes = [
+        stroke for stroke in reversed(compiled["strokes"])
+        if _distance_to_stroke(nx, ny, stroke)
+        <= number(stroke.get("width"), .08, .002, .5) / 2
+    ]
+    if any(stroke.get("erase") for stroke in hit_strokes):
+        return None
     matched = None
     region_index = None
     mask_value = None
-    for stroke in reversed(compiled["strokes"]):
-        if _distance_to_stroke(nx, ny, stroke) <= number(stroke.get("width"), .08, .002, .5) / 2:
-            if stroke.get("erase"):
-                return None
-            matched = stroke
-            region_index = stroke.get("region")
+    for candidate in reversed(range(len(compiled["regions"]))):
+        matched = next(
+            (stroke for stroke in hit_strokes if stroke.get("region") == candidate),
+            None,
+        )
+        if matched is not None:
+            region_index = candidate
             break
-    if matched is None:
-        for candidate in reversed(range(len(compiled["regions"]))):
-            mask = compiled["masks"].get(candidate)
-            if mask is None:
-                continue
-            value = _flow_mask_value(mask, nx, ny)
-            if value >= mask["threshold"]:
-                region_index = candidate
-                mask_value = value
-                break
+        mask = compiled["masks"].get(candidate)
+        if mask is None:
+            continue
+        value = _flow_mask_value(mask, nx, ny)
+        if value > 0 and value >= mask["threshold"]:
+            region_index = candidate
+            mask_value = value
+            break
     if region_index is None:
         return None
     if not isinstance(region_index, int) or not 0 <= region_index < len(compiled["regions"]):
@@ -586,15 +592,33 @@ def _painted_flow_controls(x, y, bounds, settings):
     region = compiled["regions"][region_index]
     combined_bounds = compiled["bounds"].get(region_index, (0, 0, 1, 1))
     scope_bounds = _flow_scope_bounds(region, matched, compiled, region_index)
-    position, gradient_angle = _flow_position(nx, ny, region, scope_bounds, combined_bounds)
     mask = compiled["masks"].get(region_index)
-    if matched is None and mask is not None and mask.get("mode") == "grayscale":
+    image_gradient_region = (
+        matched is None and mask is not None
+        and mask.get("mode") == "grayscale"
+        and region.get("region_type") == "image_mask"
+    )
+    if image_gradient_region:
+        # The image is the gradient guide for this region. Flat pixels have no
+        # local slope, so use the region's explicit fallback angle, never the
+        # default draggable guide inherited by older flow plans.
         position = mask_value
         mask_angle = _flow_mask_gradient_angle(mask, nx, ny, bounds)
-        if mask_angle is not None:
-            gradient_angle = mask_angle
+        gradient_angle = (
+            mask_angle if mask_angle is not None
+            else number(region.get("fixed_angle"), 0, -180, 180)
+        )
         if region.get("reverse"):
             position = 1 - position
+    else:
+        position, gradient_angle = _flow_position(nx, ny, region, scope_bounds, combined_bounds)
+        if matched is None and mask is not None and mask.get("mode") == "grayscale":
+            position = mask_value
+            mask_angle = _flow_mask_gradient_angle(mask, nx, ny, bounds)
+            if mask_angle is not None:
+                gradient_angle = mask_angle
+            if region.get("reverse"):
+                position = 1 - position
     curve = number(region.get("curve"), settings.get("gradient_curve", 1), .2, 5)
     start = number(region.get("gradient_start"), settings.get("gradient_top", 165), 0, 255)
     end = number(region.get("gradient_end"), settings.get("gradient_bottom", 90), 0, 255)
