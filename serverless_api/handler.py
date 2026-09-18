@@ -30,6 +30,7 @@ COGNITO_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID", "").strip()
 TTL_SECONDS = int(os.environ.get("JOB_TTL_SECONDS", "604800"))
 MAX_ARTWORK_BYTES = int(os.environ.get("MAX_ARTWORK_BYTES", str(100 * 1024 * 1024)))
 MAX_MATERIAL_BYTES = int(os.environ.get("MAX_MATERIAL_BYTES", str(10 * 1024 * 1024)))
+MATERIAL_LIMIT_MB = f"{MAX_MATERIAL_BYTES / (1024 * 1024):g} MB"
 MAX_RECIPE_BYTES = int(os.environ.get("MAX_RECIPE_BYTES", str(10 * 1024 * 1024)))
 UPLOAD_CAPABILITY_SECONDS = 600
 GUEST_JOB_SECONDS = int(os.environ.get("GUEST_JOB_SECONDS", str(24 * 3600)))
@@ -67,6 +68,7 @@ PALETTE = [
     ("Orchid-Pink", "#FA9ED4"), ("Deep-Purple", "#500A78"), ("Rust-Brown", "#B45A00"),
     ("Teal", "#004754"), ("Bright-Mint-Green", "#86FA88"), ("Light-Gold", "#FFDB66"),
 ]
+MAX_LIGHTBURN_LAYERS = len(PALETTE)
 PALETTE_HEX = {name.casefold(): color for name, color in PALETTE}
 PALETTE_NAMES = {color.upper(): name for name, color in PALETTE}
 RASTER_PRESETS = {"cartoon", "color_photograph", "bw_dither_photograph"}
@@ -550,7 +552,7 @@ def publish_community_palette(event):
     if not isinstance(selected, list) or not 1 <= len(selected) <= 500:
         raise ValueError("Select between 1 and 500 swatches to add to Community Set")
     if any(not isinstance(index, int) or isinstance(index, bool) or index < 0 for index in selected):
-        raise ValueError("One or more selected swatches are invalid")
+        raise ValueError("One or more Community Set swatch selections could not be read. Reload the Vault, select the swatches again, and retry publishing.")
     selected = sorted(set(selected))
 
     entries, palette_name, palette_type = [], "", ""
@@ -594,7 +596,7 @@ def publish_community_palette(event):
             return response(404, {"message": "Saved Fauxlographic Palette not found"})
         profile = json.loads(s3.get_object(Bucket=BUCKET, Key=source["s3_key"])["Body"].read(MAX_RECIPE_BYTES + 1))
         measured = profile.get("recipes") if isinstance(profile, dict) else None
-        if int(profile.get("schema_version") or 1) < 2 or not isinstance(measured, list):
+        if fauxlographic_schema_version(profile) < 2 or not isinstance(measured, list):
             raise ValueError("Only self-contained Fauxlographic Palettes can be added to Community Set")
         palette_name = str(source.get("name") or profile.get("profile_name") or "Fauxlographic Palette")[:160]
         palette_type = "holographic_palette"
@@ -1399,7 +1401,7 @@ def delete_owned_item(event, kind, item_id):
     object_key = str(item.get("s3_key") or "")
     if expected_prefix:
         if not object_key.startswith(expected_prefix):
-            return response(400, {"message": "Saved object ownership is invalid"})
+            return response(400, {"message": "We couldn't safely delete this saved item, so it was left unchanged. Report the problem with the item name and your account email."})
         s3.delete_object(Bucket=BUCKET, Key=object_key)
     table.delete_item(Key=key)
     return response(200, {"deleted": True})
@@ -1416,7 +1418,7 @@ def rename_material(event, library_id):
         raise ValueError("Material Library names must be between 1 and 160 characters")
     source = s3.get_object(Bucket=BUCKET, Key=existing["s3_key"])["Body"].read(MAX_MATERIAL_BYTES + 1)
     if len(source) > MAX_MATERIAL_BYTES:
-        raise ValueError("Material Library is too large")
+        raise ValueError(f"This Material Library exceeds the {MATERIAL_LIMIT_MB} limit. Export a smaller library from LightBurn and import it again.")
     root = ET.fromstring(source)
     material, old_material_name = single_palette_material(root)
     material_name = str(data.get("material_name") or old_material_name).strip()
@@ -1466,7 +1468,7 @@ def edit_material_entry(event, library_id, entry_id):
         raise ValueError("Choose a valid operation type and a small settings object")
     source = s3.get_object(Bucket=BUCKET, Key=library["s3_key"])["Body"].read(MAX_MATERIAL_BYTES + 1)
     if len(source) > MAX_MATERIAL_BYTES:
-        raise ValueError("Material Library is too large")
+        raise ValueError(f"This Material Library exceeds the {MATERIAL_LIMIT_MB} limit. Export a smaller library from LightBurn and import it again.")
     root = ET.fromstring(source)
     destination, material_name = single_palette_material(root, "Destination palette")
     entries = [(material, entry) for material in root.findall("./Material") for entry in material.findall("./Entry")]
@@ -1553,22 +1555,22 @@ def selected_settings_root(owner, selections, material_name, allow_duplicates=Fa
         elif recipe_id and isinstance(recipe_index, int) and recipe_index >= 0:
             recipe_requested.setdefault(recipe_id, set()).add(recipe_index)
         else:
-            raise ValueError("One or more selected settings are invalid")
+            raise ValueError("We couldn't read one or more selected settings. Reload the page, select them again, and retry.")
     root = ET.Element("LightBurnLibrary")
     target = ET.SubElement(root, "Material", {"name": material_name})
     descriptions = set()
     for library_id, entry_ids in requested.items():
         library = owned_material(owner, library_id)
         if not library:
-            raise ValueError("One of the selected Material Libraries no longer exists")
+            raise ValueError("One of the selected Material Libraries no longer exists. Reload the Vault, select the settings again, and retry.")
         contents = s3.get_object(Bucket=BUCKET, Key=library["s3_key"])["Body"].read(MAX_MATERIAL_BYTES + 1)
         if len(contents) > MAX_MATERIAL_BYTES:
-            raise ValueError("One of the selected Material Libraries is too large")
+            raise ValueError(f"One of the selected Material Libraries exceeds the {MATERIAL_LIMIT_MB} limit. Select a smaller library or import a smaller LightBurn export.")
         source_root = ET.fromstring(contents)
         entries = [entry for material in source_root.findall("./Material") for entry in material.findall("./Entry")]
         for entry_id in sorted(entry_ids):
             if entry_id >= len(entries):
-                raise ValueError("One of the selected settings no longer exists")
+                raise ValueError("One of the selected Material Library settings no longer exists. Reload the Vault, select the settings again, and retry.")
             entry = entries[entry_id]
             description = str(entry.get("Desc") or "").strip().casefold()
             if description in descriptions and not allow_duplicates:
@@ -1578,14 +1580,14 @@ def selected_settings_root(owner, selections, material_name, allow_duplicates=Fa
     for recipe_id, recipe_indexes in recipe_requested.items():
         record = owned_recipe(owner, recipe_id)
         if not record:
-            raise ValueError("One of the selected Fauxlographic Palettes no longer exists")
+            raise ValueError("One of the selected Fauxlographic Palettes no longer exists. Reload the Vault, select the settings again, and retry.")
         profile = json.loads(s3.get_object(Bucket=BUCKET, Key=record["s3_key"])["Body"].read(MAX_RECIPE_BYTES + 1))
         measured = profile.get("recipes") if isinstance(profile, dict) else None
-        if int(profile.get("schema_version") or 1) < 2 or not isinstance(measured, list):
+        if fauxlographic_schema_version(profile) < 2 or not isinstance(measured, list):
             raise ValueError("Only self-contained Fauxlographic Palette swatches can be exported")
         for recipe_index in sorted(recipe_indexes):
             if recipe_index >= len(measured):
-                raise ValueError("One of the selected Fauxlographic Palette swatches no longer exists")
+                raise ValueError("One of the selected Fauxlographic Palette swatches no longer exists. Reload the Vault, select the settings again, and retry.")
             recipe = measured[recipe_index]
             description = str(recipe.get("name") or "").strip()
             normalized = description.casefold()
@@ -1608,40 +1610,72 @@ def selected_settings_root(owner, selections, material_name, allow_duplicates=Fa
     return root
 
 
+def fauxlographic_swatch_capacity(black_setting):
+    has_black_layer = usable_preserved_black_setting(black_setting) is not None
+    return MAX_LIGHTBURN_LAYERS - int(has_black_layer)
+
+
+def fauxlographic_swatch_limit_message(black_setting):
+    capacity = fauxlographic_swatch_capacity(black_setting)
+    if capacity < MAX_LIGHTBURN_LAYERS:
+        return f"A Fauxlographic Palette with preserved Black can have at most {capacity} measured swatches ({MAX_LIGHTBURN_LAYERS} LightBurn layers total)."
+    return f"A Fauxlographic Palette can have at most {capacity} swatches."
+
+
+def fauxlographic_schema_version(profile):
+    try:
+        version = int(profile.get("schema_version") or 1)
+        if version < 1:
+            raise ValueError("Version must be positive")
+    except (AttributeError, TypeError, ValueError, OverflowError) as error:
+        raise ValueError("This Fauxlographic Palette has an invalid file version. Export a fresh palette JSON and import it again.") from error
+    return version
+
+
 def uploaded_holographic_settings_root(profile, recipe_indexes, material_name):
     """Build a transient LightBurn library from an uploaded Fauxlographic Palette."""
     if not isinstance(profile, dict) or profile.get("kind") != "holographic_calibration_profile":
         raise ValueError("Choose a valid Fauxlographic Swatch Palette")
     measured = profile.get("recipes")
-    if int(profile.get("schema_version") or 1) < 2 or not isinstance(measured, list) or not measured:
+    if fauxlographic_schema_version(profile) < 2 or not isinstance(measured, list) or not measured:
         raise ValueError("Choose a self-contained Fauxlographic Swatch Palette")
+    black_setting = profile.get("black_setting")
+    capacity = fauxlographic_swatch_capacity(black_setting)
+    if len(measured) > capacity:
+        raise ValueError(f"{fauxlographic_swatch_limit_message(black_setting)} Choose a palette with fewer swatches.")
     if not isinstance(recipe_indexes, list) or not recipe_indexes:
         raise ValueError("Select at least one Fauxlographic Palette swatch")
     recipe_indexes = list(dict.fromkeys(recipe_indexes))
-    if (len(recipe_indexes) > 500
-            or any(not isinstance(index, int) or isinstance(index, bool)
-                   or index < 0 or index >= len(measured) for index in recipe_indexes)):
-        raise ValueError("The Fauxlographic Swatch Palette contains too many swatches")
+    if len(recipe_indexes) > capacity:
+        raise ValueError(f"Select no more than {capacity} Fauxlographic Palette swatches for one job.")
+    if any(not isinstance(index, int) or isinstance(index, bool)
+           or index < 0 or index >= len(measured) for index in recipe_indexes):
+        raise ValueError("One or more selected Fauxlographic Palette swatches are no longer available. Reload the palette and select them again.")
     material_name = str(material_name or profile.get("profile_name") or "Fauxlographic Palette").strip()
     if not material_name or len(material_name) > 160:
         raise ValueError("Provide a Material Name between 1 and 160 characters")
     root = ET.Element("LightBurnLibrary")
     target = ET.SubElement(root, "Material", {"name": material_name})
-    descriptions = set()
+    descriptions = {}
     for recipe_index in sorted(recipe_indexes):
         recipe = measured[recipe_index]
         if not isinstance(recipe, dict):
-            raise ValueError("A Fauxlographic Palette swatch is invalid")
+            raise ValueError(f"Swatch {recipe_index + 1} in the uploaded Fauxlographic Palette could not be read. Check the JSON file or export a fresh palette, then try again.")
         description = str(recipe.get("name") or "").strip()
         normalized = description.casefold()
-        if not description or normalized in descriptions:
-            raise ValueError(f"Duplicate swatch name '{description}' is not allowed")
-        descriptions.add(normalized)
+        if not description:
+            raise ValueError(f"Swatch {recipe_index + 1} in the uploaded Fauxlographic Palette has no name. Name it in the JSON file or export a fresh palette, then try again.")
+        if normalized in descriptions:
+            raise ValueError(f"Swatches {descriptions[normalized]} and {recipe_index + 1} in the uploaded Fauxlographic Palette both use the name '{description}'. Give them distinct names in the JSON file, then try again.")
+        descriptions[normalized] = recipe_index + 1
         entry = ET.Element("Entry", {
             "Thickness": "-1.0000", "Desc": description,
             "NoThickTitle": f"{description} {str(recipe.get('observed_hex') or '')}"[:160],
         })
-        cut = lightburn_snapshot_element(recipe.get("laser_settings"))
+        try:
+            cut = lightburn_snapshot_element(recipe.get("laser_settings"))
+        except ValueError as error:
+            raise ValueError(f"Swatch {recipe_index + 1} ('{description}') has invalid embedded LightBurn settings in the uploaded Fauxlographic Palette. Check the JSON file or export a fresh palette, then try again.") from error
         index_node = cut.find("./index")
         if index_node is None:
             index_node = ET.SubElement(cut, "index")
@@ -1661,7 +1695,10 @@ def validate_library_descriptions(root):
         for entry in material.findall("./Entry"):
             description = str(entry.get("Desc") or "").strip()
             if not description or description.casefold() in seen:
-                raise ValueError(f"Material '{material.get('name')}' contains a missing or duplicate setting Description")
+                raise ValueError(
+                    f"Material '{material.get('name')}' has a missing or repeated LightBurn entry Description. "
+                    "Give each setting in that material a distinct Description, then import the library again."
+                )
             seen.add(description.casefold())
 
 
@@ -1748,7 +1785,7 @@ def selected_blank_project_settings(owner, selections):
     material_cache, recipe_cache, resolved = {}, {}, []
     for selection in selections:
         if not isinstance(selection, dict):
-            raise ValueError("One or more selected settings are invalid")
+            raise ValueError("We couldn't read one or more selected settings. Reload the page, select them again, and retry.")
         library_id = str(selection.get("library_id") or "")
         recipe_id = str(selection.get("recipe_id") or "")
         entry_id = selection.get("entry_id")
@@ -1761,22 +1798,22 @@ def selected_blank_project_settings(owner, selections):
             if library_id not in material_cache:
                 library = owned_material(owner, library_id)
                 if not library:
-                    raise ValueError("One of the selected Material Libraries no longer exists")
+                    raise ValueError("One of the selected Material Libraries no longer exists. Reload the Vault, select the settings again, and retry.")
                 contents = s3.get_object(Bucket=BUCKET, Key=library["s3_key"])["Body"].read(MAX_MATERIAL_BYTES + 1)
                 if len(contents) > MAX_MATERIAL_BYTES:
-                    raise ValueError("One of the selected Material Libraries is too large")
+                    raise ValueError(f"One of the selected Material Libraries exceeds the {MATERIAL_LIMIT_MB} limit. Select a smaller library or import a smaller LightBurn export.")
                 source = ET.fromstring(contents)
                 material_cache[library_id] = [
                     entry for material in source.findall("./Material") for entry in material.findall("./Entry")
                 ]
             entries = material_cache[library_id]
             if entry_id >= len(entries):
-                raise ValueError("One of the selected settings no longer exists")
+                raise ValueError("One of the selected Material Library settings no longer exists. Reload the Vault, select the settings again, and retry.")
             entry = deepcopy(entries[entry_id])
             expected = str(selection.get("entry_description") or "").strip()
             description = str(entry.get("Desc") or "").strip()
             if expected and description != expected:
-                raise ValueError("One of the selected settings changed; select it again")
+                raise ValueError("A selected Material Library setting changed since this page loaded. Reload the Vault, select the settings again, and retry.")
             if preferred_index is None:
                 official_hex = PALETTE_HEX.get(description.casefold())
                 preferred_index = next(
@@ -1788,24 +1825,24 @@ def selected_blank_project_settings(owner, selections):
             if recipe_id not in recipe_cache:
                 record = owned_recipe(owner, recipe_id)
                 if not record:
-                    raise ValueError("One of the selected Fauxlographic Palettes no longer exists")
+                    raise ValueError("One of the selected Fauxlographic Palettes no longer exists. Reload the Vault, select the settings again, and retry.")
                 profile = json.loads(s3.get_object(Bucket=BUCKET, Key=record["s3_key"])["Body"].read(MAX_RECIPE_BYTES + 1))
                 measured = profile.get("recipes") if isinstance(profile, dict) else None
-                if int(profile.get("schema_version") or 1) < 2 or not isinstance(measured, list):
+                if fauxlographic_schema_version(profile) < 2 or not isinstance(measured, list):
                     raise ValueError("Only self-contained Fauxlographic Palette swatches can be used")
                 recipe_cache[recipe_id] = measured
             measured = recipe_cache[recipe_id]
             if recipe_index >= len(measured) or not isinstance(measured[recipe_index], dict):
-                raise ValueError("One of the selected Fauxlographic Palette swatches no longer exists")
+                raise ValueError("One of the selected Fauxlographic Palette swatches no longer exists. Reload the Vault, select the settings again, and retry.")
             recipe = measured[recipe_index]
             description = str(recipe.get("name") or "").strip()
             expected_name = str(selection.get("recipe_name") or "").strip()
             expected_hex = str(selection.get("recipe_hex") or "").strip().upper()
             observed_hex = str(recipe.get("observed_hex") or "").strip().upper()
             if (expected_name and description != expected_name) or (expected_hex and observed_hex != expected_hex):
-                raise ValueError("One of the selected Fauxlographic swatches changed; select it again")
+                raise ValueError("A selected Fauxlographic Palette swatch changed since this page loaded. Reload the Vault, select the swatches again, and retry.")
             if not description:
-                raise ValueError("A selected Fauxlographic swatch has no name")
+                raise ValueError("A selected Fauxlographic Palette swatch has no name. Name that swatch in the Vault, then select it again.")
             entry = ET.Element("Entry", {
                 "Thickness":"-1.0000", "Desc":description,
                 "NoThickTitle":f"{description} {observed_hex}"[:160],
@@ -1815,7 +1852,7 @@ def selected_blank_project_settings(owner, selections):
                 preferred_index = nearest_lightburn_palette_index(observed_hex)
             resolved.append((entry, preferred_index))
             continue
-        raise ValueError("One or more selected settings are invalid")
+        raise ValueError("We couldn't read one or more selected settings. Reload the page, select them again, and retry.")
     return resolved
 
 
@@ -1831,7 +1868,7 @@ def blank_lightburn_project(settings):
             overflow.append(entry)
     unused = [index for index in range(len(PALETTE)) if index not in claimed]
     if len(overflow) > len(unused):
-        raise ValueError("The selected settings exceed the available LightBurn layers")
+        raise ValueError(f"The selected settings exceed LightBurn's {MAX_LIGHTBURN_LAYERS}-layer limit. Deselect settings until the project fits, then try again.")
     assignments = list(claimed.items()) + list(zip(unused, overflow))
     project = ET.Element("LightBurnProject", {
         "AppVersion":"2.1.04", "FormatVersion":"1", "MaterialHeight":"0",
@@ -1841,7 +1878,10 @@ def blank_lightburn_project(settings):
     for layer_index, entry in sorted(assignments, key=lambda item:item[0]):
         layer = deepcopy(entry.find("./CutSetting"))
         if layer is None:
-            raise ValueError(f"Selected setting '{entry.get('Desc') or 'Unnamed setting'}' has no LightBurn settings")
+            raise ValueError(
+                f"Selected setting '{entry.get('Desc') or 'Unnamed setting'}' has no LightBurn cut settings. "
+                "Choose another setting or correct that entry in LightBurn and import the library again."
+            )
         for link_path in layer.findall("./LinkPath"):
             layer.remove(link_path)
         index_node = layer.find("./index")
@@ -1872,31 +1912,31 @@ def delete_selected_palette_settings(owner, selections):
         if library_id and isinstance(entry_id, int) and not isinstance(entry_id, bool) and entry_id >= 0 and entry_description:
             expected = requested.setdefault(library_id, {})
             if entry_id in expected and expected[entry_id] != entry_description:
-                raise ValueError("One or more selected settings are inconsistent")
+                raise ValueError("Some selected items have conflicting details. Reload the page, select them again, and retry.")
             expected[entry_id] = entry_description
         elif (recipe_id and isinstance(recipe_index, int) and not isinstance(recipe_index, bool)
               and recipe_index >= 0 and recipe_name and recipe_hex):
             expected = recipe_requested.setdefault(recipe_id, {})
             identity = (recipe_name, recipe_hex)
             if recipe_index in expected and expected[recipe_index] != identity:
-                raise ValueError("One or more selected swatches are inconsistent")
+                raise ValueError("Some selected items have conflicting details. Reload the page, select them again, and retry.")
             expected[recipe_index] = identity
         else:
-            raise ValueError("One or more selected settings are invalid")
+            raise ValueError("We couldn't read one or more selected settings. Reload the page, select them again, and retry.")
 
     material_updates, recipe_updates, deleted_count = [], [], 0
     for library_id, expected_entries in requested.items():
         entry_ids = set(expected_entries)
         library = owned_material(owner, library_id)
         if not library:
-            raise ValueError("One of the selected Material Libraries no longer exists")
+            raise ValueError("One of the selected Material Libraries no longer exists. Reload the Vault, select the settings again, and retry.")
         source = s3.get_object(Bucket=BUCKET, Key=library["s3_key"])["Body"].read(MAX_MATERIAL_BYTES + 1)
         if len(source) > MAX_MATERIAL_BYTES:
-            raise ValueError("One of the selected Material Libraries is too large")
+            raise ValueError(f"One of the selected Material Libraries exceeds the {MATERIAL_LIMIT_MB} limit. Select a smaller library or import a smaller LightBurn export.")
         root = ET.fromstring(source)
         entries = [(material, entry) for material in root.findall("./Material") for entry in material.findall("./Entry")]
         if any(entry_id >= len(entries) for entry_id in entry_ids):
-            raise ValueError("One of the selected Material Library settings no longer exists")
+            raise ValueError("One of the selected Material Library settings no longer exists. Reload the Vault, select the settings again, and retry.")
         if any(str(entries[entry_id][1].get("Desc") or "").strip() != expected_entries[entry_id]
                for entry_id in entry_ids):
             raise ValueError("One of the selected settings changed; reload the palette and select it again")
@@ -1920,30 +1960,36 @@ def delete_selected_palette_settings(owner, selections):
         recipe_indexes = set(expected_recipes)
         record = owned_recipe(owner, recipe_id)
         if not record:
-            raise ValueError("One of the selected Fauxlographic Palettes no longer exists")
+            raise ValueError("One of the selected Fauxlographic Palettes no longer exists. Reload the Vault, select the settings again, and retry.")
         try:
             profile = json.loads(s3.get_object(Bucket=BUCKET, Key=record["s3_key"])["Body"].read(MAX_RECIPE_BYTES + 1))
         except (ClientError, UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise ValueError("One of the selected Fauxlographic Palettes is unavailable or malformed") from error
+            raise ValueError(
+                "We couldn't open one of the selected Fauxlographic Palettes. Reload the Vault and try again. If it still fails, report the palette name."
+            ) from error
         measured = profile.get("recipes") if isinstance(profile, dict) else None
-        if (not isinstance(profile, dict) or int(profile.get("schema_version") or 1) < 2
+        if (not isinstance(profile, dict) or fauxlographic_schema_version(profile) < 2
                 or not isinstance(measured, list)):
             raise ValueError("Only self-contained Fauxlographic Palette swatches can be deleted")
         if any(index >= len(measured) for index in recipe_indexes):
-            raise ValueError("One of the selected Fauxlographic Palette swatches no longer exists")
+            raise ValueError("One of the selected Fauxlographic Palette swatches no longer exists. Reload the Vault, select the settings again, and retry.")
+        unreadable_index = next((index for index in sorted(recipe_indexes) if not isinstance(measured[index], dict)), None)
+        if unreadable_index is not None:
+            raise ValueError(
+                f"Swatch {unreadable_index + 1} in Fauxlographic Palette '{record.get('name') or 'Unnamed palette'}' could not be read. "
+                "Reload the Vault and try again. If it still fails, report the palette name and swatch number."
+            )
         if any((str(measured[index].get("name") or "").strip(),
                 str(measured[index].get("observed_hex") or "").strip().upper()) != expected_recipes[index]
-               for index in recipe_indexes if isinstance(measured[index], dict)):
+               for index in recipe_indexes):
             raise ValueError("One of the selected swatches changed; reload the palette and select it again")
-        if any(not isinstance(measured[index], dict) for index in recipe_indexes):
-            raise ValueError("One of the selected Fauxlographic Palette swatches is malformed")
         if len(measured) - len(recipe_indexes) < 1:
             raise ValueError(f"Keep at least one swatch in '{record.get('name') or 'Fauxlographic Palette'}'")
         kept = [item for index, item in enumerate(measured) if index not in recipe_indexes]
         profile["recipes"] = kept
         body = json.dumps(profile, indent=2).encode()
         if len(body) > MAX_RECIPE_BYTES:
-            raise ValueError("The updated Fauxlographic Palette is too large")
+            raise ValueError("This Fauxlographic Palette exceeds the save-size limit. Remove unneeded swatches, then save again.")
         metadata = dict(record.get("metadata") or {})
         metadata.update({
             "recipe_count": len(kept), "swatch_preview": holographic_swatch_preview(kept),
@@ -2034,7 +2080,7 @@ def selected_material_settings(event):
             return response(404, {"message":"Destination Material Library not found"})
         existing = s3.get_object(Bucket=BUCKET, Key=library["s3_key"])["Body"].read(MAX_MATERIAL_BYTES + 1)
         if len(existing) > MAX_MATERIAL_BYTES:
-            raise ValueError("Destination palette is too large")
+            raise ValueError(f"The destination Material Library exceeds the {MATERIAL_LIMIT_MB} limit. Choose a smaller destination library or import a smaller LightBurn export.")
         target_root = ET.fromstring(existing)
         destination, material_name = single_palette_material(target_root, "Destination palette")
     root = selected_settings_root(owner, data.get("selections"), material_name, allow_duplicates=action == "coupon")
@@ -2172,6 +2218,17 @@ def validate_lightburn_setting_snapshot(snapshot, depth=0):
     return snapshot
 
 
+def usable_preserved_black_setting(setting):
+    """Ignore optional preserved Black when its embedded LightBurn setting cannot be read."""
+    if not isinstance(setting, dict):
+        return None
+    try:
+        validate_lightburn_setting_snapshot(setting.get("laser_settings"))
+    except ValueError:
+        return None
+    return setting
+
+
 def material_black_setting(material):
     """Snapshot the selected material's explicitly named Black setting, when present."""
     for entry in material.findall("./Entry"):
@@ -2255,7 +2312,7 @@ def create_holographic_calibration(event, guest=False, upload_task_id=""):
         material_key = str(data.pop("material_key", ""))
         expected_key_prefix = f"jobs/{upload_task_id}/inputs/material-"
         if not material_key.startswith(expected_key_prefix):
-            return response(400, {"message":"Material Library upload does not belong to this calibration"})
+            return response(400, {"message":"We couldn't match the uploaded Material Library to this calibration. Review the selected file, then click \"Build Calibration Grid\" again to start a fresh upload."})
         try:
             verify_upload(material_key, upload_item["upload_capability"], MAX_MATERIAL_BYTES)
             contents = s3.get_object(Bucket=BUCKET, Key=material_key)["Body"].read(MAX_MATERIAL_BYTES + 1)
@@ -2279,14 +2336,19 @@ def create_holographic_calibration(event, guest=False, upload_task_id=""):
         cut_types = {"setting":None,"line":"Cut","fill":"Scan","offset_fill":"Offset"}
         if cut_mode not in cut_types: raise ValueError("Choose a valid cut mode")
     except (TypeError, ValueError) as error:
-        raise ValueError(str(error) or "Calibration grid values are invalid") from error
+        if str(error).startswith("Choose a valid "):
+            raise
+        raise ValueError(
+            "A Fauxlographic Etching Lab grid value could not be read. Review the selected LightBurn setting, "
+            "grid dimensions, interval range, and sweep bounds, then build the grid again."
+        ) from error
     material_name = str(data.get("material_name") or "").strip()
     if not material_name or len(material_name) > 160: raise ValueError("Provide a Material Name")
-    if len(contents) > MAX_MATERIAL_BYTES: raise ValueError("The selected Material Library is too large")
+    if len(contents) > MAX_MATERIAL_BYTES: raise ValueError(f"The selected Material Library exceeds the {MATERIAL_LIMIT_MB} limit. Choose a smaller library or import a smaller LightBurn export.")
     try:
         source_root = ET.fromstring(contents)
     except ET.ParseError as error:
-        raise ValueError("The selected Material Library is malformed") from error
+        raise ValueError("We couldn't read the selected Material Library. Choose a valid LightBurn library, or export a fresh copy from LightBurn and try again.") from error
     entries = [(material, entry) for material in source_root.findall("./Material") for entry in material.findall("./Entry")]
     if entry_id < 0 or entry_id >= len(entries): raise ValueError("Choose a valid Material Library setting")
     source_material, source_entry = entries[entry_id]
@@ -2458,7 +2520,7 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
         material_key = str(data.pop("material_key", ""))
         expected_key_prefix = f"jobs/{upload_task_id}/inputs/material-"
         if not material_key.startswith(expected_key_prefix):
-            return response(400, {"message":"Material Library upload does not belong to this Color Lab grid"})
+            return response(400, {"message":"We couldn't match the uploaded Material Library to this Color Lab grid. Review the selected file, then click \"Generate Discovery Grid\" again to start a fresh upload."})
         try:
             verify_upload(material_key, upload_item["upload_capability"], MAX_MATERIAL_BYTES)
             contents = s3.get_object(Bucket=BUCKET, Key=material_key)["Body"].read(MAX_MATERIAL_BYTES + 1)
@@ -2532,7 +2594,13 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
         if x_parameter not in COLOR_DISCOVERY_PARAMETERS or y_parameter not in COLOR_DISCOVERY_PARAMETERS or x_parameter == y_parameter: raise ValueError("Choose two different supported sweep parameters")
         x_field, x_values = color_axis_values(x_parameter,data.get("x_low"),data.get("x_high"),columns)
         y_field, y_values = color_axis_values(y_parameter,data.get("y_low"),data.get("y_high"),rows)
-    except (TypeError, ValueError) as error: raise ValueError(str(error) or "Discovery grid values are invalid") from error
+    except (TypeError, ValueError) as error:
+        if str(error).startswith("Choose two different supported sweep parameters"):
+            raise
+        raise ValueError(
+            "A Color Discovery grid value could not be read. Review the selected LightBurn setting, "
+            "grid dimensions, and X- and Y-axis sweep bounds, then generate the grid again."
+        ) from error
     if refinement:
         source_material = ET.Element("Material", {"Name":str(refinement_metadata.get("material") or "")})
         source_entry = ET.Element("Entry", {"Desc":str(refinement_metadata.get("setting_description") or "")})
@@ -2558,9 +2626,9 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
     else:
         if contents is None:
             contents = s3.get_object(Bucket=BUCKET,Key=library["s3_key"])["Body"].read(MAX_MATERIAL_BYTES+1)
-        if len(contents)>MAX_MATERIAL_BYTES: raise ValueError("The selected Material Library is too large")
+        if len(contents)>MAX_MATERIAL_BYTES: raise ValueError(f"The selected Material Library exceeds the {MATERIAL_LIMIT_MB} limit. Choose a smaller library or import a smaller LightBurn export.")
         try: source_root=ET.fromstring(contents)
-        except ET.ParseError as error: raise ValueError("The selected Material Library is malformed") from error
+        except ET.ParseError as error: raise ValueError("We couldn't read the selected Material Library. Choose a valid LightBurn library, or export a fresh copy from LightBurn and try again.") from error
         entries=[(material,entry) for material in source_root.findall("./Material") for entry in material.findall("./Entry")]
         if entry_id<0 or entry_id>=len(entries): raise ValueError("Choose a valid Material Library setting")
         source_material,source_entry=entries[entry_id]; source_cut=source_entry.find("./CutSetting")
@@ -2701,12 +2769,20 @@ def save_color_discovery_palette(event):
     if not palette_name or len(palette_name)>160: raise ValueError("Provide a palette name between 1 and 160 characters")
     if not material_name or len(material_name)>160: raise ValueError("Provide a material name between 1 and 160 characters")
     selected, seen, assigned = [], set(), {}
-    for swatch in measured:
+    for selected_position, swatch in enumerate(measured, start=1):
+        if not isinstance(swatch, dict):
+            raise ValueError(f"Selected swatch {selected_position} could not be read. Reopen the Color Lab results, review its cell, and save again.")
         try:
             index=int(swatch.get("index")); color=str(swatch.get("observed_hex") or "").strip().upper()
             rasterizer_hex=str(swatch.get("rasterizer_hex") or "").strip().upper()
-        except (AttributeError,TypeError,ValueError) as error: raise ValueError("A measured swatch is invalid") from error
-        if index not in known or index in seen or not re.fullmatch(r"#[0-9A-F]{6}",color): raise ValueError("A measured swatch is invalid")
+        except (TypeError,ValueError) as error:
+            raise ValueError(f"Selected swatch {selected_position} has an invalid cell number. Reopen the Color Lab results and select the cell again.") from error
+        if index not in known:
+            raise ValueError(f"Cell {index} is not in this Color Discovery grid. Reload the grid and select its swatches again.")
+        if index in seen:
+            raise ValueError(f"Cell {index} was selected more than once. Reload the Color Lab results and save again.")
+        if not re.fullmatch(r"#[0-9A-F]{6}", color):
+            raise ValueError(f"Cell {index} has an invalid observed color. Measure again or manually correct the cell's values, then save the palette again.")
         palette_index=next((candidate for candidate,item in enumerate(PALETTE) if item[1].upper()==rasterizer_hex),None)
         if palette_index is None: raise ValueError(f"Cell {index} must use one of the official Rasterizer color hex codes")
         if palette_index in assigned:
@@ -2761,25 +2837,44 @@ def save_measured_holographic_recipe(event):
     known = {int(cell["index"]):cell for cell in metadata.get("cells") or []}
     measurements = data.get("measurements")
     if not isinstance(measurements,list) or not measurements: raise ValueError("Keep at least one measured calibration cell")
+    black_setting = usable_preserved_black_setting(metadata.get("embedded_black_setting"))
+    if len(measurements) > fauxlographic_swatch_capacity(black_setting):
+        raise ValueError(f"{fauxlographic_swatch_limit_message(black_setting)} Deselect some measured cells and save again.")
     recipes, names = [], set()
     for measurement in measurements:
-        index = int(measurement.get("index")); rgb = measurement.get("observed_rgb")
+        raw_index = measurement.get("index") if isinstance(measurement, dict) else None
+        try:
+            index = int(raw_index) if not isinstance(raw_index, bool) else None
+        except (TypeError, ValueError, OverflowError):
+            index = None
+        cell_label = f"Cell {index}" if index is not None and index > 0 else "A selected cell"
+        invalid_cell_message = f"{cell_label} has missing or invalid measurement data. Measure again, then save the palette."
+        if index not in known:
+            raise ValueError(invalid_cell_message)
+        rgb = measurement.get("observed_rgb")
+        if not isinstance(rgb, list) or len(rgb) != 3:
+            raise ValueError(invalid_cell_message)
         name = str(measurement.get("name") or f"Fauxlographic {index:02d}").strip()[:160]
-        if index not in known or not isinstance(rgb,list) or len(rgb)!=3: raise ValueError("A measured calibration cell is invalid")
-        rgb = [max(0,min(255,int(value))) for value in rgb]
-        if not name or name.casefold() in names: raise ValueError("Recipe names must be unique")
+        try:
+            rgb = [max(0, min(255, int(value))) for value in rgb]
+        except (TypeError, ValueError, OverflowError) as error:
+            raise ValueError(invalid_cell_message) from error
+        if not name or name.casefold() in names:
+            raise ValueError("Each selected Fauxlographic Palette swatch needs a unique name. Rename or deselect duplicate swatches, then save again.")
         names.add(name.casefold()); recipes.append({"name":name,"observed_rgb":rgb,"observed_hex":"#"+"".join(f"{value:02X}" for value in rgb),**known[index]})
     profile_name = str(data.get("profile_name") or "").strip()
-    if not profile_name or len(profile_name)>160: raise ValueError("Provide a Recipe Profile name")
+    if not profile_name or len(profile_name)>160:
+        raise ValueError("Give the Fauxlographic Palette a name between 1 and 160 characters.")
     recipe_id, now = str(uuid.uuid4()), int(time.time())
     profile = {"kind":"holographic_calibration_profile","schema_version":2,"status":"recipe_palette_ready",
                "self_contained":True,"profile_id":recipe_id,"profile_name":profile_name,"grid":metadata,
                "capture":data.get("capture") if isinstance(data.get("capture"),dict) else {},
-               "black_setting":metadata.get("embedded_black_setting"),"recipes":recipes}
+               "black_setting":black_setting,"recipes":recipes}
     filename = safe_name(profile_name,"holographic-recipe")+".json"
     object_key = f"users/{owner}/holographic-recipes/{recipe_id}/{filename}"
     body = json.dumps(profile,indent=2).encode()
-    if len(body)>MAX_RECIPE_BYTES: raise ValueError("The generated Recipe Profile is too large")
+    if len(body)>MAX_RECIPE_BYTES:
+        raise ValueError("This Fauxlographic Palette exceeds the save-size limit. Shorten the capture details and save again.")
     s3.put_object(Bucket=BUCKET,Key=object_key,Body=body,ContentType="application/json")
     metadata_summary={"profile_name":profile_name,"recipe_count":len(recipes),"material":str(metadata.get("material") or "")[:160],
                       "swatch_preview": holographic_swatch_preview(recipes),
@@ -2797,7 +2892,9 @@ def holographic_recipe_detail(event, recipe_id):
     try:
         profile = json.loads(s3.get_object(Bucket=BUCKET, Key=recipe["s3_key"])["Body"].read(MAX_RECIPE_BYTES + 1))
     except (ClientError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError("The saved Fauxlographic Palette is unavailable or malformed") from error
+        raise ValueError(
+            "We couldn't open this saved Fauxlographic Palette. Reload the Vault and try again. If it still fails, report the palette name."
+        ) from error
     preview = holographic_swatch_preview(profile.get("recipes"))
     metadata = dict(recipe.get("metadata") or {})
     if metadata.get("swatch_preview") != preview:
@@ -2816,30 +2913,45 @@ def update_holographic_recipe(event, recipe_id):
     try:
         profile = json.loads(s3.get_object(Bucket=BUCKET, Key=record["s3_key"])["Body"].read(MAX_RECIPE_BYTES + 1))
     except (ClientError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError("The saved Fauxlographic Palette is unavailable or malformed") from error
+        raise ValueError(
+            "We couldn't open this saved Fauxlographic Palette. Reload the Vault and try again. If it still fails, report the palette name."
+        ) from error
     name = str(data.get("name") or "").strip()
     measured = data.get("recipes")
     if not name or len(name) > 160:
         raise ValueError("Fauxlographic Palette names must be between 1 and 160 characters")
-    if not isinstance(measured, list) or not measured or len(measured) > 100:
-        raise ValueError("Keep between 1 and 100 Fauxlographic Palette swatches")
+    capacity = fauxlographic_swatch_capacity(profile.get("black_setting"))
+    if not isinstance(measured, list) or not measured or len(measured) > capacity:
+        raise ValueError(f"Keep between 1 and {capacity} Fauxlographic Palette swatches. Preserved Black uses one of the {MAX_LIGHTBURN_LAYERS} LightBurn layers when present.")
     cleaned, names = [], set()
-    for raw in measured:
+    for swatch_index, raw in enumerate(measured, start=1):
         if not isinstance(raw, dict):
-            raise ValueError("A Fauxlographic Palette swatch is invalid")
+            raise ValueError(f"Swatch {swatch_index} in this Fauxlographic Palette could not be read. Reload the Vault palette, then try saving again.")
         swatch_name = str(raw.get("name") or "").strip()
         normalized_name = swatch_name.casefold()
         observed_hex = str(raw.get("observed_hex") or "").strip().upper()
         if not swatch_name or len(swatch_name) > 160 or normalized_name in names:
-            raise ValueError("Fauxlographic Palette swatch names must be present and unique")
+            raise ValueError("Each Fauxlographic Palette swatch needs a unique name between 1 and 160 characters. Correct the names, then save again.")
         if not re.fullmatch(r"#[0-9A-F]{6}", observed_hex):
-            raise ValueError("Each Fauxlographic Palette swatch needs a valid observed color")
+            raise ValueError(f"Swatch '{swatch_name}' has an invalid observed color. Open that swatch, choose a color under Observed color, then save again.")
         try:
-            interval = max(.001, min(10, float(raw.get("interval_mm"))))
-            angle = float(raw.get("angle_degrees")) % 180
-        except (TypeError, ValueError) as error:
-            raise ValueError("Each Fauxlographic Palette swatch needs a valid interval and angle") from error
-        laser_settings = validate_lightburn_setting_snapshot(raw.get("laser_settings"))
+            interval = float(raw.get("interval_mm"))
+            if not math.isfinite(interval):
+                raise ValueError("Interval must be finite")
+        except (TypeError, ValueError, OverflowError) as error:
+            raise ValueError(f"Swatch '{swatch_name}' has an invalid Interval (mm). Enter a number, then save again.") from error
+        interval = max(.001, min(10, interval))
+        try:
+            angle = float(raw.get("angle_degrees"))
+            if not math.isfinite(angle):
+                raise ValueError("Angle must be finite")
+        except (TypeError, ValueError, OverflowError) as error:
+            raise ValueError(f"Swatch '{swatch_name}' has an invalid Angle (degrees). Enter a number, then save again.") from error
+        angle %= 180
+        try:
+            laser_settings = validate_lightburn_setting_snapshot(raw.get("laser_settings"))
+        except ValueError as error:
+            raise ValueError(f"Swatch '{swatch_name}' has invalid embedded LightBurn settings. Review its laser-setting fields in the Vault editor, then save again.") from error
         names.add(normalized_name)
         item = dict(raw)
         item.update({"name":swatch_name,"observed_hex":observed_hex,
@@ -2855,7 +2967,7 @@ def update_holographic_recipe(event, recipe_id):
     profile.update({"schema_version":2,"self_contained":True,"profile_name":name,"recipes":cleaned})
     body = json.dumps(profile, indent=2).encode()
     if len(body) > MAX_RECIPE_BYTES:
-        raise ValueError("The updated Fauxlographic Palette is too large")
+        raise ValueError("This Fauxlographic Palette exceeds the save-size limit. Remove unneeded swatches, then save again.")
     now = int(time.time())
     s3.put_object(Bucket=BUCKET, Key=record["s3_key"], Body=body, ContentType="application/json")
     metadata = dict(record.get("metadata") or {})
@@ -2903,7 +3015,8 @@ def import_upload(event):
         "created_at": now, "expires_at": now + 900,
     })
     return response(201, {"import_id": import_id, "upload_token": token,
-                          "upload": {"url": signed["url"], "fields": signed["fields"], "key": key}})
+                          "upload": {"url": signed["url"], "fields": signed["fields"], "key": key,
+                                     "kind": kind, "max_file_bytes": MAX_MATERIAL_BYTES}})
 
 
 def effective_lightburn_settings(setting):
@@ -2923,6 +3036,8 @@ def material_summary(contents):
         raise ValueError("The file is not a LightBurn Material Library")
     populated_materials = [material for material in root.findall("./Material") if material.findall("./Entry")]
     if len(populated_materials) != 1:
+        if not populated_materials:
+            raise ValueError("The selected material needs at least one laser setting entry. Choose a material with settings or add a setting in LightBurn, then import the library again.")
         raise ValueError("Palette must contain settings for exactly one material")
     entries, names, description_issues = [], [], []
     for material in root.findall(".//Material"):
@@ -3004,7 +3119,11 @@ def normalize_imported_material_descriptions(contents):
 def retain_selected_material(contents, selected_name):
     root = ET.fromstring(contents)
     if root.tag != "LightBurnLibrary":
-        raise ValueError("The file is not a LightBurn Material Library")
+        raise ValueError(
+            "This isn't a LightBurn Material Library. Export a copy as a .clb file from LightBurn's Material Library. "
+            "For a swatch palette, rename the copy's setting descriptions to match your desired Rasterizer swatches, "
+            "then start the import again."
+        )
     selected_name = str(selected_name or "").strip()
     materials = root.findall("./Material")
     matches = [material for material in materials if str(material.get("name") or "").strip() == selected_name]
@@ -3012,9 +3131,15 @@ def retain_selected_material(contents, selected_name):
         available = [str(material.get("name") or "").strip() for material in materials]
         available = [name for name in available if name]
         detail = f" Available materials: {', '.join(available[:20])}." if available else ""
-        raise ValueError(f"Material '{selected_name or '(none selected)'}' was not found in the library.{detail}")
+        raise ValueError(
+            f"Material '{selected_name or '(none selected)'}' was not found in the library.{detail} "
+            "Choose a material name present in the library that contains the settings you want to import."
+        )
     if len(matches) > 1:
-        raise ValueError(f"Material name '{selected_name}' occurs more than once in the library")
+        raise ValueError(
+            f"The LightBurn library contains more than one material named '{selected_name}'. "
+            "Give the materials distinct names in LightBurn, save the library, and import it again."
+        )
     for material in materials:
         if material is not matches[0]:
             root.remove(material)
@@ -3080,18 +3205,40 @@ def finalize_import(event, import_id):
     key = {"pk": f"USER#{owner}", "sk": f"IMPORT#{import_id}"}
     pending = table.get_item(Key=key, ConsistentRead=True).get("Item")
     if not pending:
-        return response(404, {"message": "Import not found or expired"})
+        return response(404, {"message": "This import session is no longer available. Start the import again."})
     token = str(data.get("upload_token") or "")
     if not token or not secrets.compare_digest(token_hash(token), str(pending.get("capability") or "")):
-        return response(403, {"message": "Import capability is invalid"})
+        return response(403, {"message": "This import session could not be verified. Start a new import and upload the file using its new link."})
     temporary_key = str(pending["s3_key"])
     try:
-        result = s3.get_object(Bucket=BUCKET, Key=temporary_key)
+        try:
+            result = s3.get_object(Bucket=BUCKET, Key=temporary_key)
+        except ClientError as error:
+            raise ValueError("We couldn't retrieve the uploaded file. Start a new import and upload the file again using its new link.") from error
         if (result.get("Metadata") or {}).get("upload-capability") != pending.get("capability"):
-            raise ValueError("Import upload capability does not match")
-        if int(result.get("ContentLength") or 0) > MAX_MATERIAL_BYTES:
-            raise ValueError("Imported file is too large")
+            raise ValueError("We couldn't verify this uploaded file. Start a new import and upload the file using its new link.")
+        size = int(result.get("ContentLength") or 0)
+        if size < 1:
+            raise ValueError("The uploaded file is empty. Choose a nonempty file and start a new import.")
+        limit_mb = f"{MAX_MATERIAL_BYTES / (1024 * 1024):g} MB"
+        if pending["kind"] == "material":
+            size_error = (
+                f"This LightBurn Material Library exceeds the {limit_mb} upload limit. "
+                "Save a copy in LightBurn, remove materials you don't plan to import from that copy, "
+                "export it as a .clb file, and start a new import."
+            )
+        else:
+            size_error = (
+                f"This Fauxlographic Palette exceeds the {limit_mb} upload limit. "
+                "Export a smaller palette with only the swatches and capture details you need, then start a new import."
+            )
+        if size > MAX_MATERIAL_BYTES:
+            raise ValueError(size_error)
         contents = result["Body"].read(MAX_MATERIAL_BYTES + 1)
+        if not contents:
+            raise ValueError("The uploaded file is empty. Choose a nonempty file and start a new import.")
+        if len(contents) > MAX_MATERIAL_BYTES:
+            raise ValueError(size_error)
         asset_id, now = str(uuid.uuid4()), int(time.time())
         if pending["kind"] == "material":
             contents = retain_selected_material(contents, pending.get("material_name"))
@@ -3099,14 +3246,20 @@ def finalize_import(event, import_id):
                 root = ET.fromstring(contents)
                 source_entries = [entry for material in root.findall("./Material") for entry in material.findall("./Entry")]
                 try: base_setting_id = int(pending.get("base_setting_id"))
-                except (TypeError, ValueError) as error: raise ValueError("Choose one setting from the selected material") from error
+                except (TypeError, ValueError) as error:
+                    raise ValueError(
+                        "The Hatch Palette base setting selection could not be read. Start a new import and select one setting from the material."
+                    ) from error
                 if base_setting_id < 0 or base_setting_id >= len(source_entries):
-                    raise ValueError("The selected base setting no longer exists in that material")
+                    raise ValueError("The selected Hatch Palette base setting no longer exists in that material. Start a new import and select the base setting again.")
                 base_entry = source_entries[base_setting_id]
                 operation = str(pending.get("hatch_operation") or "setting")
                 if operation in {"Scan", "Offset"}:
                     cut = base_entry.find("./CutSetting")
-                    if cut is None: raise ValueError("The selected base entry has no LightBurn setting")
+                    if cut is None:
+                        raise ValueError(
+                            "The selected Hatch Palette base entry has no LightBurn cut setting. Give it a Fill or Offset Fill setting in LightBurn, export the .clb file again, and start a new import."
+                        )
                     cut.set("type", operation)
                 elif operation != "setting":
                     raise ValueError("Choose Use setting, Fill, or Offset Fill")
@@ -3129,20 +3282,29 @@ def finalize_import(event, import_id):
                 "import_adjustments": import_adjustments}
         else:
             recipe = json.loads(contents.decode("utf-8"))
-            recipes = recipe.get("recipes") if isinstance(recipe, dict) else None
-            if recipe.get("kind") != "holographic_calibration_profile" or not isinstance(recipes, list) or not recipes:
-                raise ValueError("Choose a Fauxlographic Palette with at least one saved recipe")
-            schema_version = int(recipe.get("schema_version") or 1)
+            if not isinstance(recipe, dict) or recipe.get("kind") != "holographic_calibration_profile":
+                raise ValueError("This file is not a Fauxlographic Palette. Choose a Fauxlographic Palette JSON file.")
+            recipes = recipe.get("recipes")
+            if not isinstance(recipes, list) or not recipes:
+                raise ValueError("This Fauxlographic Palette has no saved swatches. Choose a palette containing at least one swatch.")
+            original_black_setting = recipe.get("black_setting")
+            black_setting = usable_preserved_black_setting(original_black_setting)
+            ignored_preserved_black = original_black_setting is not None and black_setting is None
+            if ignored_preserved_black:
+                recipe["black_setting"] = None
+                contents = json.dumps(recipe, separators=(",", ":")).encode("utf-8")
+            if len(recipes) > fauxlographic_swatch_capacity(black_setting):
+                raise ValueError(f"{fauxlographic_swatch_limit_message(black_setting)} Import a palette with fewer swatches.")
+            schema_version = fauxlographic_schema_version(recipe)
             if schema_version >= 2:
-                for measured in recipes:
+                for swatch_index, measured in enumerate(recipes, start=1):
                     if not isinstance(measured, dict):
-                        raise ValueError("A Fauxlographic Palette measurement is invalid")
-                    validate_lightburn_setting_snapshot(measured.get("laser_settings"))
-                black_setting = recipe.get("black_setting")
-                if black_setting is not None:
-                    if not isinstance(black_setting, dict):
-                        raise ValueError("A Fauxlographic Palette Black setting is invalid")
-                    validate_lightburn_setting_snapshot(black_setting.get("laser_settings"))
+                        raise ValueError(f"Swatch {swatch_index} in the uploaded Fauxlographic Palette could not be read. Check the JSON file or export a fresh palette, then try again.")
+                    try:
+                        validate_lightburn_setting_snapshot(measured.get("laser_settings"))
+                    except ValueError as error:
+                        swatch_name = str(measured.get("name") or f"Swatch {swatch_index}").strip()[:160]
+                        raise ValueError(f"Swatch {swatch_index} ('{swatch_name}') has invalid embedded LightBurn settings in the uploaded Fauxlographic Palette. Check the JSON file or export a fresh palette, then try again.") from error
             filename = pending["filename"]
             destination = f"users/{owner}/holographic-recipes/{asset_id}/{filename}"
             metadata = {"profile_name": str(recipe.get("profile_name") or "")[:160],
@@ -3155,13 +3317,31 @@ def finalize_import(event, import_id):
             item = {"pk": f"USER#{owner}", "sk": f"HOLORECIPE#{asset_id}", "recipe_id": asset_id,
                     "name": pending.get("display_name") or metadata["profile_name"] or os.path.splitext(filename)[0],
                     "original_name": filename, "metadata": metadata, "s3_key": destination, "created_at": now}
-            response_body = {"holographic_recipe": {"recipe_id": asset_id, "name": item["name"], "metadata": metadata}}
+            response_body = {"holographic_recipe": {"recipe_id": asset_id, "name": item["name"], "metadata": metadata},
+                             "ignored_preserved_black": ignored_preserved_black}
         if pending["kind"] == "material":
             s3.put_object(Bucket=BUCKET, Key=destination, Body=contents, ContentType="application/xml")
+        elif ignored_preserved_black:
+            s3.put_object(Bucket=BUCKET, Key=destination, Body=contents, ContentType="application/json")
         else:
             s3.copy_object(Bucket=BUCKET, CopySource={"Bucket": BUCKET, "Key": temporary_key}, Key=destination)
         table.put_item(Item=item)
         return response(201, response_body)
+    except (ET.ParseError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        owner_ref = hashlib.sha256(owner.encode("utf-8")).hexdigest()[:12]
+        print(
+            "Staging import validation failed "
+            f"owner_ref={owner_ref} import_id={import_id} kind={pending.get('kind')} "
+            f"intent={pending.get('library_intent')} filename={safe_name(pending.get('filename'), 'upload')}: malformed file",
+            flush=True,
+        )
+        if pending.get("kind") == "material":
+            raise ValueError(
+                "This LightBurn Material Library could not be read. Choose a valid .clb file exported from LightBurn and start the import again."
+            ) from error
+        raise ValueError(
+            "This Fauxlographic Palette JSON could not be read. Choose a valid Fauxlographic Palette JSON file and start the import again."
+        ) from error
     except ValueError as error:
         owner_ref = hashlib.sha256(owner.encode("utf-8")).hexdigest()[:12]
         print(
@@ -3171,15 +3351,6 @@ def finalize_import(event, import_id):
             flush=True,
         )
         raise
-    except (ET.ParseError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        owner_ref = hashlib.sha256(owner.encode("utf-8")).hexdigest()[:12]
-        print(
-            "Staging import validation failed "
-            f"owner_ref={owner_ref} import_id={import_id} kind={pending.get('kind')} "
-            f"intent={pending.get('library_intent')} filename={safe_name(pending.get('filename'), 'upload')}: malformed file",
-            flush=True,
-        )
-        raise ValueError("The uploaded file is malformed") from error
     finally:
         s3.delete_object(Bucket=BUCKET, Key=temporary_key)
         table.delete_item(Key=key)
@@ -3248,13 +3419,15 @@ def create_upload(event):
     if saved_recipe:
         profile = json.loads(s3.get_object(Bucket=BUCKET, Key=saved_recipe["s3_key"])["Body"].read(MAX_RECIPE_BYTES + 1))
         measured = profile.get("recipes") if isinstance(profile, dict) else None
-        if int(profile.get("schema_version") or 1) < 2 or not isinstance(measured, list) or not measured:
+        if fauxlographic_schema_version(profile) < 2 or not isinstance(measured, list) or not measured:
             raise ValueError("Only self-contained Fauxlographic Palettes can be used by Rasterizer")
+        if len(measured) > fauxlographic_swatch_capacity(profile.get("black_setting")):
+            raise ValueError(f"{fauxlographic_swatch_limit_message(profile.get('black_setting'))} Choose a palette with fewer swatches.")
         selections = [{"recipe_id":saved_recipe_id,"recipe_index":index} for index in range(len(measured))]
         library_root = selected_settings_root(owner, selections, saved_recipe.get("name") or "Fauxlographic Palette")
         embedded_black_name = ""
-        black_setting = profile.get("black_setting")
-        if isinstance(black_setting, dict) and isinstance(black_setting.get("laser_settings"), dict):
+        black_setting = usable_preserved_black_setting(profile.get("black_setting"))
+        if black_setting is not None:
             embedded_black_name = "Rasterizer Preserved Black"
             target_material = library_root.find("./Material")
             black_entry = ET.SubElement(target_material, "Entry", {
@@ -3270,7 +3443,7 @@ def create_upload(event):
             black_entry.append(black_cut)
         library_bytes = ET.tostring(library_root, encoding="utf-8", xml_declaration=True)
         if len(library_bytes) > MAX_MATERIAL_BYTES:
-            raise ValueError("Generated Fauxlographic Palette Material Library is too large")
+            raise ValueError(f"The generated Fauxlographic Palette Material Library exceeds the {MATERIAL_LIMIT_MB} limit. Use fewer swatches and try again.")
         generated_material_key = f"jobs/{task_id}/inputs/material-{material_name}"
         s3.put_object(Bucket=BUCKET, Key=generated_material_key, Body=library_bytes,
                       ContentType="application/xml", Metadata={"upload-capability":digest})
@@ -3444,15 +3617,24 @@ def create_guest_upload(event):
 
 def verify_upload(key, digest, maximum):
     if not key.startswith("jobs/") or "/inputs/" not in key:
-        raise ValueError("Invalid staging upload key")
+        raise ValueError("The uploaded file does not match this request. Select the file again and retry to start a fresh upload.")
     try:
         head = s3.head_object(Bucket=BUCKET, Key=key)
     except ClientError as error:
-        raise ValueError(f"Upload is missing: {key}") from error
-    if head.get("ContentLength", 0) < 1 or head.get("ContentLength", 0) > maximum:
-        raise ValueError(f"Upload has an invalid size: {key}")
+        raise ValueError(
+            "We couldn't access the uploaded file. Select it again and retry to start a fresh upload. "
+            "If this keeps happening, report the time and any job or grid ID shown."
+        ) from error
+    size = int(head.get("ContentLength") or 0)
+    if size < 1:
+        raise ValueError("The uploaded file is empty. Choose a nonempty file and retry the upload.")
+    if size > maximum:
+        raise ValueError(
+            f"The uploaded file exceeds the {maximum / (1024 * 1024):g} MB limit. "
+            "Choose a smaller file and retry the upload."
+        )
     if (head.get("Metadata") or {}).get("upload-capability") != digest:
-        raise ValueError("Upload capability does not match this task")
+        raise ValueError("The uploaded file no longer matches this request. Select it again and retry to start a fresh upload.")
     return head
 
 
@@ -3540,24 +3722,30 @@ def record_artwork_duplicate_telemetry(owner, task_id, head):
 
 def verify_saved_material(key, owner, maximum):
     if not key.startswith(f"users/{owner}/materials/"):
-        raise ValueError("Saved Material Library does not belong to this account")
+        raise ValueError("This saved Material Library isn't available to the signed-in account. Check that you're signed into the right account, or choose another library.")
     try:
         head = s3.head_object(Bucket=BUCKET, Key=key)
     except ClientError as error:
-        raise ValueError("Saved Material Library file is missing") from error
-    if head.get("ContentLength", 0) < 1 or head.get("ContentLength", 0) > maximum:
-        raise ValueError("Saved Material Library has an invalid size")
+        raise ValueError("We couldn't access the saved Material Library. Try again. If it keeps happening, re-import the library or report the problem, including any job ID shown.") from error
+    size = int(head.get("ContentLength") or 0)
+    if size < 1:
+        raise ValueError("The saved Material Library is empty. Choose another library or import a valid LightBurn file.")
+    if size > maximum:
+        raise ValueError(f"The saved Material Library exceeds the {maximum / (1024 * 1024):g} MB limit. Choose a smaller library or import a smaller LightBurn export.")
 
 
 def verify_saved_recipe(key, owner, maximum):
     if not key.startswith(f"users/{owner}/holographic-recipes/"):
-        raise ValueError("Saved Fauxlographic Palette does not belong to this account")
+        raise ValueError("This saved Fauxlographic Palette isn't available to the signed-in account. Check that you're signed into the right account, or choose another palette.")
     try:
         head = s3.head_object(Bucket=BUCKET, Key=key)
     except ClientError as error:
-        raise ValueError("Saved Fauxlographic Palette file is missing") from error
-    if head.get("ContentLength", 0) < 1 or head.get("ContentLength", 0) > maximum:
-        raise ValueError("Saved Fauxlographic Palette has an invalid size")
+        raise ValueError("We couldn't access the saved Fauxlographic Palette. Try again. If it keeps happening, re-import the palette or report the problem, including any job ID shown.") from error
+    size = int(head.get("ContentLength") or 0)
+    if size < 1:
+        raise ValueError("The saved Fauxlographic Palette is empty. Choose another palette or import a valid palette file.")
+    if size > maximum:
+        raise ValueError(f"The saved Fauxlographic Palette exceeds the {maximum / (1024 * 1024):g} MB limit. Choose a smaller palette or import a smaller palette file.")
 
 
 def create_holographic_upload(event):
@@ -3610,9 +3798,9 @@ def submit_holographic_job(event, task_id):
     recipe_key = str(data.get("recipe_key") or "")
     material_key = str(data.get("material_key") or "")
     if not artwork_key.startswith(f"jobs/{task_id}/inputs/"):
-        return response(400, {"message": "Artwork upload key does not belong to this task"})
+        return response(400, {"message": "We couldn't match the uploaded artwork to this job. Submit the job again to start a fresh upload."})
     if recipe_key != item.get("saved_recipe_key") or material_key != item.get("saved_material_key"):
-        return response(400, {"message": "Saved input selection changed during submission"})
+        return response(400, {"message": "Your input selection changed while the file was uploading. Review your selection, then submit the job again."})
     try:
         max_dimension = max(8, min(1600, int(data.get("max_dimension", 96))))
         pixel_mm = max(0.01, min(5, float(data.get("pixel_mm", 0.5))))
@@ -3729,7 +3917,7 @@ def submit_job(event, task_id, guest=False):
     svg_only = item.get("svg_only") is True
     requested_svg_only = data.get("svg_only") is True or str(data.get("svg_only") or "").strip().lower() in {"1", "true", "yes", "on"}
     if requested_svg_only != svg_only:
-        return response(400, {"message": "SVG-Only selection changed during submission"})
+        return response(400, {"message": "The SVG-Only choice no longer matches this upload. Review your output choice, then submit the job again."})
     data["svg_only"] = "true" if svg_only else "false"
     preset = str(data.get("image_preset") or "cartoon").strip().lower()
     if preset not in RASTER_PRESETS and not (
@@ -3740,11 +3928,11 @@ def submit_job(event, task_id, guest=False):
     try:
         parameters = json.loads(raw_parameters) if isinstance(raw_parameters, str) else raw_parameters
     except (TypeError, json.JSONDecodeError):
-        return response(400, {"message": "Image style settings are not valid JSON"})
+        return response(400, {"message": "We couldn't read the Image Style settings. Reload Rasterizer, choose the style again, and submit the job again."})
     if not isinstance(parameters, dict) or len(parameters) > 20:
-        return response(400, {"message": "Image style settings must be a small object"})
+        return response(400, {"message": "The Image Style settings could not be read or contain too many controls. Reload Rasterizer, choose the style again, and submit the job again."})
     if any(not isinstance(value, (str, int, float, bool)) for value in parameters.values()):
-        return response(400, {"message": "Image style settings contain an invalid value"})
+        return response(400, {"message": "An Image Style control has an invalid value. Use Reset settings under Image Style, then configure it and submit again."})
     # Color matching is independent of abstract-filter controls. Older cached
     # clients briefly sent these keys inside the abstract settings object, so
     # pop them there as a compatibility measure before the worker's numeric
@@ -3773,7 +3961,8 @@ def submit_job(event, task_id, guest=False):
             if not math.isfinite(value) or not 0 <= value <= 10:
                 raise ValueError
         except (TypeError, ValueError):
-            return response(400, {"message": "Color matching influences must be between 0 and 10"})
+            label = key.removeprefix("color_matching_").removesuffix("_weight").capitalize()
+            return response(400, {"message": f"Color matching {label} influence must be between 0 and 10. Adjust that control and submit again."})
         data[key] = value
         matching_weights.append(value)
     if matching_mode == "custom" and not sum(matching_weights):
@@ -3807,18 +3996,18 @@ def submit_job(event, task_id, guest=False):
             else raw_geometry_parameters
         )
     except (TypeError, json.JSONDecodeError):
-        return response(400, {"message": "Geometry style settings are not valid JSON"})
+        return response(400, {"message": "We couldn't read the Geometry Style settings. Reload Rasterizer, choose the geometry again, and submit the job again."})
     if not isinstance(geometry_parameters, dict):
-        return response(400, {"message": "Geometry style settings must be a small object"})
+        return response(400, {"message": "The Geometry Style settings could not be read. Use Reset geometry settings, configure the geometry again, and submit the job again."})
     # Older cached staging pages exposed this retired experimental control.
     # Discard it so a browser/API/worker rolling deployment cannot strand an
     # otherwise valid Rasterizer job.
     geometry_parameters = dict(geometry_parameters)
     geometry_parameters.pop("posterize_colors", None)
     if len(geometry_parameters) > 24:
-        return response(400, {"message": "Geometry style settings must be a small object"})
+        return response(400, {"message": "The Geometry Style settings contain too many controls. Use Reset geometry settings, configure the geometry again, and submit the job again."})
     if len(json.dumps(geometry_parameters, separators=(",", ":"))) > 120000:
-        return response(400, {"message": "Geometry style settings are too large"})
+        return response(400, {"message": "The Geometry Style settings are too large to submit. Remove extra Flow Painter regions, masks, or brush strokes and try again."})
     numeric_geometry_parameters = {
         "cell_size_mm", "minimum_glyph_ratio", "maximum_glyph_ratio",
         "non_black_glyph_density", "tone_curve", "contrast", "grid_angle",
@@ -3826,14 +4015,17 @@ def submit_job(event, task_id, guest=False):
         "gradient_bottom", "gradient_curve", "hue_rotation",
         "saturation_cutoff", "patch_size_mm", "line_spacing_mm",
         "hue_line_spacing_minimum_mm", "hue_line_spacing_maximum_mm",
-        "angle_min", "angle_max",
+        "angle_min", "angle_max", "custom_glyph_threshold",
+        "custom_glyph_padding",
     }
-    toggle_geometry_parameters = {"invert", "invert_fill", "black_only", "preserve_black"}
+    toggle_geometry_parameters = {
+        "invert", "invert_fill", "black_only", "preserve_black", "custom_glyph_invert",
+    }
     glyph_shapes = {
         "circle", "square", "diamond", "triangle", "hexagon", "octagon",
         "star", "cross", "bar", "skull", "heart", "space_invader",
         "ghost", "bat", "alien_head", "paw_print", "fish_scale",
-        "puzzle_piece", "mixed",
+        "puzzle_piece", "mixed", "custom",
     }
     cell_shapes = {
         "square", "hexagon", "triangle", "diamond", "skull", "heart",
@@ -3845,55 +4037,154 @@ def submit_job(event, task_id, guest=False):
         "top_to_bottom", "bottom_to_top", "left_to_right", "right_to_left",
         "center_to_edge", "edge_to_center",
     }
+    def validate_compact_mask(value, *, flow_region_number=None):
+        message = (
+            f"Fauxlogram Flow Painter region {flow_region_number}'s image mask couldn't be used. "
+            "Remove the mask and add a PNG, JPEG, or WebP image again."
+            if flow_region_number is not None else
+            "The custom glyph image couldn't be used. Remove it and choose a PNG, "
+            "JPEG, or WebP image again."
+        )
+        if not isinstance(value, dict) or set(value) != {"width", "height", "data"}:
+            raise ValueError(message)
+        width, height, encoded = value.get("width"), value.get("height"), value.get("data")
+        if (
+            isinstance(width, bool) or not isinstance(width, int) or not 8 <= width <= 128
+            or isinstance(height, bool) or not isinstance(height, int) or not 8 <= height <= 128
+            or not isinstance(encoded, str) or len(encoded) > 21856
+        ):
+            raise ValueError(message)
+        try:
+            decoded = base64.b64decode(encoded, validate=True)
+        except Exception as error:
+            raise ValueError(message) from error
+        if len(decoded) != width * height:
+            raise ValueError(message)
     def validate_fauxlogram_flow(value):
         if not isinstance(value, dict):
-            raise ValueError("Fauxlogram Flow Painter settings must be an object")
+            raise ValueError("Fauxlogram Flow Painter settings could not be read. Use Reset geometry settings and rebuild the flow setup.")
         regions = value.get("regions") or []
         strokes = value.get("strokes") or []
         if not isinstance(regions, list) or not 1 <= len(regions) <= 8:
-            raise ValueError("Fauxlogram Flow Painter supports 1-8 regions")
+            raise ValueError("Fauxlogram Flow Painter needs 1 to 8 regions. Reopen the painter and adjust the regions, or use Reset geometry settings if it won't open.")
         if not isinstance(strokes, list) or len(strokes) > 256:
-            raise ValueError("Fauxlogram Flow Painter has too many brush strokes")
+            raise ValueError("Fauxlogram Flow Painter supports at most 256 brush strokes. Reopen the painter and clear or simplify painted regions.")
         point_count = 0
-        for region in regions:
+        for region_number, region in enumerate(regions, start=1):
             if not isinstance(region, dict):
-                raise ValueError("A Fauxlogram Flow Painter region is invalid")
+                raise ValueError(
+                    f"Fauxlogram Flow Painter region {region_number} could not be read. "
+                    "Reopen the painter and recreate that region. If the painter won't open, "
+                    "use Reset geometry settings and rebuild the flow setup."
+                )
+            if str(region.get("region_type") or "painted") not in {"painted", "image_mask"}:
+                raise ValueError(
+                    f"Fauxlogram Flow Painter region {region_number} has an unsupported region type. "
+                    "Reopen the painter and recreate that region. If the painter won't open, "
+                    "use Reset geometry settings and rebuild the flow setup."
+                )
             if str(region.get("scope") or "combined_region") not in {
                 "combined_region", "each_shape", "entire_artwork",
             }:
-                raise ValueError("A Fauxlogram Flow Painter scope is invalid")
+                raise ValueError(
+                    f"Fauxlogram Flow Painter region {region_number} has an invalid Gradient scope. "
+                    "Reopen the painter and choose a valid Gradient scope for that region. "
+                    "If the painter won't open, use Reset geometry settings and rebuild the flow setup."
+                )
             if str(region.get("guide_type") or "linear") not in {"linear", "radial"}:
-                raise ValueError("A Fauxlogram Flow Painter guide is invalid")
+                raise ValueError(
+                    f"Fauxlogram Flow Painter region {region_number} has an invalid Guide type. "
+                    "Reopen the painter and choose Linear or Radial for that region. "
+                    "If the painter won't open, use Reset geometry settings and rebuild the flow setup."
+                )
             if str(region.get("orientation") or "parallel") not in {
                 "parallel", "perpendicular", "fixed", "offset",
             }:
-                raise ValueError("A Fauxlogram Flow Painter orientation is invalid")
+                raise ValueError(
+                    f"Fauxlogram Flow Painter region {region_number} has an invalid Grating orientation. "
+                    "Reopen the painter and choose a Grating orientation for that region. "
+                    "If the painter won't open, use Reset geometry settings and rebuild the flow setup."
+                )
+            mask = region.get("mask")
+            if mask is not None:
+                validate_compact_mask(mask, flow_region_number=region_number)
+                if str(region.get("mask_mode") or "silhouette") not in {
+                    "silhouette", "grayscale",
+                }:
+                    raise ValueError(
+                        f"Fauxlogram Flow Painter region {region_number} has an invalid mask Interpretation. "
+                        "Reopen the painter and choose Grayscale gradient map or Silhouette for that region."
+                    )
+                threshold = region.get("mask_threshold", 0.5)
+                if (
+                    isinstance(threshold, bool)
+                    or not isinstance(threshold, (int, float))
+                    or not math.isfinite(threshold)
+                    or not 0 <= threshold <= 1
+                ):
+                    raise ValueError(
+                        f"Fauxlogram Flow Painter region {region_number} has an invalid mask Threshold. "
+                        "Reopen the painter and adjust that region's Threshold slider."
+                    )
+                mask_invert = region.get("mask_invert", False)
+                if not isinstance(mask_invert, (bool, int)) or mask_invert not in (False, True, 0, 1):
+                    raise ValueError(
+                        f"Fauxlogram Flow Painter region {region_number} has an invalid Invert mask setting. "
+                        "Reopen the painter and toggle Invert mask for that region."
+                    )
+                offset = region.get("mask_offset", [0, 0])
+                if not isinstance(offset, list) or len(offset) != 2 or any(
+                    isinstance(item, bool) or not isinstance(item, (int, float))
+                    or not math.isfinite(item) or not -1 <= item <= 1
+                    for item in offset
+                ):
+                    raise ValueError(
+                        f"Fauxlogram Flow Painter region {region_number} has an invalid mask position. "
+                        "Reopen the painter and reposition that region's mask, or remove and add the mask again."
+                    )
             for point in (region.get("start", [.25, .5]), region.get("end", [.75, .5])):
                 if not isinstance(point, list) or len(point) != 2 or any(
                     isinstance(item, bool) or not isinstance(item, (int, float))
                     or not math.isfinite(item) or not 0 <= item <= 1 for item in point
                 ):
-                    raise ValueError("A Fauxlogram Flow Painter guide point is invalid")
-        for stroke in strokes:
-            points = stroke.get("points") if isinstance(stroke, dict) else None
-            region_index = stroke.get("region") if isinstance(stroke, dict) else None
-            if (
-                not isinstance(region_index, int) or not 0 <= region_index < len(regions)
-                or not isinstance(points, list) or not 1 <= len(points) <= 512
-            ):
-                raise ValueError("A Fauxlogram Flow Painter stroke is invalid")
+                    raise ValueError(
+                        f"Fauxlogram Flow Painter region {region_number} has an invalid guide position. "
+                        "Reopen the painter and redraw that region's guide. If the painter won't open, "
+                        "use Reset geometry settings and rebuild the flow setup."
+                    )
+        for stroke_number, stroke in enumerate(strokes, start=1):
+            if not isinstance(stroke, dict):
+                raise ValueError(
+                    f"Fauxlogram Flow Painter brush stroke {stroke_number} could not be read. "
+                    "Reopen the painter and clear the affected region, then paint it again."
+                )
+            points = stroke.get("points")
+            region_index = stroke.get("region")
+            if not isinstance(region_index, int) or not 0 <= region_index < len(regions):
+                raise ValueError(
+                    f"Fauxlogram Flow Painter brush stroke {stroke_number} refers to a region that is no longer available. "
+                    "Use Reset geometry settings and rebuild the flow setup."
+                )
+            if not isinstance(points, list) or not 1 <= len(points) <= 512:
+                raise ValueError(
+                    f"Fauxlogram Flow Painter brush stroke {stroke_number} could not be read. "
+                    "Reopen the painter and clear the affected region, then paint it again."
+                )
             point_count += len(points)
             if point_count > 4000:
-                raise ValueError("Fauxlogram Flow Painter has too many brush points")
+                raise ValueError("Fauxlogram Flow Painter supports at most 4,000 brush points. Reopen the painter and clear or simplify painted regions.")
             for point in points:
                 if not isinstance(point, list) or len(point) != 2 or any(
                     isinstance(item, bool) or not isinstance(item, (int, float))
                     or not math.isfinite(item) or not 0 <= item <= 1 for item in point
                 ):
-                    raise ValueError("A Fauxlogram Flow Painter stroke point is invalid")
+                    raise ValueError(
+                        f"Fauxlogram Flow Painter brush stroke {stroke_number} has an invalid point. "
+                        "Reopen the painter and clear the affected region, then paint it again."
+                    )
     def validate_geometry_section(section):
         if not isinstance(section, dict) or len(section) > 24:
-            raise ValueError("Geometry style settings must be a small object")
+            raise ValueError("The Geometry Style settings could not be read or contain too many controls. Use Reset geometry settings, configure the geometry again, and submit the job again.")
         for key, value in section.items():
             valid = (
                 (key == "glyph_shape" and value in glyph_shapes)
@@ -3904,6 +4195,7 @@ def submit_job(event, task_id, guest=False):
                     and value in gradient_directions
                 )
                 or (key == "fauxlogram_flow" and isinstance(value, dict))
+                or (key == "custom_glyph_mask" and isinstance(value, dict))
                 or (key in toggle_geometry_parameters and isinstance(value, (bool, int)) and value in {0, 1})
                 or (
                     key in numeric_geometry_parameters
@@ -3913,19 +4205,25 @@ def submit_job(event, task_id, guest=False):
                 )
             )
             if not valid:
-                raise ValueError(f"Geometry style setting '{key}' is invalid")
+                if key == "custom_glyph_mask":
+                    validate_compact_mask(value)
+                raise ValueError(f"Geometry Style control '{str(key)[:60]}' has an invalid value. Use Reset geometry settings, configure it again, and submit the job again.")
             if key == "fauxlogram_flow":
                 validate_fauxlogram_flow(value)
+            elif key == "custom_glyph_mask":
+                validate_compact_mask(value)
         if section.get("invert_fill") and section.get("black_only"):
-            raise ValueError("Invert Fill cannot be combined with Black Only")
+            raise ValueError("Invert Fill and Black Only cannot be used together. Turn off one of those Geometry Style controls and submit again.")
+        if section.get("glyph_shape") == "custom" and not section.get("custom_glyph_mask"):
+            raise ValueError("Upload a custom glyph image before submitting the job")
 
     try:
         if geometry_style == "by_swatch":
             if set(geometry_parameters) - {"assignments", "glyphs", "krasnow_grating"}:
-                raise ValueError("Geometry routing settings contain an invalid section")
+                raise ValueError("Choose-by-Swatch geometry settings could not be read. Use Reset geometry settings, review the swatch routing, and submit again.")
             assignments = geometry_parameters.get("assignments") or {}
             if not isinstance(assignments, dict) or len(assignments) > 64:
-                raise ValueError("Geometry routing assignments must be a small object")
+                raise ValueError("Choose-by-Swatch routing could not be read or has too many assignments. Reload Rasterizer, review the swatch routing, and submit again.")
             selected_hexes = {
                 str(value).strip().upper()
                 for value in (data.get("selected_color_hexes") or [])
@@ -3934,12 +4232,12 @@ def submit_job(event, task_id, guest=False):
             for color_hex, assigned_style in assignments.items():
                 color_hex = str(color_hex).strip().upper()
                 assigned_style = str(assigned_style).strip().lower()
-                if (
-                    not re.fullmatch(r"#[0-9A-F]{6}", color_hex)
-                    or color_hex not in selected_hexes | {"#000000"}
-                    or assigned_style not in {"vectors", "glyphs", "krasnow_grating"}
-                ):
-                    raise ValueError("Geometry routing contains an invalid swatch assignment")
+                if not re.fullmatch(r"#[0-9A-F]{6}", color_hex):
+                    raise ValueError("A Choose-by-Swatch color could not be read. Reload Rasterizer, review the swatch routing, and submit again.")
+                if color_hex not in selected_hexes | {"#000000"}:
+                    raise ValueError(f"Choose-by-Swatch routing includes {color_hex}, which is not selected for this job. Select that swatch or remove its routing, then submit again.")
+                if assigned_style not in {"vectors", "glyphs", "krasnow_grating"}:
+                    raise ValueError(f"Choose-by-Swatch routing for {color_hex} has an unsupported geometry. Choose Vectors, Glyphs, or Krasnow and submit again.")
                 clean_assignments[color_hex] = assigned_style
             clean_assignments["#000000"] = "vectors"
             glyph_parameters = geometry_parameters.get("glyphs") or {}
@@ -3964,20 +4262,23 @@ def submit_job(event, task_id, guest=False):
         palette_key = str(data.get("holographic_palette_key") or "")
         expected_prefix = f"jobs/{task_id}/inputs/"
         if not palette_key.startswith(expected_prefix):
-            return response(400, {"message": "Fauxlographic Palette upload key does not belong to this task"})
+            return response(400, {"message": "We couldn't match the uploaded Fauxlographic Swatch Palette to this job. Check your selected palette, then submit the job again to start a fresh upload."})
         try:
             verify_upload(palette_key, item["upload_capability"], MAX_RECIPE_BYTES)
             contents = s3.get_object(Bucket=BUCKET, Key=palette_key)["Body"].read(MAX_RECIPE_BYTES + 1)
             if len(contents) > MAX_RECIPE_BYTES:
-                raise ValueError("The Fauxlographic Swatch Palette is too large")
+                raise ValueError(
+                    f"The Fauxlographic Swatch Palette exceeds the {MAX_RECIPE_BYTES / (1024 * 1024):g} MB limit. "
+                    "Choose a smaller palette file and submit the job again."
+                )
             profile = json.loads(contents.decode("utf-8"))
             measured = profile.get("recipes") if isinstance(profile, dict) else None
             all_indexes = list(range(len(measured))) if isinstance(measured, list) else []
             palette_material_name = str(profile.get("profile_name") or "Fauxlographic Palette") if isinstance(profile, dict) else ""
             library_root = uploaded_holographic_settings_root(profile, all_indexes, palette_material_name)
             embedded_black_name = ""
-            black_setting = profile.get("black_setting")
-            if isinstance(black_setting, dict) and isinstance(black_setting.get("laser_settings"), dict):
+            black_setting = usable_preserved_black_setting(profile.get("black_setting"))
+            if black_setting is not None:
                 embedded_black_name = "Rasterizer Preserved Black"
                 target_material = library_root.find("./Material")
                 black_entry = ET.SubElement(target_material, "Entry", {
@@ -3996,7 +4297,7 @@ def submit_job(event, task_id, guest=False):
                 black_entry.append(black_cut)
             library_bytes = ET.tostring(library_root, encoding="utf-8", xml_declaration=True)
             if len(library_bytes) > MAX_MATERIAL_BYTES:
-                raise ValueError("Generated Fauxlographic Palette Material Library is too large")
+                raise ValueError(f"The generated Fauxlographic Palette Material Library exceeds the {MATERIAL_LIMIT_MB} limit. Use fewer swatches and try again.")
             material_filename = safe_name(f"{palette_material_name}.clb", "holographic-palette.clb")
             generated_material_key = f"jobs/{task_id}/inputs/material-{material_filename}"
             s3.put_object(
@@ -4020,15 +4321,15 @@ def submit_job(event, task_id, guest=False):
     try:
         overrides = json.loads(raw_overrides) if isinstance(raw_overrides, str) else raw_overrides
     except (TypeError, json.JSONDecodeError):
-        return response(400, {"message": "Raster palette names are not valid JSON"})
+        return response(400, {"message": "We couldn't read the selected raster swatch names. Reload Rasterizer, review the swatch selections, and submit again."})
     if not isinstance(overrides, dict):
-        return response(400, {"message": "Raster palette names must be an object"})
+        return response(400, {"message": "The selected raster swatch names could not be read. Reload Rasterizer, review the swatch selections, and submit again."})
     clean_overrides = {
         color: str(overrides.get(color) or default_name).strip()[:80]
         for color, default_name in PALETTE_NAMES.items()
     }
     if any(not name for name in clean_overrides.values()):
-        return response(400, {"message": "Raster palette names cannot be empty"})
+        return response(400, {"message": "A selected raster swatch has no Material Library name. Assign a name to each selected swatch, then submit again."})
     selected_hexes = data.get("selected_color_hexes")
     selected_recipe_indexes = data.get("selected_holographic_recipe_indexes")
     if generated_recipe_id:
@@ -4037,9 +4338,11 @@ def submit_job(event, task_id, guest=False):
             return response(400, {"message": "Select at least one valid Fauxlographic Palette swatch"})
         selected_recipe_indexes = list(dict.fromkeys(selected_recipe_indexes))
         recipe_count = int(item.get("generated_recipe_count") or 0)
-        if (not selected_recipe_indexes or len(selected_recipe_indexes) > 30
-                or any(index < 0 or index >= recipe_count for index in selected_recipe_indexes)):
-            return response(400, {"message": "Select between 1 and 30 valid Fauxlographic Palette swatches"})
+        capacity = MAX_LIGHTBURN_LAYERS - int(bool(item.get("generated_black_setting_name")))
+        if not selected_recipe_indexes or len(selected_recipe_indexes) > capacity:
+            return response(400, {"message": f"Select between 1 and {capacity} Fauxlographic Palette swatches for this job. Preserved Black uses one of the {MAX_LIGHTBURN_LAYERS} LightBurn layers when present."})
+        if any(index < 0 or index >= recipe_count for index in selected_recipe_indexes):
+            return response(400, {"message": "One or more selected Fauxlographic Palette swatches are no longer available. Reload the palette and select them again."})
         selected_hexes = []
     elif isinstance(selected_hexes, list):
         selected_hexes = [str(color).upper() for color in selected_hexes]
@@ -4088,19 +4391,19 @@ def submit_job(event, task_id, guest=False):
     material_key = str(data.pop("material_key", ""))
     expected_prefix = f"jobs/{task_id}/inputs/"
     if not artwork_key.startswith(expected_prefix):
-        return response(400, {"message": "Artwork upload key does not belong to this task"})
+        return response(400, {"message": "We couldn't match the uploaded artwork to this job. Submit the job again to start a fresh upload."})
     saved_material_key = str(item.get("saved_material_key") or "")
     if svg_only and material_key:
         return response(400, {"message": "SVG-Only jobs cannot include a Material Library"})
     if not svg_only and material_key != saved_material_key and not material_key.startswith(expected_prefix):
-        return response(400, {"message": "Material Library key does not belong to this task"})
+        return response(400, {"message": "We couldn't match the selected Material Library to this job. Review your library choice, then submit the job again."})
     try:
         artwork_head = verify_upload(artwork_key, item["upload_capability"], MAX_ARTWORK_BYTES)
         if svg_only:
             pass
         elif saved_material_key:
             if material_key != saved_material_key:
-                raise ValueError("Saved Material Library selection changed during submission")
+                raise ValueError("The saved Material Library no longer matches this upload. Review your library choice, then submit the job again.")
             verify_saved_material(material_key, owner, MAX_MATERIAL_BYTES)
         else:
             verify_upload(material_key, item["upload_capability"], MAX_MATERIAL_BYTES)
@@ -4144,10 +4447,8 @@ def submit_job(event, task_id, guest=False):
         cut_mode = str(data.get("cut_mode") or "setting").strip().lower()
         if cut_mode not in {"setting", "line", "fill", "offset_fill"}:
             return response(400, {"message": "Choose a valid Fauxlographic Artwork cut mode"})
-        preserve_black_outlines = data.get("preserve_black_outlines") is True
         embedded_black_setting_name = str(item.get("generated_black_setting_name") or "")
-        if preserve_black_outlines and not embedded_black_setting_name:
-            return response(400, {"message": "This Fauxlographic Palette does not contain a preserved Black setting"})
+        preserve_black_outlines = data.get("preserve_black_outlines") is True and bool(embedded_black_setting_name)
         payload.update({
             "job_type": "holographic_artwork",
             "artwork_key": artwork_key,
@@ -4399,5 +4700,8 @@ def handler(event, _context):
     except (ValueError, json.JSONDecodeError, ET.ParseError) as error:
         return response(400, {"message": str(error)})
     except Exception as error:
-        print(f"Unhandled staging API error: {error}", flush=True)
-        return response(500, {"message": "Staging API request failed"})
+        print(f"Unhandled API error: {error}", flush=True)
+        return response(500, {"message": (
+            "We couldn't complete this request. Please try again. If it happens again, "
+            "note the time and any job ID shown when reporting the problem."
+        )})

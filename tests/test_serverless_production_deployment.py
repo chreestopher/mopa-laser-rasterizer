@@ -160,6 +160,17 @@ def test_web_stack_supports_preview_and_both_production_hostnames():
     assert "SERVERLESS_CONFIGURE_ARTIFACT_CORS=true" in production_script
 
 
+def test_production_release_guards_auth_configuration_before_mutation_and_verifies_it_afterward():
+    release = read("dev_setup/deploy_serverless_production_release.sh")
+    workflow = read(".github/workflows/deploy-serverless-production.yml")
+
+    assert 'if [ -z "${SERVERLESS_PRODUCTION_CERTIFICATE_ARN:-}" ]; then' in release
+    assert 'if [ "${SERVERLESS_PRODUCTION_USE_CLOUDFRONT_CALLBACK:-false}" != "false" ]; then' in release
+    assert release.index('SERVERLESS_PRODUCTION_CERTIFICATE_ARN is required') < release.index('deploy_serverless_production.sh" --apply')
+    assert release.index('verify_production_auth.py') > release.index('deploy_serverless_production_web.sh" --apply')
+    assert workflow.index('Guard production login configuration') < workflow.index('Build and publish immutable worker image')
+
+
 def test_production_web_configures_post_only_artifact_cors():
     script = read("dev_setup/deploy_serverless_staging_web.sh")
 

@@ -28,6 +28,7 @@ from shapely.geometry import LineString, Polygon, box
 from shapely.ops import unary_union
 
 from .common import number
+from custom_shape import decode_grayscale_mask
 
 
 USES_SOURCE_LUMINANCE = True
@@ -413,29 +414,102 @@ def _prepare_fauxlogram_flow(settings):
         return None
     regions = plan.get("regions") or []
     strokes = plan.get("strokes") or []
-    if not regions or not strokes:
+    if not regions:
         return None
     region_bounds = {}
+    masks = {}
     for index in range(len(regions)):
         painted = [
             _stroke_bounds(stroke) for stroke in strokes
             if stroke.get("region") == index and not stroke.get("erase")
         ]
+        region = regions[index]
+        mask_spec = region.get("mask") if isinstance(region, dict) else None
+        if isinstance(mask_spec, dict):
+            image = decode_grayscale_mask(mask_spec)
+            values = image.astype(float) / 255.0
+            offset = region.get("mask_offset") or [0, 0]
+            offset_x = number(offset[0] if len(offset) > 0 else 0, 0, -1, 1)
+            offset_y = number(offset[1] if len(offset) > 1 else 0, 0, -1, 1)
+            if region.get("mask_invert"):
+                values = 1.0 - values
+            threshold = number(region.get("mask_threshold"), 0.5, 0, 1)
+            active_y, active_x = ((values > 0) & (values >= threshold)).nonzero()
+            if len(active_x):
+                width = max(image.shape[1] - 1, 1)
+                height = max(image.shape[0] - 1, 1)
+                mask_bounds = (
+                    float(active_x.min()) / width + offset_x,
+                    float(active_y.min()) / height + offset_y,
+                    float(active_x.max()) / width + offset_x,
+                    float(active_y.max()) / height + offset_y,
+                )
+                painted.append(mask_bounds)
+                masks[index] = {
+                    "values": values,
+                    "threshold": threshold,
+                    "mode": str(region.get("mask_mode") or "silhouette"),
+                    "offset": (offset_x, offset_y),
+                }
         if painted:
             region_bounds[index] = (
                 min(item[0] for item in painted), min(item[1] for item in painted),
                 max(item[2] for item in painted), max(item[3] for item in painted),
             )
-    return {"regions": regions, "strokes": strokes, "bounds": region_bounds}
+    if not region_bounds:
+        return None
+    return {
+        "regions": regions,
+        "strokes": strokes,
+        "bounds": region_bounds,
+        "masks": masks,
+    }
 
 
-def _flow_scope_bounds(region, matched_stroke, compiled):
+def _flow_scope_bounds(region, matched_stroke, compiled, region_index):
     scope = region.get("scope", "combined_region")
     if scope == "entire_artwork":
         return (0, 0, 1, 1)
     if scope == "each_shape":
-        return _stroke_bounds(matched_stroke)
-    return compiled["bounds"].get(matched_stroke.get("region"), (0, 0, 1, 1))
+        if matched_stroke is not None:
+            return _stroke_bounds(matched_stroke)
+        return compiled["bounds"].get(region_index, (0, 0, 1, 1))
+    return compiled["bounds"].get(region_index, (0, 0, 1, 1))
+
+
+def _flow_mask_value(mask, x, y):
+    values = mask["values"]
+    offset_x, offset_y = mask.get("offset", (0, 0))
+    local_x = x - offset_x
+    local_y = y - offset_y
+    if not 0 <= local_x <= 1 or not 0 <= local_y <= 1:
+        return 0.0
+    column = min(values.shape[1] - 1, max(0, round(local_x * (values.shape[1] - 1))))
+    row = min(values.shape[0] - 1, max(0, round(local_y * (values.shape[0] - 1))))
+    return float(values[row, column])
+
+
+def _flow_mask_gradient_angle(mask, x, y, bounds):
+    """Use a grayscale mask's local dark-to-light slope as its direction."""
+    values = mask["values"]
+    if min(values.shape) < 2:
+        return None
+    offset_x, offset_y = mask.get("offset", (0, 0))
+    local_x = x - offset_x
+    local_y = y - offset_y
+    column = min(values.shape[1] - 1, max(0, round(local_x * (values.shape[1] - 1))))
+    row = min(values.shape[0] - 1, max(0, round(local_y * (values.shape[0] - 1))))
+    left = max(0, column - 1)
+    right = min(values.shape[1] - 1, column + 1)
+    top = max(0, row - 1)
+    bottom = min(values.shape[0] - 1, row + 1)
+    width = max(bounds[2] - bounds[0], 1e-9)
+    height = max(bounds[3] - bounds[1], 1e-9)
+    slope_x = (values[row, right] - values[row, left]) * (values.shape[1] - 1) / max(right - left, 1) / width
+    slope_y = (values[bottom, column] - values[top, column]) * (values.shape[0] - 1) / max(bottom - top, 1) / height
+    if math.hypot(slope_x, slope_y) < 1e-3:
+        return None
+    return math.degrees(math.atan2(slope_y, slope_x))
 
 
 def _flow_position(x, y, region, scope_bounds, combined_bounds):
@@ -485,22 +559,66 @@ def _painted_flow_controls(x, y, bounds, settings):
     min_x, min_y, max_x, max_y = bounds
     nx = (x - min_x) / max(max_x - min_x, 1e-9)
     ny = (y - min_y) / max(max_y - min_y, 1e-9)
-    matched = None
-    for stroke in reversed(compiled["strokes"]):
-        if _distance_to_stroke(nx, ny, stroke) <= number(stroke.get("width"), .08, .002, .5) / 2:
-            if stroke.get("erase"):
-                return None
-            matched = stroke
-            break
-    if matched is None:
+    hit_strokes = [
+        stroke for stroke in reversed(compiled["strokes"])
+        if _distance_to_stroke(nx, ny, stroke)
+        <= number(stroke.get("width"), .08, .002, .5) / 2
+    ]
+    if any(stroke.get("erase") for stroke in hit_strokes):
         return None
-    region_index = matched.get("region")
+    matched = None
+    region_index = None
+    mask_value = None
+    for candidate in reversed(range(len(compiled["regions"]))):
+        matched = next(
+            (stroke for stroke in hit_strokes if stroke.get("region") == candidate),
+            None,
+        )
+        if matched is not None:
+            region_index = candidate
+            break
+        mask = compiled["masks"].get(candidate)
+        if mask is None:
+            continue
+        value = _flow_mask_value(mask, nx, ny)
+        if value > 0 and value >= mask["threshold"]:
+            region_index = candidate
+            mask_value = value
+            break
+    if region_index is None:
+        return None
     if not isinstance(region_index, int) or not 0 <= region_index < len(compiled["regions"]):
         return None
     region = compiled["regions"][region_index]
     combined_bounds = compiled["bounds"].get(region_index, (0, 0, 1, 1))
-    scope_bounds = _flow_scope_bounds(region, matched, compiled)
-    position, gradient_angle = _flow_position(nx, ny, region, scope_bounds, combined_bounds)
+    scope_bounds = _flow_scope_bounds(region, matched, compiled, region_index)
+    mask = compiled["masks"].get(region_index)
+    image_gradient_region = (
+        matched is None and mask is not None
+        and mask.get("mode") == "grayscale"
+        and region.get("region_type") == "image_mask"
+    )
+    if image_gradient_region:
+        # The image is the gradient guide for this region. Flat pixels have no
+        # local slope, so use the region's explicit fallback angle, never the
+        # default draggable guide inherited by older flow plans.
+        position = mask_value
+        mask_angle = _flow_mask_gradient_angle(mask, nx, ny, bounds)
+        gradient_angle = (
+            mask_angle if mask_angle is not None
+            else number(region.get("fixed_angle"), 0, -180, 180)
+        )
+        if region.get("reverse"):
+            position = 1 - position
+    else:
+        position, gradient_angle = _flow_position(nx, ny, region, scope_bounds, combined_bounds)
+        if matched is None and mask is not None and mask.get("mode") == "grayscale":
+            position = mask_value
+            mask_angle = _flow_mask_gradient_angle(mask, nx, ny, bounds)
+            if mask_angle is not None:
+                gradient_angle = mask_angle
+            if region.get("reverse"):
+                position = 1 - position
     curve = number(region.get("curve"), settings.get("gradient_curve", 1), .2, 5)
     start = number(region.get("gradient_start"), settings.get("gradient_top", 165), 0, 255)
     end = number(region.get("gradient_end"), settings.get("gradient_bottom", 90), 0, 255)

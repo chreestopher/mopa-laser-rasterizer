@@ -373,9 +373,9 @@ def parse_material_settings(
     ]
     placeholder_settings = [
         item for item in matching_settings
-        if str(
-            getattr(item, "entryDesc", "") or getattr(item, "name", "") or ""
-        ).strip().casefold().startswith("unconfigured ")
+        if str(getattr(item, "entryDesc", "") or "").strip().casefold().startswith(
+            "unconfigured "
+        )
     ]
     if matching_settings and len(placeholder_settings) == len(matching_settings):
         raise ValueError(
@@ -414,24 +414,14 @@ def parse_material_settings(
         if metadata[2].casefold() in {str(color).strip().casefold() for color in limit_colors}
     }
     for item in matching_settings:
-        # LightBurn stores both an Entry description and a cut-setting name.
-        # Accept either as the library-side label, then make the editable
-        # palette label authoritative for the generated project layer name.
-        library_labels = (getattr(item, "entryDesc", ""), getattr(item, "name", ""))
-        target = next(
-            (selected_targets.get(str(label or "").strip().casefold())
-             for label in library_labels
-             if str(label or "").strip().casefold() in selected_targets),
-            None,
-        )
+        description = str(getattr(item, "entryDesc", "") or "").strip()
+        description_key = description.casefold()
+        target = selected_targets.get(description_key)
         matching_required_name = next(
             (
                 required_name
                 for required_name in required_names
-                if any(
-                    required_name in str(label or "").strip().casefold()
-                    for label in library_labels
-                )
+                if required_name in description_key
             ),
             None,
         )
@@ -441,7 +431,7 @@ def parse_material_settings(
             item.frequency = int(item.frequency)
             item.index = next_layer_index
             next_layer_index += 1
-            item.name = str(getattr(item, "entryDesc", "") or item.name).strip()
+            item.name = description
             required_layers[matching_required_name] = item.index
             lb.add_layer(item)
             material_layer_report["loaded"].append(item.name)
@@ -450,13 +440,13 @@ def parse_material_settings(
             )
             continue
         if target is None:
-            material_layer_report["skipped"].append(str(getattr(item, "entryDesc", "") or item.name))
+            material_layer_report["skipped"].append(description or "Unnamed setting")
             continue
 
         target_hex, target_metadata = target
         if target_hex in matched_settings:
             existing_name = matched_settings[target_hex][2]
-            skipped_name = str(getattr(item, "entryDesc", "") or item.name)
+            skipped_name = description or "Unnamed setting"
             material_layer_report["skipped"].append(skipped_name)
             printLogMessage(
                 f"Material layer '{skipped_name}' skipped: '{existing_name}' already has "

@@ -172,7 +172,7 @@ def resolve_material_setting_usage(material_settings_path, material_name, select
     """Resolve the exact settings a raster job will map to each palette swatch.
 
     This deliberately mirrors the production parser's exact, case-insensitive
-    material and Description/cut-setting matching rules.  It is telemetry only:
+    material and Entry Description matching rules.  It is telemetry only:
     a malformed or unusual library must never prevent the actual job from running.
     """
     names = dict(LIGHTBURN_PALETTE_NAMES)
@@ -189,17 +189,19 @@ def resolve_material_setting_usage(material_settings_path, material_name, select
     for setting in Lightburn().parse_material_library(material_settings_path):
         if str(getattr(setting, "materialName", "") or "").strip().casefold() != requested_material:
             continue
-        labels = {
-            str(getattr(setting, "entryDesc", "") or "").strip().casefold(),
-            str(getattr(setting, "name", "") or "").strip().casefold(),
-        }
+        description = str(getattr(setting, "entryDesc", "") or "").strip()
+        description_key = description.casefold()
         for swatch, swatch_name in names.items():
-            if swatch_name.casefold() in chosen and swatch_name.casefold() in labels and swatch not in matched:
+            if (
+                swatch_name.casefold() in chosen
+                and swatch_name.casefold() == description_key
+                and swatch not in matched
+            ):
                 matched[swatch] = {
                     "swatch_hex": swatch,
                     "swatch_name": swatch_name,
                     "material": str(getattr(setting, "materialName", "") or "").strip(),
-                    "description": str(getattr(setting, "entryDesc", "") or "").strip(),
+                    "description": description,
                     "type": str(getattr(setting, "type", "") or "").strip(),
                     "setting_values": _setting_values(setting),
                 }
@@ -1453,13 +1455,13 @@ def parse_abstract_filter_parameters(raw_value):
     try:
         parameters = json.loads(raw_value)
     except json.JSONDecodeError as error:
-        raise ValueError("Abstract filter settings are not valid JSON") from error
+        raise ValueError("We couldn't read the Image Style settings. Reload Rasterizer, choose the style again, and submit the job again.") from error
     if not isinstance(parameters, dict) or len(parameters) > 20:
-        raise ValueError("Abstract filter settings must be a small object")
+        raise ValueError("The Image Style settings could not be read or contain too many controls. Reload Rasterizer, choose the style again, and submit the job again.")
     clean = {}
     for key, value in parameters.items():
         if not isinstance(key, str) or not key.replace("_", "").isalnum():
-            raise ValueError("An abstract filter setting has an invalid name")
+            raise ValueError("An Image Style control name could not be read. Use Reset settings under Image Style, configure it again, and submit the job again.")
         if key == "material" and value in ("metal", "powdercoat"):
             clean[key] = value
         elif key == "setting_name" and isinstance(value, str) and 1 <= len(value.strip()) <= 80:
@@ -1493,7 +1495,7 @@ def parse_abstract_filter_parameters(raw_value):
         elif key in {"transparent", "invert_threshold", "keep_black", "square_dots", "invert", "black_only", "keep_available_colors_as_vectors", "preserve_black"} and isinstance(value, bool):
             clean[key] = int(value)
         elif isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise ValueError(f"Abstract filter setting '{key}' must be numeric")
+            raise ValueError(f"Image Style control '{key[:60]}' needs a number. Adjust that control or use Reset settings, then submit the job again.")
         else:
             clean[key] = value
     return clean
@@ -1505,9 +1507,9 @@ def parse_geometry_style_parameters(raw_value):
     try:
         parameters = json.loads(raw_value) if isinstance(raw_value, str) else raw_value
     except (TypeError, json.JSONDecodeError) as error:
-        raise ValueError("Geometry style settings are not valid JSON") from error
+        raise ValueError("We couldn't read the Geometry Style settings. Reload Rasterizer, choose the geometry again, and submit the job again.") from error
     if not isinstance(parameters, dict):
-        raise ValueError("Geometry style settings must be a small object")
+        raise ValueError("The Geometry Style settings could not be read. Use Reset geometry settings, configure the geometry again, and submit the job again.")
     # Compatibility with the short-lived Krasnow Geometry posterization
     # control. Cached staging pages and persisted form snapshots can continue
     # sending it after removal; it no longer changes processing and must not
@@ -1515,22 +1517,21 @@ def parse_geometry_style_parameters(raw_value):
     parameters = dict(parameters)
     parameters.pop("posterize_colors", None)
     if len(parameters) > 24:
-        raise ValueError("Geometry style settings must be a small object")
+        raise ValueError("The Geometry Style settings contain too many controls. Use Reset geometry settings, configure the geometry again, and submit the job again.")
     if any(key in parameters for key in ("assignments", "glyphs", "krasnow_grating")):
         if set(parameters) - {"assignments", "glyphs", "krasnow_grating"}:
-            raise ValueError("Geometry routing settings contain an invalid section")
+            raise ValueError("Choose-by-Swatch geometry settings could not be read. Use Reset geometry settings, review the swatch routing, and submit again.")
         assignments = parameters.get("assignments") or {}
         if not isinstance(assignments, dict) or len(assignments) > 64:
-            raise ValueError("Geometry routing assignments must be a small object")
+            raise ValueError("Choose-by-Swatch routing could not be read or has too many assignments. Reload Rasterizer, review the swatch routing, and submit again.")
         clean_assignments = {}
         for color_hex, style in assignments.items():
             color_hex = str(color_hex).strip().upper()
             style = str(style).strip().lower()
-            if (
-                not re.fullmatch(r"#[0-9A-F]{6}", color_hex)
-                or style not in {"vectors", "glyphs", "krasnow_grating"}
-            ):
-                raise ValueError("Geometry routing contains an invalid swatch assignment")
+            if not re.fullmatch(r"#[0-9A-F]{6}", color_hex):
+                raise ValueError("A Choose-by-Swatch color could not be read. Reload Rasterizer, review the swatch routing, and submit again.")
+            if style not in {"vectors", "glyphs", "krasnow_grating"}:
+                raise ValueError(f"Choose-by-Swatch routing for {color_hex} has an unsupported geometry. Choose Vectors, Glyphs, or Krasnow and submit again.")
             clean_assignments[color_hex] = style
         clean_assignments["#000000"] = "vectors"
         used_styles = set(clean_assignments.values())
@@ -1551,14 +1552,18 @@ def parse_geometry_style_parameters(raw_value):
         "gradient_bottom", "gradient_curve", "hue_rotation",
         "saturation_cutoff", "patch_size_mm", "line_spacing_mm",
         "hue_line_spacing_minimum_mm", "hue_line_spacing_maximum_mm",
-        "angle_min", "angle_max",
+        "angle_min", "angle_max", "custom_glyph_threshold",
+        "custom_glyph_padding",
     }
-    toggles = {"invert", "invert_fill", "black_only", "preserve_black"}
+    toggles = {
+        "invert", "invert_fill", "black_only", "preserve_black",
+        "custom_glyph_invert",
+    }
     shapes = {
         "circle", "square", "diamond", "triangle", "hexagon", "octagon",
         "star", "cross", "bar", "skull", "heart", "space_invader",
         "ghost", "bat", "alien_head", "paw_print", "fish_scale",
-        "puzzle_piece", "mixed",
+        "puzzle_piece", "mixed", "custom",
     }
     cell_shapes = {
         "square", "hexagon", "triangle", "diamond", "skull", "heart",
@@ -1571,6 +1576,32 @@ def parse_geometry_style_parameters(raw_value):
         "center_to_edge", "edge_to_center",
     }
     clean = {}
+    def compact_mask(candidate, *, flow_region_number=None):
+        message = (
+            f"Fauxlogram Flow Painter region {flow_region_number}'s image mask couldn't be used. "
+            "Remove the mask and add a PNG, JPEG, or WebP image again."
+            if flow_region_number is not None else
+            "The custom glyph image couldn't be used. Remove it and choose a PNG, "
+            "JPEG, or WebP image again."
+        )
+        if not isinstance(candidate, dict) or set(candidate) != {"width", "height", "data"}:
+            raise ValueError(message)
+        width = candidate.get("width")
+        height = candidate.get("height")
+        encoded = candidate.get("data")
+        if (
+            isinstance(width, bool) or not isinstance(width, int) or not 8 <= width <= 128
+            or isinstance(height, bool) or not isinstance(height, int) or not 8 <= height <= 128
+            or not isinstance(encoded, str) or len(encoded) > 21856
+        ):
+            raise ValueError(message)
+        try:
+            decoded = base64.b64decode(encoded, validate=True)
+        except Exception as error:
+            raise ValueError(message) from error
+        if len(decoded) != width * height:
+            raise ValueError(message)
+        return {"width": width, "height": height, "data": encoded}
     for key, value in parameters.items():
         if key == "glyph_shape" and value in shapes:
             clean[key] = value
@@ -1582,13 +1613,13 @@ def parse_geometry_style_parameters(raw_value):
             clean[key] = value
         elif key == "fauxlogram_flow":
             if not isinstance(value, dict):
-                raise ValueError("Fauxlogram Flow Painter settings must be an object")
+                raise ValueError("Fauxlogram Flow Painter settings could not be read. Use Reset geometry settings and rebuild the flow setup.")
             regions = value.get("regions") or []
             strokes = value.get("strokes") or []
             if not isinstance(regions, list) or not 1 <= len(regions) <= 8:
-                raise ValueError("Fauxlogram Flow Painter supports 1-8 regions")
+                raise ValueError("Fauxlogram Flow Painter needs 1 to 8 regions. Reopen the painter and adjust the regions, or use Reset geometry settings if it won't open.")
             if not isinstance(strokes, list) or len(strokes) > 256:
-                raise ValueError("Fauxlogram Flow Painter has too many brush strokes")
+                raise ValueError("Fauxlogram Flow Painter supports at most 256 brush strokes. Reopen the painter and clear or simplify painted regions.")
             def flow_number(candidate, default, minimum, maximum):
                 try:
                     candidate = float(candidate)
@@ -1598,29 +1629,60 @@ def parse_geometry_style_parameters(raw_value):
                     candidate = default
                 return min(maximum, max(minimum, candidate))
             clean_regions = []
-            for region in regions:
+            for region_number, region in enumerate(regions, start=1):
                 if not isinstance(region, dict):
-                    raise ValueError("A Fauxlogram Flow Painter region is invalid")
+                    raise ValueError(
+                        f"Fauxlogram Flow Painter region {region_number} could not be read. "
+                        "Reopen the painter and recreate that region. If the painter won't open, "
+                        "use Reset geometry settings and rebuild the flow setup."
+                    )
                 scope = str(region.get("scope") or "combined_region")
+                region_type = str(region.get("region_type") or "painted")
                 guide_type = str(region.get("guide_type") or "linear")
                 orientation = str(region.get("orientation") or "parallel")
+                if region_type not in {"painted", "image_mask"}:
+                    raise ValueError(
+                        f"Fauxlogram Flow Painter region {region_number} has an unsupported region type. "
+                        "Reopen the painter and recreate that region. If the painter won't open, "
+                        "use Reset geometry settings and rebuild the flow setup."
+                    )
                 if scope not in {"combined_region", "each_shape", "entire_artwork"}:
-                    raise ValueError("A Fauxlogram Flow Painter scope is invalid")
+                    raise ValueError(
+                        f"Fauxlogram Flow Painter region {region_number} has an invalid Gradient scope. "
+                        "Reopen the painter and choose a valid Gradient scope for that region. "
+                        "If the painter won't open, use Reset geometry settings and rebuild the flow setup."
+                    )
                 if guide_type not in {"linear", "radial"}:
-                    raise ValueError("A Fauxlogram Flow Painter guide is invalid")
+                    raise ValueError(
+                        f"Fauxlogram Flow Painter region {region_number} has an invalid Guide type. "
+                        "Reopen the painter and choose Linear or Radial for that region. "
+                        "If the painter won't open, use Reset geometry settings and rebuild the flow setup."
+                    )
                 if orientation not in {"parallel", "perpendicular", "fixed", "offset"}:
-                    raise ValueError("A Fauxlogram Flow Painter orientation is invalid")
+                    raise ValueError(
+                        f"Fauxlogram Flow Painter region {region_number} has an invalid Grating orientation. "
+                        "Reopen the painter and choose a Grating orientation for that region. "
+                        "If the painter won't open, use Reset geometry settings and rebuild the flow setup."
+                    )
                 def point(name, fallback):
                     candidate = region.get(name, fallback)
+                    message = (
+                        f"Fauxlogram Flow Painter region {region_number} has an invalid guide position. "
+                        "Reopen the painter and redraw that region's guide. If the painter won't open, "
+                        "use Reset geometry settings and rebuild the flow setup."
+                    )
                     if not isinstance(candidate, list) or len(candidate) != 2:
-                        raise ValueError("A Fauxlogram Flow Painter guide point is invalid")
-                    numbers = [float(item) for item in candidate]
+                        raise ValueError(message)
+                    try:
+                        numbers = [float(item) for item in candidate]
+                    except (TypeError, ValueError) as error:
+                        raise ValueError(message) from error
                     if any(not math.isfinite(item) or not 0 <= item <= 1 for item in numbers):
-                        raise ValueError("A Fauxlogram Flow Painter guide point is invalid")
+                        raise ValueError(message)
                     return numbers
-                clean_regions.append({
+                clean_region = {
                     "name": str(region.get("name") or f"Region {len(clean_regions)+1}")[:40],
-                    "scope": scope, "guide_type": guide_type,
+                    "region_type": region_type, "scope": scope, "guide_type": guide_type,
                     "orientation": orientation,
                     "start": point("start", [.25, .5]), "end": point("end", [.75, .5]),
                     "gradient_start": flow_number(region.get("gradient_start"), 165, 0, 255),
@@ -1629,28 +1691,69 @@ def parse_geometry_style_parameters(raw_value):
                     "fixed_angle": flow_number(region.get("fixed_angle"), 0, -180, 180),
                     "angle_offset": flow_number(region.get("angle_offset"), 0, -180, 180),
                     "reverse": bool(region.get("reverse")),
-                })
+                }
+                if region.get("mask") is not None:
+                    mode = str(region.get("mask_mode") or "silhouette")
+                    if mode not in {"silhouette", "grayscale"}:
+                        raise ValueError(
+                            f"Fauxlogram Flow Painter region {region_number} has an invalid mask Interpretation. "
+                            "Reopen the painter and choose Grayscale gradient map or Silhouette for that region."
+                        )
+                    offset = region.get("mask_offset", [0, 0])
+                    if not isinstance(offset, list) or len(offset) != 2:
+                        raise ValueError(
+                            f"Fauxlogram Flow Painter region {region_number} has an invalid mask position. "
+                            "Reopen the painter and reposition that region's mask, or remove and add the mask again."
+                        )
+                    clean_region.update({
+                        "mask": compact_mask(region.get("mask"), flow_region_number=region_number),
+                        "mask_name": str(region.get("mask_name") or "")[:120],
+                        "mask_mode": mode,
+                        "mask_threshold": flow_number(region.get("mask_threshold"), .5, 0, 1),
+                        "mask_invert": bool(region.get("mask_invert")),
+                        "mask_offset": [
+                            flow_number(offset[0], 0, -1, 1),
+                            flow_number(offset[1], 0, -1, 1),
+                        ],
+                    })
+                clean_regions.append(clean_region)
             clean_strokes, point_count = [], 0
-            for stroke in strokes:
+            for stroke_number, stroke in enumerate(strokes, start=1):
                 if not isinstance(stroke, dict):
-                    raise ValueError("A Fauxlogram Flow Painter stroke is invalid")
+                    raise ValueError(
+                        f"Fauxlogram Flow Painter brush stroke {stroke_number} could not be read. "
+                        "Reopen the painter and clear the affected region, then paint it again."
+                    )
                 region_index = stroke.get("region")
                 points = stroke.get("points") or []
                 if not isinstance(region_index, int) or not 0 <= region_index < len(clean_regions):
-                    raise ValueError("A Fauxlogram Flow Painter stroke region is invalid")
+                    raise ValueError(
+                        f"Fauxlogram Flow Painter brush stroke {stroke_number} refers to a region that is no longer available. "
+                        "Use Reset geometry settings and rebuild the flow setup."
+                    )
                 if not isinstance(points, list) or not 1 <= len(points) <= 512:
-                    raise ValueError("A Fauxlogram Flow Painter stroke is invalid")
+                    raise ValueError(
+                        f"Fauxlogram Flow Painter brush stroke {stroke_number} could not be read. "
+                        "Reopen the painter and clear the affected region, then paint it again."
+                    )
                 clean_points = []
                 for candidate in points:
+                    message = (
+                        f"Fauxlogram Flow Painter brush stroke {stroke_number} has an invalid point. "
+                        "Reopen the painter and clear the affected region, then paint it again."
+                    )
                     if not isinstance(candidate, list) or len(candidate) != 2:
-                        raise ValueError("A Fauxlogram Flow Painter stroke point is invalid")
-                    coordinates = [float(item) for item in candidate]
+                        raise ValueError(message)
+                    try:
+                        coordinates = [float(item) for item in candidate]
+                    except (TypeError, ValueError) as error:
+                        raise ValueError(message) from error
                     if any(not math.isfinite(item) or not 0 <= item <= 1 for item in coordinates):
-                        raise ValueError("A Fauxlogram Flow Painter stroke point is invalid")
+                        raise ValueError(message)
                     clean_points.append(coordinates)
                 point_count += len(clean_points)
                 if point_count > 4000:
-                    raise ValueError("Fauxlogram Flow Painter has too many brush points")
+                    raise ValueError("Fauxlogram Flow Painter supports at most 4,000 brush points. Reopen the painter and clear or simplify painted regions.")
                 clean_strokes.append({
                     "region": region_index,
                     "erase": bool(stroke.get("erase")),
@@ -1662,6 +1765,8 @@ def parse_geometry_style_parameters(raw_value):
                 "regions": clean_regions,
                 "strokes": clean_strokes,
             }
+        elif key == "custom_glyph_mask":
+            clean[key] = compact_mask(value)
         elif key in toggles and isinstance(value, bool):
             clean[key] = int(value)
         elif key in toggles and isinstance(value, int) and value in {0, 1}:
@@ -1671,9 +1776,11 @@ def parse_geometry_style_parameters(raw_value):
         elif key in numeric and not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value):
             clean[key] = value
         else:
-            raise ValueError(f"Geometry style setting '{key}' is invalid")
+            raise ValueError(f"Geometry Style control '{str(key)[:60]}' has an invalid value. Use Reset geometry settings, configure it again, and submit the job again.")
     if clean.get("invert_fill") and clean.get("black_only"):
-        raise ValueError("Invert Fill cannot be combined with Black Only")
+        raise ValueError("Invert Fill and Black Only cannot be used together. Turn off one of those Geometry Style controls and submit again.")
+    if clean.get("glyph_shape") == "custom" and not clean.get("custom_glyph_mask"):
+        raise ValueError("Upload a custom glyph image before submitting the job")
     return clean
 
 
@@ -1683,20 +1790,20 @@ def parse_color_name_overrides(raw_value):
     try:
         overrides = json.loads(raw_value)
     except json.JSONDecodeError as error:
-        raise ValueError("Palette names are not valid JSON") from error
+        raise ValueError("We couldn't read the selected swatch names. Reload Rasterizer, review the swatch assignments, and submit the job again.") from error
     if not isinstance(overrides, dict) or len(overrides) > 64:
-        raise ValueError("Palette names must be a small object")
+        raise ValueError("The selected swatch names could not be read or exceed the supported limit. Reload Rasterizer, review the swatch assignments, and submit the job again.")
     clean, seen_names = {}, set()
     for color_hex, name in overrides.items():
         normalized_hex = str(color_hex).strip().upper()
         normalized_name = str(name).strip()
         if not re.fullmatch(r"#[0-9A-F]{6}", normalized_hex):
-            raise ValueError("A palette color has an invalid hex value")
+            raise ValueError(f"Swatch color '{str(color_hex)[:40]}' is invalid. Reload Rasterizer and select the swatch again.")
         if not normalized_name or len(normalized_name) > 80 or "," in normalized_name:
-            raise ValueError("Each palette name must be 1-80 characters and cannot contain commas")
+            raise ValueError(f"The name for swatch {normalized_hex} must be 1–80 characters without commas. Edit that swatch name and submit again.")
         name_key = normalized_name.casefold()
         if name_key in seen_names:
-            raise ValueError("Each palette color needs a unique Material Library name")
+            raise ValueError(f"More than one swatch uses the Material Library name '{normalized_name}'. Give each swatch a distinct name and submit again.")
         seen_names.add(name_key)
         clean[normalized_hex] = normalized_name
     return clean
@@ -1825,6 +1932,43 @@ def start_disk_cleanup_worker(app, interval_seconds=3600):
     threading.Thread(target=cleanup_loop, daemon=True).start()
 
 
+def summarize_job_failure(error, exit_code=None):
+    """Keep actionable validation errors, but summarize unexpected worker failures."""
+    if exit_code in (-9, 137):
+        return (
+            "The job stopped unexpectedly, possibly because the worker ran out of memory. "
+            "Try a smaller output size or a larger pixel size. If it happens again, report the job ID."
+        )
+    message = str(error or "").strip()
+    validation = re.fullmatch(r"ValueError:\s*(.+)", message)
+    if validation:
+        message = validation.group(1)
+    if message.startswith("source-derived Black residual-overlap correction failed"):
+        return (
+            "We couldn't safely separate the Black layer from the other engraved layers. "
+            "Try the job again. If it happens again, report the job ID; the technical details remain in the logs."
+        )
+    if message.startswith((
+        "Krasnow reserved Black mask does not match",
+        "Artwork transparency mask does not match",
+        "Source and quantized palette images must have matching dimensions",
+    )):
+        return (
+            "Image processing stopped unexpectedly. Try the job again. "
+            "If it happens again, report the job ID; the technical details remain in the logs."
+        )
+    if isinstance(error, ValueError) and message:
+        return message
+    if exit_code == 2 and message:
+        return message
+    if validation:
+        return message
+    return (
+        "We couldn't finish this job because processing stopped unexpectedly. "
+        "Try again. If it happens again, report the job ID."
+    )
+
+
 def long_running_script(task_id, data, image_path, material_settings_path, upload_folder,
                         user_id=None, output_name=None, guest_job=False,
                         guest_quota_visitor="", guest_quota_day="",
@@ -1910,9 +2054,12 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
             validation_command[17] = "true"
             validation_exit, validation_message = run_process(validation_command)
             if validation_exit != 0:
-                failure_message = validation_message or "Guest input validation failed"
+                failure_message = summarize_job_failure(validation_message, validation_exit)
                 job_runtime.set_status(task_id, "failed", error=failure_message)
-                job_runtime.append_log(task_id, f"ERROR: {failure_message}")
+                job_runtime.append_log(
+                    task_id,
+                    f"ERROR: Guest input validation exited with code {validation_exit}: {validation_message}",
+                )
                 return
             quota_context_present = bool(
                 guest_quota_visitor and guest_quota_day and int(guest_daily_job_limit or 0) > 0
@@ -1975,27 +2122,25 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
             except RuntimeError as status_error:
                 print(f"[Thread-{task_id}] Could not save durable completion state: {status_error}", flush=True)
         else:
-            failure_message = last_process_line or f"Rasterizer exited with code {exit_code}"
-            if exit_code in (-9, 137):
-                failure_message = (
-                    f"Rasterizer exited with code {exit_code} "
-                    "(the worker may have been killed or exceeded its memory limit)"
-                )
+            failure_message = summarize_job_failure(last_process_line, exit_code)
             job_runtime.set_status(task_id, "failed", error=failure_message)
-            job_runtime.append_log(task_id, f"ERROR: {failure_message}")
+            job_runtime.append_log(
+                task_id,
+                f"ERROR: Rasterizer exited with code {exit_code}: {last_process_line}",
+            )
             try:
                 update_user_job(task_id, "failed", error_message=failure_message)
             except RuntimeError as status_error:
                 print(f"[Thread-{task_id}] Could not save durable failure state: {status_error}", flush=True)
     except Exception as error:
         print(f"[Thread-{task_id}] Exception: {error}", flush=True)
-        failure_message = f"Artifact processing failed: {error}"
+        failure_message = summarize_job_failure(error)
         job_runtime.set_status(task_id, "failed", error=failure_message)
-        job_runtime.append_log(task_id, f"ERROR: {failure_message}")
+        job_runtime.append_log(task_id, f"ERROR: Artifact processing failed: {error}")
         tasks[f"{task_id}_status"] = "failed"
         tasks[f"{task_id}_error"] = str(error)
         try:
-            update_user_job(task_id, "failed", error_message=str(error))
+            update_user_job(task_id, "failed", error_message=failure_message)
         except RuntimeError as status_error:
             print(f"[Thread-{task_id}] Could not save durable failure state: {status_error}", flush=True)
     finally:

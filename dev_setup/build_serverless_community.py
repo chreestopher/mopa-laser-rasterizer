@@ -4,6 +4,7 @@
 import re
 import sys
 from pathlib import Path
+from urllib.parse import urljoin
 
 from jinja2 import Environment
 
@@ -61,4 +62,7 @@ official_colors = {
 html = Environment(autoescape=True).from_string(source).render(
     member_access=True, auth_state="signed_in", official_colors=official_colors
 )
+if len(sys.argv) > 2:
+    canonical = urljoin(sys.argv[2].rstrip("/") + "/", "community-set")
+    html = html.replace("</title>", f'</title>\n  <link rel="canonical" href="{canonical}">', 1)
 output_path.write_text(html, encoding="utf-8")

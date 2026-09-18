@@ -1,9 +1,13 @@
+import ast
+import base64
+import math
 import os
 import sys
 from pathlib import Path
 from unittest.mock import patch
 
 from PIL import Image
+import numpy as np
 import pytest
 from shapely.geometry import box
 
@@ -16,6 +20,7 @@ os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-2")
 
 import geometry_styles
 import glyph_geometry
+from custom_shape import decode_grayscale_mask, mask_to_unit_geometry
 import vector_processing
 from abstract_filters import halftone_newsprint, krasnow_grating
 from services import parse_geometry_style_parameters
@@ -608,7 +613,401 @@ def test_staging_ui_exposes_fauxlogram_flow_painter():
     assert 'id="openFlowPainter"' in page
     assert 'id="flowCanvas"' in page
     assert "values.fauxlogram_flow=structuredClone(fauxlogramFlow)" in page
-    assert "Every Krasnow cell still belongs to one source layer and at most one painted region" in page
+    assert "Add painted region" in page
+    assert "Add image-mask region" in page
     assert "function resizeFlowCanvas()" in page
     assert "availableWidth/flowBitmap.width,availableHeight/flowBitmap.height" in page
     assert "Math.min(1,960/flowBitmap.width,680/flowBitmap.height)" not in page
+
+
+def _compact_mask(values):
+    values = np.asarray(values, dtype=np.uint8)
+    return {
+        "width": values.shape[1],
+        "height": values.shape[0],
+        "data": base64.b64encode(values.tobytes()).decode("ascii"),
+    }
+
+
+def test_custom_glyph_mask_decodes_and_traces_a_normalized_shape():
+    values = np.zeros((16, 16), dtype=np.uint8)
+    values[2:14, 6:10] = 255
+    values[6:10, 2:14] = 255
+    spec = _compact_mask(values)
+
+    assert np.array_equal(decode_grayscale_mask(spec), values)
+    geometry = mask_to_unit_geometry(spec, threshold=.5, padding=.05)
+
+    assert not geometry.is_empty
+    assert max(geometry.bounds[2] - geometry.bounds[0], geometry.bounds[3] - geometry.bounds[1]) <= .91
+    assert geometry.area < .5
+
+
+def test_custom_glyph_geometry_renders_uploaded_silhouette():
+    values = np.zeros((16, 16), dtype=np.uint8)
+    values[2:14, 6:10] = 255
+    values[6:10, 2:14] = 255
+    rendered = glyph_geometry.remap_layers(
+        {"#FF0000": box(0, 0, 3, 3)},
+        TARGET_COLORS,
+        glyph_parameters(
+            glyph_shape="custom",
+            custom_glyph_mask=_compact_mask(values),
+            custom_glyph_threshold=.5,
+            custom_glyph_padding=.05,
+        ),
+    )
+
+    assert "#FF0000" in rendered
+    assert not rendered["#FF0000"].is_empty
+
+
+def test_geometry_parameter_parser_preserves_custom_glyph_mask():
+    values = np.zeros((16, 16), dtype=np.uint8)
+    values[3:13, 3:13] = 255
+    mask = _compact_mask(values)
+
+    parsed = parse_geometry_style_parameters({
+        "glyph_shape": "custom",
+        "custom_glyph_mask": mask,
+        "custom_glyph_threshold": .4,
+        "custom_glyph_padding": .08,
+        "custom_glyph_invert": 0,
+    })
+
+    assert parsed["custom_glyph_mask"] == mask
+    assert parsed["glyph_shape"] == "custom"
+
+
+def test_invalid_custom_glyph_mask_explains_how_to_replace_it():
+    with pytest.raises(ValueError, match="The custom glyph image couldn't be used") as error:
+        parse_geometry_style_parameters({"custom_glyph_mask": {}})
+
+    assert "PNG, JPEG, or WebP" in str(error.value)
+
+
+def test_invalid_flow_region_mask_explains_how_to_replace_it():
+    with pytest.raises(ValueError, match="Fauxlogram Flow Painter region 1's image mask couldn't be used") as error:
+        parse_geometry_style_parameters({
+            "fauxlogram_flow": {
+                "regions": [{"region_type": "image_mask", "mask": {}}],
+                "strokes": [],
+            },
+        })
+
+    assert "Remove the mask" in str(error.value)
+
+
+def test_fauxlogram_flow_accepts_a_mask_without_painted_strokes():
+    values = np.zeros((16, 16), dtype=np.uint8)
+    values[:, :8] = 255
+    settings = {
+        **krasnow_grating.DEFAULTS,
+        "fauxlogram_flow": {
+            "enabled": True,
+            "regions": [{
+                "name": "Masked", "region_type": "image_mask", "scope": "combined_region",
+                "guide_type": "linear", "orientation": "parallel",
+                "start": [.1, .5], "end": [.9, .5],
+                "gradient_start": 20, "gradient_end": 220, "curve": 1,
+                "fixed_angle": 0, "angle_offset": 0, "reverse": False,
+                "mask": _compact_mask(values),
+                "mask_mode": "silhouette",
+                "mask_threshold": .5,
+            }],
+            "strokes": [],
+        },
+    }
+    settings["_compiled_fauxlogram_flow"] = krasnow_grating._prepare_fauxlogram_flow(settings)
+
+    assert krasnow_grating._painted_flow_controls(20, 50, (0, 0, 100, 100), settings) is not None
+    assert krasnow_grating._painted_flow_controls(80, 50, (0, 0, 100, 100), settings) is None
+
+
+def test_grayscale_flow_mask_supplies_gradient_and_direction_without_painting():
+    values = np.tile(np.linspace(0, 255, 32, dtype=np.uint8)[:, None], (1, 32))
+    settings = {
+        **krasnow_grating.DEFAULTS,
+        "fauxlogram_flow": {
+            "enabled": True,
+            "regions": [{
+                "name": "Masked", "scope": "combined_region",
+                "guide_type": "linear", "orientation": "parallel",
+                "start": [.1, .5], "end": [.9, .5],
+                "gradient_start": 20, "gradient_end": 220, "curve": 1,
+                "fixed_angle": 0, "angle_offset": 0, "reverse": False,
+                "mask": _compact_mask(values), "mask_mode": "grayscale",
+                "mask_threshold": .1,
+            }],
+            "strokes": [],
+        },
+    }
+    settings["_compiled_fauxlogram_flow"] = krasnow_grating._prepare_fauxlogram_flow(settings)
+
+    upper = krasnow_grating._painted_flow_controls(50, 25, (0, 0, 100, 100), settings)
+    lower = krasnow_grating._painted_flow_controls(50, 75, (0, 0, 100, 100), settings)
+    assert upper is not None and lower is not None
+    assert upper[0] < lower[0]
+    assert upper[1] == pytest.approx(90)
+    assert lower[1] == pytest.approx(90)
+
+
+def test_image_mask_region_flat_area_does_not_inherit_guide_direction():
+    values = np.zeros((32, 32), dtype=np.uint8)
+    values[4:28, 4:28] = 180
+    region = {
+        "name": "Image mask", "region_type": "image_mask",
+        "scope": "combined_region", "guide_type": "linear",
+        "orientation": "parallel", "start": [.1, .5], "end": [.9, .5],
+        "gradient_start": 20, "gradient_end": 220, "curve": 1,
+        "fixed_angle": 35, "angle_offset": 0, "reverse": False,
+        "mask": _compact_mask(values), "mask_mode": "grayscale",
+        "mask_threshold": .1,
+    }
+    settings = {
+        **krasnow_grating.DEFAULTS,
+        "fauxlogram_flow": {"enabled": True, "regions": [region], "strokes": []},
+    }
+    settings["_compiled_fauxlogram_flow"] = krasnow_grating._prepare_fauxlogram_flow(settings)
+    horizontal = krasnow_grating._painted_flow_controls(50, 50, (0, 0, 100, 100), settings)
+    region["start"], region["end"] = [.5, .1], [.5, .9]
+    vertical = krasnow_grating._painted_flow_controls(50, 50, (0, 0, 100, 100), settings)
+    assert horizontal is not None and vertical is not None
+    assert horizontal == pytest.approx(vertical)
+    assert horizontal[1] == pytest.approx(35)
+
+
+def test_separate_image_mask_regions_keep_independent_settings():
+    left_mask = np.zeros((32, 32), dtype=np.uint8)
+    right_mask = np.zeros((32, 32), dtype=np.uint8)
+    left_mask[4:28, 2:14] = 200
+    right_mask[4:28, 18:30] = 200
+    regions = []
+    for name, mask, start, angle in (
+        ("Left", left_mask, 30, 15),
+        ("Right", right_mask, 180, 75),
+    ):
+        regions.append({
+            "name": name, "region_type": "image_mask", "scope": "combined_region",
+            "guide_type": "linear", "orientation": "parallel",
+            "start": [.1, .5], "end": [.9, .5],
+            "gradient_start": start, "gradient_end": start, "curve": 1,
+            "fixed_angle": angle, "angle_offset": 0, "reverse": False,
+            "mask": _compact_mask(mask), "mask_mode": "grayscale",
+            "mask_threshold": .1,
+        })
+    settings = {
+        **krasnow_grating.DEFAULTS,
+        "fauxlogram_flow": {"enabled": True, "regions": regions, "strokes": []},
+    }
+    settings["_compiled_fauxlogram_flow"] = krasnow_grating._prepare_fauxlogram_flow(settings)
+    left = krasnow_grating._painted_flow_controls(25, 50, (0, 0, 100, 100), settings)
+    right = krasnow_grating._painted_flow_controls(75, 50, (0, 0, 100, 100), settings)
+    middle = krasnow_grating._painted_flow_controls(50, 50, (0, 0, 100, 100), settings)
+    assert left == pytest.approx((30, 15))
+    assert right == pytest.approx((180, 75))
+    assert middle is None
+
+
+def test_image_mask_uncovered_cells_use_another_region_then_main_gradient():
+    mask = np.zeros((32, 32), dtype=np.uint8)
+    mask[:, 12:20] = 255
+    settings = {
+        **krasnow_grating.DEFAULTS,
+        "fauxlogram_flow": {
+            "enabled": True,
+            "regions": [
+                {
+                    "name": "Painted", "region_type": "painted",
+                    "scope": "combined_region", "guide_type": "linear",
+                    "orientation": "parallel", "start": [.1, .5], "end": [.9, .5],
+                    "gradient_start": 30, "gradient_end": 30, "curve": 1,
+                    "fixed_angle": 0, "angle_offset": 0, "reverse": False,
+                },
+                {
+                    "name": "Image mask", "region_type": "image_mask",
+                    "scope": "combined_region", "guide_type": "linear",
+                    "orientation": "parallel", "start": [.1, .5], "end": [.9, .5],
+                    "gradient_start": 180, "gradient_end": 180, "curve": 1,
+                    "fixed_angle": 45, "angle_offset": 0, "reverse": False,
+                    "mask": _compact_mask(mask), "mask_mode": "grayscale",
+                    "mask_threshold": 0,
+                },
+            ],
+            "strokes": [{"region": 0, "points": [[.5, .5]], "width": .6}],
+        },
+    }
+    settings["_compiled_fauxlogram_flow"] = krasnow_grating._prepare_fauxlogram_flow(settings)
+
+    assert krasnow_grating._painted_flow_controls(50, 50, (0, 0, 100, 100), settings) == pytest.approx((180, 45))
+    assert krasnow_grating._painted_flow_controls(25, 50, (0, 0, 100, 100), settings)[0] == pytest.approx(30)
+    assert krasnow_grating._painted_flow_controls(90, 50, (0, 0, 100, 100), settings) is None
+
+
+def test_flow_painter_exposes_image_masks_as_separate_regions():
+    page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+    assert "Add image-mask region" in page
+    assert "newFlowRegion(flowActiveRegion,'image_mask')" in page
+    assert "region.region_type==='image_mask'" in page
+    assert "Flat-area fallback angle" in page
+    assert "if they overlap, the later region takes precedence" in page
+    assert "region.mask&&region.region_type!=='image_mask'" in page
+
+
+def test_flow_painter_region_errors_identify_position_and_recovery():
+    flow = {"regions": [{}, None], "strokes": []}
+    message = r"region 2 could not be read.*Reopen the painter.*Reset geometry settings"
+    with pytest.raises(ValueError, match=message):
+        parse_geometry_style_parameters({"fauxlogram_flow": flow})
+
+    handler = ROOT / "serverless_api" / "handler.py"
+    tree = ast.parse(handler.read_text(encoding="utf-8"))
+    submit = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "submit_job")
+    validate = next(node for node in submit.body if isinstance(node, ast.FunctionDef) and node.name == "validate_fauxlogram_flow")
+    validate_mask = next(node for node in submit.body if isinstance(node, ast.FunctionDef) and node.name == "validate_compact_mask")
+    namespace = {"base64": base64, "math": math}
+    exec(compile(ast.Module(body=[validate_mask, validate], type_ignores=[]), str(handler), "exec"), namespace)
+    with pytest.raises(ValueError, match=message):
+        namespace["validate_fauxlogram_flow"](flow)
+
+    unsupported_type = {"regions": [{}, {"region_type": "unknown"}], "strokes": []}
+    type_message = r"region 2 has an unsupported region type.*Reopen the painter.*Reset geometry settings"
+    with pytest.raises(ValueError, match=type_message):
+        parse_geometry_style_parameters({"fauxlogram_flow": unsupported_type})
+    with pytest.raises(ValueError, match=type_message):
+        namespace["validate_fauxlogram_flow"](unsupported_type)
+
+    bad_scope = {"regions": [{}, {"scope": "unknown"}], "strokes": []}
+    scope_message = (
+        r"region 2 has an invalid Gradient scope.*choose a valid Gradient scope"
+        r".*Reset geometry settings"
+    )
+    with pytest.raises(ValueError, match=scope_message):
+        parse_geometry_style_parameters({"fauxlogram_flow": bad_scope})
+    with pytest.raises(ValueError, match=scope_message):
+        namespace["validate_fauxlogram_flow"](bad_scope)
+
+    bad_guide = {"regions": [{}, {"guide_type": "unknown"}], "strokes": []}
+    guide_message = (
+        r"region 2 has an invalid Guide type.*choose Linear or Radial"
+        r".*Reset geometry settings"
+    )
+    with pytest.raises(ValueError, match=guide_message):
+        parse_geometry_style_parameters({"fauxlogram_flow": bad_guide})
+    with pytest.raises(ValueError, match=guide_message):
+        namespace["validate_fauxlogram_flow"](bad_guide)
+
+    bad_orientation = {"regions": [{}, {"orientation": "unknown"}], "strokes": []}
+    orientation_message = (
+        r"region 2 has an invalid Grating orientation.*choose a Grating orientation"
+        r".*Reset geometry settings"
+    )
+    with pytest.raises(ValueError, match=orientation_message):
+        parse_geometry_style_parameters({"fauxlogram_flow": bad_orientation})
+    with pytest.raises(ValueError, match=orientation_message):
+        namespace["validate_fauxlogram_flow"](bad_orientation)
+
+    bad_point = {"regions": [{}, {"start": ["invalid", 0.5]}], "strokes": []}
+    point_message = r"region 2 has an invalid guide position.*redraw that region's guide.*Reset geometry settings"
+    with pytest.raises(ValueError, match=point_message):
+        parse_geometry_style_parameters({"fauxlogram_flow": bad_point})
+    with pytest.raises(ValueError, match=point_message):
+        namespace["validate_fauxlogram_flow"](bad_point)
+
+    valid_mask = {"width": 8, "height": 8, "data": base64.b64encode(bytes(64)).decode("ascii")}
+    bad_mask_mode = {"regions": [{}, {"mask": valid_mask, "mask_mode": "unknown"}], "strokes": []}
+    mode_message = r"region 2 has an invalid mask Interpretation.*choose Grayscale gradient map or Silhouette"
+    with pytest.raises(ValueError, match=mode_message):
+        parse_geometry_style_parameters({"fauxlogram_flow": bad_mask_mode})
+    with pytest.raises(ValueError, match=mode_message):
+        namespace["validate_fauxlogram_flow"](bad_mask_mode)
+
+    bad_inversion = {"regions": [{}, {"mask": valid_mask, "mask_invert": []}], "strokes": []}
+    with pytest.raises(ValueError, match=r"region 2 has an invalid Invert mask setting"):
+        namespace["validate_fauxlogram_flow"](bad_inversion)
+
+    bad_mask = {"regions": [{}, {"mask": {}}], "strokes": []}
+    with pytest.raises(ValueError, match=r"region 2's image mask couldn't be used"):
+        parse_geometry_style_parameters({"fauxlogram_flow": bad_mask})
+    with pytest.raises(ValueError, match=r"region 2's image mask couldn't be used"):
+        namespace["validate_fauxlogram_flow"](bad_mask)
+
+    missing_region = {"regions": [{}], "strokes": [{"region": 7, "points": [[0.5, 0.5]]}]}
+    stroke_message = r"brush stroke 1 refers to a region that is no longer available.*Reset geometry settings"
+    with pytest.raises(ValueError, match=stroke_message):
+        parse_geometry_style_parameters({"fauxlogram_flow": missing_region})
+    with pytest.raises(ValueError, match=stroke_message):
+        namespace["validate_fauxlogram_flow"](missing_region)
+
+
+def test_invalid_swatch_geometry_identifies_the_swatch_and_valid_choices():
+    with pytest.raises(ValueError, match=r"routing for #FF0000 has an unsupported geometry.*Vectors, Glyphs, or Krasnow"):
+        parse_geometry_style_parameters({
+            "assignments": {"#FF0000": "unknown"},
+            "glyphs": {},
+            "krasnow_grating": {},
+        })
+
+
+def test_geometry_parameter_parser_preserves_flow_region_mask():
+    values = np.zeros((16, 16), dtype=np.uint8)
+    values[:, :8] = 255
+    mask = _compact_mask(values)
+    parsed = parse_geometry_style_parameters({
+        "fauxlogram_flow": {
+            "enabled": True,
+            "regions": [{
+                "name": "Masked", "scope": "combined_region",
+                "region_type": "image_mask",
+                "guide_type": "radial", "orientation": "parallel",
+                "start": [.5, .5], "end": [.9, .5],
+                "mask": mask, "mask_name": "star.png",
+                "mask_mode": "grayscale", "mask_threshold": .25,
+                "mask_invert": True, "mask_offset": [.2, -.1],
+            }],
+            "strokes": [],
+        },
+    })
+
+    region = parsed["fauxlogram_flow"]["regions"][0]
+    assert region["mask"] == mask
+    assert region["region_type"] == "image_mask"
+    assert region["mask_mode"] == "grayscale"
+    assert region["mask_invert"] is True
+    assert region["mask_offset"] == [.2, -.1]
+
+
+def test_fauxlogram_flow_mask_offset_repositions_the_active_area():
+    values = np.zeros((16, 16), dtype=np.uint8)
+    values[:, :8] = 255
+    settings = {
+        **krasnow_grating.DEFAULTS,
+        "fauxlogram_flow": {
+            "enabled": True,
+            "regions": [{
+                "name": "Moved", "scope": "combined_region",
+                "guide_type": "linear", "orientation": "parallel",
+                "start": [.1, .5], "end": [.9, .5],
+                "gradient_start": 20, "gradient_end": 220, "curve": 1,
+                "fixed_angle": 0, "angle_offset": 0, "reverse": False,
+                "mask": _compact_mask(values), "mask_mode": "silhouette",
+                "mask_threshold": .5, "mask_offset": [.5, 0],
+            }],
+            "strokes": [],
+        },
+    }
+    settings["_compiled_fauxlogram_flow"] = krasnow_grating._prepare_fauxlogram_flow(settings)
+
+    assert krasnow_grating._painted_flow_controls(20, 50, (0, 0, 100, 100), settings) is None
+    assert krasnow_grating._painted_flow_controls(70, 50, (0, 0, 100, 100), settings) is not None
+
+
+def test_staging_ui_exposes_custom_glyph_and_flow_mask_uploads():
+    page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+    assert "['custom','Custom Uploaded Glyph']" in page
+    assert "data-custom-glyph-file" in page
+    assert 'id="flowMaskFile"' in page
+    assert "flowHasContent()" in page
+    assert "normalizeShapeImage" in page
+    assert 'data-flow-tool="move"' in page
+    assert "mask_offset" in page

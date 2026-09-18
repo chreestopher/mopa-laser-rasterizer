@@ -62,6 +62,17 @@ def test_login_keeps_pkce_verifier_and_redirect_on_the_same_origin():
     assert "redirect_uri:config.callback_url" not in index
 
 
+def test_failed_code_exchange_clears_one_use_callback_and_exposes_cognito_error():
+    index = read("index.html")
+
+    assert "if(!verifier){discardCallback();throw new Error" in index
+    assert "sessionStorage.removeItem('pkce_verifier')" in index
+    assert "history.replaceState({},'',location.pathname)" in index
+    assert "result.error_description||result.error||`HTTP ${response.status}`" in index
+    assert "if(!response.ok||!result.id_token)" in index
+    assert "message.startsWith('Cognito sign-in')" in index
+
+
 def test_community_set_build_uses_shared_tokens_and_refreshes_expired_sessions():
     builder = (ROOT / "dev_setup" / "build_serverless_community.py").read_text(encoding="utf-8")
 
@@ -76,7 +87,7 @@ def test_changed_auth_assets_have_cache_busting_revisions():
     expected = {
         "index.html": ('/staging-shell.js?v=3',),
         "vault.html": ('/staging-shell.js?v=3', '/vault.js?v=12'),
-        "history.html": ('/staging-shell.js?v=3', '/history.js?v=8'),
+        "history.html": ('/staging-shell.js?v=3', '/history.js?v=9'),
         "admin.html": ('/staging-shell.js?v=3', '/admin.js?v=3'),
         "color-lab.html": ('/staging-shell.js?v=3', '/color-lab.js?v=7'),
         "holographic.html": ('/staging-shell.js?v=3', '/holographic.js?v=6'),

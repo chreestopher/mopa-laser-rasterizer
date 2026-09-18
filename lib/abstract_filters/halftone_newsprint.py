@@ -78,7 +78,7 @@ def _star(x, y, radius, rotation_degrees=0):
     return Polygon(points)
 
 
-def _glyph_mark(shape, x, y, half_size, rotation_degrees=0):
+def _glyph_mark(shape, x, y, half_size, rotation_degrees=0, custom_template=None):
     """Build one bounded solid glyph for the shared halftone matrix."""
     center = Point(x, y)
     shape = str(shape or "circle").strip().lower()
@@ -104,6 +104,14 @@ def _glyph_mark(shape, x, y, half_size, rotation_degrees=0):
         ))
     elif shape == "bar":
         mark = box(x - half_size, y - half_size * 0.32, x + half_size, y + half_size * 0.32)
+    elif shape == "custom" and custom_template is not None:
+        mark = affinity.scale(
+            custom_template,
+            xfact=half_size * 2,
+            yfact=half_size * 2,
+            origin=(0, 0),
+        )
+        mark = affinity.translate(mark, xoff=x, yoff=y)
     elif shape in {
         "skull", "heart", "space_invader", "ghost", "bat", "alien_head",
         "paw_print", "fish_scale", "puzzle_piece",
@@ -320,6 +328,7 @@ def remap_layers(processed_layers, target_colors, settings):
     tone_image = settings.get("_angle_image")
     glyph_rotation = number(settings.get("_glyph_rotation"), 0, -180, 180)
     glyph_seed = int(number(settings.get("_glyph_seed"), 1, 0, 999999))
+    custom_glyph_template = settings.get("_custom_glyph_template")
     mixed_shapes = ("circle", "square", "diamond", "triangle", "hexagon", "octagon", "star", "cross", "bar")
     pieces = (
         {black_hex: []}
@@ -365,7 +374,12 @@ def remap_layers(processed_layers, target_colors, settings):
                     % len(mixed_shapes)
                 ]
             mark = _glyph_mark(
-                cell_shape, x, y, half_size, angle + glyph_rotation
+                cell_shape,
+                x,
+                y,
+                half_size,
+                angle + glyph_rotation,
+                custom_template=custom_glyph_template,
             )
             mark = mark.intersection(canvas)
             if not mark.is_empty:

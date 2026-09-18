@@ -35,6 +35,33 @@ def test_material_usage_resolution_uses_lightburn_parser(monkeypatch):
     assert resolved[0]["setting_values"]["maxPower"] == 20.0
 
 
+def test_material_usage_resolution_ignores_cut_setting_name(monkeypatch):
+    class Setting:
+        def __init__(self, description, cut_setting_name):
+            self.materialName = "Stainless Steel"
+            self.entryDesc = description
+            self.name = cut_setting_name
+            self.type = "Scan"
+            self.subLayers = []
+            self.speed = 1000.0
+
+    class Parser:
+        def parse_material_library(self, _path):
+            return [
+                Setting("Teal", "Teal"),
+                Setting("Light-Blue", "Teal"),
+            ]
+
+    monkeypatch.setattr(services, "Lightburn", Parser)
+
+    resolved = services.resolve_material_setting_usage(
+        "test.clb", "stainless steel", ["Teal"]
+    )
+
+    assert len(resolved) == 1
+    assert resolved[0]["description"] == "Teal"
+
+
 def test_rasterizer_palette_initialization_has_no_retired_holographic_call():
     template = Path("templates/index.html").read_text(encoding="utf-8")
     active_template = re.sub(r"/\*.*?\*/", "", template, flags=re.DOTALL)
