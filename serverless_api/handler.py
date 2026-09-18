@@ -787,7 +787,8 @@ LAST_USED_FORM_FIELDS = {
     "last_holographic_lab_form": {
         "calibration_source", "library_id", "entry_id", "material_name", "cut_mode",
         "laser_source", "lens_field_mm", "columns", "rows", "cell_mm", "interval_low",
-        "interval_high", "sweep_parameter", "sweep_low", "sweep_high", "profile_name",
+        "interval_high", "sweep_parameter", "sweep_low", "sweep_high", "grid_mode",
+        "flipper_angle_a", "flipper_angle_b", "profile_name",
         "capture_camera", "capture_distance", "capture_angle", "capture_lighting", "capture_notes",
     },
     "last_color_lab_form": {
@@ -2335,8 +2336,20 @@ def create_holographic_calibration(event, guest=False, upload_task_id=""):
         cut_mode = str(data.get("cut_mode") or "setting")
         cut_types = {"setting":None,"line":"Cut","fill":"Scan","offset_fill":"Offset"}
         if cut_mode not in cut_types: raise ValueError("Choose a valid cut mode")
+        grid_mode = str(data.get("grid_mode") or "standard")
+        if grid_mode not in {"standard", "flipper_pair"}: raise ValueError("Choose a valid calibration grid mode")
+        if grid_mode == "flipper_pair":
+            if columns * rows > 29: raise ValueError("Keep the Flipper direction test to 29 cells or fewer so its label and cell layers fit LightBurn's 30-layer palette")
+            flipper_angle_a = float(data.get("flipper_angle_a", 45))
+            flipper_angle_b = float(data.get("flipper_angle_b", 135))
+            if not all(math.isfinite(angle) and 0 <= angle < 180 for angle in (flipper_angle_a, flipper_angle_b)):
+                raise ValueError("Flipper test angles must be from 0 up to but not including 180 degrees")
+            if math.isclose(flipper_angle_a, flipper_angle_b, abs_tol=1e-6):
+                raise ValueError("Choose two different Flipper test angles")
+            if sweep != "none": raise ValueError("Turn off the extra laser-setting sweep for a Flipper comparison")
+            if cut_mode != "fill": raise ValueError("Select Fill cut mode for the Flipper direction test grid")
     except (TypeError, ValueError) as error:
-        if str(error).startswith("Choose a valid "):
+        if str(error).startswith(("Choose a valid ", "Keep the Flipper direction", "Flipper test angles", "Choose two different Flipper", "Turn off the extra laser-setting", "Select Fill cut mode")):
             raise
         raise ValueError(
             "A Fauxlographic Etching Lab grid value could not be read. Review the selected LightBurn setting, "
@@ -2360,7 +2373,9 @@ def create_holographic_calibration(event, guest=False, upload_task_id=""):
     count = columns * rows
     column_intervals = [interval_low + (interval_high-interval_low)*index/max(columns-1,1) for index in range(columns)]
     intervals = [column_intervals[index % columns] for index in range(count)]
-    angles = [180 * (index // columns) / rows for index in range(count)]
+    angles = ([flipper_angle_a if (index // columns) % 2 == 0 else flipper_angle_b for index in range(count)]
+              if grid_mode == "flipper_pair" else
+              [180 * (index // columns) / rows for index in range(count)])
     sweep_values = [sweep_low + (sweep_high-sweep_low)*index/max(count-1,1) for index in range(count)]
     calibration_id, now = upload_task_id if guest else str(uuid.uuid4()), int(time.time())
     top_label = max(4.0, min(8.0, cell_mm * .45))
@@ -2408,6 +2423,8 @@ def create_holographic_calibration(event, guest=False, upload_task_id=""):
                       "laser_setting_override":override,"laser_settings":lightburn_setting_snapshot(layer),
                       "grating_signature":{"cell_index":index,"interval_mm":interval,"angle_degrees":angle}})
     metadata = {"kind":"holographic_calibration_grid","schema_version":2,"calibration_grid_id":calibration_id,"material":material_name,
+                "grid_mode":grid_mode,
+                "flipper_pair_angles_degrees":[flipper_angle_a,flipper_angle_b] if grid_mode == "flipper_pair" else None,
                 "setting_description":str(source_entry.get("Desc") or ""),"laser_source":str(data.get("laser_source") or "")[:160],
                 "lens_field_of_view_mm":float(data.get("lens_field_mm") or 110),"columns":columns,"rows":rows,
                 "cell_size_mm":cell_mm,"interval_range_mm":[interval_low,interval_high],"angles_degrees":angles,

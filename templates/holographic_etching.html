@@ -156,6 +156,15 @@
     <input class="continue-as-guest" type="hidden" name="continue_as_guest" value="0">
     <h3><span class="sequence-tag">01</span> Calibration Grid Console</h3>
     <p class="form-note">This first grid sweeps line angle and fill interval while copying one selected LightBurn setting onto each cell. Keep the laser, material finish, and lens setup stable while you test it.</p>
+    <label class="full-width">Grid experiment
+      <select id="calibration_grid_mode" name="grid_mode">
+        <option value="standard">Standard angle and interval sweep</option>
+        <option value="flipper_pair">Fauxlographic Flipper paired-direction test</option>
+      </select>
+    </label>
+    <p id="flipper_pair_note" class="form-note" hidden>This is a feasibility test, not a two-image export. Alternating rows repeat two candidate grating angles while columns vary line interval. Engrave a small coupon, then compare the same cells from fixed left, center, and right viewing positions under one directional light. Continue to image interlacing only if the two angles visibly and repeatably reverse which is brighter. Fill cut mode and no extra laser-setting sweep keep the comparison controlled.</p>
+    <label id="flipper_angle_a_row" hidden>Candidate A angle (degrees)<input name="flipper_angle_a" type="number" value="45" min="0" max="179.9" step=".1"></label>
+    <label id="flipper_angle_b_row" hidden>Candidate B angle (degrees)<input name="flipper_angle_b" type="number" value="135" min="0" max="179.9" step=".1"></label>
     <label class="full-width">Material Library source
       <select id="calibration_library_source_mode" name="library_source_mode">
         <option value="upload">Upload a LightBurn Material Library</option>
@@ -379,6 +388,19 @@
       `<li><a class="action" href="${url}">${label}</a></li>`
     ).join('')}</ul>`;
     const calibrationForm = document.getElementById('calibration_form');
+    const calibrationGridMode = document.getElementById('calibration_grid_mode');
+    function updateFlipperPairFields() {
+      const paired = calibrationGridMode.value === 'flipper_pair';
+      for (const id of ['flipper_pair_note', 'flipper_angle_a_row', 'flipper_angle_b_row']) {
+        document.getElementById(id).hidden = !paired;
+      }
+      if (paired) {
+        calibrationForm.elements.cut_mode.value = 'fill';
+        calibrationForm.elements.sweep_parameter.value = 'none';
+      }
+    }
+    calibrationGridMode.addEventListener('change', updateFlipperPairFields);
+    updateFlipperPairFields();
     const calibrationLibrarySourceMode = document.getElementById('calibration_library_source_mode');
     const savedCalibrationLibraryRow = document.getElementById('saved_calibration_library_row');
     const savedCalibrationLibrary = document.getElementById('saved_calibration_library');

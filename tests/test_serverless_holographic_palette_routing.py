@@ -243,7 +243,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         color_lab = (ROOT / "serverless_web" / "color-lab.html").read_text(encoding="utf-8")
         styles = (ROOT / "serverless_web" / "staging-pages.css").read_text(encoding="utf-8")
 
-        self.assertEqual(page.count('class="lab-card"'), 3)
+        self.assertEqual(page.count('class="lab-card"'), 4)
         self.assertIn("<h2>Color Lab</h2>", page)
         self.assertLess(page.index("<h2>Color Lab</h2>"), page.index("<h2>Fauxlographic Etching Lab</h2>"))
         self.assertLess(page.index("<h2>Color Lab</h2>"), page.index("<h2>Depthmap/Relief Engraving Lab</h2>"))

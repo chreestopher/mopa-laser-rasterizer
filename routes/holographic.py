@@ -1085,8 +1085,29 @@ def calibration_grid():
             raise ValueError("Unknown calibration cut mode.")
         sweep_low = float(request.form.get("sweep_low", 0))
         sweep_high = float(request.form.get("sweep_high", sweep_low))
-    except ValueError:
-        return jsonify({"status": "error", "message": "Calibration grid dimensions and intervals must be numbers."}), 400
+        grid_mode = str(request.form.get("grid_mode", "standard")).strip()
+        if grid_mode not in {"standard", "flipper_pair"}:
+            raise ValueError("Unknown calibration grid mode.")
+        if grid_mode == "flipper_pair":
+            if columns * rows > 29:
+                raise ValueError("Keep the Flipper direction test to 29 cells or fewer so its label and cell layers fit LightBurn's 30-layer palette.")
+            flipper_angle_a = float(request.form.get("flipper_angle_a", 45))
+            flipper_angle_b = float(request.form.get("flipper_angle_b", 135))
+            if not all(math.isfinite(angle) and 0 <= angle < 180 for angle in (flipper_angle_a, flipper_angle_b)):
+                raise ValueError("Flipper test angles must be from 0 up to but not including 180 degrees.")
+            if math.isclose(flipper_angle_a, flipper_angle_b, abs_tol=1e-6):
+                raise ValueError("Choose two different Flipper test angles.")
+            if sweep_key != "none":
+                raise ValueError("Turn off the extra laser-setting sweep for a Flipper comparison.")
+            if cut_mode != "fill":
+                raise ValueError("Select Fill cut mode for the Flipper direction test grid.")
+    except ValueError as error:
+        detail = str(error)
+        message = detail if detail.startswith((
+            "Unknown calibration grid mode.", "Keep the Flipper direction", "Flipper test angles", "Choose two different Flipper",
+            "Turn off the extra laser-setting", "Select Fill cut mode",
+        )) else "Calibration grid dimensions and intervals must be numbers."
+        return jsonify({"status": "error", "message": message}), 400
 
     task_id = str(uuid.uuid4())
     upload_folder = current_app.config["UPLOAD_FOLDER"]
@@ -1126,7 +1147,11 @@ def calibration_grid():
     # Grating orientation repeats after a half-turn, so exclude 180 degrees.
     # Dividing the half-turn by the row count gives every row a unique,
     # evenly spaced orientation (for example: 0, 45, 90, 135 for four rows).
-    row_angles = [180 * index / rows for index in range(rows)]
+    row_angles = (
+        [flipper_angle_a if index % 2 == 0 else flipper_angle_b for index in range(rows)]
+        if grid_mode == "flipper_pair" else
+        [180 * index / rows for index in range(rows)]
+    )
     intervals = [column_intervals[index % columns] for index in range(count)]
     angles = [row_angles[index // columns] for index in range(count)]
     sweep_values = [sweep_low + (sweep_high - sweep_low) * index / max(count - 1, 1) for index in range(count)]
@@ -1211,6 +1236,8 @@ def calibration_grid():
         with open(os.path.join(upload_folder, f"{stem}.json"), "w", encoding="utf-8") as metadata_file:
             json.dump({
                 "kind": "holographic_calibration_grid", "calibration_grid_id": task_id,
+                "grid_mode": grid_mode,
+                "flipper_pair_angles_degrees": [flipper_angle_a, flipper_angle_b] if grid_mode == "flipper_pair" else None,
                 "material": material,
                 "setting_description": description, "laser_source": laser_source,
                 "lens_field_of_view_mm": lens_field_mm, "columns": columns, "rows": rows,
