@@ -800,17 +800,17 @@ def init_lightburn(the_colors_limit, color_name_overrides=None):
             hue, layer_index, _ = TARGET_COLORS[color_hex]
             TARGET_COLORS[color_hex] = (hue, layer_index, label.strip())
     found_lb_hex.clear()
-    if len(the_colors_limit) > 0:
+    requested_color_names = {
+        name.strip().casefold()
+        for name in str(the_colors_limit or "").split(",")
+        if name.strip()
+    }
+    if requested_color_names:
         filtered_colors = {
-            hex_code: value_tuple 
-            for hex_code, value_tuple in TARGET_COLORS.items() 
-            for hex_code, value_tuple in TARGET_COLORS.items() 
-            if value_tuple[-1].lower() in the_colors_limit.lower()
+            hex_code: value_tuple
+            for hex_code, value_tuple in TARGET_COLORS.items()
+            if str(value_tuple[-1]).strip().casefold() in requested_color_names
         }
-        # ensure light grey and black are always in the list 
-        # these colors get defaulted to when no color is close enough to the target pixel
-        filtered_colors['#B4B4B4'] = TARGET_COLORS['#B4B4B4']
-        filtered_colors['#000000'] = TARGET_COLORS['#000000']
     else:
         filtered_colors = dict(TARGET_COLORS)
     # Add it to sys.modules cache and execute the code within the module
