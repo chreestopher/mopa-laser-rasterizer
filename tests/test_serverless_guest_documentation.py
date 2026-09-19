@@ -38,6 +38,12 @@ class ServerlessGuestDocumentationTests(unittest.TestCase):
         self.assertIn("Signed-in members can choose a Fauxlographic Palette saved in Swatch Palette Vault", self.catalog)
         self.assertIn("Guests can choose Upload Fauxlographic Swatch Palette", self.catalog)
 
+    def test_unavailable_color_settings_are_documented(self):
+        self.assertIn("Rasterizer exports geometry only for colors with settings", self.documentation)
+        self.assertIn("geometry is omitted", self.documentation)
+        self.assertIn("no synthetic Black canvas", self.documentation)
+        self.assertIn("no punch-through layer", self.documentation)
+
 
 if __name__ == "__main__":
     unittest.main()

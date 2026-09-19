@@ -759,3 +759,73 @@ def test_disabled_flag_keeps_established_canvas_pipeline(tmp_path):
     source_builder.assert_not_called()
     assert canvas_builder.called
     assert output_path.exists()
+
+
+def test_missing_black_setting_omits_synthetic_canvas_and_punch_through(tmp_path):
+    image_path = tmp_path / "red-only.png"
+    output_path = tmp_path / "red-only.svg"
+    Image.new("RGB", (3, 3), (255, 0, 0)).save(image_path)
+
+    project = lightburn.Lightburn()
+    vector_processing.lightburn = lightburn
+    with patch.dict("os.environ", {"RASTER_SOURCE_BLACK_COMPONENTS": "true"}):
+        with patch.object(
+            vector_processing,
+            "build_source_black_component_layer",
+            side_effect=AssertionError("source Black requires a Black setting"),
+        ) as source_builder, patch.object(
+            vector_processing,
+            "build_black_canvas",
+            side_effect=AssertionError("synthetic Black requires a Black setting"),
+        ) as canvas_builder, patch.object(
+            vector_processing,
+            "build_punched_black_layer",
+            side_effect=AssertionError("punch-through requires a Black setting"),
+        ) as punch_builder:
+            vector_processing.raster_to_puzzle_and_lightburn(
+                raster_image_path=image_path,
+                output_svg_path=str(output_path),
+                new_height=0,
+                new_width=3,
+                lb_project_instance=project,
+                TARGET_COLORS={"#FF0000": (0, 2, "Red")},
+                scale_factor=1,
+                image_preset="cartoon",
+                abstract_filter="none",
+                min_island_area=1,
+            )
+
+    source_builder.assert_not_called()
+    canvas_builder.assert_not_called()
+    punch_builder.assert_not_called()
+    assert project.objects
+    assert {item._layer for item in project.objects} == {2}
+    assert output_path.exists()
+
+
+def test_export_omits_every_color_without_an_available_setting(capsys):
+    root = vector_processing.create_svg_root(2, 1, 2, 1)
+    project = lightburn.Lightburn()
+
+    vector_processing.export_processed_layers(
+        processed_layers={
+            "#FF0000": box(0, 0, 1, 1),
+            "#0000FF": box(1, 0, 2, 1),
+            "#000000": box(0, 0, 2, 1),
+        },
+        target_colors={"#FF0000": (0, 2, "Red")},
+        black_hex="#000000",
+        scale_factor=1,
+        root=root,
+        lb_project_instance=project,
+        punch_through_black=True,
+        black_lightburn_geometry=box(0, 0, 2, 1),
+        export_lightburn=False,
+    )
+
+    assert len(root) == 1
+    assert root[0].get("fill") == "#FF0000"
+    output = capsys.readouterr().out
+    assert "Omitting geometry for colors without assigned" in output
+    assert "#000000" in output
+    assert "#0000FF" in output
