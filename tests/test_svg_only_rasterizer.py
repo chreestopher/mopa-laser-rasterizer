@@ -25,7 +25,8 @@ class SvgOnlyRasterizerCoverageTests(unittest.TestCase):
         self.assertIn("selected_default_names = [", route)
         self.assertIn('user_data["colors"] = ", ".join(selected_default_names)', route)
         self.assertIn('user_data["color_name_overrides"] = json.dumps(LIGHTBURN_PALETTE_NAMES', route)
-        self.assertIn("if len(limit_list) <= 1 and not svg_only", pipeline)
+        self.assertIn("selected_material_color_names(limit_colors, target_colors)", pipeline)
+        self.assertNotIn('limit_list.extend(("black", "light-gray"))', pipeline)
         self.assertIn('if not svg_only:\n            resolved_settings = resolve_material_setting_usage', route)
         self.assertIn('export_lightburn=not svg_only', pipeline)
 
