@@ -112,6 +112,7 @@ def test_last_used_krasnow_geometry_style_survives_dynamodb_decimal_round_trip()
             "geometry_style": "krasnow_grating",
             "geometry_style_parameters": {
                 "cell_shape": "diamond",
+                "grating_render_mode": "fill",
                 "preserve_black": Decimal("0"),
                 "posterize_colors": Decimal("12"),
                 "patch_size_mm": Decimal("0.4"),
@@ -125,6 +126,7 @@ def test_last_used_krasnow_geometry_style_survives_dynamodb_decimal_round_trip()
         "geometry_style": "krasnow_grating",
         "geometry_style_parameters": {
             "cell_shape": "diamond",
+            "grating_render_mode": "fill",
             "preserve_black": 0,
             "patch_size_mm": .4,
             "hue_line_spacing_minimum_mm": .05,

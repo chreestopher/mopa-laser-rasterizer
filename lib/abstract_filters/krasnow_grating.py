@@ -1,9 +1,10 @@
-"""Ben Krasnow-style open-path grating geometry with view correction.
+"""Ben Krasnow-style grating geometry with view correction.
 
 The ordinary raster pipeline still prepares, color-separates, and cleans the
 artwork. This module's optional ``remap_layers`` capability then
-rebuilds those finished color regions as open parallel-line patches and
-assigns each patch across the available non-black LightBurn layers.
+rebuilds those finished color regions as either open parallel-line patches or
+closed cells assigned to native LightBurn Fill layers, then distributes the
+result across the available non-black LightBurn layers.
 
 The layer colors are identifiers, not promises about the engraved color. Black
 is excluded from the grating carriers and is emitted later as an independent,
@@ -34,16 +35,21 @@ from custom_shape import decode_grayscale_mask
 USES_SOURCE_LUMINANCE = True
 PRESERVE_SOURCE_BLACK = True
 OUTPUT_PATH_MODE = "Cut"
+OUTPUT_FILL_MODE = "Scan"
 SETTING_NAME = "fauxlographic"
 SETTING_ALIASES = ("holographic",)
 REPLICATE_SETTING_TO_OUTPUT_LAYERS = True
 REFERENCE_PITCH_UM = 1.0
 PITCH_MIN_UM = .55
 PITCH_MAX_UM = 1.55
+MAX_LIGHTBURN_LAYERS = 30
+FILL_TARGET_CARRIER_LEVELS = 7
+FILL_TARGET_ANGLE_BINS = 4
 
 DEFAULTS = {
     "preserve_black": 1,
     "cell_shape": "square",
+    "grating_render_mode": "line",
     "fauxlogram_gradient_scope": "entire_artwork",
     "fauxlogram_gradient_direction": "top_to_bottom",
     "speed_spread": 1,
@@ -108,9 +114,105 @@ def _cell_shape(settings):
     return value if value in CELL_SHAPES else "square"
 
 
+def _grating_render_mode(settings):
+    """Return the stable renderer name, retaining explicit lines by default."""
+    value = str(settings.get("grating_render_mode", "line")).strip().lower()
+    return value if value in {"line", "fill"} else "line"
+
+
 def _preserve_black(settings):
     """Keep source Black separate unless the user explicitly grates it."""
     return number(settings.get("preserve_black"), 1, 0, 1) >= .5
+
+
+def _automatic_fill_dimensions(layer_slots):
+    """Choose a useful carrier/angle split without exceeding available layers.
+
+    The search balances both dimensions and stops improving once it reaches
+    seven carriers and four angle bins, the practical target for the
+    experimental renderer. Empty palette slots are allowed when no exact
+    factorization offers a better optical balance.
+    """
+    layer_slots = max(1, min(MAX_LIGHTBURN_LAYERS, int(layer_slots)))
+    candidates = []
+    for carrier_count in range(1, layer_slots + 1):
+        for angle_count in range(1, min(FILL_TARGET_ANGLE_BINS, layer_slots) + 1):
+            used = carrier_count * angle_count
+            if used > layer_slots:
+                continue
+            carrier_utility = min(carrier_count, FILL_TARGET_CARRIER_LEVELS) \
+                / FILL_TARGET_CARRIER_LEVELS
+            angle_utility = min(angle_count, FILL_TARGET_ANGLE_BINS) \
+                / FILL_TARGET_ANGLE_BINS
+            score = carrier_utility * angle_utility
+            balance = min(carrier_utility, angle_utility)
+            candidates.append(
+                (score, balance, used, carrier_count, angle_count)
+            )
+    _, _, _, carrier_count, angle_count = max(candidates)
+    return carrier_count, angle_count
+
+
+def _fill_angle_controls(settings, angle_count):
+    """Return center-sampled normal angles for the automatically sized bins."""
+    angle_min = number(settings.get("angle_min"), -90, -180, 180)
+    angle_max = number(settings.get("angle_max"), 90, -180, 180)
+    if angle_count <= 1:
+        return ((angle_min + angle_max) / 2,)
+    span = angle_max - angle_min
+    return tuple(
+        angle_min + ((index + .5) / angle_count) * span
+        for index in range(angle_count)
+    )
+
+
+def _lightburn_fill_angle(normal_angle):
+    """Convert Rasterizer's grating normal to LightBurn's path direction."""
+    return (normal_angle + 90) % 180
+
+
+def _fill_layer_plan(target_colors, settings=None):
+    """Map available palette layers onto automatic carrier/angle combinations."""
+    settings = settings or {}
+    swatches = _grating_swatches(target_colors, settings)
+    if not swatches:
+        return {
+            "carrier_count": 0, "angle_count": 0, "angles": (),
+            "entries": (), "by_combination": {},
+        }
+    carrier_count, angle_count = _automatic_fill_dimensions(len(swatches))
+    angles = _fill_angle_controls(settings, angle_count)
+    entries = []
+    by_combination = {}
+    for carrier_index in range(carrier_count):
+        for angle_index, normal_angle in enumerate(angles):
+            swatch = swatches[len(entries)]
+            entry = {
+                "swatch": swatch,
+                "carrier_index": carrier_index,
+                "angle_index": angle_index,
+                "normal_angle": normal_angle,
+                "fill_angle": _lightburn_fill_angle(normal_angle),
+            }
+            entries.append(entry)
+            by_combination[(carrier_index, angle_index)] = swatch
+    return {
+        "carrier_count": carrier_count,
+        "angle_count": angle_count,
+        "angles": angles,
+        "entries": tuple(entries),
+        "by_combination": by_combination,
+    }
+
+
+def _nearest_fill_angle_index(angle, fill_plan):
+    """Quantize a continuous Krasnow normal angle to the nearest native Fill bin."""
+    angles = fill_plan["angles"]
+    def axial_distance(candidate):
+        # Parallel lines repeat every 180 degrees, so -90 and +90 describe
+        # the same axis even when a painted-flow offset crosses the endpoint.
+        return abs(((angle - candidate + 90) % 180) - 90)
+    return min(range(len(angles)), key=lambda index: axial_distance(angles[index]))
 
 
 def _pitch_for_level(level, level_count):
@@ -135,7 +237,7 @@ def _speed_for_pitch(reference_speed, target_pitch_um, speed_spread=1):
 
 
 def configure_output_layers(lightburn_project, target_colors, settings=None):
-    """Clone the 1 um anchor and scale each speed by pitch and Speed Spread."""
+    """Clone the 1 um anchor into explicit-line or native-Fill carriers."""
     settings = settings or {}
     setting_layer_id = settings.get("_setting_layer_id")
     project_layers = list(getattr(lightburn_project, "_layers", []))
@@ -164,15 +266,33 @@ def configure_output_layers(lightburn_project, target_colors, settings=None):
             "The Fauxlographic Material Library setting must have a positive frequency."
         )
 
-    output_layers = {}
     grating_swatches = _grating_swatches(target_colors, settings)
-    for level, color_hex in enumerate(grating_swatches):
+    fill_mode = _grating_render_mode(settings) == "fill"
+    fill_plan = _fill_layer_plan(target_colors, settings) if fill_mode else None
+    if fill_mode:
+        layer_entries = [
+            (
+                entry["swatch"],
+                entry["carrier_index"],
+                fill_plan["carrier_count"],
+                entry,
+            )
+            for entry in fill_plan["entries"]
+        ]
+    else:
+        layer_entries = [
+            (color_hex, level, len(grating_swatches), None)
+            for level, color_hex in enumerate(grating_swatches)
+        ]
+
+    output_layers = {}
+    for color_hex, level, level_count, fill_entry in layer_entries:
         metadata = target_colors[color_hex]
-        target_pitch_um = _pitch_for_level(level, len(grating_swatches))
+        target_pitch_um = _pitch_for_level(level, level_count)
         clone = deepcopy(setting_template)
         clone.index = metadata[1]
         clone.name = metadata[2]
-        clone.type = OUTPUT_PATH_MODE
+        clone.type = OUTPUT_FILL_MODE if fill_mode else OUTPUT_PATH_MODE
         clone.subLayers = []
         clone.speed = round(
             _speed_for_pitch(
@@ -182,6 +302,15 @@ def configure_output_layers(lightburn_project, target_colors, settings=None):
             ),
             6,
         )
+        if fill_mode:
+            clone.interval = number(
+                settings.get("line_spacing_mm"), .06, .01, .5
+            )
+            clone.angle = round(fill_entry["fill_angle"], 6)
+            clone.anglePerPass = 0
+            clone.crossHatch = False
+            clone.scanOpt = "individual"
+            clone.floodFill = False
         clone.materialName = getattr(source_layer, "materialName", "")
         clone.entryDesc = getattr(source_layer, "entryDesc", SETTING_NAME)
         output_layers[clone.index] = clone
@@ -191,6 +320,13 @@ def configure_output_layers(lightburn_project, target_colors, settings=None):
     for layer in project_layers:
         layer_id = getattr(layer, "index", None)
         if layer_id == setting_layer_id and layer_id not in output_layers:
+            continue
+        if fill_mode and layer_id in {
+            target_colors[swatch][1] for swatch in grating_swatches
+        } and layer_id not in output_layers:
+            # Some factorisations intentionally leave a palette slot unused.
+            # Remove its now-empty original layer instead of exposing a stale
+            # non-carrier setting in the generated LightBurn project.
             continue
         if layer_id in output_layers:
             if layer_id not in replaced_ids:
@@ -1039,7 +1175,14 @@ def _process_layer_patches(layer_plan, grating_swatches, bounds, settings,
                            progress_callback=None):
     """Clip one source layer while preserving its original patch order."""
     source_hex, geometry, candidate_indices, gradient_bounds = layer_plan
-    line_spacing = _line_spacing_for_color(source_hex, settings, scale_factor)
+    fill_plan = settings.get("_fill_layer_plan")
+    fill_mode = fill_plan is not None
+    line_spacing = None if fill_mode else _line_spacing_for_color(
+        source_hex, settings, scale_factor
+    )
+    level_count = (
+        fill_plan["carrier_count"] if fill_mode else len(grating_swatches)
+    )
     min_x, min_y, max_x, max_y = bounds
     layer_pieces = {swatch: [] for swatch in grating_swatches}
 
@@ -1071,7 +1214,7 @@ def _process_layer_patches(layer_plan, grating_swatches, bounds, settings,
                     center_y,
                     gradient_bounds,
                     settings,
-                    len(grating_swatches),
+                    level_count,
                 )
                 angle = _source_angle(center_x, center_y, bounds, settings)
             else:
@@ -1081,12 +1224,17 @@ def _process_layer_patches(layer_plan, grating_swatches, bounds, settings,
                     max(0.0, control + _hue_offset(source_hex, settings)),
                 )
                 level = min(
-                    len(grating_swatches) - 1,
-                    math.floor(control / 256 * len(grating_swatches)),
+                    level_count - 1,
+                    math.floor(control / 256 * level_count),
                 )
-            layer_pieces[grating_swatches[level]].extend(
-                _patch_lines(region, patch, angle, line_spacing)
-            )
+            if fill_mode:
+                angle_index = _nearest_fill_angle_index(angle, fill_plan)
+                output_swatch = fill_plan["by_combination"][(level, angle_index)]
+                layer_pieces[output_swatch].append(region)
+            else:
+                layer_pieces[grating_swatches[level]].extend(
+                    _patch_lines(region, patch, angle, line_spacing)
+                )
         unreported_patches += 1
         if progress_callback and unreported_patches >= 512:
             progress_callback(unreported_patches)
@@ -1099,7 +1247,7 @@ def _process_layer_patches(layer_plan, grating_swatches, bounds, settings,
 
 
 def remap_layers(processed_layers, target_colors, settings):
-    """Build open gratings, optionally treating Black as a normal carrier."""
+    """Build explicit gratings or closed cells for native LightBurn Fill."""
     progress = settings.get("_progress_logger")
 
     def log(message):
@@ -1121,6 +1269,23 @@ def remap_layers(processed_layers, target_colors, settings):
     grating_swatches = _grating_swatches(target_colors, settings)
     if not grating_swatches:
         return {}
+    fill_mode = _grating_render_mode(settings) == "fill"
+    if fill_mode:
+        if settings.get("_setting_layer_id") is None:
+            raise ValueError(
+                "LightBurn Fill grating rendering requires a Material Library-backed "
+                "job so Rasterizer can store each carrier's Fill angle, interval, and "
+                "laser settings. Choose a Material Library or switch Grating Render "
+                "Mode back to Explicit Lines."
+            )
+        settings["_fill_layer_plan"] = _fill_layer_plan(target_colors, settings)
+        plan = settings["_fill_layer_plan"]
+        log(
+            "Krasnow LightBurn Fill: automatically allocated "
+            f"{plan['carrier_count']} carrier levels x {plan['angle_count']} "
+            f"angle bins = {len(plan['entries'])} layers from "
+            f"{len(grating_swatches)} available layer slots."
+        )
 
     scale_factor = number(settings.get("_scale_factor"), 1, 1e-9, 1000)
     patch_size = number(settings.get("patch_size_mm"), .4, .1, 5) / scale_factor
@@ -1172,7 +1337,8 @@ def remap_layers(processed_layers, target_colors, settings):
     )
     log(
         f"[Krasnow mapping 2/3] START: clipping {cell_label} and generating "
-        f"open grating paths for {total_patches} candidate cells."
+        f"{'closed native-Fill regions' if fill_mode else 'open grating paths'} "
+        f"for {total_patches} candidate cells."
     )
     progress_lock = Lock()
     processed_patches = 0
@@ -1252,8 +1418,9 @@ def remap_layers(processed_layers, target_colors, settings):
         if swatch_pieces
     ]
     log(
-        f"[Krasnow mapping 2/3] DONE: generated {segment_count} open path "
-        f"segments across {len(populated)} carrier layers."
+        f"[Krasnow mapping 2/3] DONE: generated {segment_count} "
+        f"{'closed cell regions' if fill_mode else 'open path segments'} "
+        f"across {len(populated)} carrier layers."
     )
     log(
         f"[Krasnow mapping 3/3] START: merging path segments for "

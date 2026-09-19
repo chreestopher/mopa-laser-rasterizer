@@ -843,6 +843,10 @@ def clean_last_used_form(name, snapshot):
                 "alien_head", "paw_print", "fish_scale", "puzzle_piece",
             }:
                 cleaned[parameter] = parameter_value
+            elif parameter == "grating_render_mode" and parameter_value in {
+                "line", "fill",
+            }:
+                cleaned[parameter] = parameter_value
             elif parameter == "glyph_shape" and parameter_value in {
                 "circle", "square", "diamond", "triangle", "hexagon",
                 "octagon", "star", "cross", "bar", "skull", "heart",
@@ -4033,6 +4037,7 @@ def submit_job(event, task_id, guest=False):
         "fish_scale", "puzzle_piece",
     }
     gradient_scopes = {"entire_artwork", "each_shape"}
+    grating_render_modes = {"line", "fill"}
     gradient_directions = {
         "top_to_bottom", "bottom_to_top", "left_to_right", "right_to_left",
         "center_to_edge", "edge_to_center",
@@ -4189,6 +4194,7 @@ def submit_job(event, task_id, guest=False):
             valid = (
                 (key == "glyph_shape" and value in glyph_shapes)
                 or (key == "cell_shape" and value in cell_shapes)
+                or (key == "grating_render_mode" and value in grating_render_modes)
                 or (key == "fauxlogram_gradient_scope" and value in gradient_scopes)
                 or (
                     key == "fauxlogram_gradient_direction"

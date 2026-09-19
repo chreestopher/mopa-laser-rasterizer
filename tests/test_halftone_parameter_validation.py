@@ -41,5 +41,17 @@ def test_krasnow_cell_shape_accepts_only_supported_tessellations():
             json.dumps({"cell_shape": cell_shape})
         ) == {"cell_shape": cell_shape}
 
-    with pytest.raises(ValueError, match="cell_shape.*numeric"):
+    with pytest.raises(ValueError, match="cell_shape.*number"):
         parse_abstract_filter_parameters(json.dumps({"cell_shape": "circle"}))
+
+
+def test_krasnow_render_mode_accepts_only_line_or_fill():
+    for render_mode in ("line", "fill"):
+        assert parse_abstract_filter_parameters(
+            json.dumps({"grating_render_mode": render_mode})
+        ) == {"grating_render_mode": render_mode}
+
+    with pytest.raises(ValueError, match="grating_render_mode.*number"):
+        parse_abstract_filter_parameters(
+            json.dumps({"grating_render_mode": "offset_fill"})
+        )

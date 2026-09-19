@@ -208,6 +208,116 @@ def test_krasnow_output_layers_use_parent_recipe_not_offset_sublayer():
     assert output.subLayers == []
 
 
+def test_krasnow_native_fill_automatically_balances_available_layer_slots():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+
+    assert krasnow._automatic_fill_dimensions(6) == (3, 2)
+    assert krasnow._automatic_fill_dimensions(21) == (7, 3)
+    assert krasnow._automatic_fill_dimensions(29) == (7, 4)
+    assert krasnow._automatic_fill_dimensions(30) == (7, 4)
+
+
+def test_krasnow_native_fill_configures_scan_layers_from_anchor_recipe():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+    anchor = SimpleNamespace(
+        index=30,
+        name="Fauxlographic",
+        type="Cut",
+        speed=300,
+        frequency=300000,
+        QPulseWidth=5,
+        minPower=18,
+        maxPower=20,
+        materialName="Stainless",
+        entryDesc="Fauxlographic",
+        subLayers=[SimpleNamespace(speed=999)],
+    )
+    target_colors = {
+        color: (0, index, f"Carrier {index}")
+        for index, color in enumerate(
+            ("#0000FF", "#FF0000", "#00E000", "#D0D000", "#FF8000", "#00E0E0"),
+            1,
+        )
+    }
+    project = SimpleNamespace(_layers=[anchor])
+
+    krasnow.configure_output_layers(
+        project,
+        target_colors,
+        {
+            "_setting_layer_id": 30,
+            "grating_render_mode": "fill",
+            "line_spacing_mm": .075,
+            "angle_min": -90,
+            "angle_max": 90,
+            "speed_spread": 1,
+        },
+    )
+
+    assert len(project._layers) == 6
+    assert all(layer.type == "Scan" for layer in project._layers)
+    assert all(layer.interval == .075 for layer in project._layers)
+    assert all(layer.scanOpt == "individual" for layer in project._layers)
+    assert all(layer.floodFill is False for layer in project._layers)
+    assert all(layer.subLayers == [] for layer in project._layers)
+    assert {layer.frequency for layer in project._layers} == {300000}
+    assert {layer.QPulseWidth for layer in project._layers} == {5}
+    # Six slots become three pitch carriers with two angle bins each.
+    assert [layer.speed for layer in project._layers] == [165, 165, 315, 315, 465, 465]
+    assert len({layer.angle for layer in project._layers}) == 2
+
+
+def test_krasnow_native_fill_emits_closed_cell_geometry_within_source():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+    source = box(.1, .1, 1.9, 1.9)
+    target_colors = {
+        "#0000FF": (240, 1, "Blue"),
+        "#FF0000": (1, 2, "Red"),
+        "#00E000": (120, 3, "Green"),
+        "#D0D000": (60, 4, "Yellow"),
+    }
+    angle_image = Image.fromarray(np.array([
+        [0, 0, 255, 255],
+        [0, 0, 255, 255],
+        [0, 0, 255, 255],
+        [0, 0, 255, 255],
+    ], dtype=np.uint8), mode="L")
+
+    remapped = krasnow.remap_layers(
+        {"#0000FF": source},
+        target_colors,
+        {
+            "_canvas_bounds": (0, 0, 2, 2),
+            "_scale_factor": 1,
+            "_setting_layer_id": 30,
+            "_angle_image": angle_image,
+            "grating_render_mode": "fill",
+            "patch_size_mm": .5,
+            "angle_min": -90,
+            "angle_max": 90,
+        },
+    )
+
+    assert remapped
+    assert len(remapped) <= 4
+    for geometry in remapped.values():
+        assert geometry.geom_type in {"Polygon", "MultiPolygon"}
+        assert geometry.difference(source).area < 1e-8
+
+
+def test_krasnow_native_fill_requires_material_library_backing():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+    with pytest.raises(ValueError, match="requires a Material Library-backed job"):
+        krasnow.remap_layers(
+            {"#0000FF": box(0, 0, 1, 1)},
+            {"#0000FF": (240, 1, "Blue")},
+            {
+                "_canvas_bounds": (0, 0, 1, 1),
+                "grating_render_mode": "fill",
+            },
+        )
+
+
 def test_krasnow_unpreserved_black_layer_uses_holographic_parent_recipe():
     krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
     original_black = SimpleNamespace(
