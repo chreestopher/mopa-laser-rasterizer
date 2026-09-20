@@ -97,6 +97,9 @@ def clean_preferences(payload):
     if preset and (preset in {"cartoon", "photograph", "bw_dither_photograph"} or
                    preset.removeprefix("abstract_") in ABSTRACT_FILTER_NAMES):
         clean["image_preset"] = preset
+    white_is = str(payload.get("white_is") or "").strip().lower()
+    if white_is in {"engraved", "unengraved"}:
+        clean["white_is"] = white_is
     for key in ("pixel_square_mm", "new_width", "new_height"):
         value = payload.get(key)
         if value is None:

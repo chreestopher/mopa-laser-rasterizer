@@ -563,6 +563,17 @@
     </div>
     </div>    
 
+    <div>
+      <div><label for="white_is">White Is:</label></div>
+      <div>
+        <select id="white_is" name="white_is">
+          <option value="engraved" selected>Engraved with White</option>
+          <option value="unengraved">Unengraved</option>
+        </select>
+        <p class="field-help">Engraved with White includes pure-white artwork pixels in normal color matching. Unengraved produces no geometry for pure-white pixels, including on backing layers.</p>
+      </div>
+    </div>
+
   <div>
     <div>
       <label for="image_preset">6. Choose your image style</label>
@@ -945,6 +956,7 @@
         pixel_square_mm: document.getElementById('pixel_square_mm').value,
         new_width: newWidthInput.value,
         new_height: newHeightInput.value,
+        white_is: document.getElementById('white_is').value,
         image_preset: document.getElementById('image_preset').value,
         selected_color_hexes: Array.from(selectedColorHexes),
         color_name_overrides: JSON.parse(colorNameOverrides.value || '{}'),
@@ -967,6 +979,7 @@
         document.getElementById('pixel_square_mm').value = preferences.pixel_square_mm ?? document.getElementById('pixel_square_mm').value;
         newWidthInput.value = preferences.new_width ?? newWidthInput.value;
         newHeightInput.value = preferences.new_height ?? newHeightInput.value;
+        if (['engraved', 'unengraved'].includes(preferences.white_is)) document.getElementById('white_is').value = preferences.white_is;
         if (preferences.image_preset) document.getElementById('image_preset').value = preferences.image_preset;
         paletteCards.forEach(card => {
           const hex = card.querySelector('.color-hex').textContent.trim().toUpperCase();
@@ -1229,6 +1242,7 @@
           document.getElementById('pixel_square_mm').value = settings.pixel_square_mm || '1';
           newWidthInput.value = settings.new_width ?? '0';
           newHeightInput.value = settings.new_height ?? '0';
+          if (['engraved', 'unengraved'].includes(settings.white_is)) document.getElementById('white_is').value = settings.white_is;
           document.getElementById('image_preset').value = settings.image_preset || 'cartoon';
           sessionStorage.setItem(materialNameKey, materialInput.value.trim());
           paletteCards.forEach(card => {

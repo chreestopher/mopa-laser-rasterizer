@@ -1358,6 +1358,7 @@ def reuse_settings_url(entry):
         "pixel_square_mm": parameters.get("pixel_size_mm", "1"),
         "new_width": parameters.get("processing_width_px", "0"),
         "new_height": parameters.get("processing_height_px", "0"),
+        "white_is": parameters.get("white_is", "engraved"),
         "image_preset": entry.get("image_preset", "cartoon"),
         "colors": parameters.get("colors", []),
         "selected_color_hexes": parameters.get("selected_color_hexes", []),
@@ -2024,6 +2025,7 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
             geometry_style,
             json.dumps(geometry_parameters, separators=(",", ":")),
             str(data.get("crop_shape", "")).strip().lower(),
+            str(data.get("white_is", "engraved")).strip().lower(),
         ]
 
         def run_process(arguments):

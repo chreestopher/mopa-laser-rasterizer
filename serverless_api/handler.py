@@ -777,6 +777,7 @@ LAST_USED_FORM_FIELDS = {
         "material_choice", "material_name", "pixel_square_mm", "new_width", "new_height",
         "image_preset", "filter_parameters", "cut_mode", "preserve_black_outlines",
         "geometry_style", "geometry_style_parameters",
+        "white_is",
         "color_matching_mode", "color_matching_hue_weight",
         "color_matching_saturation_weight", "color_matching_lightness_weight",
     },
@@ -3982,6 +3983,10 @@ def submit_job(event, task_id, guest=False):
     if crop_shape not in {"", "rectangle", "square", "oval", "circle", "transparency"}:
         return response(400, {"message": "Choose a valid artwork crop shape"})
     data["crop_shape"] = crop_shape
+    white_is = str(data.get("white_is") or "engraved").strip().lower()
+    if white_is not in {"engraved", "unengraved"}:
+        return response(400, {"message": "Choose whether White is Engraved with White or Unengraved"})
+    data["white_is"] = white_is
     data["image_preset"] = preset
     data["abstract_filter"] = preset.removeprefix("abstract_") if preset.startswith("abstract_") else "none"
     data["abstract_filter_parameters"] = json.dumps(parameters, separators=(",", ":"))

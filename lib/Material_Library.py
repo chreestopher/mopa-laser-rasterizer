@@ -38,7 +38,7 @@ def main(argv=None):
         user_input_error(
             "Usage: Material_Library.py INPUT OUTPUT PIXEL_MM WIDTH HEIGHT "
             "MATERIAL_LIBRARY MATERIAL COLORS PRESET FILTER [FILTER_JSON] [PALETTE_NAMES_JSON] "
-            "[SVG_ONLY] [COLOR_MATCHING_JSON] [VALIDATE_ONLY] [GEOMETRY_STYLE] [GEOMETRY_JSON] [CROP_SHAPE]"
+            "[SVG_ONLY] [COLOR_MATCHING_JSON] [VALIDATE_ONLY] [GEOMETRY_STYLE] [GEOMETRY_JSON] [CROP_SHAPE] [WHITE_IS]"
         )
 
     (input_file, output_file, square_mm, new_width, new_height,
@@ -53,6 +53,9 @@ def main(argv=None):
     crop_shape = argv[17].strip().lower() if len(argv) > 17 else ""
     if crop_shape not in {"", "rectangle", "square", "oval", "circle", "transparency"}:
         user_input_error("Invalid artwork crop shape")
+    white_is = argv[18].strip().lower() if len(argv) > 18 else "engraved"
+    if white_is not in {"engraved", "unengraved"}:
+        user_input_error("Choose whether White is engraved or unengraved")
     svg_only = len(argv) > 12 and argv[12].strip().lower() in ("true", "1", "yes", "on")
     # Accept the former argv[13]=validate-only layout for compatibility while
     # reserving argv[13] for the new, independent color-matching object.
@@ -258,11 +261,13 @@ def main(argv=None):
             "effective_limit_colors": limit_list,
             "material_library_layers": material_layer_report,
             "artwork_crop_shape": crop_shape or "none",
+            "white_is": white_is,
         },
         export_lightburn=not svg_only,
         geometry_style=geometry_style,
         geometry_style_parameters=geometry_style_parameters,
         crop_shape=crop_shape,
+        white_is=white_is,
     )
 
 

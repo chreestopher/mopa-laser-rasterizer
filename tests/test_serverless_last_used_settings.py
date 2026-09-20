@@ -47,6 +47,16 @@ def test_last_used_settings_are_allowlisted_and_expire_after_seven_days():
     assert clean("last_rasterizer_form", expired) is None
 
 
+def test_last_used_rasterizer_settings_retain_white_treatment():
+    clean = load_cleaner()
+    result = clean("last_rasterizer_form", {
+        "saved_at": int(time.time()),
+        "values": {"white_is": "unengraved"},
+    })
+
+    assert result["values"]["white_is"] == "unengraved"
+
+
 def test_last_used_rasterizer_settings_retain_krasnow_cell_shape():
     clean = load_cleaner()
     current = {

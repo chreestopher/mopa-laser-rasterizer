@@ -337,6 +337,19 @@ def load_resized_artwork_alpha_mask(raster_image_path, output_size):
     return np.asarray(resized_mask, dtype=np.uint8) == 255
 
 
+def load_resized_source_nonwhite_mask(raster_image_path, output_size):
+    """Return source pixels that are not exactly opaque white at processing size."""
+    with Image.open(raster_image_path) as source:
+        rgba = np.asarray(source.convert("RGBA"), dtype=np.uint8)
+    nonwhite = (
+        (rgba[:, :, 3] > 0)
+        & np.any(rgba[:, :, :3] != 255, axis=2)
+    )
+    mask_image = Image.fromarray(nonwhite.astype(np.uint8) * 255)
+    resized_mask = mask_image.resize(output_size, Image.Resampling.NEAREST)
+    return np.asarray(resized_mask, dtype=np.uint8) == 255
+
+
 def restore_reserved_black(quantized_img, source_black_mask):
     """Restore reserved source darkness after non-Black quantization."""
     output = np.asarray(quantized_img.convert("RGB"), dtype=np.uint8).copy()
@@ -2919,6 +2932,7 @@ def raster_to_puzzle_and_lightburn(
     geometry_style="vectors",
     geometry_style_parameters=None,
     crop_shape="",
+    white_is="engraved",
 ):
     """
     Parses a raster image, applies a structural vector scale_factor,
@@ -2956,6 +2970,7 @@ def raster_to_puzzle_and_lightburn(
         requested_dimensions={"width": new_width, "height": new_height},
         scale_factor_mm=scale_factor,
         ignore_background_hex=ignore_background_hex,
+        white_is=str(white_is or "engraved").strip().lower(),
         vector_settings={
             "quantize_colors": quantize_colors,
             "quantize_color_source": (
@@ -3108,18 +3123,36 @@ def raster_to_puzzle_and_lightburn(
 
     width, height = img.size
     crop_shape = str(crop_shape or "").strip().lower()
-    transparency_mask = None
+    white_is = str(white_is or "engraved").strip().lower()
+    if white_is not in {"engraved", "unengraved"}:
+        raise ValueError("Choose whether White is engraved or unengraved")
+    include_mask = None
     if crop_shape == "transparency":
-        transparency_mask = load_resized_artwork_alpha_mask(
+        include_mask = load_resized_artwork_alpha_mask(
             raster_image_path, img.size
         )
-        if not transparency_mask.any():
+        if not include_mask.any():
             raise ValueError(
                 "Crop Transparency requires at least one non-transparent pixel."
             )
-        crop_boundary = _mask_to_merged_geometry(transparency_mask)
+        crop_boundary = _mask_to_merged_geometry(include_mask)
     else:
         crop_boundary = artwork_crop_geometry(width, height, crop_shape)
+    if white_is == "unengraved":
+        nonwhite_mask = load_resized_source_nonwhite_mask(
+            raster_image_path, img.size
+        )
+        include_mask = (
+            nonwhite_mask if include_mask is None
+            else np.logical_and(include_mask, nonwhite_mask)
+        )
+        crop_boundary = crop_boundary.intersection(
+            _mask_to_merged_geometry(include_mask)
+        )
+        printLogMessage(
+            "White Is: Unengraved. Pure-white source pixels are excluded from "
+            "color matching and clipped from every output layer."
+        )
     if crop_shape:
         printLogMessage(
             f"Artwork crop active: preserving the applied {crop_shape} boundary "
@@ -3260,7 +3293,7 @@ def raster_to_puzzle_and_lightburn(
         ),
         transparent=transparent_mode,
         transparent_rgb_values=transparent_rgb_values,
-        include_mask=transparency_mask,
+        include_mask=include_mask,
         light_threshold=_number(
             filter_parameters.get(
                 "light_threshold",
@@ -3451,16 +3484,21 @@ def raster_to_puzzle_and_lightburn(
             "carrier; no Black canvas or punch-through added."
         )
 
-    if crop_shape:
+    if crop_shape or white_is == "unengraved":
         processed_layers = {
             color_hex: geometry.intersection(crop_boundary)
             for color_hex, geometry in processed_layers.items()
         }
         if black_lightburn_geometry is not None:
             black_lightburn_geometry = black_lightburn_geometry.intersection(crop_boundary)
-        printLogMessage(
-            f"Artwork crop: clipped every output layer to the {crop_shape} boundary."
-        )
+        if crop_shape:
+            printLogMessage(
+                f"Artwork crop: clipped every output layer to the {crop_shape} boundary."
+            )
+        if white_is == "unengraved":
+            printLogMessage(
+                "White Is: Unengraved clipped every output layer to non-white artwork pixels."
+            )
 
     # =========================================================================
     # 7. Create SVG document
