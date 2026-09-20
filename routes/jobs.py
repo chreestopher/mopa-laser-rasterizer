@@ -93,6 +93,10 @@ def start_task():
     user_data["pixel_square_mm"] = str(pixel_square_mm)
     user_data["new_width"] = str(normalize_dimension(user_data.get("new_width")))
     user_data["new_height"] = str(normalize_dimension(user_data.get("new_height")))
+    white_is = str(user_data.get("white_is") or "engraved").strip().lower()
+    if white_is not in {"engraved", "unengraved"}:
+        return jsonify({"status": "error", "message": "Choose whether White is Engraved with White or Unengraved"}), 400
+    user_data["white_is"] = white_is
     history_session = private_history_session(
         valid_history_session(request.cookies.get("mopa_history_session"))
         or valid_history_session(user_data.get("history_session"))
@@ -289,6 +293,7 @@ def start_task():
         "pixel_size_mm": user_data.get("pixel_square_mm", "1"),
         "processing_width_px": user_data["new_width"],
         "processing_height_px": user_data["new_height"],
+        "white_is": white_is,
         "colors": [color.strip() for color in user_data.get("colors", "").split(",") if color.strip()],
         "selected_color_hexes": [
             color_hex for color_hex, color_name in color_name_overrides.items()

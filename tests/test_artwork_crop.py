@@ -133,7 +133,7 @@ def test_staging_ui_uses_applied_crop_for_preview_upload_and_shape_metadata():
     assert "crop_shape:appliedCropShape" in source
     assert "data[offset+3]===0" in source
     assert ".quant-preview-canvas.transparency-grid" in source
-    assert "classList.toggle('transparency-grid',appliedCropShape==='transparency')" in source
+    assert "appliedCropShape==='transparency'||document.querySelector('#whiteIs').value==='unengraved'" in source
     assert ".crop-canvas{display:block;width:auto;height:auto;max-width:100%;max-height:520px" in source
     assert "function cropHandleAt(point)" in source
     assert "cropDragMode='move'" in source

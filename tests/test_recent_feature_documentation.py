@@ -49,6 +49,8 @@ class RecentFeatureDocumentationTests(unittest.TestCase):
             self.assertIn("50,000,000 bytes", export)
             self.assertIn("Geometry Style and its parameters", export)
             self.assertNotIn("synthetic full-canvas shape", color_layers)
+            self.assertIn("If the selected material has no setting assigned to Black", color_layers)
+            self.assertIn("omits the synthetic Black canvas", color_layers)
 
             handler_tree = ast.parse(
                 (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")

@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1280" viewBox="0 0 900 1280" role="img" aria-labelledby="title description">
+  <title id="title">Production rasterizer job lifecycle</title>
+  <desc id="description">The browser prepares a job, receives a scoped upload policy, uploads artwork to private S3, and submits it. The API validates the request and records pending state in DynamoDB. SQS and an EventBridge Pipe trigger Step Functions, which checks for a pause and starts a Fargate worker. Outputs go to S3, progress to DynamoDB, and logs to CloudWatch. The API returns status and signed download links to the browser.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#52657a"/>
+    </marker>
+  </defs>
+  <rect width="900" height="1280" fill="#ffffff"/>
+  <g fill="none" stroke="#52657a" stroke-width="2.5" marker-end="url(#arrow)">
+    <path d="M 450 96 V 128"/>
+    <path d="M 450 196 V 228"/>
+    <path d="M 450 296 V 328"/>
+    <path d="M 450 396 V 428"/>
+    <path d="M 450 496 V 528"/>
+    <path d="M 450 596 V 628"/>
+    <path d="M 450 696 V 728"/>
+    <path d="M 450 796 V 828"/>
+    <path d="M 450 896 V 923 H 155 V 944"/>
+    <path d="M 450 923 V 944"/>
+    <path d="M 450 923 H 745 V 944"/>
+    <path d="M 155 1022 V 1051 H 450 V 1076"/>
+    <path d="M 450 1022 V 1076"/>
+    <path d="M 745 1022 V 1051 H 450 V 1076"/>
+    <path d="M 450 1144 V 1186"/>
+  </g>
+  <g font-family="Arial, Helvetica, sans-serif" text-anchor="middle" fill="#172b42">
+    <g font-size="18" font-weight="600">
+      <rect x="175" y="32" width="550" height="64" rx="9" fill="#eef5ff" stroke="#8daed5"/>
+      <text x="450" y="72">1. Browser prepares artwork and settings</text>
+
+      <rect x="175" y="132" width="550" height="64" rx="9" fill="#eaf6f1" stroke="#83b5a1"/>
+      <text x="450" y="158"><tspan x="450">2. API creates task ID</tspan><tspan x="450" dy="23">and scoped upload policy</tspan></text>
+
+      <rect x="175" y="232" width="550" height="64" rx="9" fill="#fff5e9" stroke="#cfab77"/>
+      <text x="450" y="272">3. Browser uploads directly to private S3</text>
+
+      <rect x="175" y="332" width="550" height="64" rx="9" fill="#eaf6f1" stroke="#83b5a1"/>
+      <text x="450" y="372">4. API validates inputs and job parameters</text>
+
+      <rect x="175" y="432" width="550" height="64" rx="9" fill="#fff5e9" stroke="#cfab77"/>
+      <text x="450" y="458"><tspan x="450">5. DynamoDB stores pending payload,</tspan><tspan x="450" dy="23">owner, and history</tspan></text>
+
+      <rect x="175" y="532" width="550" height="64" rx="9" fill="#f2f0fb" stroke="#a39bcd"/>
+      <text x="450" y="572">6. SQS receives the task ID</text>
+
+      <rect x="175" y="632" width="550" height="64" rx="9" fill="#f2f0fb" stroke="#a39bcd"/>
+      <text x="450" y="672">7. EventBridge Pipe starts the workflow</text>
+
+      <rect x="175" y="732" width="550" height="64" rx="9" fill="#f2f0fb" stroke="#a39bcd"/>
+      <text x="450" y="758"><tspan x="450">8. Step Functions checks service state</tspan><tspan x="450" dy="23">Paused: wait and recheck; active: dispatch</tspan></text>
+
+      <rect x="175" y="832" width="550" height="64" rx="9" fill="#f2f0fb" stroke="#a39bcd"/>
+      <text x="450" y="858"><tspan x="450">9. Fargate worker processes artwork</tspan><tspan x="450" dy="23">Spot first, then on-demand fallback</tspan></text>
+
+      <rect x="25" y="948" width="260" height="74" rx="9" fill="#fff5e9" stroke="#cfab77"/>
+      <text x="155" y="978"><tspan x="155">S3 stores SVG and</tspan><tspan x="155" dy="23">optional LightBurn file</tspan></text>
+
+      <rect x="320" y="948" width="260" height="74" rx="9" fill="#fff5e9" stroke="#cfab77"/>
+      <text x="450" y="978"><tspan x="450">DynamoDB stores</tspan><tspan x="450" dy="23">progress and final status</tspan></text>
+
+      <rect x="615" y="948" width="260" height="74" rx="9" fill="#fff5e9" stroke="#cfab77"/>
+      <text x="745" y="978"><tspan x="745">CloudWatch stores</tspan><tspan x="745" dy="23">worker log lines</tspan></text>
+
+      <rect x="175" y="1080" width="550" height="64" rx="9" fill="#eaf6f1" stroke="#83b5a1"/>
+      <text x="450" y="1106"><tspan x="450">10. API returns status, logs,</tspan><tspan x="450" dy="23">and signed download links</tspan></text>
+
+      <rect x="175" y="1190" width="550" height="64" rx="9" fill="#eef5ff" stroke="#8daed5"/>
+      <text x="450" y="1230">11. Browser downloads selected outputs</text>
+    </g>
+  </g>
+</svg>
