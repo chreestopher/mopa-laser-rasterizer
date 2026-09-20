@@ -24,6 +24,14 @@ def user_input_error(message):
     raise SystemExit(2)
 
 
+def selected_material_color_names(limit_colors, target_colors):
+    """Keep the submitted swatch set exact, including one-swatch jobs."""
+    selected = [item.strip() for item in str(limit_colors or "").split(",") if item.strip()]
+    if selected:
+        return selected
+    return [metadata[2] for metadata in target_colors.values()]
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if len(argv) < 10:
@@ -89,16 +97,13 @@ def main(argv=None):
     preset = vector_processing.PHOTO_TYPE_PRESETS[image_preset]
     vector_processing.image_preset = image_preset
 
-    limit_list = [item.strip() for item in limit_colors.split(",") if item.strip()]
     target_colors, lb, lightburn_module = vector_processing.init_lightburn(
         limit_colors, color_name_overrides=color_name_overrides
     )
     # Keep the exporter dependency explicit at the compatibility boundary.
     # init_lightburn also registers it internally for direct API callers.
     vector_processing.lightburn = lightburn_module
-    if len(limit_list) <= 1 and not svg_only:
-        limit_list = [value[-1].lower() for value in target_colors.values()]
-    limit_list.extend(("black", "light-gray"))
+    limit_list = selected_material_color_names(limit_colors, target_colors)
     material_layer_report = {"loaded": [], "skipped": []}
     filter_module = vector_processing.ABSTRACT_FILTER_MODULES.get(abstract_filter)
     try:

@@ -410,6 +410,7 @@ def test_geometry_parameter_parser_accepts_only_supported_controls():
     }
     assert parse_geometry_style_parameters({
         "cell_shape": "hexagon", "preserve_black": False,
+        "grating_render_mode": "fill",
         "fauxlogram_gradient_scope": "each_shape",
         "fauxlogram_gradient_direction": "center_to_edge",
         "patch_size_mm": .4, "line_spacing_mm": .06,
@@ -418,6 +419,7 @@ def test_geometry_parameter_parser_accepts_only_supported_controls():
         "speed_spread": 1,
     }) == {
         "cell_shape": "hexagon", "preserve_black": 0,
+        "grating_render_mode": "fill",
         "fauxlogram_gradient_scope": "each_shape",
         "fauxlogram_gradient_direction": "center_to_edge",
         "patch_size_mm": .4, "line_spacing_mm": .06,
@@ -534,6 +536,8 @@ def test_staging_ui_exposes_an_independent_compatible_geometry_section():
     assert "syncGeometryToggleCompatibility" in page
     assert "Every output layer is made mutually exclusive before export." in page
     assert "const KRASNOW_GEOMETRY={...PRESETS.abstract_krasnow_grating" in page
+    assert "['grating_render_mode','line'" in page
+    assert "LightBurn Fill (Experimental)" in page
     assert "fauxlogram_gradient_scope" in page
     assert "fauxlogram_gradient_direction" in page
     assert "Fauxlogram Gradient Start" in page

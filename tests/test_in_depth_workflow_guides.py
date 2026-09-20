@@ -8,6 +8,23 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_rasterizer_home_links_to_workflow_guides_before_inputs():
+    homes = (
+        ((ROOT / "templates" / "index.html").read_text(encoding="utf-8"), '<!-- Form Section -->'),
+        ((ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8"), '<form id="job"'),
+    )
+
+    for home, input_marker in homes:
+        guide_panel = home.split('<nav class="rasterizer-guide-links"', 1)[1].split("</nav>", 1)[0]
+        assert home.index('<nav class="rasterizer-guide-links"') < home.index(input_marker)
+        for slug in (
+            "fauxlogram-tutorial",
+            "multi-geometry-rasterizer-guide",
+        ):
+            assert f'href="/docs/{slug}"' in guide_panel
+        assert 'href="/docs/color-layers"' not in guide_panel
+
+
 def test_in_depth_guides_build_and_cover_the_complete_workflows():
     with tempfile.TemporaryDirectory() as temporary:
         output = Path(temporary) / "docs"

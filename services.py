@@ -1483,6 +1483,8 @@ def parse_abstract_filter_parameters(raw_value):
             "fish_scale", "puzzle_piece",
         }:
             clean[key] = value
+        elif key == "grating_render_mode" and value in {"line", "fill"}:
+            clean[key] = value
         elif key in {"transparent", "invert_threshold", "keep_black"} and isinstance(value, bool):
             clean[key] = value
         elif key in {"transparent", "invert_threshold", "keep_black"} and isinstance(value, str) and value.lower() in ("true", "false"):
@@ -1571,6 +1573,7 @@ def parse_geometry_style_parameters(raw_value):
         "fish_scale", "puzzle_piece",
     }
     gradient_scopes = {"entire_artwork", "each_shape"}
+    grating_render_modes = {"line", "fill"}
     gradient_directions = {
         "top_to_bottom", "bottom_to_top", "left_to_right", "right_to_left",
         "center_to_edge", "edge_to_center",
@@ -1606,6 +1609,8 @@ def parse_geometry_style_parameters(raw_value):
         if key == "glyph_shape" and value in shapes:
             clean[key] = value
         elif key == "cell_shape" and value in cell_shapes:
+            clean[key] = value
+        elif key == "grating_render_mode" and value in grating_render_modes:
             clean[key] = value
         elif key == "fauxlogram_gradient_scope" and value in gradient_scopes:
             clean[key] = value

@@ -800,17 +800,17 @@ def init_lightburn(the_colors_limit, color_name_overrides=None):
             hue, layer_index, _ = TARGET_COLORS[color_hex]
             TARGET_COLORS[color_hex] = (hue, layer_index, label.strip())
     found_lb_hex.clear()
-    if len(the_colors_limit) > 0:
+    requested_color_names = {
+        name.strip().casefold()
+        for name in str(the_colors_limit or "").split(",")
+        if name.strip()
+    }
+    if requested_color_names:
         filtered_colors = {
-            hex_code: value_tuple 
-            for hex_code, value_tuple in TARGET_COLORS.items() 
-            for hex_code, value_tuple in TARGET_COLORS.items() 
-            if value_tuple[-1].lower() in the_colors_limit.lower()
+            hex_code: value_tuple
+            for hex_code, value_tuple in TARGET_COLORS.items()
+            if str(value_tuple[-1]).strip().casefold() in requested_color_names
         }
-        # ensure light grey and black are always in the list 
-        # these colors get defaulted to when no color is close enough to the target pixel
-        filtered_colors['#B4B4B4'] = TARGET_COLORS['#B4B4B4']
-        filtered_colors['#000000'] = TARGET_COLORS['#000000']
     else:
         filtered_colors = dict(TARGET_COLORS)
     # Add it to sys.modules cache and execute the code within the module
@@ -2665,12 +2665,31 @@ def export_processed_layers(
         "Sorting and formatting log history..."
     )
 
+    missing_setting_colors = sorted(
+        color for color in processed_layers if color not in target_colors
+    )
+    if missing_setting_colors:
+        missing_list = ", ".join(missing_setting_colors)
+        printLogMessage(
+            "Omitting geometry for colors without assigned Material Library "
+            f"settings: {missing_list}. Rasterizer will export only colors that "
+            "have available settings."
+        )
+
     sorted_layers = sorted(
-        processed_layers.items(),
+        (
+            (color, geometry)
+            for color, geometry in processed_layers.items()
+            if color in target_colors
+        ),
         key=lambda item: target_colors[
             item[0]
         ][1]
     )
+
+    if black_hex not in target_colors:
+        punch_through_black = False
+        black_lightburn_geometry = None
 
     printLogMessage(
         "=============================================="
@@ -2981,10 +3000,17 @@ def raster_to_puzzle_and_lightburn(
             TARGET_COLORS
         )
     )
+    black_layer_available = black_hex in TARGET_COLORS
 
     # The exporter resolves this same native black-layer ID when it emits
     # LightBurn hole-punch paths.
     _ = black_layer_id
+    if not black_layer_available:
+        printLogMessage(
+            "The selected Material Library has no Black setting. Rasterizer "
+            "will not create a synthetic Black canvas, Black fallback geometry, "
+            "or punch-through layer for this job."
+        )
 
     # =========================================================================
     # 3. Load and prepare raster
@@ -3027,14 +3053,18 @@ def raster_to_puzzle_and_lightburn(
     # normal palette quantization decide which pixels Black owns in that mode;
     # the dedicated Krasnow source-darkness mask would otherwise turn dark,
     # chromatic artwork into Black before the swatch router sees it.
-    mixed_vector_black = mixed_krasnow
+    mixed_vector_black = mixed_krasnow and black_layer_available
     krasnow_preserve_black = (
         krasnow_mode
         and not mixed_krasnow
+        and black_layer_available
         and bool(_number(krasnow_parameters.get("preserve_black", 1), 1, 0, 1))
     )
     krasnow_grate_black = (
-        krasnow_mode and not mixed_krasnow and not krasnow_preserve_black
+        krasnow_mode
+        and not mixed_krasnow
+        and black_layer_available
+        and not krasnow_preserve_black
     )
     if krasnow_preserve_black:
         printLogMessage(
@@ -3168,11 +3198,13 @@ def raster_to_puzzle_and_lightburn(
     }
     source_black_mode = (
         source_black_requested
+        and black_layer_available
         and filter_name in source_black_compatible_filters
         and not preserve_source_black
     )
     if (
         source_black_requested
+        and black_layer_available
         and not source_black_mode
         and not filter_preserves_source_black
     ):
@@ -3213,16 +3245,17 @@ def raster_to_puzzle_and_lightburn(
         black_hex=black_hex,
         ignore_background_hex=ignore_background_hex,
         include_black=(
-            krasnow_grate_black
-            or
-            mixed_vector_black
-            or
-            (preserve_source_black and not krasnow_mode)
-            or source_black_mode
-            or (
-                min_island_area > 0
-                and not transparent_mode
-                and not filter_preserves_source_black
+            black_layer_available
+            and (
+                krasnow_grate_black
+                or mixed_vector_black
+                or (preserve_source_black and not krasnow_mode)
+                or source_black_mode
+                or (
+                    min_island_area > 0
+                    and not transparent_mode
+                    and not filter_preserves_source_black
+                )
             )
         ),
         transparent=transparent_mode,
@@ -3250,7 +3283,7 @@ def raster_to_puzzle_and_lightburn(
             min_island_area=min_island_area,
             color_order=TARGET_COLORS.keys(),
             black_hex=black_hex,
-            fallback_to_black=not transparent_mode,
+            fallback_to_black=black_layer_available and not transparent_mode,
         )
         # Cleanup is complete while ownership is still exact raster data.
         # Running the older per-layer deletion afterward would discard the
@@ -3376,6 +3409,8 @@ def raster_to_puzzle_and_lightburn(
             )
 
     if (
+        black_layer_available
+        and
         not preserve_source_black
         and not source_black_active
         and not krasnow_grate_black
@@ -3451,7 +3486,8 @@ def raster_to_puzzle_and_lightburn(
         root=root,
         lb_project_instance=lb_project_instance,
         punch_through_black=(
-            not preserve_source_black
+            black_layer_available
+            and not preserve_source_black
             and not source_black_active
             and not krasnow_grate_black
         ),
