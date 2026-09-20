@@ -38,6 +38,7 @@ def _capture_pipeline(tmp_path, white_is):
             image_preset="cartoon",
             abstract_filter="none",
             export_lightburn=False,
+            job_settings={"white_is": white_is},
             white_is=white_is,
         )
     return captured
