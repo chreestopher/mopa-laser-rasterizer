@@ -2963,15 +2963,15 @@ def raster_to_puzzle_and_lightburn(
 
     # Keep this at the beginning of the pipeline so the console records the
     # effective values used by the job before raster processing begins.
-    log_job_settings(
-        **(job_settings or {}),
-        input_raster_path=raster_image_path,
-        output_svg_path=output_svg_path,
-        requested_dimensions={"width": new_width, "height": new_height},
-        scale_factor_mm=scale_factor,
-        ignore_background_hex=ignore_background_hex,
-        white_is=str(white_is or "engraved").strip().lower(),
-        vector_settings={
+    effective_job_settings = dict(job_settings or {})
+    effective_job_settings.update({
+        "input_raster_path": raster_image_path,
+        "output_svg_path": output_svg_path,
+        "requested_dimensions": {"width": new_width, "height": new_height},
+        "scale_factor_mm": scale_factor,
+        "ignore_background_hex": ignore_background_hex,
+        "white_is": str(white_is or "engraved").strip().lower(),
+        "vector_settings": {
             "quantize_colors": quantize_colors,
             "quantize_color_source": (
                 "bw_dither_preset" if image_preset == "bw_dither_photograph"
@@ -2981,13 +2981,14 @@ def raster_to_puzzle_and_lightburn(
             "simplification_factor": simplification_factor,
             "smoothing_radius": smoothing_radius,
         },
-        abstract_filter=abstract_filter,
-        abstract_filter_parameters=filter_parameters or {},
-        lightburn_layers={
+        "abstract_filter": abstract_filter,
+        "abstract_filter_parameters": filter_parameters or {},
+        "lightburn_layers": {
             color_hex: {"layer_id": metadata[1], "name": metadata[2]}
             for color_hex, metadata in TARGET_COLORS.items()
         },
-    )
+    })
+    log_job_settings(**effective_job_settings)
 
     # =========================================================================
     # 1. Normalize parameters
