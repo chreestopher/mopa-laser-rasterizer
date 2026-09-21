@@ -689,7 +689,7 @@
       },
       halftone_newsprint: {
         description: 'Rebuilds the artwork as a shared halftone matrix. Darker areas receive larger dots, and the marks can be circles or squares. Black Only places every mark on the official Black layer for a conventional monochrome halftone; otherwise each cell uses its matching color swatch. Cell Size MM sets the physical matrix pitch; Minimum and Maximum Dot Ratio limit mark size; Tone Curve and Contrast shape the tonal response; Grid Angle rotates the matrix; Square Dots changes the circular marks to squares; Invert reverses light and dark.',
-        toggles: [['black_only', false], ['square_dots', false], ['invert', false]],
+        toggles: [['black_only', false], ['square_dots', false], ['invert', false], ['tight_pack_geometry', false]],
         controls: [['cell_size_mm', .6, .2, 5, .05], ['minimum_dot_ratio', .5, 0, .8, .01],
           ['maximum_dot_ratio', .92, .1, 1, .01], ['tone_curve', .75, .2, 5, .05],
           ['contrast', .8, .2, 3, .05], ['grid_angle', 0, -45, 45, 1]]
@@ -706,7 +706,7 @@
       },
       krasnow_grating: {
         selects: [['cell_shape', 'square', [['square', 'Square'], ['hexagon', 'Hexagon'], ['triangle', 'Triangle'], ['diamond', 'Diamond / Rhombus'], ['skull', 'Skull'], ['heart', 'Heart'], ['space_invader', 'Space Invader'], ['ghost', 'Ghost'], ['bat', 'Bat'], ['alien_head', 'Alien Head'], ['paw_print', 'Paw Print'], ['fish_scale', 'Fish Scale'], ['puzzle_piece', 'Puzzle Piece']]]],
-        toggles: [['preserve_black', true]],
+        toggles: [['preserve_black', true], ['tight_pack_geometry', false]],
         description: 'Transforms the color-separated artwork into open parallel-line patches and distributes corrected grating levels across the available LightBurn layers. The Material Library entry matching Fauxlographic is treated as the machine-specific 1.00 µm calibration anchor. Each output layer receives an independent copy that preserves the anchor power, frequency, pulse width, passes, and other values while scaling speed for a target pitch between approximately 0.55 and 1.55 µm. Speed Spread scales each layer\'s deviation around the anchor: 0 gives every layer the anchor speed, 1 uses the normal calculated range, and 2 doubles the variation without moving the 1.00 µm layer. With a 300 mm/s anchor and Speed Spread 1 this yields 165–465 mm/s, following Ben Krasnow\'s fixed-frequency progression. Hue Line Spacing Minimum and Maximum vary visible line density using an approximate wavelength ordering: violet and blue use spacing near the minimum while red uses spacing near the maximum. Purple and magenta use a continuous violet-to-red proxy because they do not have a single spectral wavelength. Equal values preserve uniform spacing, and low-saturation swatches continue to use Line Spacing. These controls affect visible hatch spacing; the calibrated microscopic diffraction pitch remains controlled by the carrier settings. Preserve Black keeps source Black as normal Black geometry with its Black laser setting. Turn it off to convert Black regions into gratings and clone the Fauxlographic setting onto the Black LightBurn layer like every other carrier.',
         controls: [['speed_spread', 1, 0, 2, .001], ['gradient_top', 165, 0, 255, 1], ['gradient_bottom', 90, 0, 255, 1],
           ['gradient_curve', 1, .2, 5, .05], ['hue_rotation', .13, 0, 1, .01],

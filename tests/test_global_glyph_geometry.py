@@ -403,13 +403,16 @@ def test_krasnow_geometry_style_resolves_filter_overlaps_before_grating():
 def test_geometry_parameter_parser_accepts_only_supported_controls():
     assert parse_geometry_style_parameters({
         "glyph_shape": "mixed", "cell_size_mm": .6, "invert": False,
+        "tight_pack_geometry": True,
         "invert_fill": 1, "black_only": 0, "seed": 7,
     }) == {
         "glyph_shape": "mixed", "cell_size_mm": .6, "invert": 0,
+        "tight_pack_geometry": 1,
         "invert_fill": 1, "black_only": 0, "seed": 7,
     }
     assert parse_geometry_style_parameters({
         "cell_shape": "hexagon", "preserve_black": False,
+        "tight_pack_geometry": "true",
         "grating_render_mode": "fill",
         "fauxlogram_gradient_scope": "each_shape",
         "fauxlogram_gradient_direction": "center_to_edge",
@@ -419,6 +422,7 @@ def test_geometry_parameter_parser_accepts_only_supported_controls():
         "speed_spread": 1,
     }) == {
         "cell_shape": "hexagon", "preserve_black": 0,
+        "tight_pack_geometry": 1,
         "grating_render_mode": "fill",
         "fauxlogram_gradient_scope": "each_shape",
         "fauxlogram_gradient_direction": "center_to_edge",

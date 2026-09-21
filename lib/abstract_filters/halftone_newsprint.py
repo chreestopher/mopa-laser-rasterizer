@@ -14,6 +14,7 @@ from shapely.ops import unary_union
 from shapely.prepared import prep
 
 from .common import number
+from .packing import SpatialCollisionIndex, placement_variant
 
 
 USES_SOURCE_LUMINANCE = True
@@ -30,6 +31,7 @@ DEFAULTS = {
     "square_dots": 0,
     "invert": 0,
     "black_only": 0,
+    "tight_pack_geometry": 0,
 }
 
 VECTOR_DEFAULTS = {
@@ -262,6 +264,10 @@ def remap_layers(processed_layers, target_colors, settings):
         scale_factor = 1.0
     cell_size_mm = number(settings.get("cell_size_mm"), 0.6, 0.2, 5.0)
     cell_size = cell_size_mm / scale_factor
+    tight_pack = number(
+        settings.get("_tight_pack_geometry", settings.get("tight_pack_geometry")),
+        0, 0, 1,
+    ) >= .5
     angle = number(settings.get("grid_angle"), -45.0, -90, 45)
     square_dots = number(settings.get("square_dots"), 0, 0, 1) >= 0.5
     glyph_shape = str(settings.get("_glyph_shape") or ("square" if square_dots else "circle"))
@@ -285,7 +291,16 @@ def remap_layers(processed_layers, target_colors, settings):
     local_min_y = min(point[1] for point in local_corners)
     local_max_y = max(point[1] for point in local_corners)
     row_step = cell_size * staggered_row_step if staggered_row_step else cell_size
-    if staggered_row_step:
+    if tight_pack:
+        tight_column_step = cell_size * .82
+        tight_row_step = cell_size * .72
+        column_count = max(
+            1, math.ceil((local_max_x - local_min_x) / tight_column_step) + 3
+        )
+        row_count = max(
+            1, math.ceil((local_max_y - local_min_y) / tight_row_step) + 3
+        )
+    elif staggered_row_step:
         column_count = max(1, math.ceil((local_max_x - local_min_x) / cell_size) + 2)
         row_count = max(1, math.ceil((local_max_y - local_min_y) / row_step) + 2)
     else:
@@ -338,20 +353,42 @@ def remap_layers(processed_layers, target_colors, settings):
     progress_interval = max(1, math.ceil(row_count / PROGRESS_BATCHES))
     last_reported_row = 0
 
+    if tight_pack:
+        # A staggered, slightly compressed candidate lattice lets concave and
+        # small tone-scaled marks occupy gaps in neighboring rows. The spatial
+        # index rejects actual overlaps, so dense candidates never create a
+        # double-engraved area. Regular mode above remains byte-for-byte stable.
+        collision_index = SpatialCollisionIndex(cell_size)
+    else:
+        collision_index = None
+
     for row_index in range(row_count):
-        if staggered_row_step:
+        if tight_pack:
+            local_y = local_min_y - cell_size / 2 + row_index * tight_row_step
+            row_x_offset = (row_index & 1) * tight_column_step / 2
+        elif staggered_row_step:
             local_y = local_min_y - cell_size / 2 + row_index * row_step
             row_x_offset = (row_index & 1) * cell_size / 2
         else:
             local_y = local_min_y + (row_index + 0.5) * cell_size
             row_x_offset = 0
         for column_index in range(column_count):
-            if staggered_row_step:
+            if tight_pack:
+                local_x = (
+                    local_min_x - cell_size / 2
+                    + column_index * tight_column_step + row_x_offset
+                )
+                variant = placement_variant(row_index, column_index, glyph_seed)
+                local_x += (((variant >> 3) % 5) - 2) * cell_size * .018
+                local_y_for_mark = local_y + (((variant >> 7) % 5) - 2) * cell_size * .018
+            elif staggered_row_step:
                 local_x = local_min_x - cell_size / 2 + column_index * cell_size + row_x_offset
+                local_y_for_mark = local_y
             else:
                 local_x = local_min_x + (column_index + 0.5) * cell_size
+                local_y_for_mark = local_y
             x, y = _rotate_point(
-                local_x, local_y, center_x, center_y, radians
+                local_x, local_y_for_mark, center_x, center_y, radians
             )
             center = Point(x, y)
             source_color_hex = _owner(center, prepared_layers)
@@ -373,15 +410,25 @@ def remap_layers(processed_layers, target_colors, settings):
                     (row_index * 73856093 + column_index * 19349663 + glyph_seed * 83492791)
                     % len(mixed_shapes)
                 ]
+            independent_rotation = 0
+            if tight_pack:
+                independent_rotation = (-18, -9, 0, 9, 18)[variant % 5]
             mark = _glyph_mark(
                 cell_shape,
                 x,
                 y,
                 half_size,
-                angle + glyph_rotation,
+                angle + glyph_rotation + independent_rotation,
                 custom_template=custom_glyph_template,
             )
             mark = mark.intersection(canvas)
+            if tight_pack:
+                # Keep each packed mark in the source swatch that selected it;
+                # close packing must never move geometry into another color.
+                mark = mark.intersection(exclusive_source_layers[source_color_hex])
+                if mark.is_empty or collision_index.overlaps(mark):
+                    continue
+                collision_index.add(mark)
             if not mark.is_empty:
                 pieces[color_hex].append(mark)
 

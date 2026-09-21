@@ -25,6 +25,7 @@ DEFAULTS = {
     "contrast": 2.0,
     "grid_angle": -45.0,
     "glyph_rotation": 0.0,
+    "tight_pack_geometry": 0,
     "custom_glyph_threshold": 0.5,
     "custom_glyph_invert": 0,
     "custom_glyph_padding": 0.06,
@@ -53,6 +54,7 @@ def remap_layers(processed_layers, target_colors, settings):
         ),
         "_glyph_shape": shape,
         "_glyph_rotation": number(settings.get("glyph_rotation"), 0, -180, 180),
+        "_tight_pack_geometry": number(settings.get("tight_pack_geometry"), 0, 0, 1),
         "_glyph_seed": number(settings.get("seed"), 1, 0, 999999),
         "_progress_name": settings.get("_progress_name") or "Glyph Geometry Style",
     })

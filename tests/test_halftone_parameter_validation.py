@@ -31,6 +31,12 @@ def test_krasnow_preserve_black_checkbox_is_normalized_to_a_numeric_flag():
     ) == {"preserve_black": 1}
 
 
+def test_tight_pack_checkbox_is_normalized_for_filter_settings():
+    assert parse_abstract_filter_parameters(
+        json.dumps({"tight_pack_geometry": True})
+    ) == {"tight_pack_geometry": 1}
+
+
 def test_krasnow_cell_shape_accepts_only_supported_tessellations():
     for cell_shape in (
         "square", "hexagon", "triangle", "diamond", "skull", "heart",
