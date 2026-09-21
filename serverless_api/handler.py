@@ -855,6 +855,10 @@ def clean_last_used_form(name, snapshot):
                 "paw_print", "fish_scale", "puzzle_piece", "mixed", "custom",
             }:
                 cleaned[parameter] = parameter_value
+            elif parameter == "glyph_size_source" and parameter_value in {
+                "source_brightness", "seeded_variation",
+            }:
+                cleaned[parameter] = parameter_value
             elif geometry and parameter in {"custom_glyph_svg", "custom_cell_svg"}:
                 if (
                     isinstance(parameter_value, dict)
@@ -4056,6 +4060,7 @@ def submit_job(event, task_id, guest=False):
         "fish_scale", "puzzle_piece", "custom",
     }
     gradient_scopes = {"entire_artwork", "each_shape"}
+    glyph_size_sources = {"source_brightness", "seeded_variation"}
     grating_render_modes = {"line", "fill"}
     gradient_directions = {
         "top_to_bottom", "bottom_to_top", "left_to_right", "right_to_left",
@@ -4228,6 +4233,7 @@ def submit_job(event, task_id, guest=False):
         for key, value in section.items():
             valid = (
                 (key == "glyph_shape" and value in glyph_shapes)
+                or (key == "glyph_size_source" and value in glyph_size_sources)
                 or (key == "cell_shape" and value in cell_shapes)
                 or (key == "grating_render_mode" and value in grating_render_modes)
                 or (key == "fauxlogram_gradient_scope" and value in gradient_scopes)

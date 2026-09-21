@@ -183,11 +183,47 @@ def _dot_ratio(luminance, settings):
     return math.sqrt(max(0.0, area_ratio))
 
 
+def _seeded_dot_ratio(row_index, column_index, seed, settings):
+    """Choose a stable ratio across the configured range for one matrix cell."""
+    value = placement_variant(row_index, column_index, seed)
+    # Mix the existing stable placement value so adjacent cells do not form a
+    # visible linear ramp even though the result remains repeatable per seed.
+    value ^= value >> 16
+    value = (value * 0x45D9F3B) & 0x7FFFFFFF
+    value ^= value >> 16
+    amount = value / 0x7FFFFFFF
+    minimum = number(settings.get("minimum_dot_ratio"), 0.48, 0.0, 0.8)
+    maximum = number(settings.get("maximum_dot_ratio"), 0.97, 0.1, 1.0)
+    minimum, maximum = min(minimum, maximum), max(minimum, maximum)
+    area_ratio = minimum * minimum + amount * (
+        maximum * maximum - minimum * minimum
+    )
+    return math.sqrt(max(0.0, area_ratio))
+
+
 def _adjust_dot_ratio_for_color(ratio, color_hex, black_only, settings):
     """Scale non-Black mark area while keeping every mark inside its cell."""
     if black_only or str(color_hex).upper() == "#000000":
         return ratio
     density = number(settings.get("non_black_dot_density"), 2.3, 0.25, 4.0)
+    if number(settings.get("_preserve_dot_ratio_range"), 0, 0, 1) >= 0.5:
+        minimum = number(settings.get("minimum_dot_ratio"), 0.48, 0.0, 0.8)
+        maximum = number(settings.get("maximum_dot_ratio"), 0.97, 0.1, 1.0)
+        minimum, maximum = min(minimum, maximum), max(minimum, maximum)
+        minimum_area = minimum * minimum
+        maximum_area = maximum * maximum
+        if maximum_area <= minimum_area + 1e-12:
+            return minimum
+        position = min(
+            1.0,
+            max(0.0, (ratio * ratio - minimum_area) / (maximum_area - minimum_area)),
+        )
+        # Increase colored engraved area without clipping most marks to one
+        # identical full-cell size. Both user-selected endpoints remain exact.
+        boosted_position = 1.0 - ((1.0 - position) ** density)
+        return math.sqrt(
+            minimum_area + boosted_position * (maximum_area - minimum_area)
+        )
     # Geometry uses a linear ratio, so sqrt(density) produces the requested
     # area multiplier for both circles and squares.
     return min(1.0, ratio * math.sqrt(density))
@@ -341,6 +377,9 @@ def remap_layers(processed_layers, target_colors, settings):
         )
 
     tone_image = settings.get("_angle_image")
+    glyph_size_source = str(
+        settings.get("_glyph_size_source") or "source_brightness"
+    ).strip().lower()
     glyph_rotation = number(settings.get("_glyph_rotation"), 0, -180, 180)
     glyph_seed = int(number(settings.get("_glyph_seed"), 1, 0, 999999))
     custom_glyph_template = settings.get("_custom_glyph_template")
@@ -395,8 +434,10 @@ def remap_layers(processed_layers, target_colors, settings):
             if source_color_hex is None:
                 continue
             color_hex = black_hex if black_only else source_color_hex
-            ratio = _dot_ratio(
-                _sample_luminance(tone_image, x, y, bounds), settings
+            ratio = (
+                _seeded_dot_ratio(row_index, column_index, glyph_seed, settings)
+                if glyph_size_source == "seeded_variation"
+                else _dot_ratio(_sample_luminance(tone_image, x, y, bounds), settings)
             )
             ratio = _adjust_dot_ratio_for_color(
                 ratio, source_color_hex, black_only, settings

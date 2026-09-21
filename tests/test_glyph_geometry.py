@@ -37,6 +37,15 @@ def test_abstract_filter_is_retired_but_geometry_style_remains_registered():
     assert "glyph_mosaic" not in FULL_PALETTE_FILTERS
     assert geometry_styles.module_for_style("glyphs") is glyph_geometry
     assert glyph_geometry.DEFAULTS["glyph_shape"] == "diamond"
+    assert glyph_geometry.DEFAULTS["glyph_size_source"] == "source_brightness"
+
+
+def test_serverless_ui_exposes_five_mm_cells_and_seeded_size_variation():
+    page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+
+    assert "['cell_size_mm',.6,.2,5,.05]" in page
+    assert "['glyph_size_source','source_brightness'" in page
+    assert "['seeded_variation','Seeded Variation']" in page
 
 
 def test_all_exposed_shapes_emit_geometry():
@@ -70,6 +79,43 @@ def test_layers_are_exclusive_and_mixed_shapes_are_deterministic():
     assert first["#FF0000"].intersection(first["#0000FF"]).area <= 1e-12
     assert first["#FF0000"].wkb == second["#FF0000"].wkb
     assert first["#0000FF"].wkb == second["#0000FF"].wkb
+
+
+def test_seeded_size_source_varies_glyphs_within_one_flat_color():
+    layers = {"#FF0000": box(0, 0, 8, 4)}
+    target = {"#FF0000": TARGET_COLORS["#FF0000"]}
+    configured = settings(
+        glyph_shape="square",
+        glyph_size_source="seeded_variation",
+        cell_size_mm=1,
+        minimum_glyph_ratio=.2,
+        maximum_glyph_ratio=.8,
+        non_black_glyph_density=2.3,
+        grid_angle=0,
+        seed=41,
+        _angle_image=Image.new("L", (8, 4), 128),
+    )
+
+    first = glyph_geometry.remap_layers(layers, target, configured)["#FF0000"]
+    second = glyph_geometry.remap_layers(layers, target, configured)["#FF0000"]
+    components = list(first.geoms) if hasattr(first, "geoms") else [first]
+    component_areas = {round(component.area, 5) for component in components}
+
+    assert first.wkb == second.wkb
+    assert len(component_areas) > 4
+
+
+def test_unknown_size_source_is_rejected():
+    try:
+        glyph_geometry.remap_layers(
+            {"#FF0000": box(0, 0, 2, 2)},
+            {"#FF0000": TARGET_COLORS["#FF0000"]},
+            settings(glyph_size_source="palette_color"),
+        )
+    except ValueError as error:
+        assert "size source" in str(error)
+    else:
+        raise AssertionError("Expected an unknown glyph size source to be rejected")
 
 
 def test_tight_pack_is_opt_in_deterministic_and_stays_inside_source_colors():

@@ -72,6 +72,30 @@ def test_non_black_density_is_tunable_clamped_and_disabled_in_black_only_mode():
     ) == 0.5
 
 
+def test_glyph_density_mode_preserves_configured_size_endpoints():
+    configured = {
+        "minimum_dot_ratio": .2,
+        "maximum_dot_ratio": .8,
+        "non_black_dot_density": 2.3,
+        "_preserve_dot_ratio_range": 1,
+    }
+    midpoint = math.sqrt((.2 ** 2 + .8 ** 2) / 2)
+
+    assert halftone_newsprint._adjust_dot_ratio_for_color(
+        .2, "#FF0000", False, configured
+    ) == .2
+    assert math.isclose(
+        halftone_newsprint._adjust_dot_ratio_for_color(
+            .8, "#FF0000", False, configured
+        ),
+        .8,
+    )
+    adjusted_midpoint = halftone_newsprint._adjust_dot_ratio_for_color(
+        midpoint, "#FF0000", False, configured
+    )
+    assert midpoint < adjusted_midpoint < .8
+
+
 def test_density_doubles_emitted_color_area_and_leaves_emitted_black_unchanged():
     layers = {
         "#000000": box(0, 0, 2, 2),

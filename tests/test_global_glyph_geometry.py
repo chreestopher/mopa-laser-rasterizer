@@ -669,6 +669,16 @@ def test_serverless_job_api_accepts_tight_pack_checkbox_values():
     assert "tight_pack_geometry" in ast.literal_eval(toggle_assignment.value)
 
 
+def test_glyph_size_source_accepts_only_supported_modes():
+    for source in ("source_brightness", "seeded_variation"):
+        assert parse_geometry_style_parameters({"glyph_size_source": source}) == {
+            "glyph_size_source": source
+        }
+
+    with pytest.raises(ValueError, match="glyph_size_source"):
+        parse_geometry_style_parameters({"glyph_size_source": "palette_color"})
+
+
 def test_serverless_api_discards_retired_posterize_from_cached_submissions():
     handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
     assert 'geometry_parameters.pop("posterize_colors", None)' in handler
