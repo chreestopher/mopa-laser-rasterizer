@@ -3,7 +3,7 @@ import { createKrasnowParallaxSvg } from "./depthmap_parallax_svg.js";
 import {
   createScratchHologramArcs,
   createScratchHologramSvg,
-} from "./depthmap_scratch_hologram_svg.js";
+} from "./depthmap_scratch_hologram_svg.js?v=2";
 
 const MODEL_ID = "onnx-community/depth-anything-v2-small";
 const TRANSFORMERS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2";
@@ -881,7 +881,7 @@ function drawScratchPreview() {
     const adjusted = geometry.effectiveSampleStep !== geometry.requestedSampleStep
       ? ` The preview automatically increased the sample step to ${geometry.effectiveSampleStep} px to remain within its geometry limit.`
       : "";
-    scratchPreviewSummary.textContent = `${geometry.arcs.length.toLocaleString()} preview arcs; ${geometry.physicalWidth.toFixed(2)} ? ${geometry.physicalHeight.toFixed(2)} mm.${adjusted}`;
+    scratchPreviewSummary.textContent = `${geometry.arcs.length.toLocaleString()} preview arcs; ${geometry.physicalWidth.toFixed(2)} × ${geometry.physicalHeight.toFixed(2)} mm.${adjusted}`;
   } catch (cause) {
     scratchPreviewSummary.textContent = cause.message || String(cause);
   }
@@ -920,7 +920,7 @@ async function exportScratchHologramSvg() {
 function updateScratchControls() {
   if (outputWidth && outputHeight) {
     const pixelSize = Number(scratchPixelSizeControl.value);
-    scratchPhysicalSize.value = `${(outputWidth * pixelSize).toFixed(2)} ? ${(outputHeight * pixelSize).toFixed(2)} mm`;
+    scratchPhysicalSize.value = `${(outputWidth * pixelSize).toFixed(2)} × ${(outputHeight * pixelSize).toFixed(2)} mm`;
   } else {
     scratchPhysicalSize.value = "Generate a depthmap first";
   }
