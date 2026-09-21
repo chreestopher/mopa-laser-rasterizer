@@ -1574,6 +1574,7 @@ def parse_geometry_style_parameters(raw_value):
         "fish_scale", "puzzle_piece", "custom",
     }
     gradient_scopes = {"entire_artwork", "each_shape"}
+    glyph_size_sources = {"source_brightness", "seeded_variation"}
     grating_render_modes = {"line", "fill"}
     gradient_directions = {
         "top_to_bottom", "bottom_to_top", "left_to_right", "right_to_left",
@@ -1628,6 +1629,8 @@ def parse_geometry_style_parameters(raw_value):
         }
     for key, value in parameters.items():
         if key == "glyph_shape" and value in shapes:
+            clean[key] = value
+        elif key == "glyph_size_source" and value in glyph_size_sources:
             clean[key] = value
         elif key == "cell_shape" and value in cell_shapes:
             clean[key] = value

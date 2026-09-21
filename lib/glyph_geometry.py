@@ -17,6 +17,7 @@ GLYPH_SHAPES = {
 
 DEFAULTS = {
     "glyph_shape": "diamond",
+    "glyph_size_source": "source_brightness",
     "cell_size_mm": 0.6,
     "minimum_glyph_ratio": 0.48,
     "maximum_glyph_ratio": 0.97,
@@ -42,6 +43,13 @@ def remap_layers(processed_layers, target_colors, settings):
     if shape not in GLYPH_SHAPES:
         raise ValueError(f"Glyph Geometry shape '{shape}' is not supported.")
     translated = dict(settings)
+    size_source = str(
+        settings.get("glyph_size_source") or DEFAULTS["glyph_size_source"]
+    ).strip().lower()
+    if size_source not in {"source_brightness", "seeded_variation"}:
+        raise ValueError(
+            f"Glyph Geometry size source '{size_source}' is not supported."
+        )
     translated.update({
         "minimum_dot_ratio": number(
             settings.get("minimum_glyph_ratio"), DEFAULTS["minimum_glyph_ratio"], 0, 0.8
@@ -53,6 +61,8 @@ def remap_layers(processed_layers, target_colors, settings):
             settings.get("non_black_glyph_density"), DEFAULTS["non_black_glyph_density"], 0.25, 4
         ),
         "_glyph_shape": shape,
+        "_glyph_size_source": size_source,
+        "_preserve_dot_ratio_range": 1,
         "_glyph_rotation": number(settings.get("glyph_rotation"), 0, -180, 180),
         "_tight_pack_geometry": number(settings.get("tight_pack_geometry"), 0, 0, 1),
         "_glyph_seed": number(settings.get("seed"), 1, 0, 999999),
