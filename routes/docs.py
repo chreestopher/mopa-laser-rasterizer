@@ -1,7 +1,11 @@
 """Public, crawlable product documentation and practical user guides."""
 
+import re
+from pathlib import Path
+
 from flask import Response, current_app, render_template, request, send_file
 from lib.abstract_filters import manifest as abstract_filter_manifest
+from lib.docs_markdown import markdown_guide_page
 from lib.material_library_template import build_blank_palette_library
 from werkzeug.utils import secure_filename
 
@@ -1478,6 +1482,13 @@ DOCS["multi-geometry-rasterizer-guide"].update({
     "guide_outcome": "A cropped, palette-verified Rasterizer job in which selected swatches remain normal vectors, selected swatches become glyphs, and selected swatches become Krasnow diffraction gratings without positive-area overlap.",
 })
 
+DOCS["manual-krasnow-geometry-workflow"] = markdown_guide_page(
+    Path(__file__).resolve().parents[1] / "docs" / "manual-krasnow-geometry-workflow.md",
+    description="Reproduce Rasterizer's Krasnow grating construction manually, from aligned vector cells and luminance-directed open paths through calibrated LightBurn carrier layers.",
+    outcome="A small, manually constructed angular diffraction artwork whose cells, open grating paths, carrier assignments, and LightBurn settings follow the same core process used by Rasterizer's Krasnow geometry.",
+    related=["krasnow-grating-filter", "geometry-styles", "diffraction-gratings", "fauxlogram-tutorial", "lightburn-export"],
+)
+
 
 DOCS["power-down-cutoff-frequency"]["diagram"] = {
     "src": "/static/docs/jpt-e2-60-m7-power-down-cutoff-chart.svg",
@@ -1487,7 +1498,7 @@ DOCS["power-down-cutoff-frequency"]["diagram"] = {
 
 
 DOC_GROUPS = [
-    ("In-depth workflow guides", ["fauxlogram-tutorial", "multi-geometry-rasterizer-guide"]),
+    ("In-depth workflow guides", ["fauxlogram-tutorial", "multi-geometry-rasterizer-guide", "manual-krasnow-geometry-workflow"]),
     ("Rasterizer", ["preset-controls", "artwork-cropping", "geometry-styles", "raster-to-vector", "svg-only-mode", "raster-vs-vector", "image-presets", "cartoon-preset", "color-photo-preset", "black-and-white-photo", "pixel-size", "color-layers"]),
     ("Abstract filters", ["abstract-filters", "abstract-filter-reference"] + [f"{slug}-filter" for slug in FILTER_PAGES]),
     ("Laser technology", ["my-personal-laser-journey", "mopa-color-laser-engraving", "types-of-lasers-for-engraving", "continuous-wave-vs-pulsed-lasers", "what-does-mopa-mean", "what-does-q-switched-mean", "diode-lasers-explained", "co2-lasers-explained", "uv-lasers-explained", "laser-engraving-parameters", "all-about-operation-mode", "all-about-laser-power", "what-is-laser-ablation", "all-about-engraving-speed", "all-about-laser-frequency", "all-about-pulse-width", "power-down-cutoff-frequency", "all-about-line-interval", "all-about-engraving-passes", "all-about-scan-angle-crosshatch", "why-fixturing-is-so-important", "laser-compatibility", "what-laser-should-i-buy", "color-discovery"]),
@@ -1501,6 +1512,8 @@ DOC_ORDER = [slug for _group, slugs in DOC_GROUPS for slug in slugs]
 
 def _searchable_paragraph_text(paragraph):
     if isinstance(paragraph, dict):
+        if paragraph.get("html"):
+            return re.sub(r"<[^>]+>", " ", paragraph["html"])
         if paragraph.get("swatch_table"):
             return " ".join(
                 f"{item['layer']} {item['name']} {item['hex']}"
