@@ -20,7 +20,7 @@ os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-2")
 
 import geometry_styles
 import glyph_geometry
-from custom_shape import decode_grayscale_mask, mask_to_unit_geometry
+from custom_shape import decode_grayscale_mask, mask_to_unit_geometry, svg_to_unit_geometry
 import vector_processing
 from abstract_filters import halftone_newsprint, krasnow_grating
 from services import parse_geometry_style_parameters
@@ -29,6 +29,14 @@ from services import parse_geometry_style_parameters
 TARGET_COLORS = {
     "#FF0000": ["Red", 2, "Red"],
     "#000000": ["Black", 0, "Black"],
+}
+
+CUSTOM_SVG = {
+    "name": "diamond.svg",
+    "svg": (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">'
+        '<path d="M50 4 L96 50 L50 96 L4 50 Z"/></svg>'
+    ),
 }
 
 
@@ -439,6 +447,82 @@ def test_geometry_parameter_parser_accepts_only_supported_controls():
         raise AssertionError("Expected an unknown geometry parameter to be rejected")
 
 
+def test_custom_svg_geometry_is_validated_and_preserved():
+    assert parse_geometry_style_parameters({
+        "glyph_shape": "custom",
+        "custom_glyph_svg": CUSTOM_SVG,
+        "custom_glyph_padding": .08,
+        "tight_pack_geometry": 0,
+    }) == {
+        "glyph_shape": "custom",
+        "custom_glyph_svg": CUSTOM_SVG,
+        "custom_glyph_padding": .08,
+        "tight_pack_geometry": 0,
+    }
+    assert parse_geometry_style_parameters({
+        "cell_shape": "custom",
+        "custom_cell_svg": CUSTOM_SVG,
+        "custom_cell_padding": .04,
+        "tight_pack_geometry": 1,
+    }) == {
+        "cell_shape": "custom",
+        "custom_cell_svg": CUSTOM_SVG,
+        "custom_cell_padding": .04,
+        "tight_pack_geometry": 1,
+    }
+
+    with pytest.raises(ValueError, match="Upload a custom cell SVG"):
+        parse_geometry_style_parameters({"cell_shape": "custom"})
+    with pytest.raises(ValueError, match="embedded or external|couldn't be used"):
+        parse_geometry_style_parameters({
+            "cell_shape": "custom",
+            "custom_cell_svg": {
+                "name": "unsafe.svg",
+                "svg": '<svg><script>alert(1)</script><path d="M0 0Z"/></svg>',
+            },
+        })
+
+
+def test_custom_svg_preserves_closed_shape_and_hole():
+    geometry = svg_to_unit_geometry({
+        "name": "ring.svg",
+        "svg": (
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">'
+            '<path d="M5 5 H95 V95 H5 Z M30 30 H70 V70 H30 Z"/></svg>'
+        ),
+    }, padding=0)
+
+    assert geometry.area == pytest.approx(1 - (40 / 90) ** 2, abs=1e-6)
+    assert not geometry.contains(geometry.centroid)
+    assert geometry.bounds == pytest.approx((-.5, -.5, .5, .5))
+
+
+def test_custom_svg_renders_as_glyph_and_krasnow_cell():
+    layers = {"#FF0000": box(0, 0, 4, 4)}
+    glyph = glyph_geometry.remap_layers(
+        layers,
+        {"#FF0000": TARGET_COLORS["#FF0000"]},
+        glyph_parameters(
+            glyph_shape="custom",
+            custom_glyph_svg=CUSTOM_SVG,
+            cell_size_mm=1,
+            grid_angle=0,
+        ),
+    )
+    assert 0 < glyph["#FF0000"].area < layers["#FF0000"].area
+
+    cells = krasnow_grating._tessellated_cells(
+        (0, 0, 4, 4),
+        1,
+        "custom",
+        tight_pack=True,
+        custom_template=svg_to_unit_geometry(CUSTOM_SVG),
+    )
+    assert cells
+    canvas = box(0, 0, 4, 4)
+    assert all(cell.intersection(canvas).area > 0 for _, cell in cells)
+
+
 def test_fauxlogram_gradient_directions_cover_axes_and_radial_space():
     bounds = (0, 0, 10, 20)
     position = krasnow_grating._gradient_position
@@ -515,7 +599,7 @@ def test_global_glyphs_include_every_krasnow_shape_without_removing_existing_sha
     }
     assert original_shapes <= glyph_geometry.GLYPH_SHAPES
     assert set(krasnow_grating.CELL_SHAPES) <= glyph_geometry.GLYPH_SHAPES
-    for shape in krasnow_grating.CELL_SHAPES:
+    for shape in set(krasnow_grating.CELL_SHAPES) - {"custom"}:
         assert parse_geometry_style_parameters({"glyph_shape": shape}) == {
             "glyph_shape": shape,
         }
@@ -546,6 +630,10 @@ def test_staging_ui_exposes_an_independent_compatible_geometry_section():
     assert "fauxlogram_gradient_direction" in page
     assert "Fauxlogram Gradient Start" in page
     assert "Fauxlogram Gradient End" in page
+    assert "['custom','Custom SVG']" in page
+    assert 'accept=".svg,image/svg+xml,image/png,image/jpeg,image/webp"' in page
+    assert 'data-custom-cell-file' in page
+    assert "values.custom_cell_svg=structuredClone(customCellSvg)" in page
     assert 'id="geometryRoutingGrid"' in page
     assert 'data-route-bulk="glyphs"' in page
     assert 'data-route-bulk="krasnow_grating"' in page
@@ -559,6 +647,26 @@ def test_staging_ui_exposes_an_independent_compatible_geometry_section():
         ("puzzle_piece", "Puzzle Piece"),
     ):
         assert f"['{value}','{label}']" in page
+
+
+def test_serverless_job_api_accepts_tight_pack_checkbox_values():
+    handler_path = ROOT / "serverless_api" / "handler.py"
+    tree = ast.parse(handler_path.read_text(encoding="utf-8"))
+    submit_job = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "submit_job"
+    )
+    toggle_assignment = next(
+        node for node in ast.walk(submit_job)
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name)
+            and target.id == "toggle_geometry_parameters"
+            for target in node.targets
+        )
+    )
+
+    assert "tight_pack_geometry" in ast.literal_eval(toggle_assignment.value)
 
 
 def test_serverless_api_discards_retired_posterize_from_cached_submissions():

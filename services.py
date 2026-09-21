@@ -1556,7 +1556,7 @@ def parse_geometry_style_parameters(raw_value):
         "saturation_cutoff", "patch_size_mm", "line_spacing_mm",
         "hue_line_spacing_minimum_mm", "hue_line_spacing_maximum_mm",
         "angle_min", "angle_max", "custom_glyph_threshold",
-        "custom_glyph_padding",
+        "custom_glyph_padding", "custom_cell_padding",
     }
     toggles = {
         "invert", "invert_fill", "black_only", "preserve_black",
@@ -1571,7 +1571,7 @@ def parse_geometry_style_parameters(raw_value):
     cell_shapes = {
         "square", "hexagon", "triangle", "diamond", "skull", "heart",
         "space_invader", "ghost", "bat", "alien_head", "paw_print",
-        "fish_scale", "puzzle_piece",
+        "fish_scale", "puzzle_piece", "custom",
     }
     gradient_scopes = {"entire_artwork", "each_shape"}
     grating_render_modes = {"line", "fill"}
@@ -1606,6 +1606,26 @@ def parse_geometry_style_parameters(raw_value):
         if len(decoded) != width * height:
             raise ValueError(message)
         return {"width": width, "height": height, "data": encoded}
+    def compact_svg(candidate, label):
+        message = (
+            f"The custom {label} SVG couldn't be used. Choose a plain SVG "
+            "containing one or more closed vector shapes."
+        )
+        if not isinstance(candidate, dict) or set(candidate) - {"name", "svg"}:
+            raise ValueError(message)
+        svg_text = candidate.get("svg")
+        if not isinstance(svg_text, str) or not svg_text.strip() or len(svg_text) > 65_536:
+            raise ValueError(message)
+        lowered = svg_text.lower()
+        if not re.search(r"<svg(?:\s|>)", lowered) or any(token in lowered for token in (
+            "<!doctype", "<!entity", "<script", "<foreignobject", "<image",
+            "<use", "javascript:", "data:", "url(", "href=", "xlink:href=",
+        )):
+            raise ValueError(message)
+        return {
+            "name": str(candidate.get("name") or f"custom-{label}.svg")[:120],
+            "svg": svg_text,
+        }
     for key, value in parameters.items():
         if key == "glyph_shape" and value in shapes:
             clean[key] = value
@@ -1773,6 +1793,10 @@ def parse_geometry_style_parameters(raw_value):
             }
         elif key == "custom_glyph_mask":
             clean[key] = compact_mask(value)
+        elif key == "custom_glyph_svg":
+            clean[key] = compact_svg(value, "glyph")
+        elif key == "custom_cell_svg":
+            clean[key] = compact_svg(value, "cell")
         elif key in toggles and isinstance(value, bool):
             clean[key] = int(value)
         elif key in toggles and isinstance(value, int) and value in {0, 1}:
@@ -1785,8 +1809,12 @@ def parse_geometry_style_parameters(raw_value):
             raise ValueError(f"Geometry Style control '{str(key)[:60]}' has an invalid value. Use Reset geometry settings, configure it again, and submit the job again.")
     if clean.get("invert_fill") and clean.get("black_only"):
         raise ValueError("Invert Fill and Black Only cannot be used together. Turn off one of those Geometry Style controls and submit again.")
-    if clean.get("glyph_shape") == "custom" and not clean.get("custom_glyph_mask"):
-        raise ValueError("Upload a custom glyph image before submitting the job")
+    if clean.get("glyph_shape") == "custom" and not (
+        clean.get("custom_glyph_mask") or clean.get("custom_glyph_svg")
+    ):
+        raise ValueError("Upload a custom glyph image or SVG before submitting the job.")
+    if clean.get("cell_shape") == "custom" and not clean.get("custom_cell_svg"):
+        raise ValueError("Upload a custom cell SVG before submitting the job.")
     return clean
 
 

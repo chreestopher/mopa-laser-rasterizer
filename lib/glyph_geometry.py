@@ -2,7 +2,7 @@
 
 from abstract_filters.common import number
 from abstract_filters import halftone_newsprint
-from custom_shape import mask_to_unit_geometry
+from custom_shape import mask_to_unit_geometry, svg_to_unit_geometry
 
 
 USES_SOURCE_LUMINANCE = True
@@ -59,10 +59,16 @@ def remap_layers(processed_layers, target_colors, settings):
         "_progress_name": settings.get("_progress_name") or "Glyph Geometry Style",
     })
     if shape == "custom":
-        translated["_custom_glyph_template"] = mask_to_unit_geometry(
-            settings.get("custom_glyph_mask"),
-            threshold=number(settings.get("custom_glyph_threshold"), 0.5, 0, 1),
-            invert=bool(settings.get("custom_glyph_invert")),
-            padding=number(settings.get("custom_glyph_padding"), 0.06, 0, 0.3),
-        )
+        padding = number(settings.get("custom_glyph_padding"), 0.06, 0, 0.3)
+        if settings.get("custom_glyph_svg"):
+            translated["_custom_glyph_template"] = svg_to_unit_geometry(
+                settings.get("custom_glyph_svg"), padding=padding
+            )
+        else:
+            translated["_custom_glyph_template"] = mask_to_unit_geometry(
+                settings.get("custom_glyph_mask"),
+                threshold=number(settings.get("custom_glyph_threshold"), 0.5, 0, 1),
+                invert=bool(settings.get("custom_glyph_invert")),
+                padding=padding,
+            )
     return halftone_newsprint.remap_layers(processed_layers, target_colors, translated)
