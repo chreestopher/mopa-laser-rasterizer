@@ -841,7 +841,7 @@ def clean_last_used_form(name, snapshot):
             elif parameter == "cell_shape" and parameter_value in {
                 "square", "hexagon", "triangle", "diamond", "skull",
                 "heart", "space_invader", "ghost", "bat",
-                "alien_head", "paw_print", "fish_scale", "puzzle_piece",
+                "alien_head", "paw_print", "fish_scale", "puzzle_piece", "custom",
             }:
                 cleaned[parameter] = parameter_value
             elif parameter == "grating_render_mode" and parameter_value in {
@@ -852,9 +852,22 @@ def clean_last_used_form(name, snapshot):
                 "circle", "square", "diamond", "triangle", "hexagon",
                 "octagon", "star", "cross", "bar", "skull", "heart",
                 "space_invader", "ghost", "bat", "alien_head",
-                "paw_print", "fish_scale", "puzzle_piece", "mixed",
+                "paw_print", "fish_scale", "puzzle_piece", "mixed", "custom",
             }:
                 cleaned[parameter] = parameter_value
+            elif geometry and parameter in {"custom_glyph_svg", "custom_cell_svg"}:
+                if (
+                    isinstance(parameter_value, dict)
+                    and isinstance(parameter_value.get("svg"), str)
+                    and len(parameter_value["svg"]) <= 65_536
+                ):
+                    cleaned[parameter] = {
+                        "name": str(parameter_value.get("name") or "custom-shape.svg")[:120],
+                        "svg": parameter_value["svg"],
+                    }
+            elif geometry and parameter == "custom_glyph_mask":
+                if isinstance(parameter_value, dict):
+                    cleaned[parameter] = parameter_value
             elif parameter == "fauxlogram_gradient_scope" and parameter_value in {
                 "entire_artwork", "each_shape",
             }:
@@ -4025,10 +4038,11 @@ def submit_job(event, task_id, guest=False):
         "saturation_cutoff", "patch_size_mm", "line_spacing_mm",
         "hue_line_spacing_minimum_mm", "hue_line_spacing_maximum_mm",
         "angle_min", "angle_max", "custom_glyph_threshold",
-        "custom_glyph_padding",
+        "custom_glyph_padding", "custom_cell_padding",
     }
     toggle_geometry_parameters = {
         "invert", "invert_fill", "black_only", "preserve_black", "custom_glyph_invert",
+        "tight_pack_geometry",
     }
     glyph_shapes = {
         "circle", "square", "diamond", "triangle", "hexagon", "octagon",
@@ -4039,7 +4053,7 @@ def submit_job(event, task_id, guest=False):
     cell_shapes = {
         "square", "hexagon", "triangle", "diamond", "skull", "heart",
         "space_invader", "ghost", "bat", "alien_head", "paw_print",
-        "fish_scale", "puzzle_piece",
+        "fish_scale", "puzzle_piece", "custom",
     }
     gradient_scopes = {"entire_artwork", "each_shape"}
     grating_render_modes = {"line", "fill"}
@@ -4069,6 +4083,22 @@ def submit_job(event, task_id, guest=False):
         except Exception as error:
             raise ValueError(message) from error
         if len(decoded) != width * height:
+            raise ValueError(message)
+    def validate_custom_svg(value, label):
+        message = (
+            f"The custom {label} SVG couldn't be used. Choose a plain SVG "
+            "containing one or more closed vector shapes."
+        )
+        if not isinstance(value, dict) or set(value) - {"name", "svg"}:
+            raise ValueError(message)
+        svg_text = value.get("svg")
+        if not isinstance(svg_text, str) or not svg_text.strip() or len(svg_text) > 65_536:
+            raise ValueError(message)
+        lowered = svg_text.lower()
+        if not re.search(r"<svg(?:\s|>)", lowered) or any(token in lowered for token in (
+            "<!doctype", "<!entity", "<script", "<foreignobject", "<image",
+            "<use", "javascript:", "data:", "url(", "href=", "xlink:href=",
+        )):
             raise ValueError(message)
     def validate_fauxlogram_flow(value):
         if not isinstance(value, dict):
@@ -4207,6 +4237,7 @@ def submit_job(event, task_id, guest=False):
                 )
                 or (key == "fauxlogram_flow" and isinstance(value, dict))
                 or (key == "custom_glyph_mask" and isinstance(value, dict))
+                or (key in {"custom_glyph_svg", "custom_cell_svg"} and isinstance(value, dict))
                 or (key in toggle_geometry_parameters and isinstance(value, (bool, int)) and value in {0, 1})
                 or (
                     key in numeric_geometry_parameters
@@ -4218,15 +4249,27 @@ def submit_job(event, task_id, guest=False):
             if not valid:
                 if key == "custom_glyph_mask":
                     validate_compact_mask(value)
+                if key == "custom_glyph_svg":
+                    validate_custom_svg(value, "glyph")
+                if key == "custom_cell_svg":
+                    validate_custom_svg(value, "cell")
                 raise ValueError(f"Geometry Style control '{str(key)[:60]}' has an invalid value. Use Reset geometry settings, configure it again, and submit the job again.")
             if key == "fauxlogram_flow":
                 validate_fauxlogram_flow(value)
             elif key == "custom_glyph_mask":
                 validate_compact_mask(value)
+            elif key == "custom_glyph_svg":
+                validate_custom_svg(value, "glyph")
+            elif key == "custom_cell_svg":
+                validate_custom_svg(value, "cell")
         if section.get("invert_fill") and section.get("black_only"):
             raise ValueError("Invert Fill and Black Only cannot be used together. Turn off one of those Geometry Style controls and submit again.")
-        if section.get("glyph_shape") == "custom" and not section.get("custom_glyph_mask"):
-            raise ValueError("Upload a custom glyph image before submitting the job")
+        if section.get("glyph_shape") == "custom" and not (
+            section.get("custom_glyph_mask") or section.get("custom_glyph_svg")
+        ):
+            raise ValueError("Upload a custom glyph image or SVG before submitting the job.")
+        if section.get("cell_shape") == "custom" and not section.get("custom_cell_svg"):
+            raise ValueError("Upload a custom cell SVG before submitting the job.")
 
     try:
         if geometry_style == "by_swatch":

@@ -31,7 +31,7 @@ from shapely.ops import unary_union
 
 from .common import number
 from .packing import SpatialCollisionIndex, placement_variant
-from custom_shape import decode_grayscale_mask
+from custom_shape import decode_grayscale_mask, svg_to_unit_geometry
 
 
 USES_SOURCE_LUMINANCE = True
@@ -73,6 +73,7 @@ CELL_SHAPES = (
     "square", "hexagon", "triangle", "diamond", "skull", "heart",
     "space_invader", "ghost", "bat", "alien_head", "paw_print",
     "fish_scale", "puzzle_piece",
+    "custom",
 )
 
 FAUXLOGRAM_GRADIENT_SCOPES = ("entire_artwork", "each_shape")
@@ -1045,12 +1046,16 @@ def _template_polygon(template, center_x, center_y, patch_size):
     )
 
 
-def _tight_packed_icon_cells(bounds, patch_size, cell_shape):
+def _tight_packed_icon_cells(bounds, patch_size, cell_shape, custom_template=None):
     """Greedily nest decorative silhouettes with bounded deterministic tries."""
     min_x, min_y, max_x, max_y = bounds
     canvas = box(min_x, min_y, max_x, max_y)
-    template = _GAPPED_CELL_TEMPLATES[cell_shape]
-    x_multiplier, y_multiplier = _TIGHT_PACK_STEPS[cell_shape]
+    template = (
+        custom_template
+        if custom_template is not None
+        else _GAPPED_CELL_TEMPLATES[cell_shape]
+    )
+    x_multiplier, y_multiplier = _TIGHT_PACK_STEPS.get(cell_shape, (.90, .78))
     x_step = patch_size * x_multiplier
     y_step = patch_size * y_multiplier
     start_row = -3
@@ -1099,7 +1104,9 @@ def _tight_packed_icon_cells(bounds, patch_size, cell_shape):
     return cells
 
 
-def _tessellated_cells(bounds, patch_size, cell_shape, tight_pack=False):
+def _tessellated_cells(
+    bounds, patch_size, cell_shape, tight_pack=False, custom_template=None
+):
     """Build a deterministic, globally aligned non-square cell grid.
 
     Hexagon uses ``patch_size`` as the flat-to-flat height of a regular
@@ -1111,8 +1118,12 @@ def _tessellated_cells(bounds, patch_size, cell_shape, tight_pack=False):
     Full boundary cells are retained so their centers and grating alignment do
     not change when source geometry touches a canvas edge.
     """
-    if tight_pack and cell_shape in _GAPPED_CELL_TEMPLATES:
-        return _tight_packed_icon_cells(bounds, patch_size, cell_shape)
+    if tight_pack and (
+        cell_shape in _GAPPED_CELL_TEMPLATES or cell_shape == "custom"
+    ):
+        return _tight_packed_icon_cells(
+            bounds, patch_size, cell_shape, custom_template=custom_template
+        )
 
     min_x, min_y, max_x, max_y = bounds
     canvas = box(min_x, min_y, max_x, max_y)
@@ -1188,8 +1199,13 @@ def _tessellated_cells(bounds, patch_size, cell_shape, tight_pack=False):
                 ))
                 if polygon.intersection(canvas).area > 1e-12:
                     cells.append(((row, column), polygon))
-    elif cell_shape in _GAPPED_CELL_TEMPLATES:
-        row_step = patch_size * _GAPPED_CELL_ROW_STEPS[cell_shape]
+    elif cell_shape in _GAPPED_CELL_TEMPLATES or cell_shape == "custom":
+        template = (
+            custom_template
+            if custom_template is not None
+            else _GAPPED_CELL_TEMPLATES[cell_shape]
+        )
+        row_step = patch_size * _GAPPED_CELL_ROW_STEPS.get(cell_shape, 1.0)
         start_row = -2
         stop_row = math.ceil((max_y - min_y) / row_step) + 2
         start_column = -2
@@ -1203,7 +1219,7 @@ def _tessellated_cells(bounds, patch_size, cell_shape, tight_pack=False):
                     + column * patch_size
                 )
                 polygon = _template_polygon(
-                    _GAPPED_CELL_TEMPLATES[cell_shape],
+                    template,
                     center_x,
                     center_y,
                     patch_size,
@@ -1364,6 +1380,12 @@ def remap_layers(processed_layers, target_colors, settings):
     scale_factor = number(settings.get("_scale_factor"), 1, 1e-9, 1000)
     patch_size = number(settings.get("patch_size_mm"), .4, .1, 5) / scale_factor
     cell_shape = _cell_shape(settings)
+    custom_cell_template = None
+    if cell_shape == "custom":
+        custom_cell_template = svg_to_unit_geometry(
+            settings.get("custom_cell_svg"),
+            padding=number(settings.get("custom_cell_padding"), .06, 0, .3),
+        )
     pieces = {swatch: [] for swatch in grating_swatches}
 
     tessellated_cells = None
@@ -1373,6 +1395,7 @@ def remap_layers(processed_layers, target_colors, settings):
             patch_size,
             cell_shape,
             tight_pack=number(settings.get("tight_pack_geometry"), 0, 0, 1) >= .5,
+            custom_template=custom_cell_template,
         )
     cell_label = "patches" if cell_shape == "square" else f"{cell_shape} cells"
 

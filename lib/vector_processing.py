@@ -126,6 +126,11 @@ def _summarize_project_geometry(value):
                 "height": item.get("height"),
                 "uploaded": bool(item.get("data")),
             }
+        elif key in {"custom_glyph_svg", "custom_cell_svg"} and isinstance(item, dict):
+            summarized[key] = {
+                "name": item.get("name"),
+                "uploaded": bool(item.get("svg")),
+            }
         elif isinstance(item, dict):
             summarized[key] = _summarize_project_geometry(item)
         else:

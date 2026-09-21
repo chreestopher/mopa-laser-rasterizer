@@ -145,6 +145,44 @@ def test_last_used_krasnow_geometry_style_survives_dynamodb_decimal_round_trip()
     }
 
 
+def test_last_used_custom_svg_shapes_survive_dynamodb_round_trip():
+    clean = load_cleaner()
+    svg = {
+        "name": "diamond.svg",
+        "svg": '<svg viewBox="0 0 10 10"><path d="M5 0L10 5L5 10L0 5Z"/></svg>',
+    }
+    now = int(time.time())
+
+    glyph = clean("last_rasterizer_form", {
+        "saved_at": now,
+        "values": {
+            "geometry_style": "glyphs",
+            "geometry_style_parameters": {
+                "glyph_shape": "custom",
+                "custom_glyph_svg": svg,
+            },
+        },
+    })
+    cell = clean("last_rasterizer_form", {
+        "saved_at": now,
+        "values": {
+            "geometry_style": "krasnow_grating",
+            "geometry_style_parameters": {
+                "cell_shape": "custom",
+                "custom_cell_svg": svg,
+                "tight_pack_geometry": Decimal("1"),
+            },
+        },
+    })
+
+    assert glyph["values"]["geometry_style_parameters"]["custom_glyph_svg"] == svg
+    assert cell["values"]["geometry_style_parameters"] == {
+        "cell_shape": "custom",
+        "custom_cell_svg": svg,
+        "tight_pack_geometry": 1,
+    }
+
+
 def test_last_used_by_swatch_geometry_routing_survives_dynamodb_decimal_round_trip():
     clean = load_cleaner()
     result = clean("last_rasterizer_form", {
