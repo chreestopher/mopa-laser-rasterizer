@@ -1,5 +1,9 @@
 import { createKrasnowParallaxPixels } from "./depthmap_parallax.js";
 import { createKrasnowParallaxSvg } from "./depthmap_parallax_svg.js";
+import {
+  createScratchHologramArcs,
+  createScratchHologramSvg,
+} from "./depthmap_scratch_hologram_svg.js";
 
 const MODEL_ID = "onnx-community/depth-anything-v2-small";
 const TRANSFORMERS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2";
@@ -54,6 +58,17 @@ const parallaxSvgButton = document.querySelector("#depth_export_parallax_svg");
 const parallaxPreviewCanvas = document.querySelector("#depth_parallax_preview_canvas");
 const parallaxMaskCanvas = document.querySelector("#depth_parallax_mask_canvas");
 const parallaxPreviewSummary = document.querySelector("#depth_parallax_preview_summary");
+const scratchPixelSizeControl = document.querySelector("#depth_scratch_pixel_size");
+const scratchSampleStepControl = document.querySelector("#depth_scratch_sample_step");
+const scratchNearDepthControl = document.querySelector("#depth_scratch_near_depth");
+const scratchDepthRangeControl = document.querySelector("#depth_scratch_depth_range");
+const scratchViewSweepControl = document.querySelector("#depth_scratch_view_sweep");
+const scratchBackgroundControl = document.querySelector("#depth_scratch_background");
+const scratchStrokeWidthControl = document.querySelector("#depth_scratch_stroke_width");
+const scratchPhysicalSize = document.querySelector("#depth_scratch_physical_size");
+const scratchSvgButton = document.querySelector("#depth_export_scratch_svg");
+const scratchPreviewCanvas = document.querySelector("#depth_scratch_preview_canvas");
+const scratchPreviewSummary = document.querySelector("#depth_scratch_preview_summary");
 const colorGuidancePanel = document.querySelector("#color_guidance_panel");
 const swatchGrid = document.querySelector("#depth_swatch_grid");
 const guidanceFeatherControl = document.querySelector("#depth_guidance_feather");
@@ -86,6 +101,7 @@ let perimeterDepthOverride = null;
 let paintingFarDepth = false;
 let lastPaintPoint = null;
 let parallaxPreviewTimer = null;
+let scratchPreviewTimer = null;
 
 function revealDepthWorkflow() {
   workspace.hidden = false;
@@ -469,6 +485,7 @@ function buildOutputCanvas() {
     }
   }
   updateParallaxControls();
+  updateScratchControls();
 }
 
 function paintFarDepth(event) {
@@ -556,6 +573,7 @@ function drawGrayscale() {
   drawWorkflowPreview(guidancePreviewCanvas);
   drawWorkflowPreview(parallaxSourceCanvas);
   scheduleParallaxPreview();
+  scheduleScratchPreview();
 }
 
 function drawWorkflowPreview(canvas) {
@@ -816,6 +834,98 @@ function updateParallaxControls() {
   scheduleParallaxPreview();
 }
 
+function scratchGeometryOptions(maxArcs = 30000) {
+  return {
+    backgroundMask:outputBackgroundMask,
+    inverted:invertControl.checked,
+    pixelSize:Number(scratchPixelSizeControl.value),
+    sampleStep:Number(scratchSampleStepControl.value),
+    nearDepth:Number(scratchNearDepthControl.value),
+    depthRange:Number(scratchDepthRangeControl.value),
+    viewSweep:Number(scratchViewSweepControl.value),
+    backgroundCutoff:Number(scratchBackgroundControl.value) / 100,
+    maxArcs,
+  };
+}
+
+function drawScratchPreview() {
+  scratchPreviewTimer = null;
+  if (!outputDepth || !outputWidth || !outputHeight) return;
+  try {
+    const geometry = createScratchHologramArcs(
+      outputDepth,
+      outputWidth,
+      outputHeight,
+      scratchGeometryOptions(8000),
+    );
+    const longestSide = 960;
+    const scale = longestSide / Math.max(geometry.physicalWidth, geometry.physicalHeight);
+    scratchPreviewCanvas.width = Math.max(1, Math.round(geometry.physicalWidth * scale));
+    scratchPreviewCanvas.height = Math.max(1, Math.round(geometry.physicalHeight * scale));
+    const context = scratchPreviewCanvas.getContext("2d");
+    context.fillStyle = "#f7f7f2";
+    context.fillRect(0, 0, scratchPreviewCanvas.width, scratchPreviewCanvas.height);
+    context.save();
+    context.scale(scale, scale);
+    context.strokeStyle = "#111";
+    context.lineWidth = Math.max(Number(scratchStrokeWidthControl.value), 1 / scale);
+    context.lineCap = "round";
+    context.beginPath();
+    for (const arc of geometry.arcs) {
+      context.moveTo(arc.startX, arc.startY);
+      context.arc(arc.centerX, arc.centerY, arc.radius, arc.startAngle, arc.endAngle);
+    }
+    context.stroke();
+    context.restore();
+    const adjusted = geometry.effectiveSampleStep !== geometry.requestedSampleStep
+      ? ` The preview automatically increased the sample step to ${geometry.effectiveSampleStep} px to remain within its geometry limit.`
+      : "";
+    scratchPreviewSummary.textContent = `${geometry.arcs.length.toLocaleString()} preview arcs; ${geometry.physicalWidth.toFixed(2)} ? ${geometry.physicalHeight.toFixed(2)} mm.${adjusted}`;
+  } catch (cause) {
+    scratchPreviewSummary.textContent = cause.message || String(cause);
+  }
+}
+
+function scheduleScratchPreview() {
+  if (scratchPreviewTimer !== null) clearTimeout(scratchPreviewTimer);
+  if (!outputDepth) return;
+  scratchPreviewTimer = setTimeout(drawScratchPreview, 100);
+}
+
+async function exportScratchHologramSvg() {
+  if (!outputDepth) return;
+  scratchSvgButton.disabled = true;
+  try {
+    setProcessingStatus("Building experimental specular scratch hologram geometry locally.");
+    const result = await createScratchHologramSvg(outputDepth, outputWidth, outputHeight, {
+      ...scratchGeometryOptions(),
+      strokeWidth:Number(scratchStrokeWidthControl.value),
+      onProgress:(completed, total) => {
+        if (completed === total || completed % 5000 === 0) {
+          setProcessingStatus(`Building specular scratch hologram SVG: ${completed.toLocaleString()} of ${total.toLocaleString()} arcs.`);
+        }
+      },
+    });
+    downloadBlob(result.blob, "specular-scratch-hologram", "svg");
+    const adjustment = result.effectiveSampleStep !== result.requestedSampleStep
+      ? ` The sample step was automatically increased to ${result.effectiveSampleStep} px to remain below 30,000 arcs.`
+      : "";
+    setProcessingStatus(`Experimental scratch hologram SVG created locally with ${result.arcs.length.toLocaleString()} open arcs.${adjustment}`);
+  } finally {
+    scratchSvgButton.disabled = false;
+  }
+}
+
+function updateScratchControls() {
+  if (outputWidth && outputHeight) {
+    const pixelSize = Number(scratchPixelSizeControl.value);
+    scratchPhysicalSize.value = `${(outputWidth * pixelSize).toFixed(2)} ? ${(outputHeight * pixelSize).toFixed(2)} mm`;
+  } else {
+    scratchPhysicalSize.value = "Generate a depthmap first";
+  }
+  scheduleScratchPreview();
+}
+
 async function compressDeflate(bytes) {
   if (!("CompressionStream" in window)) throw new Error("This browser cannot create a 16-bit PNG. Use the 8-bit export instead.");
   const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate"));
@@ -863,6 +973,9 @@ function reset() {
   parallaxMaskCanvas.width = 0;
   parallaxMaskCanvas.height = 0;
   parallaxPreviewSummary.textContent = "Generate a depthmap to inspect the parallax conversion.";
+  scratchPreviewCanvas.width = 0;
+  scratchPreviewCanvas.height = 0;
+  scratchPreviewSummary.textContent = "Generate a depthmap to inspect the scratch geometry.";
   processingPanel.hidden = true;
   workspace.hidden = true;
   resetButton.disabled = true;
@@ -874,6 +987,7 @@ function reset() {
 function updateInputMode() {
   const direct = inputModeControl.value === "depthmap";
   parallaxBackgroundControl.disabled = direct;
+  scratchBackgroundControl.disabled = direct;
   generateButton.textContent = direct ? "Use Existing Depthmap" : "Initialize Depthmap";
   inputModeHelp.textContent = direct
     ? "Uses grayscale values directly without AI inference. Pure-white or transparent pixels become Krasnow's explicit source background; the cutoff control is not applied. Edge ramps may extend into that background."
@@ -1043,8 +1157,19 @@ parallaxSvgButton.addEventListener("click", () => exportParallaxSvg().catch(caus
 parallaxScaleControl.addEventListener("input", updateParallaxControls);
 parallaxBackgroundControl.addEventListener("input", updateParallaxControls);
 parallaxPatchSizeControl.addEventListener("input", updateParallaxControls);
+scratchSvgButton.addEventListener("click", () => exportScratchHologramSvg().catch(cause => setProcessingStatus(cause.message, true)));
+for (const control of [
+  scratchPixelSizeControl,
+  scratchSampleStepControl,
+  scratchNearDepthControl,
+  scratchDepthRangeControl,
+  scratchViewSweepControl,
+  scratchBackgroundControl,
+  scratchStrokeWidthControl,
+]) control.addEventListener("input", updateScratchControls);
 drawLegend();
 updateParallaxControls();
+updateScratchControls();
 updateInputMode();
 updateBrushDepthPreview();
 updateBrushSizePreview();
