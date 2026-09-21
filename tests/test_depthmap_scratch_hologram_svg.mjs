@@ -77,6 +77,20 @@ test("neighboring scratch arcs remain separated inside their sampling cells", ()
   assert.ok(Math.min(right.startX, right.endX) >= 1.1 - 1e-8);
 });
 
+test("a reference-style 180 degree viewing sweep is supported", () => {
+  const geometry = createScratchHologramArcs(Float32Array.of(0.5), 1, 1, {
+    backgroundMask:Uint8Array.of(0),
+    pixelSize:1,
+    sampleStep:1,
+    nearDepth:1,
+    depthRange:0,
+    viewSweep:180,
+  });
+  assert.equal(geometry.arcs.length, 1);
+  assert.ok(geometry.arcs[0].startX < geometry.arcs[0].centerX);
+  assert.ok(geometry.arcs[0].endX > geometry.arcs[0].centerX);
+});
+
 test("SVG contains open circular arcs, millimeter sizing, and a clipping boundary", async () => {
   const result = await createScratchHologramSvg(Float32Array.from([0.25, 0.75]), 2, 1, {
     pixelSize:0.5,
@@ -100,6 +114,6 @@ test("SVG contains open circular arcs, millimeter sizing, and a clipping boundar
 
 test("invalid scratch geometry values are rejected", async () => {
   assert.throws(() => createScratchHologramArcs(Float32Array.of(0.5), 2, 1));
-  assert.throws(() => createScratchHologramArcs(Float32Array.of(0.5), 1, 1, {viewSweep:180}));
+  assert.throws(() => createScratchHologramArcs(Float32Array.of(0.5), 1, 1, {viewSweep:181}));
   await assert.rejects(() => createScratchHologramSvg(Float32Array.of(0), 1, 1));
 });

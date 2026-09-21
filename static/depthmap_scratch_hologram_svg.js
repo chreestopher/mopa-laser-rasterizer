@@ -118,7 +118,7 @@ export function createScratchHologramArcs(
   const nearestDepth = positiveNumber(nearDepth, "Near-point virtual depth");
   const range = nonNegativeNumber(depthRange, "Virtual depth range");
   const sweep = positiveNumber(viewSweep, "Viewing sweep");
-  if (sweep >= 180) throw new Error("Viewing sweep must be less than 180 degrees.");
+  if (sweep > 180) throw new Error("Viewing sweep cannot exceed 180 degrees.");
   const cutoff = Number(backgroundCutoff);
   if (!Number.isFinite(cutoff) || cutoff < 0 || cutoff >= 1) {
     throw new Error("Background cutoff must be between 0 and 100 percent.");
