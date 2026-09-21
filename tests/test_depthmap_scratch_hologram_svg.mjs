@@ -21,6 +21,12 @@ test("relative depth controls scratch radius while preserving highlight position
   assert.equal(geometry.arcs[1].radius, 5);
   assert.equal(geometry.physicalWidth, 2);
   assert.equal(geometry.physicalHeight, 1);
+  assert.equal(geometry.arcs[0].centerX, 0.5);
+  assert.equal(geometry.arcs[0].centerY, 1.5);
+  assert.ok(geometry.arcs[0].centerY > geometry.arcs[0].startY);
+  assert.ok(geometry.arcs[0].centerY > geometry.arcs[0].endY);
+  assert.ok(geometry.arcs[0].startX < geometry.arcs[0].centerX);
+  assert.ok(geometry.arcs[0].endX > geometry.arcs[0].centerX);
   for (const arc of geometry.arcs) {
     assert.ok(arc.startX >= 0 && arc.startX <= geometry.physicalWidth);
     assert.ok(arc.endX >= 0 && arc.endX <= geometry.physicalWidth);
@@ -54,6 +60,23 @@ test("geometry automatically coarsens sampling to enforce the arc limit", () => 
   assert.ok(geometry.arcs.length <= 9);
 });
 
+test("neighboring scratch arcs remain separated inside their sampling cells", () => {
+  const geometry = createScratchHologramArcs(Float32Array.from([0.5, 0.5]), 2, 1, {
+    backgroundMask:Uint8Array.from([0, 0]),
+    pixelSize:1,
+    sampleStep:1,
+    nearDepth:2,
+    depthRange:0,
+    viewSweep:120,
+    minimumCellInset:0.1,
+  });
+  assert.equal(geometry.arcs.length, 2);
+  const left = geometry.arcs[0];
+  const right = geometry.arcs[1];
+  assert.ok(Math.max(left.startX, left.endX) <= 0.9 + 1e-8);
+  assert.ok(Math.min(right.startX, right.endX) >= 1.1 - 1e-8);
+});
+
 test("SVG contains open circular arcs, millimeter sizing, and a clipping boundary", async () => {
   const result = await createScratchHologramSvg(Float32Array.from([0.25, 0.75]), 2, 1, {
     pixelSize:0.5,
@@ -69,6 +92,7 @@ test("SVG contains open circular arcs, millimeter sizing, and a clipping boundar
   assert.match(svg, /width="1mm" height="0\.5mm"/);
   assert.match(svg, /clipPath/);
   assert.match(svg, /stroke-width="0\.01"/);
+  assert.match(svg, /non-intersecting open circular arcs/);
   assert.equal((svg.match(/ A/g) || []).length, 2);
   assert.doesNotMatch(svg, /\bZ\b/);
   assert.doesNotMatch(svg, /fetch\(|XMLHttpRequest/);

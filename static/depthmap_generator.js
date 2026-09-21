@@ -844,6 +844,7 @@ function scratchGeometryOptions(maxArcs = 30000) {
     depthRange:Number(scratchDepthRangeControl.value),
     viewSweep:Number(scratchViewSweepControl.value),
     backgroundCutoff:Number(scratchBackgroundControl.value) / 100,
+    minimumCellInset:Number(scratchStrokeWidthControl.value) / 2 + 1e-6,
     maxArcs,
   };
 }

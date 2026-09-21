@@ -33,9 +33,9 @@ function candidateAnglesForBoundary(candidates, baseAngle, startAngle, endAngle)
   }
 }
 
-function clipCircularArc(arc, width, height) {
+function clipCircularArc(arc, minX, minY, maxX, maxY) {
   const candidates = [arc.startAngle, arc.endAngle];
-  for (const boundaryX of [0, width]) {
+  for (const boundaryX of [minX, maxX]) {
     const ratio = (boundaryX - arc.centerX) / arc.radius;
     if (ratio >= -1 && ratio <= 1) {
       const angle = Math.acos(Math.min(1, Math.max(-1, ratio)));
@@ -43,7 +43,7 @@ function clipCircularArc(arc, width, height) {
       candidateAnglesForBoundary(candidates, -angle, arc.startAngle, arc.endAngle);
     }
   }
-  for (const boundaryY of [0, height]) {
+  for (const boundaryY of [minY, maxY]) {
     const ratio = (boundaryY - arc.centerY) / arc.radius;
     if (ratio >= -1 && ratio <= 1) {
       const angle = Math.asin(Math.min(1, Math.max(-1, ratio)));
@@ -61,7 +61,7 @@ function clipCircularArc(arc, width, height) {
     const middle = (startAngle + endAngle) / 2;
     const middleX = arc.centerX + arc.radius * Math.cos(middle);
     const middleY = arc.centerY + arc.radius * Math.sin(middle);
-    if (middleX < -1e-8 || middleX > width + 1e-8 || middleY < -1e-8 || middleY > height + 1e-8) continue;
+    if (middleX < minX - 1e-8 || middleX > maxX + 1e-8 || middleY < minY - 1e-8 || middleY > maxY + 1e-8) continue;
     const startX = arc.centerX + arc.radius * Math.cos(startAngle);
     const startY = arc.centerY + arc.radius * Math.sin(startAngle);
     const endX = arc.centerX + arc.radius * Math.cos(endAngle);
@@ -70,10 +70,10 @@ function clipCircularArc(arc, width, height) {
       ...arc,
       startAngle,
       endAngle,
-      startX:Math.min(width, Math.max(0, startX)),
-      startY:Math.min(height, Math.max(0, startY)),
-      endX:Math.min(width, Math.max(0, endX)),
-      endY:Math.min(height, Math.max(0, endY)),
+      startX:Math.min(maxX, Math.max(minX, startX)),
+      startY:Math.min(maxY, Math.max(minY, startY)),
+      endX:Math.min(maxX, Math.max(minX, endX)),
+      endY:Math.min(maxY, Math.max(minY, endY)),
     });
   }
   return segments;
@@ -100,6 +100,7 @@ export function createScratchHologramArcs(
     viewSweep = 60,
     backgroundCutoff = 0.01,
     maxArcs = DEFAULT_MAX_ARCS,
+    minimumCellInset = 0,
   } = {},
 ) {
   if (!depth || depth.length !== width * height) {
@@ -123,6 +124,7 @@ export function createScratchHologramArcs(
     throw new Error("Background cutoff must be between 0 and 100 percent.");
   }
   const arcLimit = Math.max(1, Math.floor(positiveNumber(maxArcs, "Maximum arc count")));
+  const requestedInset = nonNegativeNumber(minimumCellInset, "Minimum cell inset");
 
   while (Math.ceil(width / step) * Math.ceil(height / step) > arcLimit) step += 1;
 
@@ -156,6 +158,16 @@ export function createScratchHologramArcs(
       const radius = virtualDepth / 2;
       const highlightX = ((blockX + endX) / 2) * pitch;
       const highlightY = ((blockY + endY) / 2) * pitch;
+      const cellMinX = blockX * pitch;
+      const cellMinY = blockY * pitch;
+      const cellMaxX = endX * pitch;
+      const cellMaxY = endY * pitch;
+      const cellWidth = cellMaxX - cellMinX;
+      const cellHeight = cellMaxY - cellMinY;
+      const inset = Math.max(requestedInset, Math.min(cellWidth, cellHeight) * 0.05);
+      if (inset * 2 >= Math.min(cellWidth, cellHeight)) {
+        throw new Error("Scratch stroke width is too large for the sampled cells. Reduce stroke width, increase Depthmap pixel size, or increase Sample Every.");
+      }
       const centerX = highlightX;
       const centerY = highlightY + radius;
       const arc = {
@@ -170,7 +182,15 @@ export function createScratchHologramArcs(
         endY:centerY + radius * Math.sin(endAngle),
         proximity,
       };
-      arcs.push(...clipCircularArc(arc, physicalWidth, physicalHeight));
+      // Keep every scratch inside its own inset sampling cell. Adjacent cells
+      // are disjoint, so their open paths cannot intersect one another.
+      arcs.push(...clipCircularArc(
+        arc,
+        cellMinX + inset,
+        cellMinY + inset,
+        cellMaxX - inset,
+        cellMaxY - inset,
+      ));
     }
   }
 
@@ -195,7 +215,14 @@ export async function createScratchHologramSvg(
   } = {},
 ) {
   const stroke = positiveNumber(strokeWidth, "Stroke width");
-  const geometry = createScratchHologramArcs(depth, width, height, geometryOptions);
+  const configuredInset = Number(geometryOptions.minimumCellInset);
+  const geometry = createScratchHologramArcs(depth, width, height, {
+    ...geometryOptions,
+    minimumCellInset:Math.max(
+      Number.isFinite(configuredInset) ? configuredInset : 0,
+      stroke / 2 + 1e-6,
+    ),
+  });
   if (!geometry.arcs.length) {
     throw new Error("No scratch arcs were created. Lower the background cutoff or use a depthmap with visible foreground depth.");
   }
@@ -205,7 +232,7 @@ export async function createScratchHologramSvg(
     '<?xml version="1.0" encoding="UTF-8"?>\n',
     `<svg xmlns="http://www.w3.org/2000/svg" width="${coordinate(geometry.physicalWidth)}mm" height="${coordinate(geometry.physicalHeight)}mm" viewBox="0 0 ${coordinate(geometry.physicalWidth)} ${coordinate(geometry.physicalHeight)}">\n`,
     "<title>Depthmap Lab specular scratch hologram</title>\n",
-    "<desc>Relative grayscale depth sampled into open circular arcs for experimental specular scratch engraving under directional light.</desc>\n",
+    "<desc>Relative grayscale depth sampled into non-intersecting open circular arcs for experimental specular scratch engraving under directional light.</desc>\n",
     `<defs><clipPath id="${clipId}"><rect width="${coordinate(geometry.physicalWidth)}" height="${coordinate(geometry.physicalHeight)}"/></clipPath></defs>\n`,
     `<g fill="none" stroke="#000000" stroke-width="${coordinate(stroke)}" stroke-linecap="round" clip-path="url(#${clipId})">\n`,
   ];
