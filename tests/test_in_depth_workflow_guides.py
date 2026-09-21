@@ -20,6 +20,7 @@ def test_rasterizer_home_links_to_workflow_guides_before_inputs():
         for slug in (
             "fauxlogram-tutorial",
             "multi-geometry-rasterizer-guide",
+            "manual-krasnow-geometry-workflow",
         ):
             assert f'href="/docs/{slug}"' in guide_panel
         assert 'href="/docs/color-layers"' not in guide_panel
@@ -41,12 +42,20 @@ def test_in_depth_guides_build_and_cover_the_complete_workflows():
         index = (output / "index.html").read_text(encoding="utf-8")
         fauxlogram = (output / "fauxlogram-tutorial").read_text(encoding="utf-8")
         rasterizer = (output / "multi-geometry-rasterizer-guide").read_text(encoding="utf-8")
+        manual_krasnow = (output / "manual-krasnow-geometry-workflow").read_text(encoding="utf-8")
         release_story = (ROOT / "serverless_web" / "release-story.html").read_text(encoding="utf-8")
 
         assert 'href="/docs/fauxlogram-tutorial"' in index
         assert 'href="/docs/multi-geometry-rasterizer-guide"' in index
+        assert 'href="/docs/manual-krasnow-geometry-workflow"' in index
         assert "MOPA Madness: The Wizzard of Awes" in fauxlogram
         assert "Geometric Alchemy: The Wizzard of Awes" in rasterizer
+        assert "Reproducing Krasnow Grating Geometry by Hand" in manual_krasnow
+        assert "In-depth workflow guide" in manual_krasnow
+        assert "STAGE " in manual_krasnow
+        assert "docs-markdown-table" in manual_krasnow
+        assert "gradient_value = 165" in manual_krasnow
+        assert "The three decisions made for every cell" in manual_krasnow
         assert "wizardlogo.png" in (ROOT / "serverless_web" / "staging-shell.js").read_text(encoding="utf-8")
         assert "wizardlogo.png" in (ROOT / "templates" / "_machine_chrome.html").read_text(encoding="utf-8")
         assert (ROOT / "static" / "docs" / "wizardlogo.png").is_file()

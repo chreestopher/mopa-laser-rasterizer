@@ -18,6 +18,8 @@
 !static/**
 !templates/
 !templates/**
+!docs/
+!docs/manual-krasnow-geometry-workflow.md
 
 # Development artifacts nested inside runtime directories remain excluded.
 **/__pycache__/
