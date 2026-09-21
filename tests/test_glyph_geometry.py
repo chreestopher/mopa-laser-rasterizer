@@ -72,6 +72,38 @@ def test_layers_are_exclusive_and_mixed_shapes_are_deterministic():
     assert first["#0000FF"].wkb == second["#0000FF"].wkb
 
 
+def test_tight_pack_is_opt_in_deterministic_and_stays_inside_source_colors():
+    layers = {
+        "#FF0000": box(0, 0, 4, 4),
+        "#0000FF": box(4, 0, 8, 4),
+    }
+    regular = glyph_geometry.remap_layers(
+        layers, TARGET_COLORS, settings(glyph_shape="heart", grid_angle=0)
+    )
+    explicit_off = glyph_geometry.remap_layers(
+        layers,
+        TARGET_COLORS,
+        settings(glyph_shape="heart", grid_angle=0, tight_pack_geometry=0),
+    )
+    first = glyph_geometry.remap_layers(
+        layers,
+        TARGET_COLORS,
+        settings(glyph_shape="heart", grid_angle=0, tight_pack_geometry=1),
+    )
+    second = glyph_geometry.remap_layers(
+        layers,
+        TARGET_COLORS,
+        settings(glyph_shape="heart", grid_angle=0, tight_pack_geometry=1),
+    )
+
+    assert regular["#FF0000"].wkb == explicit_off["#FF0000"].wkb
+    assert first["#FF0000"].wkb == second["#FF0000"].wkb
+    assert first["#FF0000"].difference(layers["#FF0000"]).area < 1e-12
+    assert first["#0000FF"].difference(layers["#0000FF"]).area < 1e-12
+    assert first["#FF0000"].intersection(first["#0000FF"]).area < 1e-12
+    assert first["#FF0000"].wkb != regular["#FF0000"].wkb
+
+
 def test_unknown_shape_is_rejected():
     try:
         glyph_geometry.remap_layers(

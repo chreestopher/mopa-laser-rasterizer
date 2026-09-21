@@ -24,11 +24,13 @@ import math
 import os
 from threading import Lock
 
+from shapely import affinity
 from shapely.affinity import affine_transform
 from shapely.geometry import LineString, Polygon, box
 from shapely.ops import unary_union
 
 from .common import number
+from .packing import SpatialCollisionIndex, placement_variant
 from custom_shape import decode_grayscale_mask
 
 
@@ -49,6 +51,7 @@ FILL_TARGET_ANGLE_BINS = 4
 DEFAULTS = {
     "preserve_black": 1,
     "cell_shape": "square",
+    "tight_pack_geometry": 0,
     "grating_render_mode": "line",
     "fauxlogram_gradient_scope": "entire_artwork",
     "fauxlogram_gradient_direction": "top_to_bottom",
@@ -992,6 +995,20 @@ _GAPPED_CELL_ROW_STEPS = {
     "fish_scale": .9,
 }
 
+# Candidate spacing found from each normalized silhouette's actual footprint.
+# Collision checks below remain authoritative; these values only determine
+# where the bounded greedy search begins.
+_TIGHT_PACK_STEPS = {
+    "skull": (.97, .80),
+    "heart": (.90, .72),
+    "space_invader": (.95, .85),
+    "ghost": (1.0, .95),
+    "bat": (1.0, .70),
+    "alien_head": (.95, .76),
+    "paw_print": (.88, .70),
+    "fish_scale": (.90, .72),
+}
+
 _UNIT_PUZZLE_PIECE = _build_unit_puzzle_piece()
 
 
@@ -1028,7 +1045,61 @@ def _template_polygon(template, center_x, center_y, patch_size):
     )
 
 
-def _tessellated_cells(bounds, patch_size, cell_shape):
+def _tight_packed_icon_cells(bounds, patch_size, cell_shape):
+    """Greedily nest decorative silhouettes with bounded deterministic tries."""
+    min_x, min_y, max_x, max_y = bounds
+    canvas = box(min_x, min_y, max_x, max_y)
+    template = _GAPPED_CELL_TEMPLATES[cell_shape]
+    x_multiplier, y_multiplier = _TIGHT_PACK_STEPS[cell_shape]
+    x_step = patch_size * x_multiplier
+    y_step = patch_size * y_multiplier
+    start_row = -3
+    stop_row = math.ceil((max_y - min_y) / y_step) + 3
+    start_column = -3
+    stop_column = math.ceil((max_x - min_x) / x_step) + 3
+    collision_index = SpatialCollisionIndex(patch_size)
+    cells = []
+    rotations = (-12, 12, -6, 6)
+    offsets = ((0, 0), (-.035, 0), (.035, 0), (0, -.025), (0, .025))
+
+    for row in range(start_row, stop_row + 1):
+        center_y = min_y + patch_size / 2 + row * y_step
+        center_x_offset = (row & 1) * x_step / 2
+        for column in range(start_column, stop_column + 1):
+            center_x = min_x + patch_size / 2 + center_x_offset + column * x_step
+            variant = placement_variant(row, column)
+            accepted = None
+            accepted_attempt = None
+            varied_rotations = rotations[variant % 4:] + rotations[:variant % 4]
+            attempts = (
+                [(0, offsets[0])]
+                + [(rotation, offsets[0]) for rotation in varied_rotations]
+                + [(0, offset) for offset in offsets[1:]]
+            )
+            for attempt, (rotation, offset) in enumerate(attempts):
+                candidate_x = center_x + offset[0] * patch_size
+                candidate_y = center_y + offset[1] * patch_size
+                polygon = _template_polygon(
+                    template, candidate_x, candidate_y, patch_size
+                )
+                if rotation:
+                    polygon = affinity.rotate(
+                        polygon, rotation, origin=(candidate_x, candidate_y)
+                    )
+                if polygon.intersection(canvas).area <= 1e-12:
+                    continue
+                if collision_index.overlaps(polygon):
+                    continue
+                accepted = polygon
+                accepted_attempt = attempt
+                break
+            if accepted is not None:
+                collision_index.add(accepted)
+                cells.append(((row, column, accepted_attempt), accepted))
+    return cells
+
+
+def _tessellated_cells(bounds, patch_size, cell_shape, tight_pack=False):
     """Build a deterministic, globally aligned non-square cell grid.
 
     Hexagon uses ``patch_size`` as the flat-to-flat height of a regular
@@ -1040,6 +1111,9 @@ def _tessellated_cells(bounds, patch_size, cell_shape):
     Full boundary cells are retained so their centers and grating alignment do
     not change when source geometry touches a canvas edge.
     """
+    if tight_pack and cell_shape in _GAPPED_CELL_TEMPLATES:
+        return _tight_packed_icon_cells(bounds, patch_size, cell_shape)
+
     min_x, min_y, max_x, max_y = bounds
     canvas = box(min_x, min_y, max_x, max_y)
     cells = []
@@ -1294,7 +1368,12 @@ def remap_layers(processed_layers, target_colors, settings):
 
     tessellated_cells = None
     if cell_shape != "square":
-        tessellated_cells = _tessellated_cells(bounds, patch_size, cell_shape)
+        tessellated_cells = _tessellated_cells(
+            bounds,
+            patch_size,
+            cell_shape,
+            tight_pack=number(settings.get("tight_pack_geometry"), 0, 0, 1) >= .5,
+        )
     cell_label = "patches" if cell_shape == "square" else f"{cell_shape} cells"
 
     layer_plans = []

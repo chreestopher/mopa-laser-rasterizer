@@ -397,6 +397,27 @@ def test_krasnow_non_square_cell_generation_is_deterministic():
         ]
 
 
+def test_krasnow_tight_pack_is_deterministic_denser_and_nonoverlapping():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+    bounds = (0, 0, 4, 4)
+    canvas = box(*bounds)
+    regular = krasnow._tessellated_cells(bounds, 1, "heart")
+    first = krasnow._tessellated_cells(bounds, 1, "heart", tight_pack=True)
+    second = krasnow._tessellated_cells(bounds, 1, "heart", tight_pack=True)
+
+    regular_area = unary_union(
+        [polygon.intersection(canvas) for _, polygon in regular]
+    ).area
+    packed = [polygon.intersection(canvas) for _, polygon in first]
+    packed_union = unary_union(packed)
+
+    assert [(key, polygon.wkb) for key, polygon in first] == [
+        (key, polygon.wkb) for key, polygon in second
+    ]
+    assert packed_union.area > regular_area
+    assert sum(polygon.area for polygon in packed) - packed_union.area < 1e-8
+
+
 def test_krasnow_skull_cells_have_deliberate_external_and_internal_gaps():
     krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
     bounds = (0, 0, 4, 3)
@@ -703,7 +724,7 @@ def test_krasnow_preserve_black_uses_only_pre_reserved_black_pixels():
 
 def test_serverless_krasnow_form_exposes_preserve_black_checked():
     page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
-    assert "toggles:[['preserve_black',true]]" in page
+    assert "toggles:[['preserve_black',true],['tight_pack_geometry',false]]" in page
     assert "favor_black" not in page
 
 
