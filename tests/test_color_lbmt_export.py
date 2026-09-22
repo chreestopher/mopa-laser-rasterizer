@@ -21,14 +21,14 @@ class PresetExportTests(unittest.TestCase):
         nodes = [n for n in ast.parse(source).body if
                  isinstance(n, ast.FunctionDef) and n.name in names or
                  isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and
-                 t.id in {'COLOR_DISCOVERY_PARAMETERS', 'COLOR_LBMT_CELL_GAP_MM'} for t in n.targets)]
+                 t.id in {'COLOR_DISCOVERY_PARAMETERS', 'COLOR_LBMT_CELL_GAP_MM', 'COLOR_LBMT_MATRIX_SCALE'} for t in n.targets)]
         self.ns = dict(math=math, ET=ET, json=json, time=time, uuid=uuid, deepcopy=deepcopy)
         exec(compile(ast.Module(body=nodes, type_ignores=[]), 'handler.py', 'exec'), self.ns)
 
     def test_dimensions_and_limits(self):
         layout = self.ns['color_lbmt_layout']
-        self.assertEqual(layout({}, 100, 100), (10, 10, 9.1, 9.1))
-        self.assertEqual(layout(dict(rows=4, columns=6), 41, 19), (4, 6, 6, 4))
+        self.assertEqual(layout({}, 100, 100), (10, 10, 8.1, 8.1))
+        self.assertEqual(layout(dict(rows=4, columns=6), 50, 100/4.5), (4, 6, 40/6, 17/4))
         for data in ({'rows': 1}, {'columns': 2.5}, {'rows': 100, 'columns': 100},
                      {'rows': float('nan')}):
             with self.assertRaises(ValueError):
@@ -93,8 +93,8 @@ class PresetExportTests(unittest.TestCase):
         self.assertTrue(writes[0]['Key'].endswith('.lbmt'))
         preset = next(iter(json.loads(writes[0]['Body']).values()))
         self.assertEqual([preset[k] for k in ('XCount','YCount')], [6,4])
-        self.assertAlmostEqual(preset['XSize'], 55/6)
-        self.assertEqual(preset['YSize'], 45/4)
+        self.assertAlmostEqual(preset['XSize'], 49/6)
+        self.assertAlmostEqual(preset['YSize'], 40.2/4)
         self.assertEqual((preset['XCenter'], preset['YCenter']), (30,24))
         self.assertEqual((preset['XMin'], preset['XMax']), (150,450))
         self.assertEqual(preset['MaterialCut']['frequency'], 300000)
@@ -107,7 +107,8 @@ class PresetExportTests(unittest.TestCase):
         self.assertEqual(cells[-1]['overrides'], {'frequency':450000, 'interval':.001})
         self.assertEqual(result['metadata']['cut_mode'], 'fill')
         self.assertEqual(result['metadata']['cell_gap_mm'], 1)
-        self.assertEqual((result['metadata']['grid_width_mm'], result['metadata']['grid_height_mm']), (60,48))
+        self.assertEqual(result['metadata']['matrix_scale'], .9)
+        self.assertEqual((result['metadata']['grid_width_mm'], result['metadata']['grid_height_mm']), (54,43.2))
 
     def test_default_100_cells_and_existing_project(self):
         result, _ = self.generate(rows=10, columns=10)
