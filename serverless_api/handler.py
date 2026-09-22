@@ -2798,8 +2798,9 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
         material_cut, text_cut = lbmt_material_cut, color_lbmt_cut(label_cut)
         material_cut.update(index=0, name="Discovery")
         text_cut.update(index=1, name="Labels")
-        # Use the user's label setting for borders too, never invented laser values.
-        border_cut = {**text_cut, "index": 2, "name": "Border"}
+        # Keep the user's label laser values available for the optional border,
+        # but default that operation to disabled in LightBurn.
+        border_cut = {**text_cut, "index": 2, "name": "Border", "doOutput": False}
         x_scale = 1000 if x_parameter == "frequency" else 1
         y_scale = 1000 if y_parameter == "frequency" else 1
         preset = {"MaterialCut": material_cut, "TextCut": text_cut, "BorderCut": border_cut,

@@ -101,6 +101,7 @@ class PresetExportTests(unittest.TestCase):
         self.assertEqual(preset['MaterialCut']['type'], 'Scan')
         self.assertEqual(preset['TextCut']['speed'], 3500)
         self.assertEqual(preset['BorderCut']['maxPower'], 50)
+        self.assertIs(preset['BorderCut']['doOutput'], False)
         cells = result['metadata']['cells']
         self.assertEqual(len(cells), 24)
         self.assertEqual(cells[0]['overrides'], {'frequency':150000, 'interval':.01})
