@@ -49,8 +49,10 @@ Regenerate from Rasterizer instead. Label font size is left to LightBurn.
   omits additional LightBurn sublayers because a native Material Test preset has
   one material operation.
 - Rasterizer currently permits 2–100 rows/columns and at most 400 total cells.
-  Cell dimensions are calculated as grid width divided by columns and grid length
-  divided by rows. A metadata-size safeguard may require fewer cells for complex
+  LightBurn places a fixed 1 mm gap between neighboring Material Test cells, so
+  Rasterizer subtracts those gaps before dividing the requested grid width and
+  length into cells. X Center and Y Center default to half of the requested grid
+  width and length. A metadata-size safeguard may require fewer cells for complex
   settings. These are application safeguards, not claimed LightBurn limits.
 - Refinement preserves the source format and dimensions.
 

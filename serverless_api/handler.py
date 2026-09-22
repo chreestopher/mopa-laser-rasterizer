@@ -2524,6 +2524,9 @@ def color_grid_layout(width_mm, length_mm, maximum_cells=29):
     return rows, columns, cell_mm
 
 
+COLOR_LBMT_CELL_GAP_MM = 1.0
+
+
 def color_lbmt_layout(data, width_mm, length_mm):
     """Bound work independently of the project format's layer limit."""
     try:
@@ -2535,9 +2538,14 @@ def color_lbmt_layout(data, width_mm, length_mm):
             raise ValueError()
         if rows * columns > 400 or width_mm <= 0 or length_mm <= 0:
             raise ValueError()
-        return int(rows), int(columns), width_mm / int(columns), length_mm / int(rows)
+        rows, columns = int(rows), int(columns)
+        usable_width = width_mm - (columns - 1) * COLOR_LBMT_CELL_GAP_MM
+        usable_height = length_mm - (rows - 1) * COLOR_LBMT_CELL_GAP_MM
+        if usable_width <= 0 or usable_height <= 0:
+            raise ValueError()
+        return rows, columns, usable_width / columns, usable_height / rows
     except (ValueError, TypeError, OverflowError) as error:
-        raise ValueError("Material Test presets need 2–100 rows and columns and at most 400 cells. Cell dimensions are calculated from the Color Discovery grid width and length.") from error
+        raise ValueError("Material Test presets need 2–100 rows and columns and at most 400 cells. The requested grid must also have room for LightBurn's 1 mm gaps between cells.") from error
 
 
 def color_lbmt_axis(parameter, low, high, count):
@@ -2796,11 +2804,11 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
                   "XParam": x_enum, "YParam": y_enum,
                   "XMin": min(x_values)/x_scale, "XMax": max(x_values)/x_scale,
                   "YMin": min(y_values)/y_scale, "YMax": max(y_values)/y_scale,
-                  "XCenter": columns*cell_width/2, "YCenter": rows*cell_height/2}
+                  "XCenter": width_mm/2, "YCenter": length_mm/2}
         project_body = json.dumps({f"Rasterizer {grid_id[:8]}": preset}, indent=2).encode()
         metadata.update(cell_width_mm=cell_width, cell_height_mm=cell_height,
-                        cell_size_mm=None, grid_width_mm=columns*cell_width,
-                        grid_height_mm=rows*cell_height, top_label_band_mm=0,
+                        cell_gap_mm=COLOR_LBMT_CELL_GAP_MM, cell_size_mm=None,
+                        grid_width_mm=width_mm, grid_height_mm=length_mm, top_label_band_mm=0,
                         cut_mode=cut_mode,
                         row_order="top_to_bottom", interpolation="linear; LightBurn/controller may round values",
                         label_laser_settings=lightburn_setting_snapshot(label_cut))
