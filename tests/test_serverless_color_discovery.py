@@ -205,7 +205,7 @@ class ServerlessColorDiscoveryTests(unittest.TestCase):
         self.assertIn("setAxisBounds(x,$('#refineXLow'),$('#refineXHigh')", self.client)
         self.assertIn("setAxisBounds(y,$('#refineYLow'),$('#refineYHigh')", self.client)
         self.assertIn("for(const axis of ['X','Y'])", self.client)
-        self.assertIn('src="/color-lab.js?v=7"', self.page)
+        self.assertIn('src="/color-lab.js?v=8"', self.page)
 
     def test_deploy_script_uploads_color_lab_client(self):
         deploy = (ROOT / "dev_setup" / "deploy_serverless_staging_web.sh").read_text(encoding="utf-8")
