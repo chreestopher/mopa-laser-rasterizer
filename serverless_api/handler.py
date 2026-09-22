@@ -2524,20 +2524,20 @@ def color_grid_layout(width_mm, length_mm, maximum_cells=29):
     return rows, columns, cell_mm
 
 
-def color_lbmt_layout(data):
+def color_lbmt_layout(data, width_mm, length_mm):
     """Bound work independently of the project format's layer limit."""
     try:
         rows, columns = float(data.get("rows", 10)), float(data.get("columns", 10))
-        width, height = float(data.get("cell_width_mm", 5)), float(data.get("cell_height_mm", 5))
-        if not all(math.isfinite(v) for v in (rows, columns, width, height)):
+        width_mm, length_mm = float(width_mm), float(length_mm)
+        if not all(math.isfinite(v) for v in (rows, columns, width_mm, length_mm)):
             raise ValueError()
         if rows != int(rows) or columns != int(columns) or not (2 <= rows <= 100 and 2 <= columns <= 100):
             raise ValueError()
-        if rows * columns > 400 or not (.1 <= width <= 100 and .1 <= height <= 100):
+        if rows * columns > 400 or width_mm <= 0 or length_mm <= 0:
             raise ValueError()
-        return int(rows), int(columns), width, height
+        return int(rows), int(columns), width_mm / int(columns), length_mm / int(rows)
     except (ValueError, TypeError, OverflowError) as error:
-        raise ValueError("Material Test presets need 2–100 rows and columns, at most 400 cells, and cell dimensions from 0.1–100 mm. These are Rasterizer limits, not LightBurn layer limits.") from error
+        raise ValueError("Material Test presets need 2–100 rows and columns and at most 400 cells. Cell dimensions are calculated from the Color Discovery grid width and length.") from error
 
 
 def color_lbmt_axis(parameter, low, high, count):
@@ -2556,12 +2556,21 @@ def color_lbmt_axis(parameter, low, high, count):
     return COLOR_DISCOVERY_PARAMETERS[parameter][0], values, mapping[parameter]
 
 
-def color_lbmt_cut(cut):
-    if cut.get("type") not in ("Scan", "Cut"):
-        raise ValueError("Material Test preset export currently needs Line or Fill settings. Choose another setting or use .lbrn2.")
-    result = {"type": cut.get("type", "Scan")}
+def color_lbmt_cut(cut, cut_mode=None):
+    cut_types = {"fill":"Scan", "line":"Cut", "offset_fill":"Offset"}
+    if cut_mode is not None and cut_mode not in cut_types:
+        raise ValueError("Choose Fill, Line, or Offset Fill for the Material Test preset cut mode.")
+    cut_type = cut_types.get(cut_mode, cut.get("type"))
+    if cut_type not in ("Scan", "Cut", "Offset"):
+        raise ValueError("Material Test preset export needs a Line, Fill, or Offset Fill setting. Choose a cut mode or use .lbrn2.")
+    result = {"type": cut_type}
     for child in cut:
         if child.tag in ("LinkPath", "index", "name"):
+            continue
+        # A native Material Test preset has one material operation. When the
+        # user explicitly chooses that operation, use the entry's top-level
+        # values and deliberately omit any additional LightBurn sublayers.
+        if child.tag == "SubLayer" and cut_mode is not None:
             continue
         if len(child) or "Value" not in child.attrib:
             raise ValueError("This setting contains nested or unsupported LightBurn data. For .lbmt export choose a single-layer setting, or use .lbrn2.")
@@ -2651,8 +2660,7 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
             "grid_length_mm":refinement_metadata.get("requested_grid_length_mm") or refinement_metadata.get("grid_height_mm") or 100,
             "output_format":refinement_metadata.get("output_format", "lbrn2"),
             "rows":refinement_metadata.get("rows", 10), "columns":refinement_metadata.get("columns", 10),
-            "cell_width_mm":refinement_metadata.get("cell_width_mm", 5),
-            "cell_height_mm":refinement_metadata.get("cell_height_mm", 5),
+            "cut_mode":refinement_metadata.get("cut_mode", "fill"),
         }
         override_names = (("refine_x_low","x_low"),("refine_x_high","x_high"),("refine_y_low","y_low"),("refine_y_high","y_high"))
         for request_name, axis_name in override_names:
@@ -2687,7 +2695,7 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
         ) from error
     cell_width, cell_height = cell_mm, cell_mm
     if output_format == "lbmt":
-        rows, columns, cell_width, cell_height = color_lbmt_layout(data)
+        rows, columns, cell_width, cell_height = color_lbmt_layout(data, width_mm, length_mm)
         x_field, x_values, x_enum = color_lbmt_axis(x_parameter, data.get("x_low"), data.get("x_high"), columns)
         y_field, y_values, y_enum = color_lbmt_axis(y_parameter, data.get("y_low"), data.get("y_high"), rows)
         # Photo coordinates count rows downward; LightBurn's Y sweep grows upward.
@@ -2727,6 +2735,8 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
             entries,source_material,source_cut,data.get("label_entry_id"),
         )
     if source_cut is None: raise ValueError("The selected Material Library entry has no LightBurn setting")
+    cut_mode = str(data.get("cut_mode") or "fill") if output_format == "lbmt" else None
+    lbmt_material_cut = color_lbmt_cut(source_cut, cut_mode) if output_format == "lbmt" else None
     grid_id,now,top_mm=(upload_task_id if guest and upload_task_id and not refinement else str(uuid.uuid4())),int(time.time()),4.0
     project=ET.Element("LightBurnProject",{"AppVersion":"2.1.04","FormatVersion":"1","MaterialHeight":"0","MirrorX":"False","MirrorY":"True","AskForSendName":"True"})
     add_lightburn_safe_optimization_prefs(project)
@@ -2741,6 +2751,10 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
     for row,y_value in enumerate(y_values):
         for column,x_value in enumerate(x_values):
             index=row*columns+column+1; layer=deepcopy(source_cut)
+            if lbmt_material_cut is not None:
+                layer.set("type", lbmt_material_cut["type"])
+                for sublayer in layer.findall("./SubLayer"):
+                    layer.remove(sublayer)
             # Discovery cells must be independent settings. Retaining the
             # Material Library LinkPath lets LightBurn resolve the base entry
             # over the interpolated values embedded below.
@@ -2770,7 +2784,7 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
     project_body = ET.tostring(project,encoding="utf-8",xml_declaration=True)
     metadata["output_format"] = output_format
     if output_format == "lbmt":
-        material_cut, text_cut = color_lbmt_cut(source_cut), color_lbmt_cut(label_cut)
+        material_cut, text_cut = lbmt_material_cut, color_lbmt_cut(label_cut)
         material_cut.update(index=0, name="Discovery")
         text_cut.update(index=1, name="Labels")
         # Use the user's label setting for borders too, never invented laser values.
@@ -2787,6 +2801,7 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
         metadata.update(cell_width_mm=cell_width, cell_height_mm=cell_height,
                         cell_size_mm=None, grid_width_mm=columns*cell_width,
                         grid_height_mm=rows*cell_height, top_label_band_mm=0,
+                        cut_mode=cut_mode,
                         row_order="top_to_bottom", interpolation="linear; LightBurn/controller may round values",
                         label_laser_settings=lightburn_setting_snapshot(label_cut))
     # DynamoDB items have a 400 KiB limit. Leave room for keys, types and record fields.

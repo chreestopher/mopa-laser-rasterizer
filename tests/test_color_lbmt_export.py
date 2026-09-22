@@ -27,12 +27,15 @@ class PresetExportTests(unittest.TestCase):
 
     def test_dimensions_and_limits(self):
         layout = self.ns['color_lbmt_layout']
-        self.assertEqual(layout({}), (10, 10, 5, 5))
-        self.assertEqual(layout(dict(rows=4, columns=6, cell_width_mm=6, cell_height_mm=4)), (4, 6, 6, 4))
+        self.assertEqual(layout({}, 100, 100), (10, 10, 10, 10))
+        self.assertEqual(layout(dict(rows=4, columns=6), 36, 16), (4, 6, 6, 4))
         for data in ({'rows': 1}, {'columns': 2.5}, {'rows': 100, 'columns': 100},
-                     {'cell_width_mm': float('nan')}, {'cell_height_mm': 0}):
+                     {'rows': float('nan')}):
             with self.assertRaises(ValueError):
-                layout(data)
+                layout(data, 100, 100)
+        for width, length in ((float('nan'), 100), (100, 0)):
+            with self.assertRaises(ValueError):
+                layout({}, width, length)
 
     def test_axis_validation_and_interpolation(self):
         axis = self.ns['color_lbmt_axis']
@@ -51,11 +54,21 @@ class PresetExportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'single-layer'):
             convert(cut)
 
+    def test_cut_mode_override_flattens_offset_fill_sublayers(self):
+        convert = self.ns['color_lbmt_cut']
+        cut = ET.fromstring('<CutSetting type="Offset"><speed Value="400"/><interval Value="0.255"/><SubLayer type="Offset" index="1"><interval Value="0.205"/></SubLayer></CutSetting>')
+        self.assertEqual(convert(cut, 'fill'), dict(type='Scan', speed=400, interval=.255))
+        self.assertEqual(convert(cut, 'line')['type'], 'Cut')
+        self.assertEqual(convert(cut, 'offset_fill')['type'], 'Offset')
+        with self.assertRaisesRegex(ValueError, 'Choose Fill'):
+            convert(cut, 'image')
+
     def generate(self, **overrides):
         data = dict(library_id='example', entry_id=0, output_format='lbmt',
                     x_parameter='frequency', x_low=150000, x_high=450000,
                     y_parameter='interval', y_low=.001, y_high=.01,
-                    columns=6, rows=4, cell_width_mm=6, cell_height_mm=4,
+                    columns=6, rows=4, grid_width_mm=60, grid_length_mm=48,
+                    cut_mode='fill',
                     label_entry_id=1)
         data.update(overrides)
         library = b'<LightBurnLibrary><Material Name="Example"><Entry Desc="Red"><CutSetting type="Scan"><speed Value="1000"/><maxPower Value="15"/><minPower Value="12"/><frequency Value="300000"/><interval Value="0.002"/></CutSetting></Entry><Entry Desc="Labels"><CutSetting type="Scan"><speed Value="3500"/><maxPower Value="50"/></CutSetting></Entry></Material></LightBurnLibrary>'
@@ -79,15 +92,17 @@ class PresetExportTests(unittest.TestCase):
         result, writes = self.generate()
         self.assertTrue(writes[0]['Key'].endswith('.lbmt'))
         preset = next(iter(json.loads(writes[0]['Body']).values()))
-        self.assertEqual([preset[k] for k in ('XCount','YCount','XSize','YSize')], [6,4,6,4])
+        self.assertEqual([preset[k] for k in ('XCount','YCount','XSize','YSize')], [6,4,10,12])
         self.assertEqual((preset['XMin'], preset['XMax']), (150,450))
         self.assertEqual(preset['MaterialCut']['frequency'], 300000)
+        self.assertEqual(preset['MaterialCut']['type'], 'Scan')
         self.assertEqual(preset['TextCut']['speed'], 3500)
         self.assertEqual(preset['BorderCut']['maxPower'], 50)
         cells = result['metadata']['cells']
         self.assertEqual(len(cells), 24)
         self.assertEqual(cells[0]['overrides'], {'frequency':150000, 'interval':.01})
         self.assertEqual(cells[-1]['overrides'], {'frequency':450000, 'interval':.001})
+        self.assertEqual(result['metadata']['cut_mode'], 'fill')
 
     def test_default_100_cells_and_existing_project(self):
         result, _ = self.generate(rows=10, columns=10)

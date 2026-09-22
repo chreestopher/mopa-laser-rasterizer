@@ -6,7 +6,7 @@ The serverless Color Discovery page offers two output formats:
   with a separate layer per cell and the existing layer limit.
 - **LightBurn Material Test Preset (.lbmt)**: an experimental native Material Test
   preset. Rows and columns are independent, defaulting to 10 each. Cell width and
-  height default to 5 mm and are independently configurable.
+  height are derived from the existing Color Discovery grid width and length.
 
 Both use the selected library setting and the existing Labels choice (automatically
 selected when available, with a user override). The preset also uses that selected
@@ -14,7 +14,8 @@ label setting for its border. No machine configuration is exported or replaced.
 
 ## Using a preset
 
-1. Choose `.lbmt`, dimensions, starting setting, Labels setting and two sweep axes.
+1. Choose `.lbmt`, the overall grid dimensions, rows and columns, cut mode,
+   starting setting, Labels setting and two sweep axes.
 2. Download the preset and keep its metadata. The service also saves metadata for
    later grid lookup, subject to the existing retention period.
 3. In LightBurn open **Laser Tools → Material Test → Import** and select the preset
@@ -43,11 +44,14 @@ Regenerate from Rasterizer instead. Label font size is left to LightBurn.
   of integer parameters. Metadata stores nominal interpolated values; actual
   LightBurn/controller rounding still needs physical verification. Displayed label
   rounding alone does not establish the exact emitted value.
-- Line and Fill settings with flat numeric/boolean fields are supported. Nested
-  sublayers and unsupported fields are rejected rather than silently discarded.
-- Rasterizer currently permits 2–100 rows/columns, at most 400 total cells, with
-  cells 0.1–100 mm on each side. A metadata-size safeguard may require fewer cells
-  for complex settings. These are application safeguards, not claimed LightBurn limits.
+- The preset cut-mode selector supports Fill, Line and Offset Fill. The selected
+  setting supplies its top-level laser values. An explicit cut mode deliberately
+  omits additional LightBurn sublayers because a native Material Test preset has
+  one material operation.
+- Rasterizer currently permits 2–100 rows/columns and at most 400 total cells.
+  Cell dimensions are calculated as grid width divided by columns and grid length
+  divided by rows. A metadata-size safeguard may require fewer cells for complex
+  settings. These are application safeguards, not claimed LightBurn limits.
 - Refinement preserves the source format and dimensions.
 
 ## Verification
