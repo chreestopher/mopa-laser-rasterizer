@@ -10,7 +10,8 @@ The serverless Color Discovery page offers two output formats:
 
 Both use the selected library setting and the existing Labels choice (automatically
 selected when available, with a user override). The preset also uses that selected
-label setting for its border. No machine configuration is exported or replaced.
+label setting for its optional border, but exports that border with output disabled
+by default. No machine configuration is exported or replaced.
 
 ## Using a preset
 
