@@ -2526,6 +2526,7 @@ def color_grid_layout(width_mm, length_mm, maximum_cells=29):
 
 COLOR_LBMT_CELL_GAP_MM = 1.0
 COLOR_LBMT_MATRIX_SCALE = 0.9
+COLOR_LBMT_VERTICAL_TEXT_ALLOWANCE_MM = 10.0
 
 
 def color_lbmt_layout(data, width_mm, length_mm):
@@ -2541,7 +2542,7 @@ def color_lbmt_layout(data, width_mm, length_mm):
             raise ValueError()
         rows, columns = int(rows), int(columns)
         matrix_width = width_mm * COLOR_LBMT_MATRIX_SCALE
-        matrix_height = length_mm * COLOR_LBMT_MATRIX_SCALE
+        matrix_height = length_mm * COLOR_LBMT_MATRIX_SCALE - COLOR_LBMT_VERTICAL_TEXT_ALLOWANCE_MM
         usable_width = matrix_width - (columns - 1) * COLOR_LBMT_CELL_GAP_MM
         usable_height = matrix_height - (rows - 1) * COLOR_LBMT_CELL_GAP_MM
         if usable_width <= 0 or usable_height <= 0:
@@ -2814,7 +2815,8 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
                         cell_gap_mm=COLOR_LBMT_CELL_GAP_MM, cell_size_mm=None,
                         matrix_scale=COLOR_LBMT_MATRIX_SCALE,
                         grid_width_mm=width_mm*COLOR_LBMT_MATRIX_SCALE,
-                        grid_height_mm=length_mm*COLOR_LBMT_MATRIX_SCALE, top_label_band_mm=0,
+                        grid_height_mm=length_mm*COLOR_LBMT_MATRIX_SCALE-COLOR_LBMT_VERTICAL_TEXT_ALLOWANCE_MM,
+                        top_label_band_mm=0,
                         cut_mode=cut_mode,
                         row_order="top_to_bottom", interpolation="linear; LightBurn/controller may round values",
                         label_laser_settings=lightburn_setting_snapshot(label_cut))
