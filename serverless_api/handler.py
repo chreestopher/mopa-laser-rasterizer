@@ -2524,6 +2524,61 @@ def color_grid_layout(width_mm, length_mm, maximum_cells=29):
     return rows, columns, cell_mm
 
 
+def color_lbmt_layout(data):
+    """Bound work independently of the project format's layer limit."""
+    try:
+        rows, columns = float(data.get("rows", 10)), float(data.get("columns", 10))
+        width, height = float(data.get("cell_width_mm", 5)), float(data.get("cell_height_mm", 5))
+        if not all(math.isfinite(v) for v in (rows, columns, width, height)):
+            raise ValueError()
+        if rows != int(rows) or columns != int(columns) or not (2 <= rows <= 100 and 2 <= columns <= 100):
+            raise ValueError()
+        if rows * columns > 400 or not (.1 <= width <= 100 and .1 <= height <= 100):
+            raise ValueError()
+        return int(rows), int(columns), width, height
+    except (ValueError, TypeError, OverflowError) as error:
+        raise ValueError("Material Test presets need 2–100 rows and columns, at most 400 cells, and cell dimensions from 0.1–100 mm. These are Rasterizer limits, not LightBurn layer limits.") from error
+
+
+def color_lbmt_axis(parameter, low, high, count):
+    # Only enum mappings verified from exported LightBurn presets are enabled.
+    mapping = {"speed": 0, "max_power": 1, "interval": 2, "frequency": 4}
+    if parameter not in mapping:
+        raise ValueError("Material Test preset export currently supports Speed, Maximum power, Fill interval, and Frequency axes. Choose one of these or use .lbrn2.")
+    low, high = float(low), float(high)
+    minimum, maximum = COLOR_DISCOVERY_PARAMETERS[parameter][2:4]
+    if not all(math.isfinite(v) and minimum <= v <= maximum for v in (low, high)) or low > high:
+        raise ValueError("Material Test sweep bounds must be finite, in the supported parameter range, and minimum must not exceed maximum.")
+    # Do not floor individual values as the .lbrn2 generator does. LightBurn
+    # interpolates native sweeps. Frequency bounds in .lbmt use kHz, unlike cuts.
+    values = [low + (high-low)*i/(count-1) for i in range(count)]
+    values[0], values[-1] = low, high
+    return COLOR_DISCOVERY_PARAMETERS[parameter][0], values, mapping[parameter]
+
+
+def color_lbmt_cut(cut):
+    if cut.get("type") not in ("Scan", "Cut"):
+        raise ValueError("Material Test preset export currently needs Line or Fill settings. Choose another setting or use .lbrn2.")
+    result = {"type": cut.get("type", "Scan")}
+    for child in cut:
+        if child.tag in ("LinkPath", "index", "name"):
+            continue
+        if len(child) or "Value" not in child.attrib:
+            raise ValueError("This setting contains nested or unsupported LightBurn data. For .lbmt export choose a single-layer setting, or use .lbrn2.")
+        value = child.get("Value")
+        if value.lower() in ("true", "false"):
+            result[child.tag] = value.lower() == "true"
+        else:
+            try:
+                number = float(value)
+                if not math.isfinite(number):
+                    raise ValueError("Material Test settings must contain finite numeric values.")
+                result[child.tag] = int(number) if number.is_integer() else number
+            except ValueError:
+                raise ValueError(f"Material Test cannot export setting field '{child.tag}'. Choose another setting or use .lbrn2.")
+    return result
+
+
 def create_color_discovery_grid(event, guest=False, upload_task_id=""):
     owner, data = ("" if guest else user_id(event)), body_json(event)
     contents, upload_item = None, None
@@ -2594,6 +2649,10 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
             "y_low":y_center-y_step, "y_high":y_center+y_step,
             "grid_width_mm":refinement_metadata.get("requested_grid_width_mm") or refinement_metadata.get("grid_width_mm") or 100,
             "grid_length_mm":refinement_metadata.get("requested_grid_length_mm") or refinement_metadata.get("grid_height_mm") or 100,
+            "output_format":refinement_metadata.get("output_format", "lbrn2"),
+            "rows":refinement_metadata.get("rows", 10), "columns":refinement_metadata.get("columns", 10),
+            "cell_width_mm":refinement_metadata.get("cell_width_mm", 5),
+            "cell_height_mm":refinement_metadata.get("cell_height_mm", 5),
         }
         override_names = (("refine_x_low","x_low"),("refine_x_high","x_high"),("refine_y_low","y_low"),("refine_y_high","y_high"))
         for request_name, axis_name in override_names:
@@ -2608,6 +2667,9 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
     library_id = str(data.get("library_id") or "")
     library = owned_material(owner, library_id) if library_id and not guest else None
     if not library and contents is None and not refinement: return response(404, {"message":"Choose a saved or uploaded Material Library"})
+    output_format = str(data.get("output_format") or "lbrn2")
+    if output_format not in ("lbrn2", "lbmt"):
+        raise ValueError("Choose .lbrn2 or .lbmt as the Color Discovery output format.")
     try:
         entry_id = int(data.get("entry_id")); width_mm = max(40,min(500,float(data.get("grid_width_mm",100))))
         length_mm = max(40,min(500,float(data.get("grid_length_mm",100))))
@@ -2623,6 +2685,13 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
             "A Color Discovery grid value could not be read. Review the selected LightBurn setting, "
             "grid dimensions, and X- and Y-axis sweep bounds, then generate the grid again."
         ) from error
+    cell_width, cell_height = cell_mm, cell_mm
+    if output_format == "lbmt":
+        rows, columns, cell_width, cell_height = color_lbmt_layout(data)
+        x_field, x_values, x_enum = color_lbmt_axis(x_parameter, data.get("x_low"), data.get("x_high"), columns)
+        y_field, y_values, y_enum = color_lbmt_axis(y_parameter, data.get("y_low"), data.get("y_high"), rows)
+        # Photo coordinates count rows downward; LightBurn's Y sweep grows upward.
+        y_values.reverse()
     if refinement:
         source_material = ET.Element("Material", {"Name":str(refinement_metadata.get("material") or "")})
         source_entry = ET.Element("Entry", {"Desc":str(refinement_metadata.get("setting_description") or "")})
@@ -2680,7 +2749,7 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
             for field,value in ((x_field,x_value),(y_field,y_value)):
                 node=layer.find(f"./{field}")
                 if node is None: node=ET.SubElement(layer,field)
-                node.set("Value",f"{value:g}")
+                node.set("Value",repr(value) if output_format == "lbmt" else f"{value:g}")
             index_node=layer.find("./index")
             if index_node is None: index_node=ET.SubElement(layer,"index")
             index_node.set("Value",str(index)); name_node=layer.find("./name")
@@ -2698,8 +2767,33 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
               "label_entry_id":label_entry_id,"label_options":label_options,
               "label_laser_settings":lightburn_setting_snapshot(label_layer),
               "refinement":refinement}
-    prefix=(f"jobs/{grid_id}/outputs/" if guest else f"users/{owner}/color-discovery/{grid_id}/"); project_key=f"{prefix}color_discovery_{grid_id}.lbrn2"; metadata_key=f"{prefix}color_discovery_{grid_id}.json"
-    for key,body,content_type in ((project_key,ET.tostring(project,encoding="utf-8",xml_declaration=True),"application/octet-stream"),(metadata_key,json.dumps(metadata,indent=2).encode(),"application/json")):
+    project_body = ET.tostring(project,encoding="utf-8",xml_declaration=True)
+    metadata["output_format"] = output_format
+    if output_format == "lbmt":
+        material_cut, text_cut = color_lbmt_cut(source_cut), color_lbmt_cut(label_cut)
+        material_cut.update(index=0, name="Discovery")
+        text_cut.update(index=1, name="Labels")
+        # Use the user's label setting for borders too, never invented laser values.
+        border_cut = {**text_cut, "index": 2, "name": "Border"}
+        x_scale = 1000 if x_parameter == "frequency" else 1
+        y_scale = 1000 if y_parameter == "frequency" else 1
+        preset = {"MaterialCut": material_cut, "TextCut": text_cut, "BorderCut": border_cut,
+                  "XCount": columns, "YCount": rows, "XSize": cell_width, "YSize": cell_height,
+                  "XParam": x_enum, "YParam": y_enum,
+                  "XMin": min(x_values)/x_scale, "XMax": max(x_values)/x_scale,
+                  "YMin": min(y_values)/y_scale, "YMax": max(y_values)/y_scale,
+                  "XCenter": columns*cell_width/2, "YCenter": rows*cell_height/2}
+        project_body = json.dumps({f"Rasterizer {grid_id[:8]}": preset}, indent=2).encode()
+        metadata.update(cell_width_mm=cell_width, cell_height_mm=cell_height,
+                        cell_size_mm=None, grid_width_mm=columns*cell_width,
+                        grid_height_mm=rows*cell_height, top_label_band_mm=0,
+                        row_order="top_to_bottom", interpolation="linear; LightBurn/controller may round values",
+                        label_laser_settings=lightburn_setting_snapshot(label_cut))
+    # DynamoDB items have a 400 KiB limit. Leave room for keys, types and record fields.
+    if output_format == "lbmt" and len(json.dumps(metadata).encode()) > 300000:
+        raise ValueError("This grid's calibration metadata is too large to save. Reduce the row or column count and generate it again.")
+    prefix=(f"jobs/{grid_id}/outputs/" if guest else f"users/{owner}/color-discovery/{grid_id}/"); project_key=f"{prefix}color_discovery_{grid_id}.{output_format}"; metadata_key=f"{prefix}color_discovery_{grid_id}.json"
+    for key,body,content_type in ((project_key,project_body,"application/octet-stream"),(metadata_key,json.dumps(metadata,indent=2).encode(),"application/json")):
         put_options={"Bucket":BUCKET,"Key":key,"Body":body,"ContentType":content_type,"ContentDisposition":f'attachment; filename="{key.rsplit("/",1)[-1]}"'}
         if guest: put_options["Tagging"]="mopa-retention=guest"
         s3.put_object(**put_options)
