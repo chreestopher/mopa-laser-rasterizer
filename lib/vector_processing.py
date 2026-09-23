@@ -2,6 +2,10 @@ import sys
 import os
 import importlib.util
 import json
+import copy
+import shutil
+import tempfile
+import zipfile
 from PIL import Image
 import colorsys
 import math
@@ -14,7 +18,7 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 from shapely.geometry import Polygon, box, Point, MultiPoint, LineString, GeometryCollection
 from shapely.ops import unary_union, voronoi_diagram, transform
-from shapely.affinity import scale, affine_transform
+from shapely.affinity import scale, affine_transform, translate
 from shapely.validation import make_valid
 from svgelements import SVG, Path, Polygon as SVGPolygon
 from datetime import datetime
@@ -39,6 +43,86 @@ LARGE_LIGHTBURN_PROJECT_WARNING = (
     "you press Frame, Send, or Start. Please be patient; LightBurn will typically "
     "become usable again after it finishes its calculations."
 )
+
+PANEL_TILE_ORDERS = {"row_major", "column_major", "serpentine"}
+
+
+def normalize_panel_tiling(value):
+    """Validate and normalize the optional post-geometry panel layout."""
+    if not value:
+        return {"enabled": False}
+    if not isinstance(value, dict):
+        raise ValueError("Panel Tiling settings could not be read. Turn Panel Tiling off and on, then configure it again.")
+    def enabled_value(raw, default=False):
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+            return raw == 1
+        if isinstance(raw, str):
+            return raw.strip().lower() in {"true", "1", "yes", "on"}
+        return default
+
+    enabled = enabled_value(value.get("enabled"))
+    if not enabled:
+        return {"enabled": False}
+
+    def number(name, minimum, maximum, default):
+        try:
+            result = float(value.get(name, default))
+        except (TypeError, ValueError):
+            result = math.nan
+        if not math.isfinite(result) or not minimum <= result <= maximum:
+            label = name.replace("_", " ").capitalize()
+            raise ValueError(f"Panel Tiling {label} must be between {minimum:g} and {maximum:g} mm.")
+        return result
+
+    def count(name, default):
+        raw = value.get(name, default)
+        if isinstance(raw, bool):
+            raise ValueError(f"Panel Tiling {name} must be a whole number from 1 to 20.")
+        try:
+            result = int(raw)
+        except (TypeError, ValueError):
+            result = 0
+        if str(raw).strip() not in {str(result), f"{result}.0"} or not 1 <= result <= 20:
+            raise ValueError(f"Panel Tiling {name} must be a whole number from 1 to 20.")
+        return result
+
+    tile_width_mm = number("tile_width_mm", 1, 1000, 100)
+    tile_height_mm = number("tile_height_mm", 1, 1000, 100)
+    edge_inset_mm = number("edge_inset_mm", 0, 100, 0)
+    if edge_inset_mm * 2 >= min(tile_width_mm, tile_height_mm):
+        raise ValueError("Panel Tiling edge inset must leave a positive engravable area inside every tile.")
+    columns, rows = count("columns", 2), count("rows", 2)
+    if columns * rows > 100:
+        raise ValueError("Panel Tiling supports at most 100 tiles per job. Reduce the row or column count.")
+    order = str(value.get("order") or "row_major").strip().lower()
+    if order not in PANEL_TILE_ORDERS:
+        raise ValueError("Choose Row major, Column major, or Serpentine for Panel Tiling order.")
+    return {
+        "enabled": True,
+        "tile_width_mm": tile_width_mm,
+        "tile_height_mm": tile_height_mm,
+        "columns": columns,
+        "rows": rows,
+        "gap_x_mm": number("gap_x_mm", 0, 1000, 0),
+        "gap_y_mm": number("gap_y_mm", 0, 1000, 0),
+        "edge_inset_mm": edge_inset_mm,
+        "origin_x_mm": number("origin_x_mm", -1000, 1000, 0),
+        "origin_y_mm": number("origin_y_mm", -1000, 1000, 0),
+        "order": order,
+        "include_tile_ids": enabled_value(value.get("include_tile_ids"), default=True),
+    }
+
+
+def panel_tiling_dimensions(settings):
+    """Return the assembled artwork span, including intentional gaps."""
+    return (
+        settings["columns"] * settings["tile_width_mm"]
+        + (settings["columns"] - 1) * settings["gap_x_mm"],
+        settings["rows"] * settings["tile_height_mm"]
+        + (settings["rows"] - 1) * settings["gap_y_mm"],
+    )
 
 # from vector_processing import raster_to_puzzle_and_lightburn
 
@@ -2909,6 +2993,182 @@ def save_vector_output(
         ".svg file and .lbrn2 file export complete."
     )
 
+
+def _empty_lightburn_copy(project):
+    """Copy configured cut layers without carrying geometry between tiles."""
+    result = copy.deepcopy(project)
+    result.top = {"objects": [], "children": [], "parent": None}
+    result.current = result.top
+    result.objects = result.top["objects"]
+    return result
+
+
+def _ordered_panel_tiles(settings):
+    positions = []
+    rows, columns = settings["rows"], settings["columns"]
+    if settings["order"] == "column_major":
+        positions = [(row, column) for column in range(columns) for row in range(rows)]
+    else:
+        for row in range(rows):
+            row_columns = list(range(columns))
+            if settings["order"] == "serpentine" and row % 2:
+                row_columns.reverse()
+            positions.extend((row, column) for column in row_columns)
+    return positions
+
+
+def _tile_svg_root(width_mm, height_mm, origin_x_mm, origin_y_mm):
+    root = ET.Element("svg", xmlns="http://www.w3.org/2000/svg", version="1.1")
+    root.set(
+        "viewBox",
+        " ".join(format(value, ".12g") for value in (
+            origin_x_mm, origin_y_mm, width_mm, height_mm,
+        )),
+    )
+    root.set("width", f"{format(width_mm, '.12g')}mm")
+    root.set("height", f"{format(height_mm, '.12g')}mm")
+    return root
+
+
+def _write_panel_assembly_map(path, settings):
+    width_mm, height_mm = panel_tiling_dimensions(settings)
+    root = ET.Element(
+        "svg", xmlns="http://www.w3.org/2000/svg", version="1.1",
+        viewBox=f"0 0 {width_mm:g} {height_mm:g}",
+        width=f"{width_mm:g}mm", height=f"{height_mm:g}mm",
+    )
+    style = ET.SubElement(root, "style")
+    style.text = (
+        ".blank{fill:#f4f1e8;stroke:#202830;stroke-width:.35}"
+        ".safe{fill:none;stroke:#2d8a57;stroke-width:.25;stroke-dasharray:1.5 1}"
+        ".id{font:700 4px sans-serif;fill:#202830;text-anchor:middle;dominant-baseline:middle}"
+    )
+    order_lookup = {
+        position: index for index, position in enumerate(_ordered_panel_tiles(settings), 1)
+    }
+    for row in range(settings["rows"]):
+        for column in range(settings["columns"]):
+            x = column * (settings["tile_width_mm"] + settings["gap_x_mm"])
+            y = row * (settings["tile_height_mm"] + settings["gap_y_mm"])
+            ET.SubElement(root, "rect", {
+                "class": "blank", "x": f"{x:g}", "y": f"{y:g}",
+                "width": f"{settings['tile_width_mm']:g}",
+                "height": f"{settings['tile_height_mm']:g}",
+            })
+            inset = settings["edge_inset_mm"]
+            if inset:
+                ET.SubElement(root, "rect", {
+                    "class": "safe", "x": f"{x + inset:g}", "y": f"{y + inset:g}",
+                    "width": f"{settings['tile_width_mm'] - inset * 2:g}",
+                    "height": f"{settings['tile_height_mm'] - inset * 2:g}",
+                })
+            if settings["include_tile_ids"]:
+                label = ET.SubElement(root, "text", {
+                    "class": "id",
+                    "x": f"{x + settings['tile_width_mm'] / 2:g}",
+                    "y": f"{y + settings['tile_height_mm'] / 2:g}",
+                })
+                label.text = f"T{order_lookup[(row, column)]:02d} · R{row + 1} C{column + 1}"
+    ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
+
+
+def export_panel_tiles(
+    processed_layers,
+    target_colors,
+    black_hex,
+    scale_factor,
+    output_svg_path,
+    lb_project_template,
+    lightburn_note,
+    settings,
+    black_lightburn_geometry=None,
+    export_lightburn=True,
+):
+    """Clip completed global geometry into repeatably positioned panel files."""
+    temp_dir = tempfile.mkdtemp(prefix="panel-tiles-", dir=os.path.dirname(output_svg_path) or None)
+    base_path = output_svg_path[:-len(".vector.svg")] if output_svg_path.endswith(".vector.svg") else output_svg_path
+    archive_path = f"{base_path}.panel-tiles.zip"
+    assembly_path = f"{base_path}.panel-assembly.svg"
+    manifest = {
+        "format": "mopa-rasterizer-panel-tiles-v1",
+        "layout": settings,
+        "assembled_size_mm": dict(zip(("width", "height"), panel_tiling_dimensions(settings))),
+        "tiles": [],
+    }
+    scaled_layers = {
+        color: scale(geometry, xfact=scale_factor, yfact=scale_factor, origin=(0, 0))
+        if scale_factor != 1.0 else geometry
+        for color, geometry in processed_layers.items()
+    }
+    scaled_black = black_lightburn_geometry
+    if scaled_black is not None and scale_factor != 1.0:
+        scaled_black = scale(scaled_black, xfact=scale_factor, yfact=scale_factor, origin=(0, 0))
+    try:
+        printLogMessage(
+            f"Panel Tiling: exporting {settings['rows'] * settings['columns']} tiles from finalized global geometry."
+        )
+        for sequence, (row, column) in enumerate(_ordered_panel_tiles(settings), 1):
+            source_x = column * (settings["tile_width_mm"] + settings["gap_x_mm"])
+            source_y = row * (settings["tile_height_mm"] + settings["gap_y_mm"])
+            inset = settings["edge_inset_mm"]
+            clip = box(
+                source_x + inset,
+                source_y + inset,
+                source_x + settings["tile_width_mm"] - inset,
+                source_y + settings["tile_height_mm"] - inset,
+            )
+            dx = settings["origin_x_mm"] - source_x
+            dy = settings["origin_y_mm"] - source_y
+            tile_layers = {
+                color: translate(geometry.intersection(clip), xoff=dx, yoff=dy)
+                for color, geometry in scaled_layers.items()
+            }
+            tile_black = None
+            if scaled_black is not None:
+                tile_black = translate(scaled_black.intersection(clip), xoff=dx, yoff=dy)
+            stem = f"tile-{sequence:02d}-r{row + 1:02d}-c{column + 1:02d}"
+            svg_path = os.path.join(temp_dir, f"{stem}.svg")
+            root = _tile_svg_root(
+                settings["tile_width_mm"], settings["tile_height_mm"],
+                settings["origin_x_mm"], settings["origin_y_mm"],
+            )
+            project = _empty_lightburn_copy(lb_project_template)
+            export_processed_layers(
+                processed_layers=tile_layers,
+                target_colors=target_colors,
+                black_hex=black_hex,
+                scale_factor=1.0,
+                root=root,
+                lb_project_instance=project,
+                punch_through_black=tile_black is not None,
+                black_lightburn_geometry=tile_black,
+                export_lightburn=export_lightburn,
+            )
+            tile_note = (
+                f"Panel tile {sequence} of {settings['rows'] * settings['columns']} "
+                f"(row {row + 1}, column {column + 1})\n\n{lightburn_note}"
+            )
+            save_vector_output(root, svg_path, project, export_lightburn, tile_note)
+            manifest["tiles"].append({
+                "sequence": sequence, "row": row + 1, "column": column + 1,
+                "source_origin_mm": {"x": source_x, "y": source_y},
+                "workbed_origin_mm": {"x": settings["origin_x_mm"], "y": settings["origin_y_mm"]},
+                "svg": os.path.basename(svg_path),
+                "lightburn": os.path.basename(svg_path) + ".lbrn2" if export_lightburn else None,
+            })
+        manifest_path = os.path.join(temp_dir, "panel-manifest.json")
+        with open(manifest_path, "w", encoding="utf-8") as output:
+            json.dump(manifest, output, indent=2)
+        _write_panel_assembly_map(os.path.join(temp_dir, "panel-assembly.svg"), settings)
+        _write_panel_assembly_map(assembly_path, settings)
+        with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for name in sorted(os.listdir(temp_dir)):
+                archive.write(os.path.join(temp_dir, name), arcname=name)
+        printLogMessage(f"Panel Tiling complete: wrote {archive_path} and {assembly_path}.")
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+    return archive_path, assembly_path
+
 # ============================================================================
 # MAIN DROP-IN REPLACEMENT
 # ============================================================================
@@ -2938,6 +3198,7 @@ def raster_to_puzzle_and_lightburn(
     geometry_style_parameters=None,
     crop_shape="",
     white_is="engraved",
+    panel_tiling=None,
 ):
     """
     Parses a raster image, applies a structural vector scale_factor,
@@ -2961,6 +3222,8 @@ def raster_to_puzzle_and_lightburn(
         - LightBurn export
     """
 
+    panel_tiling = normalize_panel_tiling(panel_tiling)
+
     # Quantization uses the real LightBurn layers that survived both palette
     # filtering and exact Material Library matching. Black-and-white photos
     # are the sole exception and deliberately reduce the source raster to two.
@@ -2976,6 +3239,7 @@ def raster_to_puzzle_and_lightburn(
         "scale_factor_mm": scale_factor,
         "ignore_background_hex": ignore_background_hex,
         "white_is": str(white_is or "engraved").strip().lower(),
+        "panel_tiling": panel_tiling,
         "vector_settings": {
             "quantize_colors": quantize_colors,
             "quantize_color_source": (
@@ -3522,27 +3786,6 @@ def raster_to_puzzle_and_lightburn(
     # 8. Export SVG + LightBurn
     # =========================================================================
 
-    export_processed_layers(
-        processed_layers=processed_layers,
-        target_colors=TARGET_COLORS,
-        black_hex=black_hex,
-        scale_factor=scale_factor,
-        root=root,
-        lb_project_instance=lb_project_instance,
-        punch_through_black=(
-            black_layer_available
-            and not preserve_source_black
-            and not source_black_active
-            and not krasnow_grate_black
-        ),
-        black_lightburn_geometry=black_lightburn_geometry,
-        export_lightburn=export_lightburn,
-    )
-
-    # =========================================================================
-    # 9. Save output files
-    # =========================================================================
-
     lightburn_note = build_rasterizer_project_note(
         image_preset=image_preset,
         width=width,
@@ -3560,14 +3803,48 @@ def raster_to_puzzle_and_lightburn(
         geometry_style=geometry_style,
         geometry_style_parameters=normalized_geometry_parameters,
     )
+    if panel_tiling.get("enabled"):
+        export_panel_tiles(
+            processed_layers=processed_layers,
+            target_colors=TARGET_COLORS,
+            black_hex=black_hex,
+            scale_factor=scale_factor,
+            output_svg_path=output_svg_path,
+            lb_project_template=lb_project_instance,
+            lightburn_note=lightburn_note,
+            settings=panel_tiling,
+            black_lightburn_geometry=black_lightburn_geometry,
+            export_lightburn=export_lightburn,
+        )
+    else:
+        export_processed_layers(
+            processed_layers=processed_layers,
+            target_colors=TARGET_COLORS,
+            black_hex=black_hex,
+            scale_factor=scale_factor,
+            root=root,
+            lb_project_instance=lb_project_instance,
+            punch_through_black=(
+                black_layer_available
+                and not preserve_source_black
+                and not source_black_active
+                and not krasnow_grate_black
+            ),
+            black_lightburn_geometry=black_lightburn_geometry,
+            export_lightburn=export_lightburn,
+        )
 
-    save_vector_output(
-        root=root,
-        output_svg_path=output_svg_path,
-        lb_project_instance=lb_project_instance,
-        export_lightburn=export_lightburn,
-        lightburn_note=lightburn_note,
-    )
+        # =====================================================================
+        # 9. Save output files
+        # =====================================================================
+
+        save_vector_output(
+            root=root,
+            output_svg_path=output_svg_path,
+            lb_project_instance=lb_project_instance,
+            export_lightburn=export_lightburn,
+            lightburn_note=lightburn_note,
+        )
 
 
 

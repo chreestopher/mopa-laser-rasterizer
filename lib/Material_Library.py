@@ -38,7 +38,7 @@ def main(argv=None):
         user_input_error(
             "Usage: Material_Library.py INPUT OUTPUT PIXEL_MM WIDTH HEIGHT "
             "MATERIAL_LIBRARY MATERIAL COLORS PRESET FILTER [FILTER_JSON] [PALETTE_NAMES_JSON] "
-            "[SVG_ONLY] [COLOR_MATCHING_JSON] [VALIDATE_ONLY] [GEOMETRY_STYLE] [GEOMETRY_JSON] [CROP_SHAPE] [WHITE_IS]"
+            "[SVG_ONLY] [COLOR_MATCHING_JSON] [VALIDATE_ONLY] [GEOMETRY_STYLE] [GEOMETRY_JSON] [CROP_SHAPE] [WHITE_IS] [PANEL_TILING_JSON]"
         )
 
     (input_file, output_file, square_mm, new_width, new_height,
@@ -56,6 +56,25 @@ def main(argv=None):
     white_is = argv[18].strip().lower() if len(argv) > 18 else "engraved"
     if white_is not in {"engraved", "unengraved"}:
         user_input_error("Choose whether White is engraved or unengraved")
+    panel_tiling = {}
+    if len(argv) > 19 and argv[19].strip():
+        try:
+            panel_tiling = vector_processing.normalize_panel_tiling(json.loads(argv[19]))
+        except (json.JSONDecodeError, ValueError) as error:
+            user_input_error(f"Invalid Panel Tiling settings: {error}")
+    if panel_tiling.get("enabled"):
+        assembled_width_mm, assembled_height_mm = vector_processing.panel_tiling_dimensions(panel_tiling)
+        try:
+            pixel_mm = float(square_mm)
+        except (TypeError, ValueError):
+            user_input_error("Pixel size must be a number before Panel Tiling can calculate the assembled artwork size")
+        new_width = str(max(1, round(assembled_width_mm / pixel_mm)))
+        new_height = str(max(1, round(assembled_height_mm / pixel_mm)))
+        if int(new_width) > 1600 or int(new_height) > 1600:
+            user_input_error(
+                "Panel Tiling needs more than 1,600 processing pixels on an axis. "
+                "Increase Pixel size, reduce the tile count, or use smaller tile and gap dimensions."
+            )
     svg_only = len(argv) > 12 and argv[12].strip().lower() in ("true", "1", "yes", "on")
     # Accept the former argv[13]=validate-only layout for compatibility while
     # reserving argv[13] for the new, independent color-matching object.
@@ -262,12 +281,14 @@ def main(argv=None):
             "material_library_layers": material_layer_report,
             "artwork_crop_shape": crop_shape or "none",
             "white_is": white_is,
+            "panel_tiling": panel_tiling,
         },
         export_lightburn=not svg_only,
         geometry_style=geometry_style,
         geometry_style_parameters=geometry_style_parameters,
         crop_shape=crop_shape,
         white_is=white_is,
+        panel_tiling=panel_tiling,
     )
 
 
