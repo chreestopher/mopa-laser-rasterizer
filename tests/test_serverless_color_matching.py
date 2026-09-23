@@ -35,6 +35,17 @@ def test_rasterizer_exposes_matching_presets_custom_controls_and_browser_preview
     assert "The preview is generated entirely in this browser" in page
 
 
+def test_quantized_preview_uses_only_currently_enabled_swatches():
+    page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+
+    assert "function paletteEntrySelectionKey(entry)" in page
+    assert "selectedPaletteHexes.has(key)" in page
+    assert "const key=paletteEntrySelectionKey(entry)" in page
+    assert "hex=String(entry.display_hex||entry.hex||'').toUpperCase()" in page
+    assert "output.hidden=true" in page
+    assert "currently enabled swatches" in page
+
+
 def test_matching_settings_are_submitted_validated_and_forwarded_to_worker():
     page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
     handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
