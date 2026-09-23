@@ -28,6 +28,7 @@ Thank you to [@benkrasnow](https://github.com/benkrasnow) for sharing his [MOPA 
   - Choose by Swatch, which routes different colors to different geometry styles in the same job
 - Configure Glyph geometry, including supported shape families, staggered packing, and invert-fill punch-throughs.
 - Configure Krasnow Grating geometry with patch, spacing, angle, fauxlogram-gradient scope/direction, and painted flow-region controls.
+- Split globally processed artwork into repeatably positioned panel tiles with configurable blank size, row/column count, assembly gaps, edge inset, workbed origin, ordering, and an assembly manifest/map.
 - Export non-overlapping color geometry as layered SVG.
 - Export LightBurn `.lbrn2` projects using settings imported from `.clb`, `.lbmat`, or compatible `.lbrn` files.
 - Use SVG-Only mode without uploading laser settings or using LightBurn.

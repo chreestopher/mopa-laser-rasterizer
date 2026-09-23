@@ -777,6 +777,7 @@ LAST_USED_FORM_FIELDS = {
         "material_choice", "material_name", "pixel_square_mm", "new_width", "new_height",
         "image_preset", "filter_parameters", "cut_mode", "preserve_black_outlines",
         "geometry_style", "geometry_style_parameters",
+        "panel_tiling",
         "white_is",
         "color_matching_mode", "color_matching_hue_weight",
         "color_matching_saturation_weight", "color_matching_lightness_weight",
@@ -913,6 +914,21 @@ def clean_last_used_form(name, snapshot):
                     value, geometry=key == "geometry_style_parameters"
                 )
             clean_values[key] = clean_parameters
+        elif key == "panel_tiling" and isinstance(value, dict):
+            clean_values[key] = {
+                parameter: parameter_value
+                for parameter, parameter_value in value.items()
+                if parameter in {
+                    "enabled", "tile_width_mm", "tile_height_mm", "columns", "rows",
+                    "gap_x_mm", "gap_y_mm", "edge_inset_mm", "origin_x_mm",
+                    "origin_y_mm", "order", "include_tile_ids",
+                }
+                and (
+                    isinstance(parameter_value, bool)
+                    or clean_number(parameter_value) is not None
+                    or parameter == "order" and parameter_value in {"row_major", "column_major", "serpentine"}
+                )
+            }
         elif key == "geometry_style" and value in {"vectors", "glyphs", "krasnow_grating", "by_swatch"}:
             clean_values[key] = value
         elif isinstance(value, bool):
@@ -4121,6 +4137,75 @@ def submit_job(event, task_id, guest=False):
     except (TypeError, ValueError):
         return response(400, {"message": "Pixel size must be at least 0.01 mm"})
     data["pixel_square_mm"] = str(pixel_square_mm)
+    raw_panel_tiling = data.get("panel_tiling") or {"enabled": False}
+    try:
+        panel_tiling = json.loads(raw_panel_tiling) if isinstance(raw_panel_tiling, str) else raw_panel_tiling
+    except (TypeError, json.JSONDecodeError):
+        return response(400, {"message": "Panel Tiling settings could not be read. Turn Panel Tiling off and on, then configure it again."})
+    if not isinstance(panel_tiling, dict):
+        return response(400, {"message": "Panel Tiling settings could not be read. Turn Panel Tiling off and on, then configure it again."})
+    raw_panel_enabled = panel_tiling.get("enabled")
+    enabled = (
+        raw_panel_enabled is True
+        or isinstance(raw_panel_enabled, (int, float)) and not isinstance(raw_panel_enabled, bool) and raw_panel_enabled == 1
+        or isinstance(raw_panel_enabled, str) and raw_panel_enabled.strip().lower() in {"true", "1", "yes", "on"}
+    )
+    if enabled:
+        def panel_number(name, minimum, maximum, default):
+            try:
+                value = float(panel_tiling.get(name, default))
+            except (TypeError, ValueError):
+                raise ValueError
+            if not math.isfinite(value) or not minimum <= value <= maximum:
+                raise ValueError
+            return value
+        def panel_count(name, default):
+            raw = panel_tiling.get(name, default)
+            if isinstance(raw, bool):
+                raise ValueError
+            value = int(raw)
+            if str(raw).strip() not in {str(value), f"{value}.0"} or not 1 <= value <= 20:
+                raise ValueError
+            return value
+        try:
+            tile_width = panel_number("tile_width_mm", 1, 1000, 100)
+            tile_height = panel_number("tile_height_mm", 1, 1000, 100)
+            columns, rows = panel_count("columns", 2), panel_count("rows", 2)
+            gap_x = panel_number("gap_x_mm", 0, 1000, 0)
+            gap_y = panel_number("gap_y_mm", 0, 1000, 0)
+            inset = panel_number("edge_inset_mm", 0, 100, 0)
+            origin_x = panel_number("origin_x_mm", -1000, 1000, 0)
+            origin_y = panel_number("origin_y_mm", -1000, 1000, 0)
+            order = str(panel_tiling.get("order") or "row_major").strip().lower()
+            if columns * rows > 100 or inset * 2 >= min(tile_width, tile_height):
+                raise ValueError
+            if order not in {"row_major", "column_major", "serpentine"}:
+                raise ValueError
+            assembled_width = columns * tile_width + (columns - 1) * gap_x
+            assembled_height = rows * tile_height + (rows - 1) * gap_y
+            processing_width = round(assembled_width / pixel_square_mm)
+            processing_height = round(assembled_height / pixel_square_mm)
+            if max(processing_width, processing_height) > 1600:
+                return response(400, {"message": "Panel Tiling needs more than 1,600 processing pixels on an axis. Increase Pixel size, reduce the tile count, or use smaller tile and gap dimensions."})
+        except (TypeError, ValueError):
+            return response(400, {"message": "Panel Tiling contains an invalid size, count, inset, origin, or tile order. Review the Panel Tiling controls and submit again."})
+        panel_tiling = {
+            "enabled": True, "tile_width_mm": tile_width, "tile_height_mm": tile_height,
+            "columns": columns, "rows": rows, "gap_x_mm": gap_x, "gap_y_mm": gap_y,
+            "edge_inset_mm": inset, "origin_x_mm": origin_x, "origin_y_mm": origin_y,
+            "order": order,
+            "include_tile_ids": not (
+                panel_tiling.get("include_tile_ids") is False
+                or panel_tiling.get("include_tile_ids") == 0
+                or isinstance(panel_tiling.get("include_tile_ids"), str)
+                and panel_tiling.get("include_tile_ids").strip().lower() in {"false", "0", "no", "off"}
+            ),
+        }
+        data["new_width"] = str(processing_width)
+        data["new_height"] = str(processing_height)
+    else:
+        panel_tiling = {"enabled": False}
+    data["panel_tiling"] = panel_tiling
     crop_shape = str(data.get("crop_shape") or "").strip().lower()
     if crop_shape not in {"", "rectangle", "square", "oval", "circle", "transparency"}:
         return response(400, {"message": "Choose a valid artwork crop shape"})
@@ -4502,6 +4587,8 @@ def submit_job(event, task_id, guest=False):
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as error:
             return response(400, {"message": str(error) or "The Fauxlographic Swatch Palette is malformed"})
     generated_recipe_id = str(item.get("generated_recipe_id") or "")
+    if generated_recipe_id and panel_tiling.get("enabled"):
+        return response(400, {"message": "Panel Tiling is currently available for Rasterizer Material Library and SVG-Only jobs, not Fauxlographic Palette artwork exports."})
     raw_overrides = data.get("color_name_overrides") or {}
     try:
         overrides = json.loads(raw_overrides) if isinstance(raw_overrides, str) else raw_overrides
