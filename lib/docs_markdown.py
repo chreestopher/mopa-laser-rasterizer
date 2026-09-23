@@ -43,15 +43,27 @@ def _render_list(lines, index, indent=None, list_tag=None):
         if current[1] != list_tag:
             break
 
-        item = f"<li>{_inline(current[2].strip())}"
+        item_text = [current[2].strip()]
+        nested_blocks = []
         index += 1
         while index < len(lines):
             following = _list_item(lines[index])
-            if following is None or following[0] <= indent:
+            if following is not None:
+                if following[0] <= indent:
+                    break
+                nested, index = _render_list(lines, index, following[0], following[1])
+                nested_blocks.append(nested)
+                continue
+
+            continuation = lines[index]
+            continuation_indent = len(continuation) - len(continuation.lstrip())
+            if not continuation.strip() or continuation_indent <= indent:
                 break
-            nested, index = _render_list(lines, index, following[0], following[1])
-            item += nested
-        items.append(item + "</li>")
+            item_text.append(continuation.strip())
+            index += 1
+
+        item = f"<li>{_inline(' '.join(item_text))}{''.join(nested_blocks)}</li>"
+        items.append(item)
 
     return f"<{list_tag}>{''.join(items)}</{list_tag}>", index
 
