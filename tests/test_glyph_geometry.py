@@ -150,6 +150,44 @@ def test_tight_pack_is_opt_in_deterministic_and_stays_inside_source_colors():
     assert first["#FF0000"].wkb != regular["#FF0000"].wkb
 
 
+def test_random_rotation_is_independent_repeatable_and_seeded():
+    layers = {"#FF0000": box(0, 0, 8, 4)}
+    target = {"#FF0000": TARGET_COLORS["#FF0000"]}
+    ordered = glyph_geometry.remap_layers(
+        layers,
+        target,
+        settings(glyph_shape="triangle", grid_angle=0, random_rotation=0),
+    )["#FF0000"]
+    first = glyph_geometry.remap_layers(
+        layers,
+        target,
+        settings(
+            glyph_shape="triangle", grid_angle=0,
+            random_rotation=1, seed=23,
+        ),
+    )["#FF0000"]
+    repeated = glyph_geometry.remap_layers(
+        layers,
+        target,
+        settings(
+            glyph_shape="triangle", grid_angle=0,
+            random_rotation=1, seed=23,
+        ),
+    )["#FF0000"]
+    changed_seed = glyph_geometry.remap_layers(
+        layers,
+        target,
+        settings(
+            glyph_shape="triangle", grid_angle=0,
+            random_rotation=1, seed=24,
+        ),
+    )["#FF0000"]
+
+    assert first.wkb == repeated.wkb
+    assert first.wkb != ordered.wkb
+    assert first.wkb != changed_seed.wkb
+
+
 def test_unknown_shape_is_rejected():
     try:
         glyph_geometry.remap_layers(

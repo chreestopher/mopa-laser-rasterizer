@@ -4259,7 +4259,7 @@ def submit_job(event, task_id, guest=False):
     }
     toggle_geometry_parameters = {
         "invert", "invert_fill", "black_only", "preserve_black", "custom_glyph_invert",
-        "tight_pack_geometry",
+        "tight_pack_geometry", "random_rotation",
     }
     glyph_shapes = {
         "circle", "square", "diamond", "triangle", "hexagon", "octagon",

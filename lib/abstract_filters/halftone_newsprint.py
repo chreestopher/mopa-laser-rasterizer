@@ -14,7 +14,11 @@ from shapely.ops import unary_union
 from shapely.prepared import prep
 
 from .common import number
-from .packing import SpatialCollisionIndex, placement_variant
+from .packing import (
+    SpatialCollisionIndex,
+    independent_rotation_degrees,
+    placement_variant,
+)
 
 
 USES_SOURCE_LUMINANCE = True
@@ -32,6 +36,7 @@ DEFAULTS = {
     "invert": 0,
     "black_only": 0,
     "tight_pack_geometry": 0,
+    "random_rotation": 0,
 }
 
 VECTOR_DEFAULTS = {
@@ -304,6 +309,10 @@ def remap_layers(processed_layers, target_colors, settings):
         settings.get("_tight_pack_geometry", settings.get("tight_pack_geometry")),
         0, 0, 1,
     ) >= .5
+    random_rotation = number(
+        settings.get("_random_rotation", settings.get("random_rotation")),
+        0, 0, 1,
+    ) >= .5
     angle = number(settings.get("grid_angle"), -45.0, -90, 45)
     square_dots = number(settings.get("square_dots"), 0, 0, 1) >= 0.5
     glyph_shape = str(settings.get("_glyph_shape") or ("square" if square_dots else "circle"))
@@ -452,7 +461,11 @@ def remap_layers(processed_layers, target_colors, settings):
                     % len(mixed_shapes)
                 ]
             independent_rotation = 0
-            if tight_pack:
+            if random_rotation:
+                independent_rotation = independent_rotation_degrees(
+                    row_index, column_index, glyph_seed
+                )
+            elif tight_pack:
                 independent_rotation = (-18, -9, 0, 9, 18)[variant % 5]
             mark = _glyph_mark(
                 cell_shape,
