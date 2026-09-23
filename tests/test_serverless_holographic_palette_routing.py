@@ -20,7 +20,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertIn("svg_only:svgOnly", page)
         self.assertIn('result["material"] = (None if svg_only else', handler)
         self.assertIn('data["svg_only"] = "true" if svg_only else "false"', handler)
-        self.assertIn('key for key in (artwork_key, material_key, recipe_input_key) if key', handler)
+        self.assertIn('key for key in (artwork_key, thumbnail_key, material_key, recipe_input_key) if key', handler)
         self.assertIn('if not svg_only:', worker)
         self.assertIn('None if svg_only else material_path', worker)
 
@@ -545,7 +545,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertIn('<strong>Job Duration:</strong> <span data-job-duration></span>', script)
         self.assertIn('setText("[data-job-duration]",formatDuration(job))', script)
         self.assertIn('active?" (in progress)":""', script)
-        self.assertIn('src="/history.js?v=9"', page)
+        self.assertIn('src="/history.js?v=10"', page)
 
     def test_serverless_docs_rewrite_production_only_routes(self):
         builder = (ROOT / "dev_setup" / "build_serverless_docs.py").read_text(encoding="utf-8")
