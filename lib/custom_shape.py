@@ -140,7 +140,10 @@ def svg_to_unit_geometry(spec, padding=0.06):
         marker = ring.representative_point()
         depth = sum(parent.contains(marker) for parent in ordered[:index])
         geometry = geometry.difference(ring) if depth % 2 else unary_union((geometry, ring))
-    return _normalize_unit_geometry(geometry, padding)
+    # Rasterizer's image-derived geometry and exported SVG coordinates both
+    # increase downward. Preserve the uploaded SVG's visual orientation so an
+    # asymmetric custom glyph or Krasnow cell is not turned upside down.
+    return _normalize_unit_geometry(geometry, padding, flip_y=False)
 
 
 def decode_grayscale_mask(spec):
