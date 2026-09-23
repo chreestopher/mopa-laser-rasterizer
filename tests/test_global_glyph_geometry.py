@@ -412,15 +412,18 @@ def test_geometry_parameter_parser_accepts_only_supported_controls():
     assert parse_geometry_style_parameters({
         "glyph_shape": "mixed", "cell_size_mm": .6, "invert": False,
         "tight_pack_geometry": True,
+        "random_rotation": True,
         "invert_fill": 1, "black_only": 0, "seed": 7,
     }) == {
         "glyph_shape": "mixed", "cell_size_mm": .6, "invert": 0,
         "tight_pack_geometry": 1,
+        "random_rotation": 1,
         "invert_fill": 1, "black_only": 0, "seed": 7,
     }
     assert parse_geometry_style_parameters({
         "cell_shape": "hexagon", "preserve_black": False,
         "tight_pack_geometry": "true",
+        "random_rotation": "false",
         "grating_render_mode": "fill",
         "fauxlogram_gradient_scope": "each_shape",
         "fauxlogram_gradient_direction": "center_to_edge",
@@ -431,6 +434,7 @@ def test_geometry_parameter_parser_accepts_only_supported_controls():
     }) == {
         "cell_shape": "hexagon", "preserve_black": 0,
         "tight_pack_geometry": 1,
+        "random_rotation": 0,
         "grating_render_mode": "fill",
         "fauxlogram_gradient_scope": "each_shape",
         "fauxlogram_gradient_direction": "center_to_edge",
@@ -635,6 +639,7 @@ def test_staging_ui_exposes_an_independent_compatible_geometry_section():
     assert "if(used.has('glyphs'))parameters.glyphs=" in page
     assert "if(used.has('krasnow_grating'))parameters.krasnow_grating=krasnowGeometryValues()" in page
     assert "['invert_fill',false]" in page
+    assert page.count("['random_rotation',false]") >= 2
     assert "syncGeometryToggleCompatibility" in page
     assert "Every output layer is made mutually exclusive before export." in page
     assert "const KRASNOW_GEOMETRY={...PRESETS.abstract_krasnow_grating" in page
@@ -668,7 +673,7 @@ def test_staging_ui_exposes_an_independent_compatible_geometry_section():
         assert f"['{value}','{label}']" in page
 
 
-def test_serverless_job_api_accepts_tight_pack_checkbox_values():
+def test_serverless_job_api_accepts_geometry_layout_checkbox_values():
     handler_path = ROOT / "serverless_api" / "handler.py"
     tree = ast.parse(handler_path.read_text(encoding="utf-8"))
     submit_job = next(
@@ -686,6 +691,7 @@ def test_serverless_job_api_accepts_tight_pack_checkbox_values():
     )
 
     assert "tight_pack_geometry" in ast.literal_eval(toggle_assignment.value)
+    assert "random_rotation" in ast.literal_eval(toggle_assignment.value)
 
 
 def test_glyph_size_source_accepts_only_supported_modes():

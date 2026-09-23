@@ -44,3 +44,8 @@ def placement_variant(row, column, seed=0):
         + int(column) * 19_349_663
         + int(seed) * 83_492_791
     ) & 0x7FFFFFFF
+
+
+def independent_rotation_degrees(row, column, seed=0):
+    """Return one repeatable pseudo-random 0-360 degree item rotation."""
+    return (placement_variant(row, column, seed) % 7200) / 20.0

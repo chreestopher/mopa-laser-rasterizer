@@ -418,6 +418,34 @@ def test_krasnow_tight_pack_is_deterministic_denser_and_nonoverlapping():
     assert sum(polygon.area for polygon in packed) - packed_union.area < 1e-8
 
 
+@pytest.mark.parametrize("cell_shape", ["square", "triangle", "heart"])
+def test_krasnow_random_rotation_is_repeatable_seeded_and_nonoverlapping(
+    cell_shape,
+):
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+    bounds = (0, 0, 4, 4)
+    first = krasnow._tessellated_cells(
+        bounds, 1, cell_shape, random_rotation=True, seed=31,
+    )
+    repeated = krasnow._tessellated_cells(
+        bounds, 1, cell_shape, random_rotation=True, seed=31,
+    )
+    changed_seed = krasnow._tessellated_cells(
+        bounds, 1, cell_shape, random_rotation=True, seed=32,
+    )
+    polygons = [polygon for _, polygon in first]
+    merged = unary_union(polygons)
+
+    assert first
+    assert [(key, polygon.wkb) for key, polygon in first] == [
+        (key, polygon.wkb) for key, polygon in repeated
+    ]
+    assert [polygon.wkb for _, polygon in first] != [
+        polygon.wkb for _, polygon in changed_seed
+    ]
+    assert sum(polygon.area for polygon in polygons) - merged.area < 1e-8
+
+
 def test_krasnow_skull_cells_have_deliberate_external_and_internal_gaps():
     krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
     bounds = (0, 0, 4, 3)
@@ -724,7 +752,7 @@ def test_krasnow_preserve_black_uses_only_pre_reserved_black_pixels():
 
 def test_serverless_krasnow_form_exposes_preserve_black_checked():
     page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
-    assert "toggles:[['preserve_black',true],['tight_pack_geometry',false]]" in page
+    assert "toggles:[['preserve_black',true],['tight_pack_geometry',false],['random_rotation',false]]" in page
     assert "favor_black" not in page
 
 

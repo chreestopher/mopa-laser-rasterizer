@@ -30,7 +30,11 @@ from shapely.geometry import LineString, Polygon, box
 from shapely.ops import unary_union
 
 from .common import number
-from .packing import SpatialCollisionIndex, placement_variant
+from .packing import (
+    SpatialCollisionIndex,
+    independent_rotation_degrees,
+    placement_variant,
+)
 from custom_shape import decode_grayscale_mask, svg_to_unit_geometry
 
 
@@ -52,6 +56,7 @@ DEFAULTS = {
     "preserve_black": 1,
     "cell_shape": "square",
     "tight_pack_geometry": 0,
+    "random_rotation": 0,
     "grating_render_mode": "line",
     "fauxlogram_gradient_scope": "entire_artwork",
     "fauxlogram_gradient_direction": "top_to_bottom",
@@ -1046,7 +1051,10 @@ def _template_polygon(template, center_x, center_y, patch_size):
     )
 
 
-def _tight_packed_icon_cells(bounds, patch_size, cell_shape, custom_template=None):
+def _tight_packed_icon_cells(
+    bounds, patch_size, cell_shape, custom_template=None,
+    random_rotation=False, seed=1,
+):
     """Greedily nest decorative silhouettes with bounded deterministic tries."""
     min_x, min_y, max_x, max_y = bounds
     canvas = box(min_x, min_y, max_x, max_y)
@@ -1072,15 +1080,30 @@ def _tight_packed_icon_cells(bounds, patch_size, cell_shape, custom_template=Non
         center_x_offset = (row & 1) * x_step / 2
         for column in range(start_column, stop_column + 1):
             center_x = min_x + patch_size / 2 + center_x_offset + column * x_step
-            variant = placement_variant(row, column)
+            variant = placement_variant(row, column, seed)
             accepted = None
             accepted_attempt = None
-            varied_rotations = rotations[variant % 4:] + rotations[:variant % 4]
-            attempts = (
-                [(0, offsets[0])]
-                + [(rotation, offsets[0]) for rotation in varied_rotations]
-                + [(0, offset) for offset in offsets[1:]]
-            )
+            if random_rotation:
+                base_rotation = independent_rotation_degrees(row, column, seed)
+                varied_rotations = (
+                    base_rotation,
+                    base_rotation - 12,
+                    base_rotation + 12,
+                    base_rotation - 6,
+                    base_rotation + 6,
+                )
+                attempts = [
+                    (rotation, offset)
+                    for rotation in varied_rotations
+                    for offset in offsets
+                ]
+            else:
+                varied_rotations = rotations[variant % 4:] + rotations[:variant % 4]
+                attempts = (
+                    [(0, offsets[0])]
+                    + [(rotation, offsets[0]) for rotation in varied_rotations]
+                    + [(0, offset) for offset in offsets[1:]]
+                )
             for attempt, (rotation, offset) in enumerate(attempts):
                 candidate_x = center_x + offset[0] * patch_size
                 candidate_y = center_y + offset[1] * patch_size
@@ -1105,7 +1128,8 @@ def _tight_packed_icon_cells(bounds, patch_size, cell_shape, custom_template=Non
 
 
 def _tessellated_cells(
-    bounds, patch_size, cell_shape, tight_pack=False, custom_template=None
+    bounds, patch_size, cell_shape, tight_pack=False, custom_template=None,
+    random_rotation=False, seed=1,
 ):
     """Build a deterministic, globally aligned non-square cell grid.
 
@@ -1122,14 +1146,31 @@ def _tessellated_cells(
         cell_shape in _GAPPED_CELL_TEMPLATES or cell_shape == "custom"
     ):
         return _tight_packed_icon_cells(
-            bounds, patch_size, cell_shape, custom_template=custom_template
+            bounds,
+            patch_size,
+            cell_shape,
+            custom_template=custom_template,
+            random_rotation=random_rotation,
+            seed=seed,
         )
 
     min_x, min_y, max_x, max_y = bounds
     canvas = box(min_x, min_y, max_x, max_y)
     cells = []
 
-    if cell_shape == "hexagon":
+    if cell_shape == "square":
+        start_row = -1
+        stop_row = math.ceil((max_y - min_y) / patch_size) + 1
+        start_column = -1
+        stop_column = math.ceil((max_x - min_x) / patch_size) + 1
+        for row in range(start_row, stop_row + 1):
+            y = min_y + row * patch_size
+            for column in range(start_column, stop_column + 1):
+                x = min_x + column * patch_size
+                polygon = box(x, y, x + patch_size, y + patch_size)
+                if polygon.intersection(canvas).area > 1e-12:
+                    cells.append(((row, column), polygon))
+    elif cell_shape == "hexagon":
         radius = patch_size / math.sqrt(3)
         x_step = 1.5 * radius
         y_step = patch_size
@@ -1244,6 +1285,19 @@ def _tessellated_cells(
                 if polygon.intersection(canvas).area > 1e-12:
                     cells.append(((row, column), polygon))
 
+    if random_rotation:
+        collision_index = SpatialCollisionIndex(patch_size)
+        rotated_cells = []
+        for key, polygon in cells:
+            extra_seed = seed + (int(key[2]) * 104_729 if len(key) > 2 else 0)
+            angle = independent_rotation_degrees(key[0], key[1], extra_seed)
+            candidate = affinity.rotate(polygon, angle, origin="centroid")
+            if collision_index.overlaps(candidate):
+                continue
+            collision_index.add(candidate)
+            rotated_cells.append((key, candidate))
+        cells = rotated_cells
+
     return cells
 
 
@@ -1266,6 +1320,7 @@ def _process_layer_patches(layer_plan, grating_swatches, bounds, settings,
     """Clip one source layer while preserving its original patch order."""
     source_hex, geometry, candidate_indices, gradient_bounds = layer_plan
     fill_plan = settings.get("_fill_layer_plan")
+    prebuilt_cells = bool(settings.get("_prebuilt_cells"))
     fill_mode = fill_plan is not None
     line_spacing = None if fill_mode else _line_spacing_for_color(
         source_hex, settings, scale_factor
@@ -1278,7 +1333,7 @@ def _process_layer_patches(layer_plan, grating_swatches, bounds, settings,
 
     unreported_patches = 0
     for candidate in candidate_indices:
-        if cell_shape == "square":
+        if cell_shape == "square" and not prebuilt_cells:
             x_index, y_index = candidate
             x = min_x + x_index * patch_size
             y = min_y + y_index * patch_size
@@ -1289,7 +1344,7 @@ def _process_layer_patches(layer_plan, grating_swatches, bounds, settings,
         if not region.is_empty and (
             cell_shape == "square" or getattr(region, "area", 0) > 1e-12
         ):
-            if cell_shape == "square":
+            if cell_shape == "square" and not prebuilt_cells:
                 center_x = (patch.bounds[0] + patch.bounds[2]) / 2
                 center_y = (patch.bounds[1] + patch.bounds[3]) / 2
             else:
@@ -1380,6 +1435,8 @@ def remap_layers(processed_layers, target_colors, settings):
     scale_factor = number(settings.get("_scale_factor"), 1, 1e-9, 1000)
     patch_size = number(settings.get("patch_size_mm"), .4, .1, 5) / scale_factor
     cell_shape = _cell_shape(settings)
+    random_rotation = number(settings.get("random_rotation"), 0, 0, 1) >= .5
+    rotation_seed = int(number(settings.get("seed"), 1, 0, 999999))
     custom_cell_template = None
     if cell_shape == "custom":
         custom_cell_template = svg_to_unit_geometry(
@@ -1389,15 +1446,22 @@ def remap_layers(processed_layers, target_colors, settings):
     pieces = {swatch: [] for swatch in grating_swatches}
 
     tessellated_cells = None
-    if cell_shape != "square":
+    use_prebuilt_cells = cell_shape != "square" or random_rotation
+    settings["_prebuilt_cells"] = use_prebuilt_cells
+    if use_prebuilt_cells:
         tessellated_cells = _tessellated_cells(
             bounds,
             patch_size,
             cell_shape,
             tight_pack=number(settings.get("tight_pack_geometry"), 0, 0, 1) >= .5,
             custom_template=custom_cell_template,
+            random_rotation=random_rotation,
+            seed=rotation_seed,
         )
-    cell_label = "patches" if cell_shape == "square" else f"{cell_shape} cells"
+    cell_label = (
+        "patches" if cell_shape == "square" and not use_prebuilt_cells
+        else f"{cell_shape} cells"
+    )
 
     layer_plans = []
     total_patches = 0
@@ -1413,7 +1477,7 @@ def remap_layers(processed_layers, target_colors, settings):
             else [geometry]
         )
         for region_geometry in gradient_regions:
-            if cell_shape == "square":
+            if cell_shape == "square" and not use_prebuilt_cells:
                 candidate_indices = _candidate_patch_indices(
                     region_geometry, bounds, patch_size
                 )

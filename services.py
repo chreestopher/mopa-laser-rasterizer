@@ -1493,9 +1493,9 @@ def parse_abstract_filter_parameters(raw_value):
             # checkbox as text. Normalize it to the same boolean used by the
             # current JSON-producing UI.
             clean[key] = value.lower() == "true"
-        elif key in {"square_dots", "invert", "black_only", "keep_available_colors_as_vectors", "preserve_black", "tight_pack_geometry"} and isinstance(value, str) and value.lower() in ("true", "false"):
+        elif key in {"square_dots", "invert", "black_only", "keep_available_colors_as_vectors", "preserve_black", "tight_pack_geometry", "random_rotation"} and isinstance(value, str) and value.lower() in ("true", "false"):
             clean[key] = int(value.lower() == "true")
-        elif key in {"transparent", "invert_threshold", "keep_black", "square_dots", "invert", "black_only", "keep_available_colors_as_vectors", "preserve_black", "tight_pack_geometry"} and isinstance(value, bool):
+        elif key in {"transparent", "invert_threshold", "keep_black", "square_dots", "invert", "black_only", "keep_available_colors_as_vectors", "preserve_black", "tight_pack_geometry", "random_rotation"} and isinstance(value, bool):
             clean[key] = int(value)
         elif isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError(f"Image Style control '{key[:60]}' needs a number. Adjust that control or use Reset settings, then submit the job again.")
@@ -1560,7 +1560,7 @@ def parse_geometry_style_parameters(raw_value):
     }
     toggles = {
         "invert", "invert_fill", "black_only", "preserve_black",
-        "custom_glyph_invert", "tight_pack_geometry",
+        "custom_glyph_invert", "tight_pack_geometry", "random_rotation",
     }
     shapes = {
         "circle", "square", "diamond", "triangle", "hexagon", "octagon",
