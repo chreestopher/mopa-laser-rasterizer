@@ -66,9 +66,10 @@ def normalize_panel_tiling(value):
     if not enabled:
         return {"enabled": False}
 
-    def number(name, minimum, maximum, default):
+    def number(name, minimum, maximum, default, legacy_name=None):
         try:
-            result = float(value.get(name, default))
+            raw = value.get(name, value.get(legacy_name, default) if legacy_name else default)
+            result = float(raw)
         except (TypeError, ValueError):
             result = math.nan
         if not math.isfinite(result) or not minimum <= result <= maximum:
@@ -90,6 +91,10 @@ def normalize_panel_tiling(value):
 
     tile_width_mm = number("tile_width_mm", 1, 1000, 100)
     tile_height_mm = number("tile_height_mm", 1, 1000, 100)
+    workbed_width_mm = number("workbed_width_mm", 1, 2000, 350, "origin_x_mm")
+    workbed_height_mm = number("workbed_height_mm", 1, 2000, 350, "origin_y_mm")
+    if tile_width_mm > workbed_width_mm or tile_height_mm > workbed_height_mm:
+        raise ValueError("Panel Tiling tile dimensions must fit inside the described workbed.")
     edge_inset_mm = number("edge_inset_mm", 0, 100, 0)
     if edge_inset_mm * 2 >= min(tile_width_mm, tile_height_mm):
         raise ValueError("Panel Tiling edge inset must leave a positive engravable area inside every tile.")
@@ -108,8 +113,8 @@ def normalize_panel_tiling(value):
         "gap_x_mm": number("gap_x_mm", 0, 1000, 0),
         "gap_y_mm": number("gap_y_mm", 0, 1000, 0),
         "edge_inset_mm": edge_inset_mm,
-        "origin_x_mm": number("origin_x_mm", -1000, 1000, 0),
-        "origin_y_mm": number("origin_y_mm", -1000, 1000, 0),
+        "workbed_width_mm": workbed_width_mm,
+        "workbed_height_mm": workbed_height_mm,
         "order": order,
         "include_tile_ids": enabled_value(value.get("include_tile_ids"), default=True),
     }
@@ -3110,8 +3115,10 @@ def export_panel_tiles(
     scaled_black = black_lightburn_geometry
     if scaled_black is not None and scale_factor != 1.0:
         scaled_black = scale(scaled_black, xfact=scale_factor, yfact=scale_factor, origin=(0, 0))
-    workbed_x = settings["origin_x_mm"] - settings["tile_width_mm"] / 2
-    workbed_y = settings["origin_y_mm"] - settings["tile_height_mm"] / 2
+    workbed_center_x = settings["workbed_width_mm"] / 2
+    workbed_center_y = settings["workbed_height_mm"] / 2
+    workbed_x = workbed_center_x - settings["tile_width_mm"] / 2
+    workbed_y = workbed_center_y - settings["tile_height_mm"] / 2
     try:
         printLogMessage(
             f"Panel Tiling: exporting {settings['rows'] * settings['columns']} tiles from finalized global geometry."
@@ -3161,7 +3168,7 @@ def export_panel_tiles(
             manifest["tiles"].append({
                 "sequence": sequence, "row": row + 1, "column": column + 1,
                 "source_origin_mm": {"x": source_x, "y": source_y},
-                "workbed_center_mm": {"x": settings["origin_x_mm"], "y": settings["origin_y_mm"]},
+                "workbed_center_mm": {"x": workbed_center_x, "y": workbed_center_y},
                 "workbed_origin_mm": {"x": workbed_x, "y": workbed_y},
                 "svg": os.path.basename(svg_path),
                 "lightburn": os.path.basename(svg_path) + ".lbrn2" if export_lightburn else None,
