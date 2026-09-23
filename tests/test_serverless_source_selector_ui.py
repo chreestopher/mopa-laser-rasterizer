@@ -32,8 +32,15 @@ def test_saved_palettes_show_their_single_material_as_read_only_text():
 
 def test_rasterizer_nested_controls_use_the_inputs_typography_in_both_modes():
     styles = (ROOT / "serverless_web" / "staging-pages.css").read_text(encoding="utf-8")
+    rasterizer = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
 
     assert "body.staging-home #job label{color:#8ee474!important" in styles
     assert "body.staging-home #job h3" in styles
     assert "body.light-machine.staging-home #job label{color:#286d24!important" in styles
     assert "body.light-machine.staging-home #job h3" in styles
+    assert "body.light-machine.staging-home #job .filter-description{color:#343530!important" in styles
+    assert "body.light-machine.staging-home #job input[type=checkbox]{appearance:none" in styles
+    assert "background:#fff!important" in styles
+    assert "input[type=checkbox]:checked::after" in styles
+    assert "border:solid #20221e" in styles
+    assert 'href="/staging-pages.css?v=3"' in rasterizer
