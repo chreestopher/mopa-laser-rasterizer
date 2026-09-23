@@ -3110,6 +3110,8 @@ def export_panel_tiles(
     scaled_black = black_lightburn_geometry
     if scaled_black is not None and scale_factor != 1.0:
         scaled_black = scale(scaled_black, xfact=scale_factor, yfact=scale_factor, origin=(0, 0))
+    workbed_x = settings["origin_x_mm"] - settings["tile_width_mm"] / 2
+    workbed_y = settings["origin_y_mm"] - settings["tile_height_mm"] / 2
     try:
         printLogMessage(
             f"Panel Tiling: exporting {settings['rows'] * settings['columns']} tiles from finalized global geometry."
@@ -3124,8 +3126,8 @@ def export_panel_tiles(
                 source_x + settings["tile_width_mm"] - inset,
                 source_y + settings["tile_height_mm"] - inset,
             )
-            dx = settings["origin_x_mm"] - source_x
-            dy = settings["origin_y_mm"] - source_y
+            dx = workbed_x - source_x
+            dy = workbed_y - source_y
             tile_layers = {
                 color: translate(geometry.intersection(clip), xoff=dx, yoff=dy)
                 for color, geometry in scaled_layers.items()
@@ -3137,7 +3139,7 @@ def export_panel_tiles(
             svg_path = os.path.join(temp_dir, f"{stem}.svg")
             root = _tile_svg_root(
                 settings["tile_width_mm"], settings["tile_height_mm"],
-                settings["origin_x_mm"], settings["origin_y_mm"],
+                workbed_x, workbed_y,
             )
             project = _empty_lightburn_copy(lb_project_template)
             export_processed_layers(
@@ -3159,7 +3161,8 @@ def export_panel_tiles(
             manifest["tiles"].append({
                 "sequence": sequence, "row": row + 1, "column": column + 1,
                 "source_origin_mm": {"x": source_x, "y": source_y},
-                "workbed_origin_mm": {"x": settings["origin_x_mm"], "y": settings["origin_y_mm"]},
+                "workbed_center_mm": {"x": settings["origin_x_mm"], "y": settings["origin_y_mm"]},
+                "workbed_origin_mm": {"x": workbed_x, "y": workbed_y},
                 "svg": os.path.basename(svg_path),
                 "lightburn": os.path.basename(svg_path) + ".lbrn2" if export_lightburn else None,
             })

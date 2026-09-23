@@ -75,7 +75,7 @@ def test_serpentine_order_reverses_every_other_row():
     ]
 
 
-def test_export_panel_tiles_clips_finished_geometry_and_reuses_origin(tmp_path):
+def test_export_panel_tiles_clips_finished_geometry_and_reuses_center(tmp_path):
     vector_processing.lightburn = lightburn
     project = lightburn.Lightburn()
     project.add_layer(lightburn.FillLayer(0, "Red", 0, 20))
@@ -108,10 +108,20 @@ def test_export_panel_tiles_clips_finished_geometry_and_reuses_origin(tmp_path):
         manifest = json.loads(archive.read("panel-manifest.json"))
         assert manifest["assembled_size_mm"] == {"width": 22.0, "height": 10.0}
         assert [tile["source_origin_mm"]["x"] for tile in manifest["tiles"]] == [0.0, 12.0]
+        assert all(tile["workbed_center_mm"] == {"x": 5.0, "y": 7.0} for tile in manifest["tiles"])
+        assert all(tile["workbed_origin_mm"] == {"x": 0.0, "y": 2.0} for tile in manifest["tiles"])
         first_svg = archive.read("tile-01-r01-c01.svg").decode("utf-8")
         second_svg = archive.read("tile-02-r01-c02.svg").decode("utf-8")
-        assert 'viewBox="5 7 10 10"' in first_svg
-        assert "6.000,8.000" in first_svg
-        assert "14.000,16.000" in first_svg
-        assert "6.000,8.000" in second_svg
-        assert "14.000,16.000" in second_svg
+        assert 'viewBox="0 2 10 10"' in first_svg
+        assert "1.000,3.000" in first_svg
+        assert "9.000,11.000" in first_svg
+        assert "1.000,3.000" in second_svg
+        assert "9.000,11.000" in second_svg
+
+
+def test_panel_tiling_labels_workbed_coordinates_as_tile_center():
+    page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+
+    assert "Common tile center X (mm)" in page
+    assert "Common tile center Y (mm)" in page
+    assert "Set the common tile center to the center of your laser workbed" in page
