@@ -29,6 +29,7 @@ ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().casefold()
 COGNITO_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID", "").strip()
 TTL_SECONDS = int(os.environ.get("JOB_TTL_SECONDS", "604800"))
 MAX_ARTWORK_BYTES = int(os.environ.get("MAX_ARTWORK_BYTES", str(100 * 1024 * 1024)))
+MAX_THUMBNAIL_BYTES = 512 * 1024
 MAX_MATERIAL_BYTES = int(os.environ.get("MAX_MATERIAL_BYTES", str(10 * 1024 * 1024)))
 MATERIAL_LIMIT_MB = f"{MAX_MATERIAL_BYTES / (1024 * 1024):g} MB"
 MAX_RECIPE_BYTES = int(os.environ.get("MAX_RECIPE_BYTES", str(10 * 1024 * 1024)))
@@ -352,6 +353,22 @@ def ordered_output_descriptors(task_id, source_name, objects):
         output_descriptor(task_id, source_name, obj)
         for obj in sorted(objects, key=raster_output_sort_key)
     ]
+
+
+def input_thumbnail_url(task_id, record, history):
+    """Sign only the browser-generated thumbnail recorded for this owned job."""
+    key = str(record.get("thumbnail_key") or history.get("thumbnail_key") or "")
+    if not key.startswith(f"jobs/{task_id}/inputs/thumbnail-"):
+        return ""
+    return s3.generate_presigned_url(
+        "get_object",
+        Params={
+            "Bucket": BUCKET,
+            "Key": key,
+            "ResponseContentDisposition": "inline",
+        },
+        ExpiresIn=900,
+    )
 
 
 def token_hash(token):
@@ -1364,6 +1381,7 @@ def account_job(event, task_id):
         "error": error_message,
         "logs": visible_job_logs(logs, error_message) if include_logs else None,
         "logs_included": include_logs,
+        "thumbnail_url": input_thumbnail_url(task_id, record, history),
         "outputs": outputs,
     })
 
@@ -3536,6 +3554,18 @@ def presigned_post(task_id, category, filename, content_type, maximum, digest, g
             "maximum_bytes": maximum}
 
 
+def thumbnail_presigned_post(task_id, content_type, digest):
+    """Return an optional, tightly bounded upload grant for a browser preview."""
+    normalized = str(content_type or "").strip().casefold()
+    extension = {"image/webp": "webp", "image/png": "png", "image/jpeg": "jpg"}.get(normalized)
+    if not extension:
+        return None
+    return presigned_post(
+        task_id, "thumbnail", f"input-thumbnail.{extension}", normalized,
+        MAX_THUMBNAIL_BYTES, digest,
+    )
+
+
 def create_upload(event):
     data = body_json(event)
     owner = user_id(event)
@@ -3566,6 +3596,7 @@ def create_upload(event):
         material_name = safe_name(f"{saved_recipe.get('name') or 'holographic-palette'}.clb", "holographic-palette.clb")
     artwork_type = str(data.get("artwork_content_type") or mimetypes.guess_type(artwork_name)[0] or "application/octet-stream")[:120]
     material_type = str(data.get("material_content_type") or "application/octet-stream")[:120]
+    thumbnail = thumbnail_presigned_post(task_id, data.get("thumbnail_content_type"), digest)
     now = int(time.time())
     runtime_item = {**runtime_key(task_id), "task_id": task_id, "user_id": owner,
                          "status": "uploading", "upload_capability": digest,
@@ -3574,6 +3605,8 @@ def create_upload(event):
                           "expires_at": now + TTL_SECONDS}
     if svg_only:
         runtime_item["svg_only"] = True
+    if thumbnail:
+        runtime_item["expected_thumbnail_key"] = thumbnail["key"]
     if saved_material:
         runtime_item["saved_material_key"] = saved_material["s3_key"]
         runtime_item["saved_material_name"] = material_name
@@ -3621,6 +3654,7 @@ def create_upload(event):
     result = {
         "task_id": task_id, "upload_token": token,
         "artwork": presigned_post(task_id, "artwork", artwork_name, artwork_type, MAX_ARTWORK_BYTES, digest),
+        "thumbnail": thumbnail,
         "expires_in_seconds": UPLOAD_CAPABILITY_SECONDS,
     }
     result["material"] = (None if svg_only else
@@ -3925,8 +3959,9 @@ def create_holographic_upload(event):
     artwork_name = safe_name(data.get("artwork_name"), "artwork.png")
     artwork_type = str(data.get("artwork_content_type") or mimetypes.guess_type(artwork_name)[0]
                        or "application/octet-stream")[:120]
+    thumbnail = thumbnail_presigned_post(task_id, data.get("thumbnail_content_type"), digest)
     now = int(time.time())
-    table.put_item(Item={
+    runtime_item = {
         **runtime_key(task_id), "task_id": task_id, "user_id": owner,
         "status": "uploading", "upload_capability": digest, "log_count": 0,
         "upload_expires_at": now + UPLOAD_CAPABILITY_SECONDS,
@@ -3935,11 +3970,15 @@ def create_holographic_upload(event):
         "saved_material_name": safe_name(material.get("original_name"), "materials.clb"),
         "saved_recipe_key": recipe["s3_key"],
         "saved_recipe_name": safe_name(recipe.get("original_name"), "recipe.json"),
-    }, ConditionExpression="attribute_not_exists(pk)")
+    }
+    if thumbnail:
+        runtime_item["expected_thumbnail_key"] = thumbnail["key"]
+    table.put_item(Item=runtime_item, ConditionExpression="attribute_not_exists(pk)")
     return response(201, {
         "task_id": task_id, "upload_token": token,
         "artwork": presigned_post(task_id, "artwork", artwork_name, artwork_type,
                                     MAX_ARTWORK_BYTES, digest),
+        "thumbnail": thumbnail,
         "material": {"key": material["s3_key"], "saved": True},
         "recipe": {"key": recipe["s3_key"], "saved": True},
         "expires_in_seconds": UPLOAD_CAPABILITY_SECONDS,
@@ -3958,6 +3997,7 @@ def submit_holographic_job(event, task_id):
     if not valid_upload_capability(item, token):
         return response(403, {"message": "Upload capability is invalid or expired"})
     artwork_key = str(data.get("artwork_key") or "")
+    thumbnail_key = str(data.get("thumbnail_key") or "")
     recipe_key = str(data.get("recipe_key") or "")
     material_key = str(data.get("material_key") or "")
     if not artwork_key.startswith(f"jobs/{task_id}/inputs/"):
@@ -3971,6 +4011,10 @@ def submit_holographic_job(event, task_id):
         if cut_mode not in {"setting", "line", "fill", "offset_fill"}:
             raise ValueError("Choose a valid cut mode")
         artwork_head = verify_upload(artwork_key, item["upload_capability"], MAX_ARTWORK_BYTES)
+        if thumbnail_key:
+            if thumbnail_key != str(item.get("expected_thumbnail_key") or ""):
+                raise ValueError("The artwork thumbnail does not match this job. Submit the job again to start a fresh upload.")
+            verify_upload(thumbnail_key, item["upload_capability"], MAX_THUMBNAIL_BYTES)
         verify_saved_recipe(recipe_key, user_id(event), MAX_RECIPE_BYTES)
         verify_saved_material(material_key, user_id(event), MAX_MATERIAL_BYTES)
     except (TypeError, ValueError) as error:
@@ -4012,7 +4056,8 @@ def submit_holographic_job(event, task_id):
         "abstract_filter": "none", "material_name": payload["material_name"],
         "run_parameters": dynamo_value(run_parameters), "created_at": now,
         "updated_at": now, "status": "pending", "artifact_prefix": artifact_prefix,
-        "input_keys": [artwork_key, recipe_key, material_key],
+        "input_keys": [key for key in (artwork_key, thumbnail_key, recipe_key, material_key) if key],
+        "thumbnail_key": thumbnail_key,
         "expires_at": now + TTL_SECONDS,
     }
     with table.batch_writer() as batch:
@@ -4022,7 +4067,8 @@ def submit_holographic_job(event, task_id):
             "job_type": "holographic_artwork",
             "created_at": now, "updated_at": now, "history_sk": history_sk,
             "status": "pending", "artifact_prefix": artifact_prefix,
-            "input_keys": [artwork_key, recipe_key, material_key],
+            "input_keys": [key for key in (artwork_key, thumbnail_key, recipe_key, material_key) if key],
+            "thumbnail_key": thumbnail_key,
             "expires_at": now + TTL_SECONDS,
         })
         batch.put_item(Item=admin_job_index_item(event, history))
@@ -4663,6 +4709,7 @@ def submit_job(event, task_id, guest=False):
     data["colors"] = ",".join(clean_overrides[color] for color in selected_hexes)
     data.pop("upload_token", None)
     artwork_key = str(data.pop("artwork_key", ""))
+    thumbnail_key = str(data.pop("thumbnail_key", ""))
     material_key = str(data.pop("material_key", ""))
     expected_prefix = f"jobs/{task_id}/inputs/"
     if not artwork_key.startswith(expected_prefix):
@@ -4674,6 +4721,10 @@ def submit_job(event, task_id, guest=False):
         return response(400, {"message": "We couldn't match the selected Material Library to this job. Review your library choice, then submit the job again."})
     try:
         artwork_head = verify_upload(artwork_key, item["upload_capability"], MAX_ARTWORK_BYTES)
+        if thumbnail_key:
+            if thumbnail_key != str(item.get("expected_thumbnail_key") or ""):
+                raise ValueError("The artwork thumbnail does not match this job. Submit the job again to start a fresh upload.")
+            verify_upload(thumbnail_key, item["upload_capability"], MAX_THUMBNAIL_BYTES)
         if svg_only:
             pass
         elif saved_material_key:
@@ -4765,7 +4816,8 @@ def submit_job(event, task_id, guest=False):
         "material_name": str(data.get("material") or ""),
         "run_parameters": dynamo_value(data), "created_at": now,
         "updated_at": now, "status": "pending", "artifact_prefix": artifact_prefix,
-        "input_keys": list(dict.fromkeys(key for key in (artwork_key, material_key, recipe_input_key) if key)),
+        "input_keys": list(dict.fromkeys(key for key in (artwork_key, thumbnail_key, material_key, recipe_input_key) if key)),
+        "thumbnail_key": thumbnail_key,
         "expires_at": now + TTL_SECONDS,
     }
     owner_record = {
@@ -4776,7 +4828,8 @@ def submit_job(event, task_id, guest=False):
         "abstract_filter": str(data.get("abstract_filter") or "none"),
         "created_at": now, "updated_at": now, "history_sk": history_sk,
         "status": "pending", "artifact_prefix": artifact_prefix,
-        "input_keys": list(dict.fromkeys(key for key in (artwork_key, material_key, recipe_input_key) if key)),
+        "input_keys": list(dict.fromkeys(key for key in (artwork_key, thumbnail_key, material_key, recipe_input_key) if key)),
+        "thumbnail_key": thumbnail_key,
         "expires_at": now + (GUEST_JOB_SECONDS if guest else TTL_SECONDS),
     }
     with table.batch_writer() as batch:
