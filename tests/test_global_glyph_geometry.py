@@ -1132,6 +1132,7 @@ def test_staging_ui_exposes_custom_glyph_and_flow_mask_uploads():
     page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
     assert "['custom','Custom Uploaded Glyph']" in page
     assert "data-custom-glyph-file" in page
+    assert "repeating-conic-gradient(#fff 0 25%,#000 0 50%)" in page
     assert 'id="flowMaskFile"' in page
     assert "flowHasContent()" in page
     assert "normalizeShapeImage" in page
