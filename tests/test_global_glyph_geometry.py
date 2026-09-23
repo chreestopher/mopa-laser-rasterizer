@@ -497,6 +497,20 @@ def test_custom_svg_preserves_closed_shape_and_hole():
     assert geometry.bounds == pytest.approx((-.5, -.5, .5, .5))
 
 
+def test_custom_svg_preserves_visual_top_and_bottom_orientation():
+    geometry = svg_to_unit_geometry({
+        "name": "upright-triangle.svg",
+        "svg": (
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">'
+            '<path d="M50 0 L100 100 L0 100 Z"/></svg>'
+        ),
+    }, padding=0)
+
+    # The triangle carries more area near its bottom, so its centroid must
+    # remain below the normalized center (positive Y in exported coordinates).
+    assert geometry.centroid.y > 0
+
+
 def test_custom_svg_renders_as_glyph_and_krasnow_cell():
     layers = {"#FF0000": box(0, 0, 4, 4)}
     glyph = glyph_geometry.remap_layers(
@@ -634,6 +648,11 @@ def test_staging_ui_exposes_an_independent_compatible_geometry_section():
     assert 'accept=".svg,image/svg+xml,image/png,image/jpeg,image/webp"' in page
     assert 'data-custom-cell-file' in page
     assert "values.custom_cell_svg=structuredClone(customCellSvg)" in page
+    assert "function shapePreviewBounds(canvas,padding,sourceWidth,sourceHeight)" in page
+    assert page.count("padding.addEventListener('input',sync)") == 2
+    assert "drawSvgPreview(preview,customGlyphSvg,Number(padding.value))" in page
+    assert "drawShapePreview(preview,customGlyphMask,Boolean(invert.checked),Number(padding.value))" in page
+    assert "drawSvgPreview(preview,customCellSvg,Number(padding.value))" in page
     assert 'id="geometryRoutingGrid"' in page
     assert 'data-route-bulk="glyphs"' in page
     assert 'data-route-bulk="krasnow_grating"' in page
