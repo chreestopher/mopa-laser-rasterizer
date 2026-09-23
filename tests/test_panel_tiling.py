@@ -4,6 +4,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from PIL import Image
 from shapely.geometry import box
 
 
@@ -43,6 +44,28 @@ def test_panel_validation_rejects_too_many_tiles_and_impossible_inset():
         panel_settings(rows=11, columns=10)
     with pytest.raises(ValueError, match="positive engravable area"):
         panel_settings(edge_inset_mm=5)
+
+
+def test_panel_tiling_settings_are_disclosed_only_when_enabled():
+    page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+
+    assert 'id="panelTilingEnabled" type="checkbox" aria-controls="panelTilingDetails" aria-expanded="false"' in page
+    assert 'id="panelTilingDetails" class="layout-details" hidden' in page
+    assert ".layout-details[hidden]{display:none}" in page
+    assert "details.hidden=!settings.enabled" in page
+    assert "toggle.setAttribute('aria-expanded',String(settings.enabled))" in page
+
+
+def test_panel_dimensions_resize_the_complete_source_before_clipping():
+    source = Image.new("RGB", (460, 640), "white")
+
+    resized = vector_processing.resize_to_specific_height_or_width(
+        source,
+        width=108,
+        height=170,
+    )
+
+    assert resized.size == (108, 170)
 
 
 def test_serpentine_order_reverses_every_other_row():
