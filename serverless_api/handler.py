@@ -920,8 +920,8 @@ def clean_last_used_form(name, snapshot):
                 for parameter, parameter_value in value.items()
                 if parameter in {
                     "enabled", "tile_width_mm", "tile_height_mm", "columns", "rows",
-                    "gap_x_mm", "gap_y_mm", "edge_inset_mm", "origin_x_mm",
-                    "origin_y_mm", "order", "include_tile_ids",
+                    "gap_x_mm", "gap_y_mm", "edge_inset_mm", "workbed_width_mm",
+                    "workbed_height_mm", "origin_x_mm", "origin_y_mm", "order", "include_tile_ids",
                 }
                 and (
                     isinstance(parameter_value, bool)
@@ -4151,9 +4151,10 @@ def submit_job(event, task_id, guest=False):
         or isinstance(raw_panel_enabled, str) and raw_panel_enabled.strip().lower() in {"true", "1", "yes", "on"}
     )
     if enabled:
-        def panel_number(name, minimum, maximum, default):
+        def panel_number(name, minimum, maximum, default, legacy_name=None):
             try:
-                value = float(panel_tiling.get(name, default))
+                raw = panel_tiling.get(name, panel_tiling.get(legacy_name, default) if legacy_name else default)
+                value = float(raw)
             except (TypeError, ValueError):
                 raise ValueError
             if not math.isfinite(value) or not minimum <= value <= maximum:
@@ -4174,11 +4175,13 @@ def submit_job(event, task_id, guest=False):
             gap_x = panel_number("gap_x_mm", 0, 1000, 0)
             gap_y = panel_number("gap_y_mm", 0, 1000, 0)
             inset = panel_number("edge_inset_mm", 0, 100, 0)
-            origin_x = panel_number("origin_x_mm", -1000, 1000, 0)
-            origin_y = panel_number("origin_y_mm", -1000, 1000, 0)
+            workbed_width = panel_number("workbed_width_mm", 1, 2000, 350, "origin_x_mm")
+            workbed_height = panel_number("workbed_height_mm", 1, 2000, 350, "origin_y_mm")
             order = str(panel_tiling.get("order") or "row_major").strip().lower()
             if columns * rows > 100 or inset * 2 >= min(tile_width, tile_height):
                 raise ValueError
+            if tile_width > workbed_width or tile_height > workbed_height:
+                return response(400, {"message": "Panel Tiling tile dimensions must fit inside the described workbed. Increase the workbed dimensions or use smaller tiles."})
             if order not in {"row_major", "column_major", "serpentine"}:
                 raise ValueError
             assembled_width = columns * tile_width + (columns - 1) * gap_x
@@ -4188,11 +4191,11 @@ def submit_job(event, task_id, guest=False):
             if max(processing_width, processing_height) > 1600:
                 return response(400, {"message": "Panel Tiling needs more than 1,600 processing pixels on an axis. Increase Pixel size, reduce the tile count, or use smaller tile and gap dimensions."})
         except (TypeError, ValueError):
-            return response(400, {"message": "Panel Tiling contains an invalid size, count, inset, origin, or tile order. Review the Panel Tiling controls and submit again."})
+            return response(400, {"message": "Panel Tiling contains an invalid tile size, count, gap, inset, workbed size, or tile order. Review the Panel Tiling controls and submit again."})
         panel_tiling = {
             "enabled": True, "tile_width_mm": tile_width, "tile_height_mm": tile_height,
             "columns": columns, "rows": rows, "gap_x_mm": gap_x, "gap_y_mm": gap_y,
-            "edge_inset_mm": inset, "origin_x_mm": origin_x, "origin_y_mm": origin_y,
+            "edge_inset_mm": inset, "workbed_width_mm": workbed_width, "workbed_height_mm": workbed_height,
             "order": order,
             "include_tile_ids": not (
                 panel_tiling.get("include_tile_ids") is False

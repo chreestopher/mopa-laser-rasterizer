@@ -25,8 +25,8 @@ def panel_settings(**overrides):
         "gap_x_mm": 2,
         "gap_y_mm": 0,
         "edge_inset_mm": 1,
-        "origin_x_mm": 5,
-        "origin_y_mm": 7,
+        "workbed_width_mm": 10,
+        "workbed_height_mm": 14,
         "order": "row_major",
         "include_tile_ids": True,
     }
@@ -44,6 +44,21 @@ def test_panel_validation_rejects_too_many_tiles_and_impossible_inset():
         panel_settings(rows=11, columns=10)
     with pytest.raises(ValueError, match="positive engravable area"):
         panel_settings(edge_inset_mm=5)
+    with pytest.raises(ValueError, match="fit inside the described workbed"):
+        panel_settings(tile_width_mm=11)
+
+
+def test_legacy_workbed_values_are_treated_as_dimensions():
+    values = panel_settings()
+    values.pop("workbed_width_mm")
+    values.pop("workbed_height_mm")
+    values["origin_x_mm"] = 350
+    values["origin_y_mm"] = 300
+
+    settings = vector_processing.normalize_panel_tiling(values)
+
+    assert settings["workbed_width_mm"] == 350
+    assert settings["workbed_height_mm"] == 300
 
 
 def test_panel_tiling_settings_are_disclosed_only_when_enabled():
@@ -119,9 +134,9 @@ def test_export_panel_tiles_clips_finished_geometry_and_reuses_center(tmp_path):
         assert "9.000,11.000" in second_svg
 
 
-def test_panel_tiling_labels_workbed_coordinates_as_tile_center():
+def test_panel_tiling_labels_workbed_dimensions_and_explains_center():
     page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
 
-    assert "Common tile center X (mm)" in page
-    assert "Common tile center Y (mm)" in page
-    assert "Set the common tile center to the center of your laser workbed" in page
+    assert "Workbed width (mm)" in page
+    assert "Workbed height (mm)" in page
+    assert "every generated tile is centered at half of those dimensions" in page
