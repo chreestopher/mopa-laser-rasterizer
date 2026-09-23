@@ -89,10 +89,10 @@ def normalize_panel_tiling(value):
             raise ValueError(f"Panel Tiling {name} must be a whole number from 1 to 20.")
         return result
 
-    tile_width_mm = number("tile_width_mm", 1, 1000, 100)
-    tile_height_mm = number("tile_height_mm", 1, 1000, 100)
-    workbed_width_mm = number("workbed_width_mm", 1, 2000, 350, "origin_x_mm")
-    workbed_height_mm = number("workbed_height_mm", 1, 2000, 350, "origin_y_mm")
+    tile_width_mm = number("tile_width_mm", 1, 3000, 100)
+    tile_height_mm = number("tile_height_mm", 1, 3000, 100)
+    workbed_width_mm = number("workbed_width_mm", 1, 3000, 350, "origin_x_mm")
+    workbed_height_mm = number("workbed_height_mm", 1, 3000, 350, "origin_y_mm")
     if tile_width_mm > workbed_width_mm or tile_height_mm > workbed_height_mm:
         raise ValueError("Panel Tiling tile dimensions must fit inside the described workbed.")
     edge_inset_mm = number("edge_inset_mm", 0, 100, 0)

@@ -48,6 +48,27 @@ def test_panel_validation_rejects_too_many_tiles_and_impossible_inset():
         panel_settings(tile_width_mm=11)
 
 
+def test_panel_dimension_limits_allow_three_meter_tiles_and_cap_gaps():
+    settings = panel_settings(
+        tile_width_mm=3000,
+        tile_height_mm=3000,
+        workbed_width_mm=3000,
+        workbed_height_mm=3000,
+        gap_x_mm=1000,
+        gap_y_mm=1000,
+        edge_inset_mm=0,
+    )
+
+    assert settings["tile_width_mm"] == 3000
+    assert settings["tile_height_mm"] == 3000
+    assert settings["gap_x_mm"] == 1000
+    assert settings["gap_y_mm"] == 1000
+    with pytest.raises(ValueError, match="Tile width mm must be between 1 and 3000"):
+        panel_settings(tile_width_mm=3000.1, workbed_width_mm=3000)
+    with pytest.raises(ValueError, match="Gap x mm must be between 0 and 1000"):
+        panel_settings(gap_x_mm=1000.1)
+
+
 def test_legacy_workbed_values_are_treated_as_dimensions():
     values = panel_settings()
     values.pop("workbed_width_mm")
@@ -69,6 +90,18 @@ def test_panel_tiling_settings_are_disclosed_only_when_enabled():
     assert ".layout-details[hidden]{display:none}" in page
     assert "details.hidden=!settings.enabled" in page
     assert "toggle.setAttribute('aria-expanded',String(settings.enabled))" in page
+    assert 'id="tileWidth" type="number" min="1" max="3000"' in page
+    assert 'id="tileHeight" type="number" min="1" max="3000"' in page
+    assert 'id="tileGapX" type="number" min="0" max="1000"' in page
+    assert 'id="tileGapY" type="number" min="0" max="1000"' in page
+    assert 'id="tileWorkbedWidth" type="number" min="1" max="3000"' in page
+    assert 'id="tileWorkbedHeight" type="number" min="1" max="3000"' in page
+
+    api = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
+    assert 'panel_number("tile_width_mm", 1, 3000, 100)' in api
+    assert 'panel_number("tile_height_mm", 1, 3000, 100)' in api
+    assert 'panel_number("gap_x_mm", 0, 1000, 0)' in api
+    assert 'panel_number("gap_y_mm", 0, 1000, 0)' in api
 
 
 def test_panel_dimensions_resize_the_complete_source_before_clipping():

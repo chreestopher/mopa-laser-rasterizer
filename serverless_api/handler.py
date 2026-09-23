@@ -4169,14 +4169,14 @@ def submit_job(event, task_id, guest=False):
                 raise ValueError
             return value
         try:
-            tile_width = panel_number("tile_width_mm", 1, 1000, 100)
-            tile_height = panel_number("tile_height_mm", 1, 1000, 100)
+            tile_width = panel_number("tile_width_mm", 1, 3000, 100)
+            tile_height = panel_number("tile_height_mm", 1, 3000, 100)
             columns, rows = panel_count("columns", 2), panel_count("rows", 2)
             gap_x = panel_number("gap_x_mm", 0, 1000, 0)
             gap_y = panel_number("gap_y_mm", 0, 1000, 0)
             inset = panel_number("edge_inset_mm", 0, 100, 0)
-            workbed_width = panel_number("workbed_width_mm", 1, 2000, 350, "origin_x_mm")
-            workbed_height = panel_number("workbed_height_mm", 1, 2000, 350, "origin_y_mm")
+            workbed_width = panel_number("workbed_width_mm", 1, 3000, 350, "origin_x_mm")
+            workbed_height = panel_number("workbed_height_mm", 1, 3000, 350, "origin_y_mm")
             order = str(panel_tiling.get("order") or "row_major").strip().lower()
             if columns * rows > 100 or inset * 2 >= min(tile_width, tile_height):
                 raise ValueError
