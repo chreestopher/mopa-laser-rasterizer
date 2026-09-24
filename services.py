@@ -96,7 +96,7 @@ LIGHTBURN_PALETTE_NAMES = {
 ABSTRACT_FILTER_NAMES = {
     "none", "wave", "voronoi", "shear", "spiral", "mosaic",
     "crystal", "ripple", "glitch", "shattered", "deep_fryer",
-    "halftone_newsprint", "optical_color_mix", "krasnow_grating",
+    "optical_color_mix",
     "structure_tensor_flow",
 }
 ABSTRACT_PRESET_PREFIX = "abstract_"
@@ -1521,8 +1521,8 @@ def parse_geometry_style_parameters(raw_value):
     parameters.pop("posterize_colors", None)
     if len(parameters) > 24:
         raise ValueError("The Geometry Style settings contain too many controls. Use Reset geometry settings, configure the geometry again, and submit the job again.")
-    if any(key in parameters for key in ("assignments", "glyphs", "krasnow_grating")):
-        if set(parameters) - {"assignments", "glyphs", "krasnow_grating"}:
+    if any(key in parameters for key in ("assignments", "glyphs", "halftone_newsprint", "krasnow_grating")):
+        if set(parameters) - {"assignments", "glyphs", "halftone_newsprint", "krasnow_grating"}:
             raise ValueError("Choose-by-Swatch geometry settings could not be read. Use Reset geometry settings, review the swatch routing, and submit again.")
         assignments = parameters.get("assignments") or {}
         if not isinstance(assignments, dict) or len(assignments) > 64:
@@ -1533,8 +1533,8 @@ def parse_geometry_style_parameters(raw_value):
             style = str(style).strip().lower()
             if not re.fullmatch(r"#[0-9A-F]{6}", color_hex):
                 raise ValueError("A Choose-by-Swatch color could not be read. Reload Rasterizer, review the swatch routing, and submit again.")
-            if style not in {"vectors", "glyphs", "krasnow_grating"}:
-                raise ValueError(f"Choose-by-Swatch routing for {color_hex} has an unsupported geometry. Choose Vectors, Glyphs, or Krasnow and submit again.")
+            if style not in {"vectors", "glyphs", "halftone_newsprint", "krasnow_grating"}:
+                raise ValueError(f"Choose-by-Swatch routing for {color_hex} has an unsupported geometry. Choose Vectors, Glyphs, Halftone Newsprint, or Krasnow and submit again.")
             clean_assignments[color_hex] = style
         clean_assignments["#000000"] = "vectors"
         used_styles = set(clean_assignments.values())
@@ -1543,6 +1543,10 @@ def parse_geometry_style_parameters(raw_value):
             clean["glyphs"] = parse_geometry_style_parameters(
                 parameters.get("glyphs") or {}
             )
+        if "halftone_newsprint" in used_styles:
+            clean["halftone_newsprint"] = parse_geometry_style_parameters(
+                parameters.get("halftone_newsprint") or {}
+            )
         if "krasnow_grating" in used_styles:
             clean["krasnow_grating"] = parse_geometry_style_parameters(
                 parameters.get("krasnow_grating") or {}
@@ -1550,7 +1554,8 @@ def parse_geometry_style_parameters(raw_value):
         return clean
     numeric = {
         "cell_size_mm", "minimum_glyph_ratio", "maximum_glyph_ratio",
-        "non_black_glyph_density", "tone_curve", "contrast", "grid_angle",
+        "non_black_glyph_density", "minimum_dot_ratio", "maximum_dot_ratio",
+        "non_black_dot_density", "tone_curve", "contrast", "grid_angle",
         "glyph_rotation", "seed", "speed_spread", "gradient_top",
         "gradient_bottom", "gradient_curve", "hue_rotation",
         "saturation_cutoff", "patch_size_mm", "line_spacing_mm",
@@ -1559,7 +1564,7 @@ def parse_geometry_style_parameters(raw_value):
         "custom_glyph_padding", "custom_cell_padding",
     }
     toggles = {
-        "invert", "invert_fill", "black_only", "preserve_black",
+        "invert", "invert_fill", "black_only", "square_dots", "preserve_black",
         "custom_glyph_invert", "tight_pack_geometry", "random_rotation",
     }
     shapes = {
@@ -1631,6 +1636,8 @@ def parse_geometry_style_parameters(raw_value):
         if key == "glyph_shape" and value in shapes:
             clean[key] = value
         elif key == "glyph_size_source" and value in glyph_size_sources:
+            clean[key] = value
+        elif key == "dot_size_source" and value in glyph_size_sources:
             clean[key] = value
         elif key == "cell_shape" and value in cell_shapes:
             clean[key] = value
@@ -2024,10 +2031,10 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
         if image_preset != "abstract" or abstract_filter not in ABSTRACT_FILTER_NAMES:
             abstract_filter = "none"
         geometry_style = str(data.get("geometry_style", "vectors")).strip().lower()
-        if geometry_style not in {"vectors", "glyphs", "krasnow_grating", "by_swatch"}:
+        if geometry_style not in {"vectors", "glyphs", "halftone_newsprint", "krasnow_grating", "by_swatch"}:
             raise ValueError("Choose a valid geometry style")
-        if geometry_style in {"glyphs", "krasnow_grating", "by_swatch"} and abstract_filter in {
-            "halftone_newsprint", "optical_color_mix", "krasnow_grating",
+        if geometry_style in {"glyphs", "halftone_newsprint", "krasnow_grating", "by_swatch"} and abstract_filter in {
+            "optical_color_mix",
         }:
             raise ValueError("This Geometry Style is not available with the selected specialized image style")
         geometry_parameters = parse_geometry_style_parameters(

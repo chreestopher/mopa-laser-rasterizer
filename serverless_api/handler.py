@@ -75,8 +75,8 @@ PALETTE_NAMES = {color.upper(): name for name, color in PALETTE}
 RASTER_PRESETS = {"cartoon", "color_photograph", "bw_dither_photograph"}
 ABSTRACT_FILTERS = {
     "wave", "voronoi", "shear", "spiral", "mosaic", "crystal", "ripple",
-    "glitch", "deep_fryer", "shattered", "halftone_newsprint", "optical_color_mix",
-    "krasnow_grating", "structure_tensor_flow", "none",
+    "glitch", "deep_fryer", "shattered", "optical_color_mix",
+    "structure_tensor_flow", "none",
 }
 
 
@@ -873,7 +873,7 @@ def clean_last_used_form(name, snapshot):
                 "paw_print", "fish_scale", "puzzle_piece", "mixed", "custom",
             }:
                 cleaned[parameter] = parameter_value
-            elif parameter == "glyph_size_source" and parameter_value in {
+            elif parameter in {"glyph_size_source", "dot_size_source"} and parameter_value in {
                 "source_brightness", "seeded_variation",
             }:
                 cleaned[parameter] = parameter_value
@@ -916,16 +916,23 @@ def clean_last_used_form(name, snapshot):
                         character in "0123456789ABCDEF"
                         for character in str(color_hex).upper()[1:]
                     )
-                    and assigned_style in {"vectors", "glyphs", "krasnow_grating"}
+                    and assigned_style in {"vectors", "glyphs", "halftone_newsprint", "krasnow_grating"}
                 }
                 clean_assignments["#000000"] = "vectors"
-                clean_parameters = {
-                    "assignments": clean_assignments,
-                    "glyphs": clean_parameter_map(value.get("glyphs") or {}, geometry=True),
-                    "krasnow_grating": clean_parameter_map(
+                used_styles = set(clean_assignments.values())
+                clean_parameters = {"assignments": clean_assignments}
+                if "glyphs" in used_styles:
+                    clean_parameters["glyphs"] = clean_parameter_map(
+                        value.get("glyphs") or {}, geometry=True
+                    )
+                if "halftone_newsprint" in used_styles:
+                    clean_parameters["halftone_newsprint"] = clean_parameter_map(
+                        value.get("halftone_newsprint") or {}, geometry=True
+                    )
+                if "krasnow_grating" in used_styles:
+                    clean_parameters["krasnow_grating"] = clean_parameter_map(
                         value.get("krasnow_grating") or {}, geometry=True
-                    ),
-                }
+                    )
             else:
                 clean_parameters = clean_parameter_map(
                     value, geometry=key == "geometry_style_parameters"
@@ -946,7 +953,7 @@ def clean_last_used_form(name, snapshot):
                     or parameter == "order" and parameter_value in {"row_major", "column_major", "serpentine"}
                 )
             }
-        elif key == "geometry_style" and value in {"vectors", "glyphs", "krasnow_grating", "by_swatch"}:
+        elif key == "geometry_style" and value in {"vectors", "glyphs", "halftone_newsprint", "krasnow_grating", "by_swatch"}:
             clean_values[key] = value
         elif isinstance(value, bool):
             clean_values[key] = value
@@ -4267,10 +4274,10 @@ def submit_job(event, task_id, guest=False):
     data["abstract_filter"] = preset.removeprefix("abstract_") if preset.startswith("abstract_") else "none"
     data["abstract_filter_parameters"] = json.dumps(parameters, separators=(",", ":"))
     geometry_style = str(data.get("geometry_style") or "vectors").strip().lower()
-    if geometry_style not in {"vectors", "glyphs", "krasnow_grating", "by_swatch"}:
+    if geometry_style not in {"vectors", "glyphs", "halftone_newsprint", "krasnow_grating", "by_swatch"}:
         return response(400, {"message": "Choose a valid geometry style"})
-    if geometry_style in {"glyphs", "krasnow_grating", "by_swatch"} and data["abstract_filter"] in {
-        "halftone_newsprint", "optical_color_mix", "krasnow_grating",
+    if geometry_style in {"glyphs", "halftone_newsprint", "krasnow_grating", "by_swatch"} and data["abstract_filter"] in {
+        "optical_color_mix",
     }:
         return response(400, {"message": "This Geometry Style is not available with the selected specialized image style"})
     raw_geometry_parameters = data.get("geometry_style_parameters") or "{}"
@@ -4295,7 +4302,8 @@ def submit_job(event, task_id, guest=False):
         return response(400, {"message": "The Geometry Style settings are too large to submit. Remove extra Flow Painter regions, masks, or brush strokes and try again."})
     numeric_geometry_parameters = {
         "cell_size_mm", "minimum_glyph_ratio", "maximum_glyph_ratio",
-        "non_black_glyph_density", "tone_curve", "contrast", "grid_angle",
+        "non_black_glyph_density", "minimum_dot_ratio", "maximum_dot_ratio",
+        "non_black_dot_density", "tone_curve", "contrast", "grid_angle",
         "glyph_rotation", "seed", "speed_spread", "gradient_top",
         "gradient_bottom", "gradient_curve", "hue_rotation",
         "saturation_cutoff", "patch_size_mm", "line_spacing_mm",
@@ -4304,7 +4312,7 @@ def submit_job(event, task_id, guest=False):
         "custom_glyph_padding", "custom_cell_padding",
     }
     toggle_geometry_parameters = {
-        "invert", "invert_fill", "black_only", "preserve_black", "custom_glyph_invert",
+        "invert", "invert_fill", "black_only", "square_dots", "preserve_black", "custom_glyph_invert",
         "tight_pack_geometry", "random_rotation",
     }
     glyph_shapes = {
@@ -4493,6 +4501,7 @@ def submit_job(event, task_id, guest=False):
             valid = (
                 (key == "glyph_shape" and value in glyph_shapes)
                 or (key == "glyph_size_source" and value in glyph_size_sources)
+                or (key == "dot_size_source" and value in glyph_size_sources)
                 or (key == "cell_shape" and value in cell_shapes)
                 or (key == "grating_render_mode" and value in grating_render_modes)
                 or (key == "fauxlogram_gradient_scope" and value in gradient_scopes)
@@ -4538,7 +4547,7 @@ def submit_job(event, task_id, guest=False):
 
     try:
         if geometry_style == "by_swatch":
-            if set(geometry_parameters) - {"assignments", "glyphs", "krasnow_grating"}:
+            if set(geometry_parameters) - {"assignments", "glyphs", "halftone_newsprint", "krasnow_grating"}:
                 raise ValueError("Choose-by-Swatch geometry settings could not be read. Use Reset geometry settings, review the swatch routing, and submit again.")
             assignments = geometry_parameters.get("assignments") or {}
             if not isinstance(assignments, dict) or len(assignments) > 64:
@@ -4555,17 +4564,20 @@ def submit_job(event, task_id, guest=False):
                     raise ValueError("A Choose-by-Swatch color could not be read. Reload Rasterizer, review the swatch routing, and submit again.")
                 if color_hex not in selected_hexes | {"#000000"}:
                     raise ValueError(f"Choose-by-Swatch routing includes {color_hex}, which is not selected for this job. Select that swatch or remove its routing, then submit again.")
-                if assigned_style not in {"vectors", "glyphs", "krasnow_grating"}:
-                    raise ValueError(f"Choose-by-Swatch routing for {color_hex} has an unsupported geometry. Choose Vectors, Glyphs, or Krasnow and submit again.")
+                if assigned_style not in {"vectors", "glyphs", "halftone_newsprint", "krasnow_grating"}:
+                    raise ValueError(f"Choose-by-Swatch routing for {color_hex} has an unsupported geometry. Choose Vectors, Glyphs, Halftone Newsprint, or Krasnow and submit again.")
                 clean_assignments[color_hex] = assigned_style
             clean_assignments["#000000"] = "vectors"
             glyph_parameters = geometry_parameters.get("glyphs") or {}
+            halftone_parameters = geometry_parameters.get("halftone_newsprint") or {}
             krasnow_parameters = geometry_parameters.get("krasnow_grating") or {}
             validate_geometry_section(glyph_parameters)
+            validate_geometry_section(halftone_parameters)
             validate_geometry_section(krasnow_parameters)
             geometry_parameters = {
                 "assignments": clean_assignments,
                 "glyphs": glyph_parameters,
+                "halftone_newsprint": halftone_parameters,
                 "krasnow_grating": krasnow_parameters,
             }
         else:

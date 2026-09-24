@@ -25,6 +25,8 @@ USES_SOURCE_LUMINANCE = True
 PRESERVE_SOURCE_BLACK = True
 
 DEFAULTS = {
+    "dot_size_source": "source_brightness",
+    "seed": 1,
     "cell_size_mm": 0.6,
     "minimum_dot_ratio": 0.48,
     "maximum_dot_ratio": 0.97,
@@ -387,10 +389,14 @@ def remap_layers(processed_layers, target_colors, settings):
 
     tone_image = settings.get("_angle_image")
     glyph_size_source = str(
-        settings.get("_glyph_size_source") or "source_brightness"
+        settings.get("_glyph_size_source")
+        or settings.get("dot_size_source")
+        or "source_brightness"
     ).strip().lower()
     glyph_rotation = number(settings.get("_glyph_rotation"), 0, -180, 180)
-    glyph_seed = int(number(settings.get("_glyph_seed"), 1, 0, 999999))
+    glyph_seed = int(number(
+        settings.get("_glyph_seed", settings.get("seed", 1)), 1, 0, 999999
+    ))
     custom_glyph_template = settings.get("_custom_glyph_template")
     mixed_shapes = ("circle", "square", "diamond", "triangle", "hexagon", "octagon", "star", "cross", "bar")
     pieces = (

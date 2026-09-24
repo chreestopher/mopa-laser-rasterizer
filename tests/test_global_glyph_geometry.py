@@ -83,6 +83,58 @@ def test_mixed_global_glyphs_change_repeatably_with_seed():
     assert first.wkb != second.wkb
 
 
+def test_halftone_is_a_composable_geometry_style_with_seeded_tone():
+    layers = {"#FF0000": box(0, 0, 8, 4)}
+    parameters = {
+        **halftone_newsprint.DEFAULTS,
+        "dot_size_source": "seeded_variation",
+        "seed": 17,
+        "minimum_dot_ratio": .2,
+        "maximum_dot_ratio": .8,
+        "non_black_dot_density": 1,
+        "grid_angle": 0,
+        "_canvas_bounds": (0, 0, 8, 4),
+        "_scale_factor": 1,
+        "_angle_image": Image.new("L", (8, 4), 96),
+    }
+    first = geometry_styles.apply(
+        layers, TARGET_COLORS, "halftone_newsprint", parameters, "wave"
+    )
+    second = geometry_styles.apply(
+        layers, TARGET_COLORS, "halftone_newsprint", parameters, "wave"
+    )
+
+    assert geometry_styles.uses_source_luminance("halftone_newsprint")
+    assert geometry_styles.module_for_style("halftone_newsprint") is halftone_newsprint
+    assert first["#FF0000"].wkb == second["#FF0000"].wkb
+    assert 0 < first["#FF0000"].area < layers["#FF0000"].area
+
+
+def test_routed_halftone_forces_black_only_off():
+    style, parameters = geometry_styles.normalize("by_swatch", {
+        "assignments": {"#FF0000": "halftone_newsprint"},
+        "halftone_newsprint": {"black_only": 1, "dot_size_source": "seeded_variation"},
+    }, "wave")
+
+    assert style == "by_swatch"
+    assert parameters["halftone_newsprint"]["black_only"] == 0
+    assert parameters["halftone_newsprint"]["dot_size_source"] == "seeded_variation"
+
+    parsed = parse_geometry_style_parameters({
+        "assignments": {"#FF0000": "halftone_newsprint"},
+        "halftone_newsprint": {
+            "dot_size_source": "seeded_variation",
+            "square_dots": 1,
+            "seed": 17,
+        },
+    })
+    assert parsed["halftone_newsprint"] == {
+        "dot_size_source": "seeded_variation",
+        "square_dots": 1,
+        "seed": 17,
+    }
+
+
 def test_positive_and_invert_fill_outputs_never_overlap_layers():
     layers = {
         "#FF0000": box(0, 0, 6, 4),
@@ -632,17 +684,19 @@ def test_krasnow_icon_glyphs_use_their_tighter_staggered_row_spacing():
 def test_staging_ui_exposes_an_independent_compatible_geometry_section():
     page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
     assert 'id="geometryStyleSection"' in page
-    assert '<option value="vectors">Normal Vectors</option><option value="glyphs">Glyphs</option><option value="krasnow_grating">Krasnow Grating</option><option value="by_swatch">Choose by swatch</option>' in page
+    assert '<option value="vectors">Normal Vectors</option><option value="glyphs">Glyphs</option><option value="halftone_newsprint">Halftone Newsprint</option><option value="krasnow_grating">Krasnow Grating</option><option value="by_swatch">Choose by swatch</option>' in page
     assert "SPECIALIZED_GEOMETRY_PRESETS" in page
     assert "geometry_style:effectiveGeometryStyle()" in page
     assert "geometry_style_parameters:JSON.stringify(geometryStyleParameters())" in page
     assert "if(used.has('glyphs'))parameters.glyphs=" in page
+    assert "if(used.has('halftone_newsprint'))parameters.halftone_newsprint=" in page
     assert "if(used.has('krasnow_grating'))parameters.krasnow_grating=krasnowGeometryValues()" in page
     assert "['invert_fill',false]" in page
     assert page.count("['random_rotation',false]") >= 2
     assert "syncGeometryToggleCompatibility" in page
     assert "Every output layer is made mutually exclusive before export." in page
-    assert "const KRASNOW_GEOMETRY={...PRESETS.abstract_krasnow_grating" in page
+    assert "const KRASNOW_GEOMETRY={description:" in page
+    assert "const HALFTONE_GEOMETRY={description:" in page
     assert "['grating_render_mode','line'" in page
     assert "LightBurn Fill (Experimental)" in page
     assert "fauxlogram_gradient_scope" in page
@@ -660,6 +714,7 @@ def test_staging_ui_exposes_an_independent_compatible_geometry_section():
     assert "drawSvgPreview(preview,customCellSvg,Number(padding.value))" in page
     assert 'id="geometryRoutingGrid"' in page
     assert 'data-route-bulk="glyphs"' in page
+    assert 'data-route-bulk="halftone_newsprint"' in page
     assert 'data-route-bulk="krasnow_grating"' in page
     assert "posterize_colors" not in page
     assert "This requires a Fauxlographic Cut Setting" in page
@@ -1092,7 +1147,7 @@ def test_flow_painter_region_errors_identify_position_and_recovery():
 
 
 def test_invalid_swatch_geometry_identifies_the_swatch_and_valid_choices():
-    with pytest.raises(ValueError, match=r"routing for #FF0000 has an unsupported geometry.*Vectors, Glyphs, or Krasnow"):
+    with pytest.raises(ValueError, match=r"routing for #FF0000 has an unsupported geometry.*Vectors, Glyphs, Halftone Newsprint, or Krasnow"):
         parse_geometry_style_parameters({
             "assignments": {"#FF0000": "unknown"},
             "glyphs": {},

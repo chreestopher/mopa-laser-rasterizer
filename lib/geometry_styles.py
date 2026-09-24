@@ -1,17 +1,20 @@
 """Optional final geometry renderers shared by ordinary Rasterizer presets."""
 
-from abstract_filters import krasnow_grating
+from abstract_filters import halftone_newsprint, krasnow_grating
 import glyph_geometry
 from shapely.geometry import GeometryCollection, box
 
 
 GLYPH_STYLE = "glyphs"
+HALFTONE_STYLE = "halftone_newsprint"
 KRASNOW_STYLE = "krasnow_grating"
 ROUTED_STYLE = "by_swatch"
 NORMAL_STYLE = "vectors"
-SUPPORTED_STYLES = {NORMAL_STYLE, GLYPH_STYLE, KRASNOW_STYLE, ROUTED_STYLE}
+SUPPORTED_STYLES = {
+    NORMAL_STYLE, GLYPH_STYLE, HALFTONE_STYLE, KRASNOW_STYLE, ROUTED_STYLE,
+}
 SPECIALIZED_FILTERS = {
-    "halftone_newsprint", "optical_color_mix", "krasnow_grating",
+    "optical_color_mix",
 }
 
 
@@ -20,10 +23,9 @@ def normalize(style, parameters=None, abstract_filter="none"):
     if style not in SUPPORTED_STYLES:
         raise ValueError(f"Geometry style '{style}' is not supported.")
     filter_name = str(abstract_filter or "none").strip().lower()
-    if style in {GLYPH_STYLE, KRASNOW_STYLE, ROUTED_STYLE} and filter_name in SPECIALIZED_FILTERS:
+    if style in {GLYPH_STYLE, HALFTONE_STYLE, KRASNOW_STYLE, ROUTED_STYLE} and filter_name in SPECIALIZED_FILTERS:
         raise ValueError(
-            f"{style_label(style)} Geometry Style is not available with Halftone "
-            "Newsprint, Optical Color Mix, or Krasnow Grating."
+            f"{style_label(style)} Geometry Style is not available with Optical Color Mix."
         )
     if style == NORMAL_STYLE:
         return style, {}
@@ -40,7 +42,9 @@ def normalize(style, parameters=None, abstract_filter="none"):
                 len(color_hex) != 7
                 or not color_hex.startswith("#")
                 or any(character not in "0123456789ABCDEF" for character in color_hex[1:])
-                or assigned_style not in {NORMAL_STYLE, GLYPH_STYLE, KRASNOW_STYLE}
+                or assigned_style not in {
+                    NORMAL_STYLE, GLYPH_STYLE, HALFTONE_STYLE, KRASNOW_STYLE,
+                }
             ):
                 raise ValueError("Geometry routing contains an invalid swatch assignment.")
             assignments[color_hex] = assigned_style
@@ -56,6 +60,12 @@ def normalize(style, parameters=None, abstract_filter="none"):
             )
             glyph_parameters["black_only"] = 0
             normalized[GLYPH_STYLE] = glyph_parameters
+        if HALFTONE_STYLE in used_styles:
+            _, halftone_parameters = normalize(
+                HALFTONE_STYLE, raw.get(HALFTONE_STYLE) or {}, filter_name
+            )
+            halftone_parameters["black_only"] = 0
+            normalized[HALFTONE_STYLE] = halftone_parameters
         if KRASNOW_STYLE in used_styles:
             _, krasnow_parameters = normalize(
                 KRASNOW_STYLE, raw.get(KRASNOW_STYLE) or {}, filter_name
@@ -65,6 +75,7 @@ def normalize(style, parameters=None, abstract_filter="none"):
         return style, normalized
     defaults = (
         krasnow_grating.DEFAULTS if style == KRASNOW_STYLE
+        else halftone_newsprint.DEFAULTS if style == HALFTONE_STYLE
         else glyph_geometry.DEFAULTS
     )
     values = dict(defaults)
@@ -82,6 +93,8 @@ def style_label(style):
     style = str(style or NORMAL_STYLE).strip().lower()
     if style == ROUTED_STYLE:
         return "Geometry Routing"
+    if style == HALFTONE_STYLE:
+        return "Halftone Newsprint"
     return (
         "Krasnow Grating"
         if style == KRASNOW_STYLE
@@ -93,6 +106,8 @@ def module_for_style(style):
     style = str(style or NORMAL_STYLE).strip().lower()
     if style == KRASNOW_STYLE:
         return krasnow_grating
+    if style == HALFTONE_STYLE:
+        return halftone_newsprint
     if style == GLYPH_STYLE:
         return glyph_geometry
     return None
@@ -139,7 +154,9 @@ def preserves_source_black(style, parameters=None):
 
 
 def uses_source_luminance(style, parameters=None):
-    return bool(assigned_styles(style, parameters) & {GLYPH_STYLE, KRASNOW_STYLE})
+    return bool(assigned_styles(style, parameters) & {
+        GLYPH_STYLE, HALFTONE_STYLE, KRASNOW_STYLE,
+    })
 
 
 def _exclusive_source_layers(processed_layers, target_colors, bounds):
@@ -181,7 +198,9 @@ def apply(processed_layers, target_colors, style, parameters=None, abstract_filt
                 processed_layers, target_colors, bounds
             )
         assignments = values["assignments"]
-        routed_layers = {NORMAL_STYLE: {}, GLYPH_STYLE: {}, KRASNOW_STYLE: {}}
+        routed_layers = {
+            NORMAL_STYLE: {}, GLYPH_STYLE: {}, HALFTONE_STYLE: {}, KRASNOW_STYLE: {},
+        }
         for color_hex, geometry in processed_layers.items():
             assigned_style = assignments.get(str(color_hex).upper(), NORMAL_STYLE)
             routed_layers[assigned_style][color_hex] = geometry
@@ -189,6 +208,7 @@ def apply(processed_layers, target_colors, style, parameters=None, abstract_filt
         output = dict(routed_layers[NORMAL_STYLE])
         for routed_style, renderer in (
             (GLYPH_STYLE, glyph_geometry.remap_layers),
+            (HALFTONE_STYLE, halftone_newsprint.remap_layers),
             (KRASNOW_STYLE, krasnow_grating.remap_layers),
         ):
             source_layers = routed_layers[routed_style]
@@ -200,11 +220,11 @@ def apply(processed_layers, target_colors, style, parameters=None, abstract_filt
             ):
                 if private_name in values:
                     routed_parameters[private_name] = values[private_name]
-            routed_parameters["_progress_name"] = (
-                "Routed Glyph Geometry"
-                if routed_style == GLYPH_STYLE
-                else "Routed Krasnow Grating Geometry"
-            )
+            routed_parameters["_progress_name"] = {
+                GLYPH_STYLE: "Routed Glyph Geometry",
+                HALFTONE_STYLE: "Routed Halftone Newsprint Geometry",
+                KRASNOW_STYLE: "Routed Krasnow Grating Geometry",
+            }[routed_style]
             routed_targets = target_colors_for_style(
                 target_colors, values, routed_style
             )
@@ -218,5 +238,15 @@ def apply(processed_layers, target_colors, style, parameters=None, abstract_filt
                 processed_layers, target_colors, bounds
             )
         return krasnow_grating.remap_layers(processed_layers, target_colors, values)
+    if style == HALFTONE_STYLE:
+        values["_progress_name"] = "Halftone Newsprint Geometry Style"
+        bounds = values.get("_canvas_bounds")
+        if bounds and len(bounds) == 4:
+            processed_layers = _exclusive_source_layers(
+                processed_layers, target_colors, bounds
+            )
+        return halftone_newsprint.remap_layers(
+            processed_layers, target_colors, values
+        )
     values["_progress_name"] = "Glyph Geometry Style"
     return glyph_geometry.remap_layers(processed_layers, target_colors, values)

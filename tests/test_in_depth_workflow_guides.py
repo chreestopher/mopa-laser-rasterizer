@@ -61,11 +61,11 @@ def test_in_depth_guides_build_and_cover_the_complete_workflows():
         assert (ROOT / "static" / "docs" / "wizardlogo.png").is_file()
         assert "In-depth workflow guide" in fauxlogram
         assert "STAGE " in fauxlogram
-        assert "First method: launch a Krasnow Color Grating test" in fauxlogram
+        assert "First method: launch a Krasnow Grating test" in fauxlogram
         assert "Go deeper: generate a Fauxlographic Etching Lab grid" in fauxlogram
         assert "smaller refinement grid" not in fauxlogram
         assert "cells with no apparent visual difference from others" in fauxlogram
-        assert "Advanced method: reveal Krasnow Grating Geometry Style" in fauxlogram
+        assert "Explore composable Krasnow Geometry" in fauxlogram
         assert "Entire Artwork radial" in fauxlogram
         assert "Each Shape radial" in fauxlogram
         assert "not a true wavefront hologram" in fauxlogram
