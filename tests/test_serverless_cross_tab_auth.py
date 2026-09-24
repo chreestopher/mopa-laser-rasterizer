@@ -87,9 +87,9 @@ def test_changed_auth_assets_have_cache_busting_revisions():
     expected = {
         "index.html": ('/staging-shell.js?v=3',),
         "vault.html": ('/staging-shell.js?v=3', '/vault.js?v=12'),
-        "history.html": ('/staging-shell.js?v=3', '/history.js?v=9'),
+        "history.html": ('/staging-shell.js?v=3', '/history.js?v=10'),
         "admin.html": ('/staging-shell.js?v=3', '/admin.js?v=4'),
-        "color-lab.html": ('/staging-shell.js?v=3', '/color-lab.js?v=7'),
+        "color-lab.html": ('/staging-shell.js?v=3', '/color-lab.js?v=8'),
         "holographic.html": ('/staging-shell.js?v=3', '/holographic.js?v=6'),
     }
 
@@ -100,4 +100,4 @@ def test_changed_auth_assets_have_cache_busting_revisions():
 
     depthmap_builder = (ROOT / "dev_setup" / "build_serverless_depthmap.py").read_text(encoding="utf-8")
     assert '/staging-shell.js?v=3' in depthmap_builder
-    assert '/depthmap_bootstrap.js?v=3' in depthmap_builder
+    assert '/depthmap_bootstrap.js?v=4' in depthmap_builder

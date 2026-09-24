@@ -15,10 +15,19 @@ test("flat foreground becomes a neutral angle bounded by blank background", () =
 test("an explicit mask keeps zero as a valid imported depth", () => {
   const result = createKrasnowParallaxPixels(Float32Array.of(1, 0, 0, 1), 4, 1, {
     scaleFactor:0,
-    backgroundCutoff:0.5,
+    backgroundCutoff:0,
     backgroundMask:Uint8Array.of(1, 0, 0, 1),
   });
   assert.deepEqual([...result], [255, 127, 127, 127]);
+});
+
+test("cutoff adds far pixels to an imported depthmap's explicit background", () => {
+  const result = createKrasnowParallaxPixels(Float32Array.of(1, 0.4, 0.6, 1), 4, 1, {
+    scaleFactor:0,
+    backgroundCutoff:0.5,
+    backgroundMask:Uint8Array.of(1, 0, 0, 1),
+  });
+  assert.deepEqual([...result], [255, 255, 127, 127]);
 });
 
 test("near depth creates opposite horizontal ramps at the two boundaries", () => {

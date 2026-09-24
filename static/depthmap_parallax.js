@@ -49,7 +49,14 @@ export function createKrasnowParallaxPixels(
   const inputValue = index => {
     const encoded = clamp(Number(encodedDepth[index]) || 0, 0, 1);
     const proximity = inverted ? 1 - encoded : encoded;
-    const isBackground = backgroundMask ? Boolean(backgroundMask[index]) : proximity <= cutoff;
+    // Imported depthmaps can carry an explicit white/transparent background
+    // mask and still use the cutoff to include additional far-depth pixels.
+    // A zero cutoff leaves non-masked black pixels available as valid depth.
+    const isExplicitBackground = backgroundMask && Boolean(backgroundMask[index]);
+    const isCutoffBackground = backgroundMask
+      ? cutoff > 0 && proximity <= cutoff
+      : proximity <= cutoff;
+    const isBackground = isExplicitBackground || isCutoffBackground;
     return isBackground ? 255 : Math.min(254, Math.round(proximity * 254));
   };
 
