@@ -36,6 +36,18 @@ def test_staging_deployer_cannot_manage_production_cognito_pool():
     assert "userpool/${CognitoUserPoolId}" not in role
 
 
+def test_staging_deployer_can_update_workflow_and_api_inline_policies():
+    role = read("ecs/github-actions-staging-deployer.yaml")
+    inline_policy = role[
+        role.index("- Sid: UpdateStagingInlinePolicies") :
+        role.index("- Sid: UpdateStagingWorker")
+    ]
+    assert "iam:GetRolePolicy" in inline_policy
+    assert "iam:PutRolePolicy" in inline_policy
+    assert "${WorkflowRoleName}" in inline_policy
+    assert "${ApiRoleName}" in inline_policy
+
+
 def test_migration_copies_only_durable_assets_and_keeps_source():
     migration = read("dev_setup/migrate_staging_identity_assets.py")
     assert 'DURABLE_PREFIXES = ("MATERIAL#", "DEPTHPALETTE#", "HOLOCALIBRATION#", "HOLORECIPE#")' in migration
