@@ -109,6 +109,9 @@ Resources:
               - Effect: Allow
                 Action: cognito-idp:ListUsers
                 Resource: !Sub arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${CognitoUserPoolId}
+              - Effect: Allow
+                Action: cloudwatch:GetMetricStatistics
+                Resource: "*"
 
   ApiFunction:
     Type: AWS::Lambda::Function
@@ -128,6 +131,7 @@ Resources:
           WORKER_LOG_GROUP_NAME: !Ref WorkerLogGroupName
           SQS_QUEUE_URL: !Ref QueueUrl
           WORKER_PIPE_NAME: !Ref WorkerPipeName
+          DEPLOYMENT_ACCOUNT_ID: !Ref AWS::AccountId
           JOB_TTL_SECONDS: "604800"
           GUEST_JOB_SECONDS: "86400"
           GUEST_DAILY_JOB_LIMIT: "5"
@@ -472,6 +476,9 @@ Resources:
   AdminServiceControlPostRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties: {ApiId: !Ref HttpApi, RouteKey: "POST /admin/service-control", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  AdminStateTransitionsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "GET /admin/state-transitions", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
   CreateDepthPaletteRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties: {ApiId: !Ref HttpApi, RouteKey: "POST /account/depth-palettes", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}

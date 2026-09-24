@@ -10,6 +10,7 @@ import secrets
 import time
 import uuid
 import re
+from datetime import datetime, timezone
 from copy import deepcopy
 from decimal import Decimal
 from urllib.parse import unquote
@@ -42,6 +43,7 @@ GUEST_QUOTA_SALT = os.environ.get("GUEST_QUOTA_SALT", TABLE_NAME)
 ARTWORK_TELEMETRY_SECONDS = int(os.environ.get("ARTWORK_TELEMETRY_SECONDS", str(30 * 86400)))
 WORKER_LOG_GROUP_NAME = os.environ.get("WORKER_LOG_GROUP_NAME", "").strip()
 PIPE_NAME = os.environ.get("WORKER_PIPE_NAME", "").strip()
+AWS_ACCOUNT_ID = os.environ.get("DEPLOYMENT_ACCOUNT_ID", "").strip()
 MAX_JOB_LOG_EVENTS = max(1, min(10000, int(os.environ.get("MAX_JOB_LOG_EVENTS", "10000"))))
 
 s3 = boto3.client(
@@ -53,6 +55,7 @@ sqs = boto3.client("sqs", region_name=REGION)
 cognito = boto3.client("cognito-idp", region_name=REGION)
 cloudwatch_logs = boto3.client("logs", region_name=REGION)
 pipes = boto3.client("pipes", region_name=REGION)
+cloudwatch = boto3.client("cloudwatch", region_name=REGION)
 table = boto3.resource("dynamodb", region_name=REGION).Table(TABLE_NAME)
 
 SERVICE_CONTROL_KEY = {"pk": "SYSTEM#SERVICE", "sk": "CONTROL"}
@@ -304,6 +307,45 @@ def admin_service_control(event):
         )
         return response(200, {"status": "active", "processing_available": True})
     return response(400, {"message": "Choose pause, continue, or resume"})
+
+
+def admin_state_transitions(event):
+    """Read the existing account-wide Step Functions transition metric once."""
+    denied = require_admin(event)
+    if denied:
+        return denied
+    now = datetime.now(timezone.utc)
+    month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+    result = cloudwatch.get_metric_statistics(
+        Namespace="AWS/States",
+        MetricName="ConsumedCapacity",
+        Dimensions=[{"Name": "ServiceMetric", "Value": "StateTransition"}],
+        StartTime=month_start,
+        EndTime=now,
+        Period=3600,
+        Statistics=["Sum"],
+    )
+    transitions = int(round(sum(float(point.get("Sum") or 0) for point in result.get("Datapoints", []))))
+    free_tier = 4000
+    elapsed_days = max((now - month_start).total_seconds() / 86400, 1 / 24)
+    if now.month == 12:
+        next_month = datetime(now.year + 1, 1, 1, tzinfo=timezone.utc)
+    else:
+        next_month = datetime(now.year, now.month + 1, 1, tzinfo=timezone.utc)
+    month_days = (next_month - month_start).days
+    projected = int(round(transitions * month_days / elapsed_days))
+    return response(200, {
+        "account_id": AWS_ACCOUNT_ID,
+        "region": REGION,
+        "month": month_start.strftime("%Y-%m"),
+        "as_of": int(now.timestamp()),
+        "transitions": transitions,
+        "free_tier": free_tier,
+        "remaining_free": max(0, free_tier - transitions),
+        "used_percent": round((transitions / free_tier) * 100, 1),
+        "projected_transitions": projected,
+        "estimated_charge_usd": round(max(0, transitions - free_tier) * 0.000025, 4),
+    })
 
 
 def safe_name(value, fallback):
@@ -4978,6 +5020,8 @@ def handler(event, _context):
             return admin_users(event)
         if path == "/admin/service-control" and method in {"GET", "POST"}:
             return admin_service_control(event)
+        if method == "GET" and path == "/admin/state-transitions":
+            return admin_state_transitions(event)
         if method == "GET" and path == "/community-set/settings":
             return community_settings(event)
         if method == "POST" and path == "/account/community-set":

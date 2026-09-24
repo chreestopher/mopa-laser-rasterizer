@@ -25,6 +25,8 @@ Parameters:
     Type: String
   SqsQueueArn:
     Type: String
+  SqsQueueUrl:
+    Type: String
   SqsDlqArn:
     Type: String
   SqsDlqUrl:
@@ -66,7 +68,7 @@ Resources:
                 Resource: !Sub arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForECSTaskRule
               - Effect: Allow
                 Action: sqs:SendMessage
-                Resource: !Ref SqsDlqArn
+                Resource: [!Ref SqsQueueArn, !Ref SqsDlqArn]
               - Effect: Allow
                 Action: dynamodb:UpdateItem
                 Resource: !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RuntimeTableName}
@@ -87,35 +89,8 @@ Resources:
           ParseMessage:
             Type: Pass
             Parameters:
-              event.$: States.StringToJson($[0].body)
+              message.$: States.StringToJson($[0].body)
               spot_attempt: 1
-            Next: DetectMessageShape
-          DetectMessageShape:
-            Type: Choice
-            Choices:
-              - Variable: $.event.task_id
-                IsPresent: true
-                Next: SetDirectTaskId
-            Default: SplitDispatchKey
-          SetDirectTaskId:
-            Type: Pass
-            Parameters:
-              message:
-                task_id.$: $.event.task_id
-              spot_attempt.$: $.spot_attempt
-            Next: CheckServiceAvailability
-          SplitDispatchKey:
-            Type: Pass
-            Parameters:
-              key_parts.$: States.StringSplit($.event.Records[0].s3.object.key, '/')
-              spot_attempt.$: $.spot_attempt
-            Next: SetTaskId
-          SetTaskId:
-            Type: Pass
-            Parameters:
-              message:
-                task_id.$: $.key_parts[1]
-              spot_attempt.$: $.spot_attempt
             Next: CheckServiceAvailability
           CheckServiceAvailability:
             Type: Task
@@ -136,12 +111,18 @@ Resources:
                     IsPresent: true
                   - Variable: $.service_control.Item.status.S
                     StringEquals: paused
-                Next: WaitForServiceResume
+                Next: RequeuePausedJob
             Default: RunSpotWorker
-          WaitForServiceResume:
-            Type: Wait
-            Seconds: 300
-            Next: CheckServiceAvailability
+          RequeuePausedJob:
+            Type: Task
+            Resource: arn:aws:states:::aws-sdk:sqs:sendMessage
+            Parameters:
+              QueueUrl: !Ref SqsQueueUrl
+              DelaySeconds: 300
+              MessageBody.$: States.JsonToString($.message)
+            Next: JobDeferred
+          JobDeferred:
+            Type: Succeed
           RunSpotWorker:
             Type: Task
             Resource: arn:aws:states:::ecs:runTask.sync

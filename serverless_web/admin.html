@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/machine_chrome.css?v=3">
   <link rel="stylesheet" href="/staging-shell.css?v=1">
   <link rel="stylesheet" href="/staging-pages.css?v=2">
-  <link rel="stylesheet" href="/admin.css?v=1">
+  <link rel="stylesheet" href="/admin.css?v=2">
   <script src="/staging-shell.js?v=3" defer></script>
 </head>
 <body>
@@ -24,6 +24,21 @@
       <button id="continueService" type="button">Continue / Re-enable Service</button>
     </div>
     <p>Pausing stops the queue trigger and blocks worker launches. Waiting jobs remain queued. A cost-related pause automatically expires on the first day of the next UTC billing cycle.</p>
+  </section>
+  <section class="admin-panel admin-protected admin-transition-panel" aria-labelledby="admin-transitions-title" hidden>
+    <div class="admin-heading">
+      <div><p class="admin-kicker">AWS account · current UTC month</p><h2 id="admin-transitions-title">Step Functions transitions</h2></div>
+      <strong id="transitionCount" class="admin-count">—</strong>
+    </div>
+    <p id="transitionNotice" role="status">Loading the account-wide transition total once…</p>
+    <div class="admin-transition-meter" aria-hidden="true"><span id="transitionMeterFill"></span></div>
+    <dl class="admin-transition-stats">
+      <div><dt>Free allowance used</dt><dd id="transitionPercent">—</dd></div>
+      <div><dt>Free transitions remaining</dt><dd id="transitionRemaining">—</dd></div>
+      <div><dt>Projected month total</dt><dd id="transitionProjection">—</dd></div>
+      <div><dt>Estimated charge so far</dt><dd id="transitionCharge">—</dd></div>
+    </dl>
+    <p class="admin-transition-footnote">This is a single on-demand read of the existing account metric when this page opens. It does not poll, store snapshots, or create a custom metric.</p>
   </section>
   <section class="admin-panel admin-protected admin-jobs-panel" aria-labelledby="admin-jobs-title" hidden>
     <div class="admin-heading">
@@ -44,6 +59,6 @@
     </div>
     <div id="adminUsers" class="admin-users"><p>Loading the user directory…</p></div>
   </section>
-  <script type="module" src="/admin.js?v=3"></script>
+  <script type="module" src="/admin.js?v=4"></script>
 </body>
 </html>

@@ -70,7 +70,10 @@ def test_pause_blocks_api_and_fargate_launches_independently():
     assert "pipes.stop_pipe(Name=PIPE_NAME)" in api
     assert "pipes.start_pipe(Name=PIPE_NAME)" in api
     assert "CheckServiceAvailability:" in orchestration
-    assert "WaitForServiceResume:" in orchestration
+    assert "RequeuePausedJob:" in orchestration
+    assert "DelaySeconds: 300" in orchestration
+    assert "MessageBody.$: States.JsonToString($.message)" in orchestration
+    assert "WaitForServiceResume:" not in orchestration
     assert orchestration.index("CheckServiceAvailability:") < orchestration.index("RunSpotWorker:")
     assert 'StringEquals: paused' in orchestration
 

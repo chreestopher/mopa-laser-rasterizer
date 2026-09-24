@@ -9,6 +9,7 @@ REGION="${AWS_REGION:-us-east-2}"
 configure_aws_deployment_credentials
 WORKER_STACK="mopa-rasterizer-serverless-staging-worker"
 ORCHESTRATION_STACK="mopa-rasterizer-serverless-staging-orchestration"
+FOUNDATION_STACK="mopa-rasterizer-serverless-staging"
 REPOSITORY="${ECR_REPOSITORY:-mopa-laser-rasterizer}"
 
 for stack in "$WORKER_STACK" "$ORCHESTRATION_STACK"; do
@@ -40,8 +41,11 @@ aws cloudformation deploy --region "$REGION" --stack-name "$WORKER_STACK" \
 
 TASK_DEFINITION_ARN="$(aws cloudformation describe-stacks --region "$REGION" --stack-name "$WORKER_STACK" \
   --query "Stacks[0].Outputs[?OutputKey=='TaskDefinitionArn'].OutputValue" --output text)"
+QUEUE_URL="$(aws cloudformation describe-stacks --region "$REGION" --stack-name "$FOUNDATION_STACK" \
+  --query "Stacks[0].Outputs[?OutputKey=='JobQueueUrl'].OutputValue" --output text)"
 aws cloudformation deploy --region "$REGION" --stack-name "$ORCHESTRATION_STACK" \
   --template-file "$REPO_ROOT/ecs/rasterizer-orchestration.yaml" --capabilities CAPABILITY_IAM \
-  --parameter-overrides "TaskDefinitionArn=$TASK_DEFINITION_ARN" --no-fail-on-empty-changeset
+  --parameter-overrides "TaskDefinitionArn=$TASK_DEFINITION_ARN" "SqsQueueUrl=$QUEUE_URL" \
+  --no-fail-on-empty-changeset
 
 echo "Serverless staging worker-only update complete: $IMAGE_URI"
