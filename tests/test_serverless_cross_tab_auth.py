@@ -100,4 +100,4 @@ def test_changed_auth_assets_have_cache_busting_revisions():
 
     depthmap_builder = (ROOT / "dev_setup" / "build_serverless_depthmap.py").read_text(encoding="utf-8")
     assert '/staging-shell.js?v=3' in depthmap_builder
-    assert '/depthmap_bootstrap.js?v=4' in depthmap_builder
+    assert '/depthmap_bootstrap.js?v=5' in depthmap_builder

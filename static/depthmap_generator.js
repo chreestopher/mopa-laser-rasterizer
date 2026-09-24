@@ -59,6 +59,18 @@ const parallaxPreviewSummary = document.querySelector("#depth_parallax_preview_s
 const reliefLayerCountControl = document.querySelector("#depth_relief_layers");
 const reliefConstructionControl = document.querySelector("#depth_relief_construction");
 const reliefSpacingControl = document.querySelector("#depth_relief_spacing");
+const reliefSmoothingControl = document.querySelector("#depth_relief_smoothing");
+const reliefSmoothingValue = document.querySelector("#depth_relief_smoothing_value");
+const reliefNaturalControls = document.querySelector("#depth_relief_natural_controls");
+const reliefGroupingStrengthControl = document.querySelector("#depth_relief_grouping_strength");
+const reliefGroupingStrengthValue = document.querySelector("#depth_relief_grouping_strength_value");
+const reliefMinimumBandControl = document.querySelector("#depth_relief_minimum_band");
+const reliefEmphasisControl = document.querySelector("#depth_relief_emphasis");
+const reliefEmphasisValue = document.querySelector("#depth_relief_emphasis_value");
+const reliefHistogramCanvas = document.querySelector("#depth_relief_histogram");
+const reliefThresholdStatus = document.querySelector("#depth_relief_threshold_status");
+const reliefThresholdSliders = document.querySelector("#depth_relief_threshold_sliders");
+const reliefResetThresholdsButton = document.querySelector("#depth_relief_reset_thresholds");
 const reliefPixelSizeControl = document.querySelector("#depth_relief_pixel_size");
 const reliefMaterialThicknessControl = document.querySelector("#depth_relief_material_thickness");
 const reliefMinimumIslandControl = document.querySelector("#depth_relief_minimum_island");
@@ -110,6 +122,8 @@ let paintingFarDepth = false;
 let lastPaintPoint = null;
 let parallaxPreviewTimer = null;
 let reliefPreviewTimer = null;
+let reliefThresholdOverrides = null;
+let displayedReliefThresholds = [];
 
 function revealDepthWorkflow() {
   workspace.hidden = false;
@@ -142,6 +156,7 @@ async function acceptFile(file) {
     return;
   }
   sourceFile = file;
+  reliefThresholdOverrides = null;
   perimeterDepthOverride = null;
   perimeterDepthValue.value = "Lowest point";
   if (sourceUrl) URL.revokeObjectURL(sourceUrl);
@@ -547,6 +562,7 @@ function paintFarDepthCircle(centerX, centerY, radius) {
 function clearPaintedDepth() {
   if (!paintedDepth) return;
   paintedDepth.fill(Number.NaN);
+  reliefThresholdOverrides = null;
   renderAdjustedDepth();
   setProcessingStatus("Painted depth edits cleared.");
 }
@@ -873,6 +889,11 @@ function reliefOptions(backgroundMask = outputBackgroundMask) {
     layers:Math.min(30, Math.max(2, Math.round(Number(reliefLayerCountControl.value) || 7))),
     inverted:invertControl.checked,
     spacing:reliefSpacingControl.value,
+    smoothing:Math.min(4, Math.max(0, Math.round(Number(reliefSmoothingControl.value) || 0))),
+    groupingStrength:Math.min(1, Math.max(0, Number(reliefGroupingStrengthControl.value) / 100 || 0)),
+    minimumBandShare:Math.min(40, Math.max(0, Number(reliefMinimumBandControl.value) || 0)),
+    emphasis:Math.min(1, Math.max(-1, Number(reliefEmphasisControl.value) / 100 || 0)),
+    thresholds:reliefThresholdOverrides,
     construction:reliefConstructionControl.value,
     minimumIslandArea:Math.max(0, Math.round(Number(reliefMinimumIslandControl.value) || 0)),
     backgroundMask:reliefExcludeBackgroundControl.checked ? backgroundMask : null,
@@ -962,25 +983,133 @@ function paintReliefComposite(canvas, relief) {
   context.putImageData(image, 0, 0);
 }
 
+function reliefHistogram(depth, backgroundMask) {
+  const bins = new Uint32Array(128);
+  for (let index = 0; index < depth.length; index += 1) {
+    if (backgroundMask?.[index]) continue;
+    const value = Math.min(1, Math.max(0, Number(depth[index]) || 0));
+    bins[Math.min(bins.length - 1, Math.floor(value * bins.length))] += 1;
+  }
+  return bins;
+}
+
+function drawReliefHistogram(relief, backgroundMask) {
+  const context = reliefHistogramCanvas.getContext("2d");
+  const width = reliefHistogramCanvas.width;
+  const height = reliefHistogramCanvas.height;
+  const light = document.body.classList.contains("light-machine");
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = light ? "#f2f0e8" : "#151814";
+  context.fillRect(0, 0, width, height);
+  const bins = reliefHistogram(relief.proximityDepth, backgroundMask);
+  const maximum = Math.max(1, ...bins);
+  context.fillStyle = light ? "#657064" : "#7c9572";
+  const binWidth = width / bins.length;
+  for (let index = 0; index < bins.length; index += 1) {
+    const barHeight = bins[index] / maximum * (height - 18);
+    context.fillRect(index * binWidth, height - barHeight, Math.max(1, binWidth - 1), barHeight);
+  }
+  context.strokeStyle = "#ff4545";
+  context.fillStyle = light ? "#7b1212" : "#ffb0a8";
+  context.lineWidth = 2;
+  context.font = "bold 11px monospace";
+  context.textAlign = "center";
+  relief.thresholds.slice(1).forEach((threshold, index) => {
+    const x = Math.round(threshold * width) + .5;
+    context.beginPath();
+    context.moveTo(x, 0);
+    context.lineTo(x, height);
+    context.stroke();
+    context.fillText(String(index + 1), Math.min(width - 7, Math.max(7, x)), 12);
+  });
+  context.fillStyle = light ? "#343730" : "#c5c7b5";
+  context.textAlign = "left";
+  context.fillText("far", 6, height - 5);
+  context.textAlign = "right";
+  context.fillText("near", width - 6, height - 5);
+}
+
+function currentManualReliefThresholds(firstThreshold) {
+  return [firstThreshold, ...[...reliefThresholdSliders.querySelectorAll("input[type=range]")]
+    .map(control => Number(control.value) / 100)];
+}
+
+function renderReliefThresholdControls(relief, backgroundMask) {
+  displayedReliefThresholds = [...relief.thresholds];
+  const boundaries = relief.thresholds.slice(1);
+  const existing = [...reliefThresholdSliders.querySelectorAll("input[type=range]")];
+  if (existing.length !== boundaries.length) {
+    reliefThresholdSliders.replaceChildren();
+    boundaries.forEach((threshold, index) => {
+      const row = document.createElement("label");
+      row.className = "depth-threshold-row";
+      const caption = document.createElement("span");
+      caption.textContent = `Boundary ${index + 1} · layers ${index + 1} / ${index + 2}`;
+      const control = document.createElement("input");
+      control.type = "range";
+      control.min = "0";
+      control.max = "100";
+      control.step = "0.1";
+      control.dataset.boundaryIndex = String(index);
+      const output = document.createElement("output");
+      const controlWrap = document.createElement("span");
+      controlWrap.className = "depth-threshold-control";
+      controlWrap.append(control, output);
+      row.append(caption, controlWrap);
+      reliefThresholdSliders.append(row);
+      control.addEventListener("input", () => {
+        const controls = [...reliefThresholdSliders.querySelectorAll("input[type=range]")];
+        const position = Number(control.dataset.boundaryIndex);
+        const lower = position ? Number(controls[position - 1].value) + .1 : displayedReliefThresholds[0] * 100 + .1;
+        const upper = position + 1 < controls.length ? Number(controls[position + 1].value) - .1 : 100;
+        control.value = String(Math.min(upper, Math.max(lower, Number(control.value))));
+        output.value = `${Number(control.value).toFixed(1)}%`;
+        reliefThresholdOverrides = currentManualReliefThresholds(displayedReliefThresholds[0]);
+        scheduleReliefPreview();
+      });
+    });
+  }
+  [...reliefThresholdSliders.querySelectorAll("input[type=range]")].forEach((control, index) => {
+    if (document.activeElement !== control) control.value = String(boundaries[index] * 100);
+    control.nextElementSibling.value = `${Number(control.value).toFixed(1)}%`;
+  });
+  let excluded = 0;
+  if (backgroundMask) for (const value of backgroundMask) excluded += value;
+  const total = Math.max(1, relief.proximityDepth.length - excluded);
+  const shares = relief.layers.map(layer => {
+    const count = layer.mask.reduce((sum, value) => sum + value, 0);
+    return `${(count / total * 100).toFixed(1)}%`;
+  }).join(" · ");
+  const reduced = relief.layers.length < relief.requestedLayerCount
+    ? ` The available depth detail supports ${relief.layers.length} distinct bands rather than the ${relief.requestedLayerCount} requested.`
+    : "";
+  reliefThresholdStatus.textContent = `${reliefThresholdOverrides ? "Manual" : "Automatic"} boundaries. Layer coverage: ${shares}.${reduced}`;
+  reliefResetThresholdsButton.disabled = !reliefThresholdOverrides;
+}
+
 function drawReliefPreview() {
   reliefPreviewTimer = null;
   if (!outputDepth || !outputWidth || !outputHeight) return;
   const preview = previewDepthMap();
   const options = reliefOptions(preview.backgroundMask);
   reliefLayerCountControl.value = options.layers;
-  reliefPreviewLayerControl.max = String(options.layers);
-  reliefPreviewLayerControl.value = String(Math.min(options.layers, Math.max(1, Number(reliefPreviewLayerControl.value) || 1)));
   const relief = createReliefLayers(preview.depth, preview.width, preview.height, options);
+  const actualLayers = relief.layers.length;
+  reliefPreviewLayerControl.max = String(actualLayers);
+  reliefPreviewLayerControl.value = String(Math.min(actualLayers, Math.max(1, Number(reliefPreviewLayerControl.value) || 1)));
   const selectedIndex = Number(reliefPreviewLayerControl.value) - 1;
   const exportOptions = reliefExportOptions();
   paintReliefMask(reliefLayerCanvas, relief.layers[selectedIndex].mask, relief.width, relief.height, exportOptions);
   paintReliefComposite(reliefCompositeCanvas, relief);
-  reliefPreviewLayerValue.value = `${selectedIndex + 1} of ${options.layers} · ${selectedIndex === 0 ? "rear" : selectedIndex === options.layers - 1 ? "front" : "middle"}`;
+  reliefPreviewLayerValue.value = `${selectedIndex + 1} of ${actualLayers} · ${selectedIndex === 0 ? "rear" : selectedIndex === actualLayers - 1 ? "front" : "middle"}`;
   const physicalWidth = outputWidth * exportOptions.pixelSizeMm;
   const physicalHeight = outputHeight * exportOptions.pixelSizeMm;
   const occupied = relief.layers[selectedIndex].mask.reduce((sum, value) => sum + value, 0);
   const coverage = occupied / relief.layers[selectedIndex].mask.length * 100;
-  reliefSummary.textContent = `${options.layers} layers · ${physicalWidth.toFixed(2)} × ${physicalHeight.toFixed(2)} mm each · ${(options.layers * exportOptions.materialThicknessMm).toFixed(2)} mm nominal assembled depth · selected layer covers ${coverage.toFixed(1)}% of the canvas.`;
+  const requestedNote = actualLayers < options.layers ? ` (${options.layers} requested)` : "";
+  reliefSummary.textContent = `${actualLayers} layers${requestedNote} · ${physicalWidth.toFixed(2)} × ${physicalHeight.toFixed(2)} mm each · ${(actualLayers * exportOptions.materialThicknessMm).toFixed(2)} mm nominal assembled depth · selected layer covers ${coverage.toFixed(1)}% of the canvas.`;
+  drawReliefHistogram(relief, options.backgroundMask);
+  renderReliefThresholdControls(relief, options.backgroundMask);
 }
 
 function scheduleReliefPreview() {
@@ -994,7 +1123,25 @@ function updateReliefControls() {
   reliefLayerCountControl.value = layers;
   reliefPreviewLayerControl.max = String(layers);
   reliefRegistrationControls.hidden = !reliefRegistrationControl.checked;
+  reliefNaturalControls.hidden = reliefSpacingControl.value !== "natural";
+  const smoothing = Math.min(4, Math.max(0, Math.round(Number(reliefSmoothingControl.value) || 0)));
+  reliefSmoothingControl.value = String(smoothing);
+  reliefSmoothingValue.value = smoothing === 1 ? "1 pass" : `${smoothing} passes`;
+  reliefGroupingStrengthValue.value = `${Math.round(Number(reliefGroupingStrengthControl.value) || 0)}%`;
+  const emphasis = Math.round(Number(reliefEmphasisControl.value) || 0);
+  reliefEmphasisValue.value = emphasis === 0 ? "Balanced" : `${Math.abs(emphasis)}% ${emphasis < 0 ? "farther" : "nearer"}`;
   scheduleReliefPreview();
+}
+
+function resetReliefThresholds() {
+  reliefThresholdOverrides = null;
+  reliefResetThresholdsButton.disabled = true;
+  scheduleReliefPreview();
+}
+
+function updateReliefQuantizationControls() {
+  reliefThresholdOverrides = null;
+  updateReliefControls();
 }
 
 async function exportLayeredRelief() {
@@ -1069,6 +1216,12 @@ function reset() {
   reliefLayerCanvas.height = 0;
   reliefCompositeCanvas.width = 0;
   reliefCompositeCanvas.height = 0;
+  reliefHistogramCanvas.getContext("2d").clearRect(0, 0, reliefHistogramCanvas.width, reliefHistogramCanvas.height);
+  reliefThresholdOverrides = null;
+  displayedReliefThresholds = [];
+  reliefThresholdSliders.replaceChildren();
+  reliefThresholdStatus.textContent = "Generate a depthmap to inspect automatic layer boundaries.";
+  reliefResetThresholdsButton.disabled = true;
   reliefSummary.textContent = "Generate a depthmap to inspect layered relief slices.";
   processingPanel.hidden = true;
   workspace.hidden = true;
@@ -1167,6 +1320,7 @@ async function loadSavedDepthPalettes() {
 }
 
 function selectDepthPalette() {
+  reliefThresholdOverrides = null;
   const palette = savedDepthPalettes.find(item => item.palette_id === savedDepthPaletteSelect.value);
   colorGuidancePanel.classList.toggle("awaiting-depth-palette", !palette);
   depthGuidanceTools.hidden = !palette;
@@ -1208,24 +1362,32 @@ for (const control of [nearControl, farControl, gammaControl, invertControl]) co
   document.querySelector("#depth_gamma_value").value = (Number(gammaControl.value) / 100).toFixed(2);
   updateBrushDepthPreview();
   if (control === invertControl) for (const swatch of paletteState) swatch.update(false);
+  reliefThresholdOverrides = null;
   renderAdjustedDepth();
 });
 guidanceFeatherControl.addEventListener("input", () => {
   guidanceFeatherValue.value = `${guidanceFeatherControl.value} px`;
+  reliefThresholdOverrides = null;
   if (rawDepth) renderAdjustedDepth();
 });
 savedDepthPaletteSelect.addEventListener("change", selectDepthPalette);
 outputWidthControl.addEventListener("change", () => {
   syncOutputAspect("width");
+  reliefThresholdOverrides = null;
   renderAdjustedDepth();
 });
 outputHeightControl.addEventListener("change", () => {
   syncOutputAspect("height");
+  reliefThresholdOverrides = null;
   renderAdjustedDepth();
 });
-borderPaddingControl.addEventListener("change", renderAdjustedDepth);
+borderPaddingControl.addEventListener("change", () => {
+  reliefThresholdOverrides = null;
+  renderAdjustedDepth();
+});
 perimeterDepthControl.addEventListener("input", () => {
   perimeterDepthOverride = Number(perimeterDepthControl.value) / 100;
+  reliefThresholdOverrides = null;
   renderAdjustedDepth();
 });
 brushSizeControl.addEventListener("input", updateBrushSizePreview);
@@ -1250,7 +1412,9 @@ parallaxScaleControl.addEventListener("input", updateParallaxControls);
 parallaxBackgroundControl.addEventListener("input", updateParallaxControls);
 parallaxPatchSizeControl.addEventListener("input", updateParallaxControls);
 parallaxAppearanceControl.addEventListener("input", updateParallaxControls);
-for (const control of [reliefLayerCountControl, reliefConstructionControl, reliefSpacingControl, reliefPixelSizeControl, reliefMaterialThicknessControl, reliefMinimumIslandControl, reliefWorkbedWidthControl, reliefWorkbedHeightControl, reliefExcludeBackgroundControl, reliefRegistrationControl, reliefRegistrationDiameterControl, reliefRegistrationInsetControl]) control.addEventListener("input", updateReliefControls);
+for (const control of [reliefLayerCountControl, reliefSpacingControl, reliefSmoothingControl, reliefGroupingStrengthControl, reliefMinimumBandControl, reliefEmphasisControl, reliefExcludeBackgroundControl]) control.addEventListener("input", updateReliefQuantizationControls);
+for (const control of [reliefConstructionControl, reliefPixelSizeControl, reliefMaterialThicknessControl, reliefMinimumIslandControl, reliefWorkbedWidthControl, reliefWorkbedHeightControl, reliefRegistrationControl, reliefRegistrationDiameterControl, reliefRegistrationInsetControl]) control.addEventListener("input", updateReliefControls);
+reliefResetThresholdsButton.addEventListener("click", resetReliefThresholds);
 reliefPreviewLayerControl.addEventListener("input", scheduleReliefPreview);
 reliefExportButton.addEventListener("click", () => exportLayeredRelief().catch(cause => setProcessingStatus(cause.message, true)));
 drawLegend();
