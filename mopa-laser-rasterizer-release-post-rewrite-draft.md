@@ -608,7 +608,7 @@ Full documentation:
 - [Blank Palette Library](https://www.mopa-laser-rasterizer.com/docs/blank-palette-library)
 - [Material Libraries](https://www.mopa-laser-rasterizer.com/docs/material-libraries)
 - [Hatch Palettes](https://www.mopa-laser-rasterizer.com/docs/hatch-palettes)
-- [Krasnow Grating](https://www.mopa-laser-rasterizer.com/docs/krasnow-grating-filter)
+- [Krasnow Grating](https://www.mopa-laser-rasterizer.com/docs/krasnow-grating-geometry)
 
 **[UPDATE NEEDED BEFORE PUBLICATION: add direct links to the new Color Lab, Holographic Lab, Depthmap Lab, Vault and Community Set documentation once production URLs are final.]**
 
