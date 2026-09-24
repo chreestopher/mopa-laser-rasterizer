@@ -252,7 +252,7 @@ gradient_value = gradient_start
 
 A curve of 1 is linear. Values above 1 hold the result nearer the start value for longer, while values below 1 move away from the start more quickly.
 
-The dedicated Krasnow Color Grating filter uses a whole-artwork, top-to-bottom gradient. Krasnow Geometry Style can also use per-shape, horizontal, reversed, and radial scopes and directions.
+Krasnow Geometry Style can use whole-artwork or per-shape gradients with vertical, horizontal, reversed, and radial directions.
 
 ## 9. Add the source-swatch hue offset
 
@@ -427,13 +427,11 @@ This procedure is intentionally practical at small scale and intentionally tedio
 | Speed Spread | Departure of carrier speeds from the anchor | Visible vector spacing |
 | Preserve Black | Whether source Black remains ordinary geometry | Non-Black gratings |
 
-## Dedicated Krasnow filter versus Krasnow Geometry Style
+## Where Krasnow Geometry Style runs
 
-Both routes use the same grating builder and carrier mathematics.
+A compatible Image Style first creates and modifies the vector regions; Krasnow Geometry Style then replaces those finished regions with grating cells. Select No geometric effect when minimal image transformation is desired before that final geometry stage.
 
-The dedicated Krasnow Color Grating filter performs normal image resizing, palette mapping, and region cleanup, then immediately turns those regions into gratings. Its shared positional correction is the original whole-artwork vertical behavior.
-
-Krasnow Geometry Style runs later. A compatible Image Style first creates and modifies the vector regions; Krasnow then replaces those finished regions with grating cells. Geometry Style can also be routed by swatch, allowing some source colors to remain ordinary vectors, some to become glyphs, and some to become Krasnow gratings. Before those transformations, overlapping source regions are made mutually exclusive so a point is engraved by only one routed geometry type.
+Geometry Style can also be routed by swatch, allowing some source colors to remain ordinary vectors, some to become glyphs or Halftone Newsprint, and some to become Krasnow gratings. Before those transformations, overlapping source regions are made mutually exclusive so a point is engraved by only one routed geometry type.
 
 ## Physical calibration and limitations
 

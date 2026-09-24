@@ -593,9 +593,7 @@
           <option value="abstract_glitch">Digital Glitch</option>
           <option value="abstract_deep_fryer">Deep Fryer</option>
           <option value="abstract_shattered">Shattered</option>
-          <option value="abstract_halftone_newsprint">Halftone Newsprint</option>
           <option value="abstract_optical_color_mix">Optical Color Mix</option>
-          <option value="abstract_krasnow_grating">Krasnow Color Grating</option>
           <option value="abstract_none">Abstract: None</option>
         </optgroup>
       </select>
@@ -686,13 +684,6 @@
           ['fall_distance', 20, 0, 160, 1], ['gravity_bias', 1.4, .2, 4, .1],
           ['rotation', 22, 0, 180, 1], ['break_origin_x', .5, 0, 1, .01],
           ['break_origin_y', .35, 0, 1, .01], ['seed', 1, 0, 999999, 1]]
-      },
-      halftone_newsprint: {
-        description: 'Rebuilds the artwork as a shared halftone matrix. Darker areas receive larger dots, and the marks can be circles or squares. Black Only places every mark on the official Black layer for a conventional monochrome halftone; otherwise each cell uses its matching color swatch. Cell Size MM sets the physical matrix pitch; Minimum and Maximum Dot Ratio limit mark size; Tone Curve and Contrast shape the tonal response; Grid Angle rotates the matrix; Square Dots changes the circular marks to squares; Invert reverses light and dark.',
-        toggles: [['black_only', false], ['square_dots', false], ['invert', false], ['tight_pack_geometry', false]],
-        controls: [['cell_size_mm', .6, .2, 5, .05], ['minimum_dot_ratio', .5, 0, .8, .01],
-          ['maximum_dot_ratio', .92, .1, 1, .01], ['tone_curve', .75, .2, 5, .05],
-          ['contrast', .8, .2, 3, .05], ['grid_angle', 0, -45, 45, 1]]
       },
       optical_color_mix: {
         description: 'Keeps ordinary continuous vector geometry wherever available palette swatches adequately represent the source. Only colors that benefit from a calculated two-swatch mixture become a shared dot matrix. Turn off Keep Available Colors as Vectors to render the entire artwork with dots. Lab is the recommended model; RGB and HSV provide alternate matching behavior. Dot Pitch and Mixing Cell Dots control physical scale and ratio precision. Direct Color Preference controls how strongly the filter favors normal vectors. Hue Shift, Saturation Gain, Brightness Gamma, Dot Influence, and Neutral Bias provide approximate compensation when physical laser colors differ from their declared swatches.',

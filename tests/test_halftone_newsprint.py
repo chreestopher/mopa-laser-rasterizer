@@ -25,10 +25,12 @@ def settings(**overrides):
     return values
 
 
-def test_filter_is_registered_as_full_palette_filter():
-    assert MODULES["halftone_newsprint"] is halftone_newsprint
-    assert "halftone_newsprint" in FULL_PALETTE_FILTERS
-    defaults = manifest()["halftone_newsprint"]["defaults"]
+def test_engine_is_not_registered_as_an_abstract_filter():
+    assert "halftone_newsprint" not in MODULES
+    assert "krasnow_grating" not in MODULES
+    assert "halftone_newsprint" not in FULL_PALETTE_FILTERS
+    assert "halftone_newsprint" not in manifest()
+    defaults = halftone_newsprint.DEFAULTS
     assert defaults["cell_size_mm"] == 0.6
     assert defaults["minimum_dot_ratio"] == 0.48
     assert defaults["maximum_dot_ratio"] == 0.97
@@ -39,13 +41,12 @@ def test_filter_is_registered_as_full_palette_filter():
 
 
 def test_numeric_control_ranges_are_centered_on_engraving_validated_defaults():
-    filter_manifest = manifest()["halftone_newsprint"]
-    defaults = filter_manifest["defaults"]
-    for control in filter_manifest["controls"]:
-        if control["name"] in {"square_dots", "invert", "black_only"}:
+    defaults = halftone_newsprint.DEFAULTS
+    for name, minimum, maximum, _step in halftone_newsprint.CONTROLS:
+        if name in {"square_dots", "invert", "black_only"}:
             continue
-        midpoint = (control["min"] + control["max"]) / 2
-        assert math.isclose(defaults[control["name"]], midpoint, abs_tol=1e-12)
+        midpoint = (minimum + maximum) / 2
+        assert math.isclose(defaults[name], midpoint, abs_tol=1e-12)
 
 
 def test_default_bright_mark_uses_validated_minimum_diameter():
@@ -271,9 +272,11 @@ def test_excessive_matrix_has_actionable_error():
         raise AssertionError("Expected an oversized halftone matrix to be rejected")
 
 
-def test_staging_ui_exposes_filter_and_all_controls():
+def test_staging_ui_exposes_geometry_style_and_all_controls():
     source = open("serverless_web/index.html", encoding="utf-8").read()
-    assert 'value="abstract_halftone_newsprint"' in source
+    assert 'value="abstract_halftone_newsprint"' not in source
+    assert '<option value="halftone_newsprint">Halftone Newsprint</option>' in source
+    assert "const HALFTONE_GEOMETRY=" in source
     assert "input.type==='checkbox'?Number(input.checked):input.tagName==='SELECT'?input.value:Number(input.value)" in source
     for control_name in halftone_newsprint.DEFAULTS:
         assert control_name in source
@@ -285,7 +288,26 @@ def test_worker_normalizes_halftone_checkboxes_to_numeric_flags():
     assert "clean[key] = int(value)" in source
 
 
-def test_serverless_api_accepts_filter_name():
+def test_serverless_api_accepts_geometry_style_not_filter_name():
     source = open("serverless_api/handler.py", encoding="utf-8").read()
     declaration = source.split("ABSTRACT_FILTERS = {", 1)[1].split("}", 1)[0]
-    assert '"halftone_newsprint"' in declaration
+    assert '"halftone_newsprint"' not in declaration
+    assert '"halftone_newsprint", "krasnow_grating", "by_swatch"' in source
+
+
+def test_seeded_dot_source_is_repeatable_and_changes_with_seed():
+    layers = {"#FF0000": box(0, 0, 8, 4)}
+    target = {"#FF0000": TARGET_COLORS["#FF0000"]}
+    common = settings(
+        dot_size_source="seeded_variation",
+        minimum_dot_ratio=.2,
+        maximum_dot_ratio=.8,
+        non_black_dot_density=1,
+        grid_angle=0,
+    )
+    first = halftone_newsprint.remap_layers(layers, target, {**common, "seed": 7})
+    repeat = halftone_newsprint.remap_layers(layers, target, {**common, "seed": 7})
+    changed = halftone_newsprint.remap_layers(layers, target, {**common, "seed": 8})
+
+    assert first["#FF0000"].wkb == repeat["#FF0000"].wkb
+    assert first["#FF0000"].wkb != changed["#FF0000"].wkb

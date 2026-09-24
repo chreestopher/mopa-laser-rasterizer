@@ -4,13 +4,12 @@ MODULES={
     "wave":wave,"voronoi":voronoi,"shear":shear,"spiral":spiral,
     "mosaic":mosaic,"crystal":crystal,"ripple":ripple,
     "glitch":glitch,"shattered":shattered,
-    "deep_fryer":deep_fryer,"halftone_newsprint":halftone_newsprint,
+    "deep_fryer":deep_fryer,
     "optical_color_mix":optical_color_mix,
-    "krasnow_grating":krasnow_grating,
     "structure_tensor_flow":structure_tensor_flow,
 }
 ALIASES={"tessellation":"crystal","triangles":"crystal","topographic":"ripple","xenoglyph":"shattered","alien":"shattered"}
-FULL_PALETTE_FILTERS={"wave","voronoi","shear","spiral","mosaic","crystal","ripple","glitch","shattered","deep_fryer","halftone_newsprint","optical_color_mix","structure_tensor_flow"}
+FULL_PALETTE_FILTERS={"wave","voronoi","shear","spiral","mosaic","crystal","ripple","glitch","shattered","deep_fryer","optical_color_mix","structure_tensor_flow"}
 
 def canonical_name(name):
     name=str(name or "none").strip().lower()

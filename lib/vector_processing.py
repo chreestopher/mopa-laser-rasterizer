@@ -3335,11 +3335,7 @@ def raster_to_puzzle_and_lightburn(
         geometry_style == geometry_styles.ROUTED_STYLE
         and geometry_styles.KRASNOW_STYLE in routed_styles
     )
-    krasnow_mode = (
-        filter_name == "krasnow_grating"
-        or geometry_style == geometry_styles.KRASNOW_STYLE
-        or mixed_krasnow
-    )
+    krasnow_mode = geometry_style == geometry_styles.KRASNOW_STYLE or mixed_krasnow
     krasnow_parameters = (
         geometry_styles.parameters_for_style(
             geometry_style,
@@ -3349,11 +3345,11 @@ def raster_to_puzzle_and_lightburn(
         if geometry_style in {
             geometry_styles.KRASNOW_STYLE, geometry_styles.ROUTED_STYLE
         }
-        else filter_parameters
+        else {}
     )
     # Choose-by-Swatch always routes Black to ordinary vector geometry. Let
     # normal palette quantization decide which pixels Black owns in that mode;
-    # the dedicated Krasnow source-darkness mask would otherwise turn dark,
+    # the Krasnow source-darkness mask would otherwise turn dark,
     # chromatic artwork into Black before the swatch router sees it.
     mixed_vector_black = mixed_krasnow and black_layer_available
     krasnow_preserve_black = (
