@@ -20,7 +20,7 @@ class DepthMapGeneratorCoverageTests(unittest.TestCase):
         self.assertIn('all other Depthmap Lab tools remain available to guests', script)
         self.assertIn('/depthmap_bootstrap.js?v=5', builder)
         self.assertIn('/static/depthmap_generator.js?v=14', builder)
-        self.assertIn('await import("/depthmap_generator.js?v=16")', bootstrap)
+        self.assertIn('await import("/depthmap_generator.js?v=17")', bootstrap)
         self.assertIn('static/depthmap_layered_relief.js', deploy)
 
     def test_staging_depthmap_matches_shared_desktop_scale_and_content_width(self):
@@ -96,7 +96,7 @@ class DepthMapGeneratorCoverageTests(unittest.TestCase):
         self.assertLess(page.index('class="depth-process-schematic"'), page.index("Desktop browser recommended:"))
         self.assertIn("source images larger than 500 × 500 pixels", page)
         self.assertIn("may enter a reload loop", page)
-        self.assertIn('src="/static/depthmap_generator.js?v=14"', page)
+        self.assertIn('src="/static/depthmap_generator.js?v=15"', page)
         self.assertNotIn('role="tablist"', page)
         self.assertNotIn('data-depth-tab=', page)
         self.assertIn('class="source-depth-previews"', page)
@@ -148,6 +148,8 @@ class DepthMapGeneratorCoverageTests(unittest.TestCase):
         self.assertIn('id="depth_relief_histogram"', page)
         self.assertIn('id="depth_relief_threshold_sliders"', page)
         self.assertIn('id="depth_relief_reset_thresholds"', page)
+        self.assertIn('id="depth_relief_palette"', page)
+        self.assertIn('id="depth_relief_setting"', page)
         self.assertIn('Download Layered LightBurn Project', page)
         self.assertIn('createReliefLayers(outputDepth', script)
         self.assertIn('function drawReliefHistogram(', script)

@@ -8,6 +8,13 @@ import {
   traceMaskContours,
 } from "../static/depthmap_layered_relief.js";
 
+const labelsSetting = {
+  description:"Labels",
+  material:"Stainless steel",
+  type:"Scan",
+  settings:{minPower:"12", maxPower:"18", speed:"900", frequency:"300000", QPulseWidth:"51", interval:"0.01", hide:"1", doOutput:"0"},
+};
+
 test("linear thresholds and cumulative layers progress from rear to front", () => {
   const depth = Float32Array.of(0, .25, .5, .75, 1);
   const relief = createReliefLayers(depth, 5, 1, {layers:4});
@@ -84,11 +91,16 @@ test("contour tracing produces closed outer and hole boundaries", () => {
   for (const contour of contours) assert.deepEqual(contour[0], contour.at(-1));
 });
 
-test("LightBurn layers share workbed coordinates and use safe placeholder settings", () => {
+test("LightBurn layers share workbed coordinates and copy the selected palette setting", () => {
   const relief = createReliefLayers(Float32Array.of(1, 1, 1, 1), 2, 2, {layers:2});
-  const project = createReliefLightBurn(relief, {pixelSizeMm:1, workbedWidthMm:10, workbedHeightMm:8});
+  const project = createReliefLightBurn(relief, {pixelSizeMm:1, workbedWidthMm:10, workbedHeightMm:8, cutSetting:labelsSetting});
   assert.match(project, /<LightBurnProject AppVersion="2\.1\.04" FormatVersion="1"/);
-  assert.equal((project.match(/<maxPower Value="0"\/>/g) || []).length, 2);
+  assert.equal((project.match(/<CutSetting type="Scan">/g) || []).length, 2);
+  assert.equal((project.match(/<maxPower Value="18"\/>/g) || []).length, 2);
+  assert.equal((project.match(/<frequency Value="300000"\/>/g) || []).length, 2);
+  assert.equal((project.match(/<doOutput Value="1"\/>/g) || []).length, 2);
+  assert.equal((project.match(/<hide Value="0"\/>/g) || []).length, 2);
+  assert.doesNotMatch(project, /<maxPower Value="0"\/>/);
   assert.ok((project.match(/<Shape Type="Path" CutIndex="\d+" VertID="\d+" PrimID="\d+">/g) || []).length >= 2);
   assert.doesNotMatch(project, /ShapeID=/);
   assert.match(project, /V4 3c0x1c1x1/);
@@ -97,7 +109,7 @@ test("LightBurn layers share workbed coordinates and use safe placeholder settin
 
 test("LightBurn path geometry uses unique modern vertex and primitive identifiers", () => {
   const relief = createReliefLayers(Float32Array.of(0, 1, 0, 1), 2, 2, {layers:2});
-  const project = createReliefLightBurn(relief, {pixelSizeMm:1});
+  const project = createReliefLightBurn(relief, {pixelSizeMm:1, cutSetting:labelsSetting});
   const identifiers = [...project.matchAll(/<Shape Type="Path" CutIndex="\d+" VertID="(\d+)" PrimID="(\d+)">/g)];
   assert.ok(identifiers.length >= 2);
   assert.equal(new Set(identifiers.map(match => match[1])).size, identifiers.length);
@@ -107,14 +119,19 @@ test("LightBurn path geometry uses unique modern vertex and primitive identifier
 
 test("multi-layer LightBurn project keeps every relief slice aligned and ordered", () => {
   const relief = createReliefLayers(Float32Array.of(0, .25, .5, .75, 1), 5, 1, {layers:3});
-  const project = createReliefLightBurn(relief, {pixelSizeMm:1, workbedWidthMm:9, workbedHeightMm:5, materialThicknessMm:3});
-  assert.equal((project.match(/<CutSetting type="Cut">/g) || []).length, 3);
+  const project = createReliefLightBurn(relief, {pixelSizeMm:1, workbedWidthMm:9, workbedHeightMm:5, materialThicknessMm:3, cutSetting:labelsSetting});
+  assert.equal((project.match(/<CutSetting type="Scan">/g) || []).length, 3);
   assert.match(project, /Layer 01 of 03 - BACK/);
   assert.match(project, /Layer 03 of 03 - FRONT/);
   assert.match(project, /<hide Value="0"\/>/);
-  assert.equal((project.match(/<hide Value="1"\/>/g) || []).length, 2);
+  assert.equal((project.match(/<hide Value="0"\/>/g) || []).length, 3);
   assert.match(project, /CutIndex="0"/);
   assert.match(project, /CutIndex="1"/);
   assert.match(project, /CutIndex="2"/);
   assert.match(project, /enable Output for exactly one layer/);
+});
+
+test("LightBurn export requires a saved palette setting", () => {
+  const relief = createReliefLayers(Float32Array.of(1, 1, 1, 1), 2, 2, {layers:2});
+  assert.throws(() => createReliefLightBurn(relief, {pixelSizeMm:1}), /Choose a saved Swatch Palette and setting/);
 });

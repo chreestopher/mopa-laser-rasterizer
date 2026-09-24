@@ -328,6 +328,18 @@ function xmlEscape(value) {
   return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 }
 
+function reliefCutSettingXml(layer, name, selected) {
+  if (!selected || !selected.settings || typeof selected.settings !== "object") {
+    throw new Error("Choose a saved Swatch Palette and setting before exporting the Layered Relief project.");
+  }
+  const type = /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(String(selected.type || "")) ? String(selected.type) : "Cut";
+  const reserved = new Set(["index", "name", "priority", "hide", "doOutput"]);
+  const values = Object.entries(selected.settings)
+    .filter(([key, value]) => /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(key) && !reserved.has(key) && value !== null && value !== undefined && typeof value !== "object")
+    .map(([key, value]) => `    <${key} Value="${xmlEscape(value)}"/>`);
+  return `  <CutSetting type="${xmlEscape(type)}">\n    <index Value="${layer.index}"/>\n    <name Value="${xmlEscape(name)}"/>\n${values.length ? `${values.join("\n")}\n` : ""}    <doOutput Value="1"/>\n    <priority Value="${layer.index}"/>\n    <hide Value="0"/>\n  </CutSetting>`;
+}
+
 function reliefGeometry(layer, width, height, options, cutIndex, firstGeometryId) {
   const pixelSize = clamp(Number(options.pixelSizeMm) || 0.1, 0.001, 100);
   const artworkWidth = width * pixelSize;
@@ -366,12 +378,14 @@ export function createReliefLightBurn(relief, options = {}) {
   const digits = Math.max(2, String(count).length);
   const cutSettings = [];
   const shapes = [];
+  const selectedSetting = options.cutSetting;
+  if (!selectedSetting) throw new Error("Choose a saved Swatch Palette and setting before exporting the Layered Relief project.");
   let geometryId = 1;
   for (const layer of relief.layers) {
     const number = layer.index + 1;
     const position = number === 1 ? "BACK" : number === count ? "FRONT" : "MIDDLE";
     const name = `Layer ${String(number).padStart(digits, "0")} of ${String(count).padStart(digits, "0")} - ${position}`;
-    cutSettings.push(`  <CutSetting type="Cut">\n    <index Value="${layer.index}"/>\n    <name Value="${xmlEscape(name)}"/>\n    <minPower Value="0"/>\n    <maxPower Value="0"/>\n    <speed Value="100"/>\n    <frequency Value="20"/>\n    <numPasses Value="1"/>\n    <priority Value="${layer.index}"/>\n    <hide Value="${layer.index === 0 ? 0 : 1}"/>\n  </CutSetting>`);
+    cutSettings.push(reliefCutSettingXml(layer, name, selectedSetting));
     const geometry = reliefGeometry(layer, relief.width, relief.height, options, layer.index, geometryId);
     shapes.push(...geometry.shapes);
     geometryId = geometry.nextGeometryId;
@@ -384,7 +398,7 @@ export function createReliefLightBurn(relief, options = {}) {
     `Artwork: ${artworkWidth.toFixed(3)} x ${artworkHeight.toFixed(3)} mm on a ${workbedWidth.toFixed(3)} x ${workbedHeight.toFixed(3)} mm workbed.`,
     "All layers intentionally overlap at identical workspace coordinates.",
     "CUT ONE SHEET AT A TIME: enable Output for exactly one layer and disable every other layer before starting.",
-    "WARNING: Every layer uses a zero-power placeholder. Assign tested cutting settings before running the laser.",
+    `Every layer uses the selected ${selectedSetting.description || "palette"} setting${selectedSetting.material ? ` from ${selectedSetting.material}` : ""}.`,
     "Inspect every contour. Small or disconnected islands may require manual placement or a supporting frame.",
   ].join("\n")).replaceAll("\n", "&#10;");
   return `<?xml version="1.0" encoding="UTF-8"?>\n<LightBurnProject AppVersion="2.1.04" FormatVersion="1" MaterialHeight="0" MirrorX="False" MirrorY="True" AskForSendName="True">\n  <Notes ShowOnLoad="1" Notes="${notes}"/>\n${cutSettings.join("\n")}\n${shapes.join("\n")}\n</LightBurnProject>\n`;
