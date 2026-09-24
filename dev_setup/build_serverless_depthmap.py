@@ -42,7 +42,7 @@ source = source.replace("/docs/depthmap-generator", "/")
 source = source.replace("/login", "/")
 source = source.replace("{{ depth_palette|tojson }}", "[]")
 source = source.replace(
-    '<script type="module" src="/static/depthmap_generator.js?v=10"></script>',
+    '<script type="module" src="/static/depthmap_generator.js?v=11"></script>',
     '<script type="module" src="/depthmap_bootstrap.js?v=3"></script>',
 )
 Path(sys.argv[2]).write_text(source, encoding="utf-8")
