@@ -21,7 +21,7 @@ class ServerlessAdminConsoleTests(unittest.TestCase):
         for route in (
             "GET /admin/jobs", "GET /admin/jobs/{task_id}",
             "DELETE /admin/jobs/{task_id}", "POST /admin/jobs/{task_id}/cancel",
-            "GET /admin/users",
+            "GET /admin/users", "GET /admin/state-transitions",
         ):
             self.assertIn(f'RouteKey: "{route}"', self.infrastructure)
         self.assertGreaterEqual(self.infrastructure.count("AuthorizationType: JWT"), 5)
@@ -97,9 +97,9 @@ class ServerlessAdminConsoleTests(unittest.TestCase):
         self.assertIn("color:#20221e!important", self.styles)
 
     def test_operational_panels_stay_hidden_until_admin_authorization_succeeds(self):
-        self.assertEqual(self.page.count('class="admin-panel admin-protected'), 3)
-        self.assertEqual(self.page.count('aria-labelledby="admin-'), 3)
-        self.assertEqual(self.page.count('hidden>'), 3)
+        self.assertEqual(self.page.count('class="admin-panel admin-protected'), 4)
+        self.assertEqual(self.page.count('aria-labelledby="admin-'), 4)
+        self.assertEqual(self.page.count('hidden>'), 4)
         self.assertIn('document.querySelectorAll(".admin-protected")', self.client)
         self.assertIn("protectedPanels.forEach(panel=>panel.hidden=false)", self.client)
         self.assertIn('if(!token||(tokenExpiresSoon()&&!await refreshSession()))return', self.client)
@@ -116,6 +116,16 @@ class ServerlessAdminConsoleTests(unittest.TestCase):
         self.assertIn('"/admin.html": ["Private operational visibility"', shell)
         routes = shell[shell.index("const routes = ["):shell.index("const pageHeroes =")]
         self.assertNotIn("/admin.html", routes)
+
+    def test_transition_dashboard_reads_existing_account_metric_once_on_load(self):
+        self.assertIn('id="transitionCount"', self.page)
+        self.assertIn('api("/admin/state-transitions")', self.client)
+        self.assertEqual(self.client.count('api("/admin/state-transitions")'), 1)
+        self.assertNotIn("setInterval", self.client)
+        self.assertIn('MetricName="ConsumedCapacity"', self.handler)
+        self.assertIn('{"Name": "ServiceMetric", "Value": "StateTransition"}', self.handler)
+        self.assertIn("cloudwatch:GetMetricStatistics", self.infrastructure)
+        self.assertIn("It does not poll, store snapshots, or create a custom metric", self.page)
 
 
 if __name__ == "__main__":

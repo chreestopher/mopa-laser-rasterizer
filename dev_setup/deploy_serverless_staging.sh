@@ -195,7 +195,7 @@ aws cloudformation deploy --region "$REGION" --stack-name "$ORCHESTRATION_STACK"
     "AssignPublicIp=${FARGATE_ASSIGN_PUBLIC_IP:-DISABLED}" \
     "TaskExecutionRoleArn=$(output "$WORKER_STACK" TaskExecutionRoleArn)" \
     "TaskRoleArn=$(output "$WORKER_STACK" TaskRoleArn)" \
-    "SqsQueueArn=$QUEUE_ARN" "SqsDlqArn=$DLQ_ARN" "SqsDlqUrl=$DLQ_URL" \
+    "SqsQueueArn=$QUEUE_ARN" "SqsQueueUrl=$QUEUE_URL" "SqsDlqArn=$DLQ_ARN" "SqsDlqUrl=$DLQ_URL" \
     "RuntimeTableName=$RUNTIME_TABLE" \
     "SpotWorkerAttempts=${SERVERLESS_SPOT_WORKER_ATTEMPTS:-${FARGATE_SPOT_WORKER_ATTEMPTS:-2}}" \
   --no-fail-on-empty-changeset

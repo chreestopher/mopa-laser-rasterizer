@@ -99,6 +99,7 @@ aws cloudformation deploy --region "$REGION" --stack-name "$ORCHESTRATION_STACK_
     "TaskExecutionRoleArn=$(stack_output TaskExecutionRoleArn)" \
     "TaskRoleArn=$(stack_output TaskRoleArn)" \
     "SqsQueueArn=$SQS_QUEUE_ARN" \
+    "SqsQueueUrl=$SQS_QUEUE_URL" \
     "SqsDlqArn=$SQS_DLQ_ARN" \
     "SqsDlqUrl=$SQS_DLQ_URL" \
     "SpotWorkerAttempts=${FARGATE_SPOT_WORKER_ATTEMPTS:-2}" \

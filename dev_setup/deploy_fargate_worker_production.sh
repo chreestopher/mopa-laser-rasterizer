@@ -63,5 +63,5 @@ export REDIS_PORT=30379 REDIS_SSL=false S3_BUCKET_NAME DYNAMODB_TABLE_NAME
 export SQS_QUEUE_URL SQS_QUEUE_ARN SQS_DLQ_URL SQS_DLQ_ARN
 export FARGATE_ASSIGN_PUBLIC_IP=ENABLED
 export FARGATE_SPOT_WORKER_ATTEMPTS="${FARGATE_SPOT_WORKER_ATTEMPTS:-2}"
-bash "$SCRIPT_DIR/ensure-s3-fargate-dispatch.sh"
+bash "$SCRIPT_DIR/remove-s3-fargate-dispatch.sh"
 exec bash "$SCRIPT_DIR/deploy_fargate_worker.sh" "$@"
