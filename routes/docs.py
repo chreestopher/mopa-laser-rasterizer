@@ -872,14 +872,14 @@ DOCS["structure-tensor-flow-filter"].update({
     "related": ["abstract-filters", "abstract-filter-reference", "color-layers", "reduce-lightburn-object-count"],
 })
 
-DOCS["halftone-newsprint-filter"] = _page(
+DOCS["halftone-newsprint-geometry"] = _page(
     "Halftone Newsprint Geometry Style",
     "Build multicolor or Black-only halftone geometry after compatible image processing.",
     "Halftone Newsprint is a Geometry Style. A compatible Image Style prepares and color-separates the artwork first; Halftone then samples that prepared artwork through one shared physical matrix.",
     [],
     ["geometry-styles", "color-layers", "reduce-lightburn-object-count"],
 )
-DOCS["halftone-newsprint-filter"].update({
+DOCS["halftone-newsprint-geometry"].update({
     "description": "Build a multicolor or Black-only halftone from one shared matrix of variable-size circles or squares.",
     "intro": "Choose Halftone Newsprint under Geometry Style after selecting a compatible Image Style. It samples the prepared artwork on a regular physical grid and emits circles or squares. By default, each mark remains on the Rasterizer swatch layer owning that location. Black Only instead sends every mark to the official Black layer for a conventional monochrome halftone.",
     "sections": [
@@ -904,14 +904,14 @@ DOCS["optical-color-mix-filter"].update({
     "related": ["abstract-filters", "abstract-filter-reference", "color-layers", "reduce-lightburn-object-count"],
 })
 
-DOCS["krasnow-grating-filter"] = _page(
+DOCS["krasnow-grating-geometry"] = _page(
     "Krasnow Grating Geometry Style",
     "Create open-path diffraction-grating geometry after compatible image processing.",
     "Krasnow Grating is a Geometry Style. It follows the selected compatible Image Style and can also be assigned only to selected swatches through Choose by swatch.",
     [],
     ["geometry-styles", "color-layers", "diffraction-gratings", "holographic-calibration"],
 )
-DOCS["krasnow-grating-filter"].update({
+DOCS["krasnow-grating-geometry"].update({
     "description": "Create open-path diffraction-grating artwork based on Ben Krasnow's method by using the cut settings stored in the selected material's Fauxlographic entry as a machine-specific 1.00 µm calibration anchor and scaling the output-layer speeds to produce a range of pulse pitches.",
     "intro": "Krasnow Grating Geometry Style follows Rasterizer's image resizing, palette quantization, and color-region cleanup stages, then rebuilds selected geometry as patches of parallel open lines. Source-image luminance controls each patch's line angle, while source-image hue and the selected fauxlogram gradient determine which diffraction carrier receives that patch.",
     "sections": [
@@ -960,7 +960,7 @@ DOCS["geometry-styles"] = _page(
         ("Compatibility", ["Geometry Style is available for standard and ordinary abstract image processing. Optical Color Mix already constructs final mixed geometry and therefore does not accept another Geometry Style transformation."]),
         ("Settings and persistence", ["Signed-in members' most recently submitted Geometry Style, per-swatch assignments, and shared Glyph, Halftone, or Krasnow settings are restored with their Rasterizer workflow settings. Guest sessions use the form defaults and do not save account-backed preferences."]),
     ],
-    ["preset-controls", "artwork-cropping", "panel-tiling", "halftone-newsprint-filter", "krasnow-grating-filter", "color-layers"],
+    ["preset-controls", "artwork-cropping", "panel-tiling", "halftone-newsprint-geometry", "krasnow-grating-geometry", "color-layers"],
 )
 
 DOCS["panel-tiling"] = _page(
@@ -979,7 +979,7 @@ DOCS["panel-tiling"] = _page(
     ["preset-controls", "geometry-styles", "lightburn-export", "why-fixturing-is-so-important", "job-history"],
 )
 
-DOCS["krasnow-grating-filter"].update({
+DOCS["krasnow-grating-geometry"].update({
     "description": "Create open-path diffraction-grating artwork from palette-mapped regions, using the selected material's Fauxlographic setting as the machine-specific carrier-setting anchor.",
     "intro": "Krasnow Grating is a Geometry Style applied after a compatible Image Style prepares and color-separates the source. It replaces selected regions with clipped cells of parallel open lines. Source luminance controls line angle; source hue and the fauxlogram gradient select grating carriers. It supports artwork-wide or shape-local vertical, horizontal, and radial gradient layouts.",
     "sections": [
@@ -993,7 +993,7 @@ DOCS["krasnow-grating-filter"].update({
         ("Where it belongs in the pipeline", ["Select Krasnow Grating under Geometry Style. Use No geometric effect when you want minimal image transformation before the grating stage, or choose another compatible Image Style when it should deliberately transform the regions first. Choose by swatch when only selected colors should become gratings."]),
         ("Physical validation", ["The calculations cannot verify that a particular machine and material produce the assumed diffraction response. Confirm every generated layer and setting in LightBurn, check that calculated speeds and frequencies remain within machine limits, and engrave a small test under the intended focus, lighting, and viewing conditions.", {"before": "The approach is based on Ben Krasnow's ", "link_text": "MOPA Laser Diffraction Gratings reference project", "url": BEN_KRASNOW_DIFFRACTION_REPO, "after": ", adapted to the selected Rasterizer palette and Fauxlographic setting."}]),
     ],
-    "related": ["geometry-styles", "abstract-filters", "color-layers", "diffraction-gratings", "holographic-calibration"],
+    "related": ["geometry-styles", "color-layers", "diffraction-gratings", "holographic-calibration"],
 })
 
 DOCS["lightburn-export"].update({
@@ -1404,7 +1404,7 @@ DOCS.update({
                 {"before": "If you are not comfortable uploading laser settings, or do not use LightBurn, and still want to try the geometry produced by Rasterizer, use ", "link_text": "SVG-Only mode", "link_slug": "svg-only-mode", "after": ". It exports the generated geometry without embedding or applying LightBurn laser settings."},
             ]),
         ],
-        ["krasnow-grating-filter", "holographic-lab-workflow", "holographic-calibration", "holographic-artwork", "geometry-styles", "diffraction-gratings", "lightburn-export"],
+        ["krasnow-grating-geometry", "holographic-lab-workflow", "holographic-calibration", "holographic-artwork", "geometry-styles", "diffraction-gratings", "lightburn-export"],
     ),
     "multi-geometry-rasterizer-guide": _page(
         "Geometric Alchemy: The Wizzard of Awes' Full Guide to Multi-Geometry Rasterizer Jobs",
@@ -1522,7 +1522,7 @@ DOCS["manual-krasnow-geometry-workflow"] = markdown_guide_page(
     Path(__file__).resolve().parents[1] / "docs" / "manual-krasnow-geometry-workflow.md",
     description="Reproduce Rasterizer's Krasnow grating construction manually, from aligned vector cells and luminance-directed open paths through calibrated LightBurn carrier layers.",
     outcome="A small, manually constructed angular diffraction artwork whose cells, open grating paths, carrier assignments, and LightBurn settings follow the same core process used by Rasterizer's Krasnow geometry.",
-    related=["krasnow-grating-filter", "geometry-styles", "diffraction-gratings", "fauxlogram-tutorial", "lightburn-export"],
+    related=["krasnow-grating-geometry", "geometry-styles", "diffraction-gratings", "fauxlogram-tutorial", "lightburn-export"],
 )
 
 DOCS["color-discovery-material-test-presets"] = markdown_guide_page(
@@ -1542,7 +1542,7 @@ DOCS["power-down-cutoff-frequency"]["diagram"] = {
 
 DOC_GROUPS = [
     ("In-depth workflow guides", ["fauxlogram-tutorial", "multi-geometry-rasterizer-guide", "manual-krasnow-geometry-workflow", "color-discovery-material-test-presets"]),
-    ("Rasterizer", ["preset-controls", "artwork-cropping", "geometry-styles", "panel-tiling", "raster-to-vector", "svg-only-mode", "raster-vs-vector", "image-presets", "cartoon-preset", "color-photo-preset", "black-and-white-photo", "pixel-size", "color-layers"]),
+    ("Rasterizer", ["preset-controls", "artwork-cropping", "geometry-styles", "halftone-newsprint-geometry", "krasnow-grating-geometry", "panel-tiling", "raster-to-vector", "svg-only-mode", "raster-vs-vector", "image-presets", "cartoon-preset", "color-photo-preset", "black-and-white-photo", "pixel-size", "color-layers"]),
     ("Abstract filters", ["abstract-filters", "abstract-filter-reference"] + [f"{slug}-filter" for slug in FILTER_PAGES]),
     ("Laser technology", ["my-personal-laser-journey", "mopa-color-laser-engraving", "types-of-lasers-for-engraving", "continuous-wave-vs-pulsed-lasers", "what-does-mopa-mean", "what-does-q-switched-mean", "diode-lasers-explained", "co2-lasers-explained", "uv-lasers-explained", "laser-engraving-parameters", "all-about-operation-mode", "all-about-laser-power", "what-is-laser-ablation", "all-about-engraving-speed", "all-about-laser-frequency", "all-about-pulse-width", "power-down-cutoff-frequency", "all-about-line-interval", "all-about-engraving-passes", "all-about-scan-angle-crosshatch", "why-fixturing-is-so-important", "laser-compatibility", "what-laser-should-i-buy", "color-discovery"]),
     ("LightBurn and materials", ["works-with-lightburn", "material-vault", "hatch-palettes", "material-coupon-generator", "community-set", "material-libraries", "blank-palette-library", "lightburn-export", "lightburn-large-projects", "reduce-lightburn-object-count", "mopa-laser-workflow"]),
