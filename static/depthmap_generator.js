@@ -788,9 +788,11 @@ function drawParallaxPreview() {
 
     const encoded = Math.min(1, Math.max(0, Number(preview.depth[index]) || 0));
     const proximity = invertControl.checked ? 1 - encoded : encoded;
-    const isSourceBackground = preview.backgroundMask
-      ? Boolean(preview.backgroundMask[index])
+    const isExplicitBackground = preview.backgroundMask && Boolean(preview.backgroundMask[index]);
+    const isCutoffBackground = preview.backgroundMask
+      ? cutoff > 0 && proximity <= cutoff
       : proximity <= cutoff;
+    const isSourceBackground = isExplicitBackground || isCutoffBackground;
     if (isSourceBackground) sourceBackgroundCount += 1;
     const x = index % preview.width;
     const y = Math.floor(index / preview.width);
@@ -812,7 +814,9 @@ function drawParallaxPreview() {
   maskContext.putImageData(maskImage, 0, 0);
   const sourceBackgroundPercentage = sourceBackgroundCount / pixels.length * 100;
   const unengravedPercentage = unengravedCount / pixels.length * 100;
-  const sourceLabel = preview.backgroundMask ? "explicit source background" : "cutoff-derived source background";
+  const sourceLabel = preview.backgroundMask
+    ? "explicit or cutoff-derived source background"
+    : "cutoff-derived source background";
   const appearanceLabel = parallaxAppearanceControl.value === "source-detail" ? "Source Image Detail" : "Silhouette";
   parallaxPreviewSummary.textContent = `${appearanceLabel}: ${sourceBackgroundPercentage.toFixed(1)}% ${sourceLabel}; ${unengravedPercentage.toFixed(1)}% of cells remain unengraved after source coverage and edge ramps.`;
 }
@@ -1076,10 +1080,9 @@ function reset() {
 
 function updateInputMode() {
   const direct = inputModeControl.value === "depthmap";
-  parallaxBackgroundControl.disabled = direct;
   generateButton.textContent = direct ? "Use Existing Depthmap" : "Initialize Depthmap";
   inputModeHelp.textContent = direct
-    ? "Uses grayscale values directly without AI inference. Pure-white or transparent pixels become Krasnow's explicit source background; the cutoff control is not applied. Edge ramps may extend into that background."
+    ? "Uses grayscale values directly without AI inference. Pure-white or transparent pixels are always background; Far-depth background cutoff can include additional far-depth pixels. Set it to 0% to use only the explicit background."
     : "Uses browser-based AI to estimate relative depth from an ordinary photograph or illustration.";
   uploadPrompt.textContent = direct
     ? "Drop an existing grayscale depthmap here, or select one from your device."
