@@ -87,12 +87,22 @@ test("contour tracing produces closed outer and hole boundaries", () => {
 test("LightBurn layers share workbed coordinates and use safe placeholder settings", () => {
   const relief = createReliefLayers(Float32Array.of(1, 1, 1, 1), 2, 2, {layers:2});
   const project = createReliefLightBurn(relief, {pixelSizeMm:1, workbedWidthMm:10, workbedHeightMm:8});
-  assert.match(project, /<LightBurnProject AppVersion="1\.2\.01" FormatVersion="1"/);
-  assert.doesNotMatch(project, /AppVersion="2\.1\.04"/);
+  assert.match(project, /<LightBurnProject AppVersion="2\.1\.04" FormatVersion="1"/);
   assert.equal((project.match(/<maxPower Value="0"\/>/g) || []).length, 2);
-  assert.ok((project.match(/<Shape Type="Path" ShapeID="\d+" CutIndex="\d+">/g) || []).length >= 2);
-  assert.match(project, /V4 3/);
-  assert.match(project, /V6 5/);
+  assert.ok((project.match(/<Shape Type="Path" CutIndex="\d+" VertID="\d+" PrimID="\d+">/g) || []).length >= 2);
+  assert.doesNotMatch(project, /ShapeID=/);
+  assert.match(project, /V4 3c0x1c1x1/);
+  assert.match(project, /V6 5c0x1c1x1/);
+});
+
+test("LightBurn path geometry uses unique modern vertex and primitive identifiers", () => {
+  const relief = createReliefLayers(Float32Array.of(0, 1, 0, 1), 2, 2, {layers:2});
+  const project = createReliefLightBurn(relief, {pixelSizeMm:1});
+  const identifiers = [...project.matchAll(/<Shape Type="Path" CutIndex="\d+" VertID="(\d+)" PrimID="(\d+)">/g)];
+  assert.ok(identifiers.length >= 2);
+  assert.equal(new Set(identifiers.map(match => match[1])).size, identifiers.length);
+  assert.equal(new Set(identifiers.map(match => match[2])).size, identifiers.length);
+  assert.ok(identifiers.every(match => match[1] === match[2]));
 });
 
 test("multi-layer LightBurn project keeps every relief slice aligned and ordered", () => {
