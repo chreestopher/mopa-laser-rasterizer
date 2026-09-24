@@ -183,7 +183,7 @@
         <p class="fine-print">The LightBurn project contains one numbered cutting layer per physical sheet. Every layer uses the same workbed and identical coordinates. Assign tested cutting settings, enable Output for exactly one layer, cut that sheet, and then continue through the layers in order.</p>
       </div>
       <div class="previews">
-        <div class="preview-card"><h3>Selected cutting layer</h3><canvas id="depth_relief_layer_canvas" aria-label="Preview of the selected layered relief cutting mask"></canvas><div class="control"><label for="depth_relief_preview_layer">Layer <output id="depth_relief_preview_layer_value">1 of 7 · rear</output></label><input id="depth_relief_preview_layer" type="range" min="1" max="7" step="1" value="1"></div></div>
+        <div class="preview-card"><h3>Selected cutting layer</h3><canvas id="depth_relief_layer_canvas" aria-label="Preview of the selected layered relief cutting mask with laser paths outlined in red"></canvas><p class="fine-print">Red lines show the closed paths the laser will follow, including enabled registration holes.</p><div class="control"><label for="depth_relief_preview_layer">Layer <output id="depth_relief_preview_layer_value">1 of 7 · rear</output></label><input id="depth_relief_preview_layer" type="range" min="1" max="7" step="1" value="1"></div></div>
         <div class="preview-card"><h3>Assembled depth bands</h3><canvas id="depth_relief_composite_canvas" class="layered-relief-swatch" aria-label="Color-coded preview of the assembled relief layers"></canvas></div>
         <p id="depth_relief_summary" class="layered-relief-summary" aria-live="polite">Generate a depthmap to inspect layered relief slices.</p>
       </div>
@@ -193,6 +193,6 @@
     <aside class="panel note"><strong>Important limitation:</strong> a single photograph cannot provide measured physical depth. The model infers relative depth from visual cues and can misread reflections, transparency, shadows, abstract artwork, or unfamiliar objects. Always inspect and edit the result before using it for relief engraving. The uploaded image is processed locally; the browser downloads the AI model from Hugging Face when first used.</aside>
   </main>
   <script id="depth_palette_data" type="application/json">{{ depth_palette|tojson }}</script>
-  <script type="module" src="/static/depthmap_generator.js?v=10"></script>
+  <script type="module" src="/static/depthmap_generator.js?v=11"></script>
 </body>
 </html>

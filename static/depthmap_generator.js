@@ -1,6 +1,6 @@
 import { createKrasnowParallaxPixels } from "./depthmap_parallax.js";
 import { createKrasnowParallaxSvg } from "./depthmap_parallax_svg.js";
-import { createReliefLayers, createReliefLightBurn } from "./depthmap_layered_relief.js";
+import { createReliefLayers, createReliefLightBurn, traceMaskContours } from "./depthmap_layered_relief.js";
 
 const MODEL_ID = "onnx-community/depth-anything-v2-small";
 const TRANSFORMERS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2";
@@ -861,7 +861,37 @@ function reliefExportOptions() {
   };
 }
 
-function paintReliefMask(canvas, mask, width, height) {
+function paintReliefCutPaths(context, mask, width, height, options) {
+  const lineWidth = Math.max(1, Math.min(width, height) / 350);
+  context.save();
+  context.strokeStyle = "#ff3030";
+  context.lineWidth = lineWidth;
+  context.lineJoin = "round";
+  context.lineCap = "round";
+  for (const contour of traceMaskContours(mask, width, height)) {
+    context.beginPath();
+    contour.forEach(([x, y], index) => index ? context.lineTo(x, y) : context.moveTo(x, y));
+    context.stroke();
+  }
+  if (options.registrationHoles) {
+    const pixelSize = Math.max(.001, Number(options.pixelSizeMm) || .1);
+    const artworkWidth = width * pixelSize;
+    const artworkHeight = height * pixelSize;
+    const diameter = Math.min(Math.min(artworkWidth, artworkHeight), Math.max(.1, Number(options.registrationDiameterMm) || 3));
+    const radius = diameter / 2;
+    const maximumInset = Math.max(radius, Math.min(artworkWidth, artworkHeight) / 2);
+    const inset = Math.min(maximumInset, Math.max(radius, Number(options.registrationInsetMm) || 5));
+    const positions = [[inset, inset], [artworkWidth - inset, inset], [artworkWidth - inset, artworkHeight - inset], [inset, artworkHeight - inset]];
+    for (const [x, y] of positions) {
+      context.beginPath();
+      context.arc(x / pixelSize, y / pixelSize, radius / pixelSize, 0, Math.PI * 2);
+      context.stroke();
+    }
+  }
+  context.restore();
+}
+
+function paintReliefMask(canvas, mask, width, height, options) {
   canvas.width = width;
   canvas.height = height;
   const context = canvas.getContext("2d");
@@ -875,6 +905,7 @@ function paintReliefMask(canvas, mask, width, height) {
     image.data[offset + 3] = 255;
   }
   context.putImageData(image, 0, 0);
+  paintReliefCutPaths(context, mask, width, height, options);
 }
 
 function paintReliefComposite(canvas, relief) {
@@ -911,10 +942,10 @@ function drawReliefPreview() {
   reliefPreviewLayerControl.value = String(Math.min(options.layers, Math.max(1, Number(reliefPreviewLayerControl.value) || 1)));
   const relief = createReliefLayers(preview.depth, preview.width, preview.height, options);
   const selectedIndex = Number(reliefPreviewLayerControl.value) - 1;
-  paintReliefMask(reliefLayerCanvas, relief.layers[selectedIndex].mask, relief.width, relief.height);
+  const exportOptions = reliefExportOptions();
+  paintReliefMask(reliefLayerCanvas, relief.layers[selectedIndex].mask, relief.width, relief.height, exportOptions);
   paintReliefComposite(reliefCompositeCanvas, relief);
   reliefPreviewLayerValue.value = `${selectedIndex + 1} of ${options.layers} · ${selectedIndex === 0 ? "rear" : selectedIndex === options.layers - 1 ? "front" : "middle"}`;
-  const exportOptions = reliefExportOptions();
   const physicalWidth = outputWidth * exportOptions.pixelSizeMm;
   const physicalHeight = outputHeight * exportOptions.pixelSizeMm;
   const occupied = relief.layers[selectedIndex].mask.reduce((sum, value) => sum + value, 0);
