@@ -183,6 +183,8 @@ aws s3 cp "$REPO_ROOT/static/depthmap_parallax.js" "s3://$STATIC_BUCKET/web/dept
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/static/depthmap_parallax_svg.js" "s3://$STATIC_BUCKET/web/depthmap_parallax_svg.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
+aws s3 cp "$REPO_ROOT/static/depthmap_layered_relief.js" "s3://$STATIC_BUCKET/web/depthmap_layered_relief.js" \
+  --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/depthmap_bootstrap.js" "s3://$STATIC_BUCKET/web/depthmap_bootstrap.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/history.html" "s3://$STATIC_BUCKET/web/history.html" \
