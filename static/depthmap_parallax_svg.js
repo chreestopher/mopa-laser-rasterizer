@@ -3,6 +3,12 @@
 // https://github.com/benkrasnow/MOPA_Laser_Diffraction_Gratings/blob/main/grayscale_to_svg/angle_and_pitch_to_svg.py
 
 const EPSILON = 1e-9;
+const DETAIL_DITHER = [
+  0, 8, 2, 10,
+  12, 4, 14, 6,
+  3, 11, 1, 9,
+  15, 7, 13, 5,
+];
 
 function positiveNumber(value, label) {
   const number = Number(value);
@@ -23,6 +29,31 @@ function addUniquePoint(points, x, y) {
 export function grayscaleToGratingAngle(pixelValue) {
   const gray = Math.min(255, Math.max(0, Number(pixelValue) || 0));
   return gray / 255 * 180 - 90;
+}
+
+/** Decide whether one angle-map cell receives grating geometry. */
+export function parallaxCellIsEngraved(
+  pixelValue,
+  detailValue = 0,
+  x = 0,
+  y = 0,
+  appearanceMode = "silhouette",
+) {
+  const anglePixel = Math.min(255, Math.max(0, Math.round(Number(pixelValue) || 0)));
+  if (anglePixel === 255) return false;
+  if (appearanceMode === "silhouette") return true;
+  if (appearanceMode !== "source-detail") {
+    throw new Error("Parallax appearance must be Silhouette or Source Image Detail.");
+  }
+
+  // Preserve every directional edge-ramp cell. Neutral interior cells use a
+  // stable ordered dither so source tone changes coverage without changing
+  // the calibrated grating pitch, stroke width, or angle.
+  if (anglePixel !== 127) return true;
+  const luminance = Math.min(255, Math.max(0, Math.round(Number(detailValue) || 0)));
+  const coverage = 1 - luminance / 255;
+  const threshold = (DETAIL_DITHER[(y & 3) * 4 + (x & 3)] + 0.5) / 16;
+  return coverage >= threshold;
 }
 
 /** Return clipped parallel-line segments for one square cell at the origin. */
@@ -75,6 +106,8 @@ export async function createKrasnowParallaxSvg(
     patchSize = 0.4,
     lineSpacing = 0.06,
     strokeWidth = 0.01,
+    appearanceMode = "silhouette",
+    detailPixels = null,
     onProgress = null,
     yieldEveryRows = 8,
   } = {},
@@ -85,6 +118,9 @@ export async function createKrasnowParallaxSvg(
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) {
     throw new Error("Parallax SVG conversion requires valid image dimensions.");
   }
+  if (appearanceMode === "source-detail" && (!detailPixels || detailPixels.length !== pixels.length)) {
+    throw new Error("Source Image Detail requires a complete source-luminance map.");
+  }
   const size = positiveNumber(patchSize, "Patch size");
   const spacing = positiveNumber(lineSpacing, "Line spacing");
   const stroke = positiveNumber(strokeWidth, "Stroke width");
@@ -94,7 +130,7 @@ export async function createKrasnowParallaxSvg(
     '<?xml version="1.0" encoding="UTF-8"?>\n',
     `<svg xmlns="http://www.w3.org/2000/svg" width="${coordinate(svgWidth)}mm" height="${coordinate(svgHeight)}mm" viewBox="0 0 ${coordinate(svgWidth)} ${coordinate(svgHeight)}">\n`,
     "<title>Depthmap Lab parallax diffraction grating</title>\n",
-    "<desc>Horizontal parallax angle map converted to square cells of clipped parallel grating lines.</desc>\n",
+    `<desc>Horizontal parallax angle map converted to square cells of clipped parallel grating lines using ${appearanceMode === "source-detail" ? "source-image detail coverage" : "silhouette coverage"}.</desc>\n`,
     `<g fill="none" stroke="#000000" stroke-width="${coordinate(stroke)}" stroke-linecap="butt">\n`,
   ];
   const segmentCache = new Map();
@@ -103,7 +139,8 @@ export async function createKrasnowParallaxSvg(
     const commands = [];
     for (let x = 0; x < width; x += 1) {
       const pixel = Math.min(255, Math.max(0, Math.round(Number(pixels[y * width + x]) || 0)));
-      if (pixel === 255) continue;
+      const index = y * width + x;
+      if (!parallaxCellIsEngraved(pixel, detailPixels?.[index], x, y, appearanceMode)) continue;
       let segments = segmentCache.get(pixel);
       if (!segments) {
         segments = gratingCellSegments(pixel, size, spacing);

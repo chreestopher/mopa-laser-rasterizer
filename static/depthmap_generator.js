@@ -1,5 +1,5 @@
 import { createKrasnowParallaxPixels } from "./depthmap_parallax.js";
-import { createKrasnowParallaxSvg } from "./depthmap_parallax_svg.js";
+import { createKrasnowParallaxSvg, parallaxCellIsEngraved } from "./depthmap_parallax_svg.js";
 import { createReliefLayers, createReliefLightBurn, traceMaskContours } from "./depthmap_layered_relief.js";
 
 const MODEL_ID = "onnx-community/depth-anything-v2-small";
@@ -50,6 +50,7 @@ const parallaxBackgroundValue = document.querySelector("#depth_parallax_backgrou
 const parallaxPatchSizeControl = document.querySelector("#depth_parallax_patch_size");
 const parallaxLineSpacingControl = document.querySelector("#depth_parallax_line_spacing");
 const parallaxStrokeWidthControl = document.querySelector("#depth_parallax_stroke_width");
+const parallaxAppearanceControl = document.querySelector("#depth_parallax_appearance");
 const parallaxPhysicalSize = document.querySelector("#depth_parallax_physical_size");
 const parallaxSvgButton = document.querySelector("#depth_export_parallax_svg");
 const parallaxPreviewCanvas = document.querySelector("#depth_parallax_preview_canvas");
@@ -97,7 +98,9 @@ let depthHeight = 0;
 let adjustedDepth = null;
 let guidedDepth = null;
 let colorMatchMap = null;
+let sourceLuminance = null;
 let outputDepth = null;
+let outputSourceLuminance = null;
 let outputBackgroundMask = null;
 let outputWidth = 0;
 let outputHeight = 0;
@@ -298,9 +301,15 @@ function createColorMatchMap() {
   context.drawImage(sourceCanvas, 0, 0, depthWidth, depthHeight);
   const pixels = context.getImageData(0, 0, depthWidth, depthHeight).data;
   colorMatchMap = new Int16Array(depthWidth * depthHeight);
+  sourceLuminance = new Uint8Array(depthWidth * depthHeight);
   colorMatchMap.fill(-1);
   for (let index = 0; index < colorMatchMap.length; index += 1) {
     const offset = index * 4;
+    const alpha = pixels[offset + 3] / 255;
+    const redValue = pixels[offset] * alpha + 255 * (1 - alpha);
+    const greenValue = pixels[offset + 1] * alpha + 255 * (1 - alpha);
+    const blueValue = pixels[offset + 2] * alpha + 255 * (1 - alpha);
+    sourceLuminance[index] = Math.round(redValue * .2126 + greenValue * .7152 + blueValue * .0722);
     if (pixels[offset + 3] < 16) continue;
     let closestIndex = 0;
     let closestDistance = Infinity;
@@ -471,6 +480,8 @@ function buildOutputCanvas() {
   }
   outputDepth = new Float32Array(outputLength);
   outputDepth.fill(perimeterDepth);
+  outputSourceLuminance = new Uint8Array(outputLength);
+  outputSourceLuminance.fill(255);
   outputBackgroundMask = sourceBackgroundMask ? new Uint8Array(outputLength) : null;
   if (outputBackgroundMask) outputBackgroundMask.fill(1);
   for (let y = 0; y < contentHeight; y += 1) {
@@ -480,6 +491,7 @@ function buildOutputCanvas() {
       const outputIndex = (y + offsetY) * outputWidth + x + offsetX;
       const sourceIndex = sourceY * depthWidth + sourceX;
       outputDepth[outputIndex] = guidedDepth[sourceIndex];
+      outputSourceLuminance[outputIndex] = sourceLuminance[sourceIndex];
       if (outputBackgroundMask) outputBackgroundMask[outputIndex] = sourceBackgroundMask[sourceIndex];
     }
   }
@@ -726,9 +738,10 @@ function previewDepthMap(maximumSide = 1024) {
   const width = Math.max(1, Math.round(outputWidth * previewScale));
   const height = Math.max(1, Math.round(outputHeight * previewScale));
   if (width === outputWidth && height === outputHeight) {
-    return {depth:outputDepth, backgroundMask:outputBackgroundMask, width, height, horizontalScale:1};
+    return {depth:outputDepth, detail:outputSourceLuminance, backgroundMask:outputBackgroundMask, width, height, horizontalScale:1};
   }
   const depth = new Float32Array(width * height);
+  const detail = new Uint8Array(width * height);
   const backgroundMask = outputBackgroundMask ? new Uint8Array(width * height) : null;
   for (let y = 0; y < height; y += 1) {
     const sourceY = Math.min(outputHeight - 1, Math.floor(y * outputHeight / height));
@@ -737,10 +750,11 @@ function previewDepthMap(maximumSide = 1024) {
       const previewIndex = y * width + x;
       const sourceIndex = sourceY * outputWidth + sourceX;
       depth[previewIndex] = outputDepth[sourceIndex];
+      detail[previewIndex] = outputSourceLuminance[sourceIndex];
       if (backgroundMask) backgroundMask[previewIndex] = outputBackgroundMask[sourceIndex];
     }
   }
-  return {depth, backgroundMask, width, height, horizontalScale:width / outputWidth};
+  return {depth, detail, backgroundMask, width, height, horizontalScale:width / outputWidth};
 }
 
 function drawParallaxPreview() {
@@ -778,7 +792,15 @@ function drawParallaxPreview() {
       ? Boolean(preview.backgroundMask[index])
       : proximity <= cutoff;
     if (isSourceBackground) sourceBackgroundCount += 1;
-    const isUnengraved = pixels[index] === 255;
+    const x = index % preview.width;
+    const y = Math.floor(index / preview.width);
+    const isUnengraved = !parallaxCellIsEngraved(
+      pixels[index],
+      preview.detail[index],
+      x,
+      y,
+      parallaxAppearanceControl.value,
+    );
     if (isUnengraved) unengravedCount += 1;
     const maskValue = isUnengraved ? 255 : 0;
     maskImage.data[angleOffset] = maskValue;
@@ -791,7 +813,8 @@ function drawParallaxPreview() {
   const sourceBackgroundPercentage = sourceBackgroundCount / pixels.length * 100;
   const unengravedPercentage = unengravedCount / pixels.length * 100;
   const sourceLabel = preview.backgroundMask ? "explicit source background" : "cutoff-derived source background";
-  parallaxPreviewSummary.textContent = `${sourceBackgroundPercentage.toFixed(1)}% ${sourceLabel}; ${unengravedPercentage.toFixed(1)}% remains unengraved after generating edge ramps.`;
+  const appearanceLabel = parallaxAppearanceControl.value === "source-detail" ? "Source Image Detail" : "Silhouette";
+  parallaxPreviewSummary.textContent = `${appearanceLabel}: ${sourceBackgroundPercentage.toFixed(1)}% ${sourceLabel}; ${unengravedPercentage.toFixed(1)}% of cells remain unengraved after source coverage and edge ramps.`;
 }
 
 function scheduleParallaxPreview() {
@@ -813,6 +836,8 @@ async function exportParallaxSvg() {
       patchSize,
       lineSpacing,
       strokeWidth,
+      appearanceMode:parallaxAppearanceControl.value,
+      detailPixels:outputSourceLuminance,
       onProgress:(row, total) => {
         if (row === total || row === 1 || row % Math.max(1, Math.ceil(total / 20)) === 0) {
           setProcessingStatus(`Building Parallax SVG grating geometry locally: row ${row} of ${total}.`);
@@ -820,7 +845,8 @@ async function exportParallaxSvg() {
       },
     });
     downloadBlob(blob, "parallax-grating", "svg");
-    setProcessingStatus("Parallax SVG grating geometry created locally and downloaded.");
+    const appearanceLabel = parallaxAppearanceControl.value === "source-detail" ? "Source Image Detail" : "Silhouette";
+    setProcessingStatus(`Parallax SVG grating geometry created locally in ${appearanceLabel} mode and downloaded.`);
   } finally {
     parallaxSvgButton.disabled = false;
   }
@@ -1017,6 +1043,7 @@ function reset() {
   sourceFile = null;
   perimeterDepthOverride = null;
   rawDepth = adjustedDepth = guidedDepth = outputDepth = paintedDepth = colorMatchMap = null;
+  sourceLuminance = outputSourceLuminance = null;
   sourceBackgroundMask = outputBackgroundMask = null;
   if (sourceUrl) URL.revokeObjectURL(sourceUrl);
   sourceUrl = null;
@@ -1219,6 +1246,7 @@ parallaxSvgButton.addEventListener("click", () => exportParallaxSvg().catch(caus
 parallaxScaleControl.addEventListener("input", updateParallaxControls);
 parallaxBackgroundControl.addEventListener("input", updateParallaxControls);
 parallaxPatchSizeControl.addEventListener("input", updateParallaxControls);
+parallaxAppearanceControl.addEventListener("input", updateParallaxControls);
 for (const control of [reliefLayerCountControl, reliefConstructionControl, reliefSpacingControl, reliefPixelSizeControl, reliefMaterialThicknessControl, reliefMinimumIslandControl, reliefWorkbedWidthControl, reliefWorkbedHeightControl, reliefExcludeBackgroundControl, reliefRegistrationControl, reliefRegistrationDiameterControl, reliefRegistrationInsetControl]) control.addEventListener("input", updateReliefControls);
 reliefPreviewLayerControl.addEventListener("input", scheduleReliefPreview);
 reliefExportButton.addEventListener("click", () => exportLayeredRelief().catch(cause => setProcessingStatus(cause.message, true)));
