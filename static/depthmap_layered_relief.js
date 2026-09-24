@@ -11,7 +11,137 @@ function quantile(sortedValues, fraction) {
   return sortedValues[lower] * (1 - blend) + sortedValues[upper] * blend;
 }
 
-export function reliefThresholds(depth, backgroundMask, layerCount, inverted = false, spacing = "linear") {
+function median(values) {
+  values.sort((left, right) => left - right);
+  return values[Math.floor(values.length / 2)];
+}
+
+export function prepareReliefDepth(depth, width, height, backgroundMask, inverted = false, smoothing = 0) {
+  const proximity = new Float32Array(depth.length);
+  for (let index = 0; index < depth.length; index += 1) {
+    const encoded = clamp(Number(depth[index]) || 0, 0, 1);
+    proximity[index] = inverted ? 1 - encoded : encoded;
+  }
+  const passes = clamp(Math.round(Number(smoothing) || 0), 0, 4);
+  let current = proximity;
+  for (let pass = 0; pass < passes; pass += 1) {
+    const next = Float32Array.from(current);
+    for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+      const index = y * width + x;
+      if (backgroundMask?.[index]) continue;
+      const center = current[index];
+      const neighbors = [];
+      for (let offsetY = -1; offsetY <= 1; offsetY += 1) for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+        const neighborX = x + offsetX;
+        const neighborY = y + offsetY;
+        if (neighborX < 0 || neighborY < 0 || neighborX >= width || neighborY >= height) continue;
+        const neighborIndex = neighborY * width + neighborX;
+        if (backgroundMask?.[neighborIndex]) continue;
+        const value = current[neighborIndex];
+        if (Math.abs(value - center) <= 0.08) neighbors.push(value);
+      }
+      if (neighbors.length) next[index] = median(neighbors);
+    }
+    current = next;
+  }
+  return current;
+}
+
+function histogramFor(values, backgroundMask, emphasis = 0) {
+  const counts = new Float64Array(256);
+  const weightedCounts = new Float64Array(256);
+  const bias = clamp(Number(emphasis) || 0, -1, 1);
+  for (let index = 0; index < values.length; index += 1) {
+    if (backgroundMask?.[index]) continue;
+    const value = clamp(Number(values[index]) || 0, 0, 1);
+    const bin = Math.round(value * 255);
+    counts[bin] += 1;
+    weightedCounts[bin] += Math.exp(bias * (value * 2 - 1) * 2);
+  }
+  return {counts, weightedCounts};
+}
+
+function prefix(values, transform = value => value) {
+  const result = new Float64Array(values.length + 1);
+  for (let index = 0; index < values.length; index += 1) result[index + 1] = result[index] + transform(values[index], index);
+  return result;
+}
+
+function naturalBreakThresholds(values, backgroundMask, count, options = {}) {
+  const {counts, weightedCounts} = histogramFor(values, backgroundMask, options.emphasis);
+  const occupied = [];
+  for (let bin = 0; bin < counts.length; bin += 1) if (counts[bin]) occupied.push(bin);
+  if (!occupied.length) return Array.from({length:count}, (_, index) => index / count);
+  const wanted = Math.min(count, occupied.length);
+  const first = occupied[0];
+  const last = occupied.at(-1);
+  const rawPrefix = prefix(counts);
+  const weightPrefix = prefix(weightedCounts);
+  const weightedXPrefix = prefix(weightedCounts, (weight, bin) => weight * bin);
+  const weightedX2Prefix = prefix(weightedCounts, (weight, bin) => weight * bin * bin);
+  const totalPixels = rawPrefix[last + 1] - rawPrefix[first];
+  const requestedMinimum = clamp(Number(options.minimumBandShare) || 0, 0, 40) / 100;
+
+  const rangeSum = (valuesPrefix, start, end) => valuesPrefix[end + 1] - valuesPrefix[start];
+  const cost = (start, end) => {
+    const weight = rangeSum(weightPrefix, start, end);
+    if (!weight) return Infinity;
+    const weightedX = rangeSum(weightedXPrefix, start, end);
+    return Math.max(0, rangeSum(weightedX2Prefix, start, end) - weightedX * weightedX / weight);
+  };
+
+  const solve = (groups, minimumPixels) => {
+    const dp = Array.from({length:groups + 1}, () => new Float64Array(256).fill(Infinity));
+    const split = Array.from({length:groups + 1}, () => new Int16Array(256).fill(-1));
+    for (let end = first; end <= last; end += 1) {
+      if (rangeSum(rawPrefix, first, end) >= minimumPixels) dp[1][end] = cost(first, end);
+    }
+    for (let group = 2; group <= groups; group += 1) {
+      for (let end = first; end <= last; end += 1) {
+        for (let start = first + 1; start <= end; start += 1) {
+          if (!Number.isFinite(dp[group - 1][start - 1])) continue;
+          if (rangeSum(rawPrefix, start, end) < minimumPixels) continue;
+          const candidate = dp[group - 1][start - 1] + cost(start, end);
+          if (candidate < dp[group][end]) {
+            dp[group][end] = candidate;
+            split[group][end] = start;
+          }
+        }
+      }
+    }
+    if (!Number.isFinite(dp[groups][last])) return null;
+    const starts = new Array(groups);
+    starts[0] = first;
+    let end = last;
+    for (let group = groups; group >= 2; group -= 1) {
+      starts[group - 1] = split[group][end];
+      end = starts[group - 1] - 1;
+    }
+    return starts.map(bin => bin / 255);
+  };
+
+  for (let groups = wanted; groups >= 2; groups -= 1) {
+    const minimumPixels = Math.max(1, Math.ceil(totalPixels * Math.min(requestedMinimum, 0.9 / groups)));
+    const natural = solve(groups, minimumPixels);
+    if (!natural) continue;
+    const minimum = first / 255;
+    const maximum = last / 255;
+    const requestedStrength = Number(options.groupingStrength);
+    const strength = clamp(Number.isFinite(requestedStrength) ? requestedStrength : 1, 0, 1);
+    const blended = natural.map((value, index) => {
+      if (!index) return minimum;
+      const linear = minimum + (maximum - minimum) * index / groups;
+      return linear * (1 - strength) + value * strength;
+    });
+    for (let index = 1; index < blended.length; index += 1) {
+      blended[index] = Math.max(blended[index], blended[index - 1] + 1 / 65535);
+    }
+    return blended;
+  }
+  return [first / 255, (last + first) / 510];
+}
+
+export function reliefThresholds(depth, backgroundMask, layerCount, inverted = false, spacing = "linear", options = {}) {
   const count = clamp(Math.round(Number(layerCount) || 7), 2, 30);
   const values = [];
   for (let index = 0; index < depth.length; index += 1) {
@@ -21,6 +151,13 @@ export function reliefThresholds(depth, backgroundMask, layerCount, inverted = f
   }
   if (!values.length) return Array.from({length:count}, (_, index) => index / count);
   values.sort((left, right) => left - right);
+  if (spacing === "natural") {
+    const proximity = Float32Array.from(depth, value => {
+      const encoded = clamp(Number(value) || 0, 0, 1);
+      return inverted ? 1 - encoded : encoded;
+    });
+    return naturalBreakThresholds(proximity, backgroundMask, count, options);
+  }
   if (spacing === "equal-area") {
     return Array.from({length:count}, (_, index) => quantile(values, index / count));
   }
@@ -65,10 +202,31 @@ export function createReliefLayers(depth, width, height, options = {}) {
   if (!(depth?.length === width * height) || width < 1 || height < 1) {
     throw new Error("Layered Relief requires a complete depthmap and valid dimensions.");
   }
-  const layerCount = clamp(Math.round(Number(options.layers) || 7), 2, 30);
+  const requestedLayerCount = clamp(Math.round(Number(options.layers) || 7), 2, 30);
   const inverted = Boolean(options.inverted);
   const construction = options.construction === "separated" ? "separated" : "stacked";
-  const thresholds = reliefThresholds(depth, options.backgroundMask, layerCount, inverted, options.spacing);
+  const proximityDepth = prepareReliefDepth(depth, width, height, options.backgroundMask, inverted, options.smoothing);
+  let thresholds = Array.isArray(options.thresholds) && options.thresholds.length >= 2
+    ? options.thresholds.map(value => clamp(Number(value) || 0, 0, 1)).sort((left, right) => left - right)
+    : reliefThresholds(proximityDepth, options.backgroundMask, requestedLayerCount, false, options.spacing, {
+      groupingStrength:options.groupingStrength,
+      minimumBandShare:options.minimumBandShare,
+      emphasis:options.emphasis,
+    });
+  if (Array.isArray(options.thresholds) && options.thresholds.length >= 2) {
+    let minimum = Infinity;
+    for (let index = 0; index < proximityDepth.length; index += 1) {
+      if (options.backgroundMask?.[index]) continue;
+      minimum = Math.min(minimum, proximityDepth[index]);
+    }
+    if (Number.isFinite(minimum)) thresholds[0] = minimum;
+  }
+  thresholds = thresholds.filter((value, index) => index === 0 || value > thresholds[index - 1]);
+  if (thresholds.length < 2) {
+    const minimum = thresholds[0] ?? 0;
+    thresholds = [minimum, Math.min(1, minimum + 1 / 65535)];
+  }
+  const layerCount = thresholds.length;
   const layers = [];
   for (let layerIndex = 0; layerIndex < layerCount; layerIndex += 1) {
     const lower = thresholds[layerIndex];
@@ -76,8 +234,7 @@ export function createReliefLayers(depth, width, height, options = {}) {
     const mask = new Uint8Array(depth.length);
     for (let index = 0; index < depth.length; index += 1) {
       if (options.backgroundMask?.[index]) continue;
-      const encoded = clamp(Number(depth[index]) || 0, 0, 1);
-      const proximity = inverted ? 1 - encoded : encoded;
+      const proximity = proximityDepth[index];
       mask[index] = construction === "stacked"
         ? Number(proximity + 1e-7 >= lower)
         : Number(proximity + 1e-7 >= lower && proximity < upper);
@@ -85,7 +242,7 @@ export function createReliefLayers(depth, width, height, options = {}) {
     removeSmallComponents(mask, width, height, options.minimumIslandArea);
     layers.push({index:layerIndex, threshold:lower, upperThreshold:upper, mask});
   }
-  return {width, height, thresholds, construction, layers};
+  return {width, height, thresholds, construction, layers, requestedLayerCount, proximityDepth};
 }
 
 function pointKey(x, y) {

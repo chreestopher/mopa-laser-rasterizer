@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   createReliefLayers,
   createReliefLightBurn,
+  prepareReliefDepth,
   reliefThresholds,
   traceMaskContours,
 } from "../static/depthmap_layered_relief.js";
@@ -30,6 +31,50 @@ test("equal-area thresholds use the depth distribution", () => {
   assert.equal(thresholds.length, 4);
   assert.ok(thresholds[1] < .1);
   assert.ok(thresholds[3] >= .9);
+});
+
+test("natural grouping finds meaningful depth clusters", () => {
+  const values = Float32Array.of(0, .01, .02, .45, .46, .47, .90, .91, .92);
+  const relief = createReliefLayers(values, 9, 1, {
+    layers:3,
+    spacing:"natural",
+    groupingStrength:1,
+    construction:"separated",
+  });
+  assert.equal(relief.layers.length, 3);
+  assert.ok(relief.thresholds[1] > .02 && relief.thresholds[1] <= .45);
+  assert.ok(relief.thresholds[2] > .47 && relief.thresholds[2] <= .90);
+  assert.deepEqual(relief.layers.map(layer => [...layer.mask].reduce((a, b) => a + b, 0)), [3, 3, 3]);
+});
+
+test("natural grouping avoids empty bands when distinct depth data is limited", () => {
+  const relief = createReliefLayers(Float32Array.of(0, 0, .5, .5, 1, 1), 6, 1, {
+    layers:7,
+    spacing:"natural",
+    groupingStrength:1,
+    construction:"separated",
+  });
+  assert.equal(relief.requestedLayerCount, 7);
+  assert.equal(relief.layers.length, 3);
+  assert.deepEqual(relief.layers.map(layer => [...layer.mask].reduce((a, b) => a + b, 0)), [2, 2, 2]);
+});
+
+test("surface smoothing removes shallow noise without crossing a strong edge", () => {
+  const depth = Float32Array.of(.2, .2, .9, .2, .25, .9, .2, .2, .9);
+  const prepared = prepareReliefDepth(depth, 3, 3, null, false, 1);
+  assert.ok(Math.abs(prepared[4] - .2) < .001);
+  assert.ok(Math.abs(prepared[2] - .9) < .001);
+  assert.ok(Math.abs(prepared[5] - .9) < .001);
+});
+
+test("manual boundaries directly control exported relief masks", () => {
+  const relief = createReliefLayers(Float32Array.of(.1, .3, .5, .7, .9), 5, 1, {
+    layers:5,
+    thresholds:[.1, .4, .8],
+    construction:"separated",
+  });
+  assert.deepEqual(relief.thresholds.map(value => Number(value.toFixed(3))), [.1, .4, .8]);
+  assert.deepEqual(relief.layers.map(layer => [...layer.mask].reduce((a, b) => a + b, 0)), [2, 2, 1]);
 });
 
 test("contour tracing produces closed outer and hole boundaries", () => {
