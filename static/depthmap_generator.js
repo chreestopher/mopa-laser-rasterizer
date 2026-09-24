@@ -1,6 +1,6 @@
 import { createKrasnowParallaxPixels } from "./depthmap_parallax.js";
 import { createKrasnowParallaxSvg, parallaxCellIsEngraved } from "./depthmap_parallax_svg.js";
-import { createReliefLayers, createReliefLightBurn, traceMaskContours } from "./depthmap_layered_relief.js";
+import { createReliefLayers, createReliefLightBurn, traceMaskContours } from "./depthmap_layered_relief.js?v=3";
 
 const MODEL_ID = "onnx-community/depth-anything-v2-small";
 const TRANSFORMERS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2";
@@ -76,6 +76,9 @@ const reliefMaterialThicknessControl = document.querySelector("#depth_relief_mat
 const reliefMinimumIslandControl = document.querySelector("#depth_relief_minimum_island");
 const reliefWorkbedWidthControl = document.querySelector("#depth_relief_workbed_width");
 const reliefWorkbedHeightControl = document.querySelector("#depth_relief_workbed_height");
+const reliefPaletteControl = document.querySelector("#depth_relief_palette");
+const reliefSettingControl = document.querySelector("#depth_relief_setting");
+const reliefSettingStatus = document.querySelector("#depth_relief_setting_status");
 const reliefExcludeBackgroundControl = document.querySelector("#depth_relief_exclude_background");
 const reliefRegistrationControl = document.querySelector("#depth_relief_registration");
 const reliefRegistrationControls = document.querySelector("#depth_relief_registration_controls");
@@ -99,6 +102,7 @@ const depthGuidanceTools = document.querySelector("#depth_guidance_tools");
 const depthPalette = JSON.parse(document.querySelector("#depth_palette_data").textContent);
 const paletteState = depthPalette.map(swatch => ({...swatch, rgb:hexToRgb(swatch.hex), enabled:true, depth:50, influence:0}));
 let savedDepthPalettes = [];
+let reliefMaterialLibraries = [];
 
 let sourceFile = null;
 let sourceUrl = null;
@@ -909,7 +913,62 @@ function reliefExportOptions() {
     registrationHoles:reliefRegistrationControl.checked,
     registrationDiameterMm:Math.max(.1, Number(reliefRegistrationDiameterControl.value) || 3),
     registrationInsetMm:Math.max(.1, Number(reliefRegistrationInsetControl.value) || 5),
+    cutSetting:selectedReliefCutSetting(),
   };
+}
+
+function selectedReliefLibrary() {
+  return reliefMaterialLibraries.find(library => String(library.library_id) === reliefPaletteControl.value);
+}
+
+function selectedReliefCutSetting() {
+  const library = selectedReliefLibrary();
+  const entry = (library?.summary?.entries || []).find(item => String(item.entry_id) === reliefSettingControl.value);
+  if (!entry) return null;
+  return {
+    description:entry.description || "Selected setting",
+    material:entry.material || library.material_name || "",
+    type:entry.type || "Cut",
+    settings:entry.settings || {},
+  };
+}
+
+function populateReliefSettings() {
+  const entries = selectedReliefLibrary()?.summary?.entries || [];
+  reliefSettingControl.replaceChildren(new Option("Choose a setting…", ""));
+  for (const entry of entries) {
+    const label = entry.description || `Setting ${Number(entry.entry_id) + 1}`;
+    reliefSettingControl.add(new Option(label, String(entry.entry_id)));
+  }
+  reliefSettingControl.disabled = !entries.length;
+  const labels = entries.find(entry => String(entry.description || "").trim().toLowerCase() === "labels");
+  const preferred = labels || entries[0];
+  reliefSettingControl.value = preferred ? String(preferred.entry_id) : "";
+  updateReliefSettingStatus();
+}
+
+function updateReliefSettingStatus() {
+  const setting = selectedReliefCutSetting();
+  if (setting) {
+    const source = [setting.material, setting.description].filter(Boolean).join(" · ");
+    reliefSettingStatus.textContent = `${source} will be copied to every Layered Relief cutting layer. Enable only one layer at a time before running the laser.`;
+    return;
+  }
+  reliefSettingStatus.textContent = reliefMaterialLibraries.length
+    ? "Choose a Swatch Palette and setting to use for every Layered Relief cutting layer."
+    : "No saved Swatch Palettes are available. Save or import one in the Swatch Palette Vault before exporting a Layered Relief project.";
+}
+
+function loadReliefCutSettings() {
+  reliefMaterialLibraries = (window.serverlessDepthResources?.material_libraries || [])
+    .filter(library => library.library_intent !== "hatch_palette" && (library.summary?.entries || []).length);
+  reliefPaletteControl.replaceChildren(new Option("Choose a saved Swatch Palette…", ""));
+  for (const library of reliefMaterialLibraries) {
+    reliefPaletteControl.add(new Option(library.name || library.material_name || "Swatch Palette", String(library.library_id)));
+  }
+  reliefPaletteControl.disabled = !reliefMaterialLibraries.length;
+  reliefPaletteControl.value = reliefMaterialLibraries.length ? String(reliefMaterialLibraries[0].library_id) : "";
+  populateReliefSettings();
 }
 
 function paintReliefCutPaths(context, mask, width, height, options) {
@@ -1148,6 +1207,9 @@ async function exportLayeredRelief() {
   if (!outputDepth) return;
   reliefExportButton.disabled = true;
   try {
+    if (!selectedReliefCutSetting()) {
+      throw new Error("Choose a saved Swatch Palette and setting before downloading the Layered Relief project.");
+    }
     const layerCount = reliefOptions().layers;
     if (outputWidth * outputHeight * layerCount > 40000000) {
       throw new Error(`This ${outputWidth.toLocaleString()} × ${outputHeight.toLocaleString()} depthmap with ${layerCount} layers is too large to vectorize safely in the browser. Reduce Final Canvas Size or the number of physical layers.`);
@@ -1416,6 +1478,8 @@ for (const control of [reliefLayerCountControl, reliefSpacingControl, reliefSmoo
 for (const control of [reliefConstructionControl, reliefPixelSizeControl, reliefMaterialThicknessControl, reliefMinimumIslandControl, reliefWorkbedWidthControl, reliefWorkbedHeightControl, reliefRegistrationControl, reliefRegistrationDiameterControl, reliefRegistrationInsetControl]) control.addEventListener("input", updateReliefControls);
 reliefResetThresholdsButton.addEventListener("click", resetReliefThresholds);
 reliefPreviewLayerControl.addEventListener("input", scheduleReliefPreview);
+reliefPaletteControl.addEventListener("change", populateReliefSettings);
+reliefSettingControl.addEventListener("change", updateReliefSettingStatus);
 reliefExportButton.addEventListener("click", () => exportLayeredRelief().catch(cause => setProcessingStatus(cause.message, true)));
 drawLegend();
 updateParallaxControls();
@@ -1424,4 +1488,5 @@ updateInputMode();
 updateBrushDepthPreview();
 updateBrushSizePreview();
 createSwatchControls();
+loadReliefCutSettings();
 loadSavedDepthPalettes().catch(cause => setProcessingStatus(cause.message, true));
