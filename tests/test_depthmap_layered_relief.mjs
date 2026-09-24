@@ -42,8 +42,10 @@ test("contour tracing produces closed outer and hole boundaries", () => {
 test("LightBurn layers share workbed coordinates and use safe placeholder settings", () => {
   const relief = createReliefLayers(Float32Array.of(1, 1, 1, 1), 2, 2, {layers:2});
   const project = createReliefLightBurn(relief, {pixelSizeMm:1, workbedWidthMm:10, workbedHeightMm:8});
-  assert.match(project, /<LightBurnProject/);
+  assert.match(project, /<LightBurnProject AppVersion="1\.2\.01" FormatVersion="1"/);
+  assert.doesNotMatch(project, /AppVersion="2\.1\.04"/);
   assert.equal((project.match(/<maxPower Value="0"\/>/g) || []).length, 2);
+  assert.ok((project.match(/<Shape Type="Path" ShapeID="\d+" CutIndex="\d+">/g) || []).length >= 2);
   assert.match(project, /V4 3/);
   assert.match(project, /V6 5/);
 });

@@ -229,5 +229,8 @@ export function createReliefLightBurn(relief, options = {}) {
     "WARNING: Every layer uses a zero-power placeholder. Assign tested cutting settings before running the laser.",
     "Inspect every contour. Small or disconnected islands may require manual placement or a supporting frame.",
   ].join("\n")).replaceAll("\n", "&#10;");
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<LightBurnProject AppVersion="2.1.04" FormatVersion="1" MaterialHeight="0" MirrorX="False" MirrorY="True" AskForSendName="True">\n  <Notes ShowOnLoad="1" Notes="${notes}"/>\n${cutSettings.join("\n")}\n${shapes.join("\n")}\n</LightBurnProject>\n`;
+  // These paths use Rasterizer's established ShapeID-based LightBurn schema.
+  // Declaring a newer LightBurn writer version makes current LightBurn expect
+  // VertID/PrimID path records and silently discard otherwise valid geometry.
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<LightBurnProject AppVersion="1.2.01" FormatVersion="1" MaterialHeight="0" MirrorX="False" MirrorY="True">\n  <Notes ShowOnLoad="1" Notes="${notes}"/>\n${cutSettings.join("\n")}\n${shapes.join("\n")}\n</LightBurnProject>\n`;
 }
