@@ -1,5 +1,6 @@
 import { createKrasnowParallaxPixels } from "./depthmap_parallax.js";
 import { createKrasnowParallaxSvg } from "./depthmap_parallax_svg.js";
+import { createReliefLayers, createReliefLightBurn } from "./depthmap_layered_relief.js";
 
 const MODEL_ID = "onnx-community/depth-anything-v2-small";
 const TRANSFORMERS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2";
@@ -54,6 +55,25 @@ const parallaxSvgButton = document.querySelector("#depth_export_parallax_svg");
 const parallaxPreviewCanvas = document.querySelector("#depth_parallax_preview_canvas");
 const parallaxMaskCanvas = document.querySelector("#depth_parallax_mask_canvas");
 const parallaxPreviewSummary = document.querySelector("#depth_parallax_preview_summary");
+const reliefLayerCountControl = document.querySelector("#depth_relief_layers");
+const reliefConstructionControl = document.querySelector("#depth_relief_construction");
+const reliefSpacingControl = document.querySelector("#depth_relief_spacing");
+const reliefPixelSizeControl = document.querySelector("#depth_relief_pixel_size");
+const reliefMaterialThicknessControl = document.querySelector("#depth_relief_material_thickness");
+const reliefMinimumIslandControl = document.querySelector("#depth_relief_minimum_island");
+const reliefWorkbedWidthControl = document.querySelector("#depth_relief_workbed_width");
+const reliefWorkbedHeightControl = document.querySelector("#depth_relief_workbed_height");
+const reliefExcludeBackgroundControl = document.querySelector("#depth_relief_exclude_background");
+const reliefRegistrationControl = document.querySelector("#depth_relief_registration");
+const reliefRegistrationControls = document.querySelector("#depth_relief_registration_controls");
+const reliefRegistrationDiameterControl = document.querySelector("#depth_relief_registration_diameter");
+const reliefRegistrationInsetControl = document.querySelector("#depth_relief_registration_inset");
+const reliefExportButton = document.querySelector("#depth_export_layered_relief");
+const reliefPreviewLayerControl = document.querySelector("#depth_relief_preview_layer");
+const reliefPreviewLayerValue = document.querySelector("#depth_relief_preview_layer_value");
+const reliefLayerCanvas = document.querySelector("#depth_relief_layer_canvas");
+const reliefCompositeCanvas = document.querySelector("#depth_relief_composite_canvas");
+const reliefSummary = document.querySelector("#depth_relief_summary");
 const colorGuidancePanel = document.querySelector("#color_guidance_panel");
 const swatchGrid = document.querySelector("#depth_swatch_grid");
 const guidanceFeatherControl = document.querySelector("#depth_guidance_feather");
@@ -86,6 +106,7 @@ let perimeterDepthOverride = null;
 let paintingFarDepth = false;
 let lastPaintPoint = null;
 let parallaxPreviewTimer = null;
+let reliefPreviewTimer = null;
 
 function revealDepthWorkflow() {
   workspace.hidden = false;
@@ -556,6 +577,7 @@ function drawGrayscale() {
   drawWorkflowPreview(guidancePreviewCanvas);
   drawWorkflowPreview(parallaxSourceCanvas);
   scheduleParallaxPreview();
+  scheduleReliefPreview();
 }
 
 function drawWorkflowPreview(canvas) {
@@ -816,6 +838,124 @@ function updateParallaxControls() {
   scheduleParallaxPreview();
 }
 
+function reliefOptions(backgroundMask = outputBackgroundMask) {
+  return {
+    layers:Math.min(30, Math.max(2, Math.round(Number(reliefLayerCountControl.value) || 7))),
+    inverted:invertControl.checked,
+    spacing:reliefSpacingControl.value,
+    construction:reliefConstructionControl.value,
+    minimumIslandArea:Math.max(0, Math.round(Number(reliefMinimumIslandControl.value) || 0)),
+    backgroundMask:reliefExcludeBackgroundControl.checked ? backgroundMask : null,
+  };
+}
+
+function reliefExportOptions() {
+  return {
+    pixelSizeMm:Math.max(.001, Number(reliefPixelSizeControl.value) || .1),
+    materialThicknessMm:Math.max(.01, Number(reliefMaterialThicknessControl.value) || 3),
+    workbedWidthMm:Math.max(0, Number(reliefWorkbedWidthControl.value) || 0),
+    workbedHeightMm:Math.max(0, Number(reliefWorkbedHeightControl.value) || 0),
+    registrationHoles:reliefRegistrationControl.checked,
+    registrationDiameterMm:Math.max(.1, Number(reliefRegistrationDiameterControl.value) || 3),
+    registrationInsetMm:Math.max(.1, Number(reliefRegistrationInsetControl.value) || 5),
+  };
+}
+
+function paintReliefMask(canvas, mask, width, height) {
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  const image = context.createImageData(width, height);
+  for (let index = 0; index < mask.length; index += 1) {
+    const value = mask[index] ? 24 : 244;
+    const offset = index * 4;
+    image.data[offset] = value;
+    image.data[offset + 1] = value;
+    image.data[offset + 2] = value;
+    image.data[offset + 3] = 255;
+  }
+  context.putImageData(image, 0, 0);
+}
+
+function paintReliefComposite(canvas, relief) {
+  const colors = [[35,52,40],[60,83,54],[79,110,68],[102,137,82],[132,163,102],[168,190,130],[211,209,166]];
+  canvas.width = relief.width;
+  canvas.height = relief.height;
+  const context = canvas.getContext("2d");
+  const image = context.createImageData(relief.width, relief.height);
+  for (let index = 0; index < relief.width * relief.height; index += 1) {
+    let top = -1;
+    for (let layerIndex = 0; layerIndex < relief.layers.length; layerIndex += 1) if (relief.layers[layerIndex].mask[index]) top = layerIndex;
+    const offset = index * 4;
+    if (top < 0) {
+      image.data[offset + 3] = 0;
+      continue;
+    }
+    const paletteIndex = relief.layers.length === 1 ? 0 : Math.round(top / (relief.layers.length - 1) * (colors.length - 1));
+    const color = colors[paletteIndex];
+    image.data[offset] = color[0];
+    image.data[offset + 1] = color[1];
+    image.data[offset + 2] = color[2];
+    image.data[offset + 3] = 255;
+  }
+  context.putImageData(image, 0, 0);
+}
+
+function drawReliefPreview() {
+  reliefPreviewTimer = null;
+  if (!outputDepth || !outputWidth || !outputHeight) return;
+  const preview = previewDepthMap();
+  const options = reliefOptions(preview.backgroundMask);
+  reliefLayerCountControl.value = options.layers;
+  reliefPreviewLayerControl.max = String(options.layers);
+  reliefPreviewLayerControl.value = String(Math.min(options.layers, Math.max(1, Number(reliefPreviewLayerControl.value) || 1)));
+  const relief = createReliefLayers(preview.depth, preview.width, preview.height, options);
+  const selectedIndex = Number(reliefPreviewLayerControl.value) - 1;
+  paintReliefMask(reliefLayerCanvas, relief.layers[selectedIndex].mask, relief.width, relief.height);
+  paintReliefComposite(reliefCompositeCanvas, relief);
+  reliefPreviewLayerValue.value = `${selectedIndex + 1} of ${options.layers} · ${selectedIndex === 0 ? "rear" : selectedIndex === options.layers - 1 ? "front" : "middle"}`;
+  const exportOptions = reliefExportOptions();
+  const physicalWidth = outputWidth * exportOptions.pixelSizeMm;
+  const physicalHeight = outputHeight * exportOptions.pixelSizeMm;
+  const occupied = relief.layers[selectedIndex].mask.reduce((sum, value) => sum + value, 0);
+  const coverage = occupied / relief.layers[selectedIndex].mask.length * 100;
+  reliefSummary.textContent = `${options.layers} layers · ${physicalWidth.toFixed(2)} × ${physicalHeight.toFixed(2)} mm each · ${(options.layers * exportOptions.materialThicknessMm).toFixed(2)} mm nominal assembled depth · selected layer covers ${coverage.toFixed(1)}% of the canvas.`;
+}
+
+function scheduleReliefPreview() {
+  if (reliefPreviewTimer !== null) clearTimeout(reliefPreviewTimer);
+  if (!outputDepth) return;
+  reliefPreviewTimer = setTimeout(drawReliefPreview, 100);
+}
+
+function updateReliefControls() {
+  const layers = Math.min(30, Math.max(2, Math.round(Number(reliefLayerCountControl.value) || 7)));
+  reliefLayerCountControl.value = layers;
+  reliefPreviewLayerControl.max = String(layers);
+  reliefRegistrationControls.hidden = !reliefRegistrationControl.checked;
+  scheduleReliefPreview();
+}
+
+async function exportLayeredRelief() {
+  if (!outputDepth) return;
+  reliefExportButton.disabled = true;
+  try {
+    const layerCount = reliefOptions().layers;
+    if (outputWidth * outputHeight * layerCount > 40000000) {
+      throw new Error(`This ${outputWidth.toLocaleString()} × ${outputHeight.toLocaleString()} depthmap with ${layerCount} layers is too large to vectorize safely in the browser. Reduce Final Canvas Size or the number of physical layers.`);
+    }
+    setProcessingStatus("Building layered relief masks and closed SVG contours locally.");
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const relief = createReliefLayers(outputDepth, outputWidth, outputHeight, reliefOptions());
+    const project = createReliefLightBurn(relief, reliefExportOptions());
+    const blob = new Blob([project], {type:"application/xml"});
+    downloadBlob(blob, "layered-relief", "lbrn2");
+    setProcessingStatus(`Layered Relief LightBurn project created locally with ${relief.layers.length} aligned cutting layers.`);
+  } finally {
+    reliefExportButton.disabled = false;
+  }
+}
+
 async function compressDeflate(bytes) {
   if (!("CompressionStream" in window)) throw new Error("This browser cannot create a 16-bit PNG. Use the 8-bit export instead.");
   const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate"));
@@ -863,6 +1003,11 @@ function reset() {
   parallaxMaskCanvas.width = 0;
   parallaxMaskCanvas.height = 0;
   parallaxPreviewSummary.textContent = "Generate a depthmap to inspect the parallax conversion.";
+  reliefLayerCanvas.width = 0;
+  reliefLayerCanvas.height = 0;
+  reliefCompositeCanvas.width = 0;
+  reliefCompositeCanvas.height = 0;
+  reliefSummary.textContent = "Generate a depthmap to inspect layered relief slices.";
   processingPanel.hidden = true;
   workspace.hidden = true;
   resetButton.disabled = true;
@@ -1043,8 +1188,12 @@ parallaxSvgButton.addEventListener("click", () => exportParallaxSvg().catch(caus
 parallaxScaleControl.addEventListener("input", updateParallaxControls);
 parallaxBackgroundControl.addEventListener("input", updateParallaxControls);
 parallaxPatchSizeControl.addEventListener("input", updateParallaxControls);
+for (const control of [reliefLayerCountControl, reliefConstructionControl, reliefSpacingControl, reliefPixelSizeControl, reliefMaterialThicknessControl, reliefMinimumIslandControl, reliefWorkbedWidthControl, reliefWorkbedHeightControl, reliefExcludeBackgroundControl, reliefRegistrationControl, reliefRegistrationDiameterControl, reliefRegistrationInsetControl]) control.addEventListener("input", updateReliefControls);
+reliefPreviewLayerControl.addEventListener("input", scheduleReliefPreview);
+reliefExportButton.addEventListener("click", () => exportLayeredRelief().catch(cause => setProcessingStatus(cause.message, true)));
 drawLegend();
 updateParallaxControls();
+updateReliefControls();
 updateInputMode();
 updateBrushDepthPreview();
 updateBrushSizePreview();
