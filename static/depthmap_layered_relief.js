@@ -328,7 +328,7 @@ function xmlEscape(value) {
   return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 }
 
-function reliefGeometry(layer, width, height, options, cutIndex, firstShapeId) {
+function reliefGeometry(layer, width, height, options, cutIndex, firstGeometryId) {
   const pixelSize = clamp(Number(options.pixelSizeMm) || 0.1, 0.001, 100);
   const artworkWidth = width * pixelSize;
   const artworkHeight = height * pixelSize;
@@ -337,10 +337,11 @@ function reliefGeometry(layer, width, height, options, cutIndex, firstShapeId) {
   const offsetX = (workbedWidth - artworkWidth) / 2;
   const offsetY = (workbedHeight - artworkHeight) / 2;
   const contours = traceMaskContours(layer.mask, width, height);
-  let shapeId = firstShapeId;
+  let geometryId = firstGeometryId;
   const shapes = contours.map(points => {
-    const vertices = points.slice(0, -1).map(([x, y]) => `V${formatNumber(offsetX + x * pixelSize)} ${formatNumber(offsetY + y * pixelSize)}`).join("\n        ");
-    return `    <Shape Type="Path" ShapeID="${shapeId++}" CutIndex="${cutIndex}">\n      <XForm>1 0 0 1 0 0</XForm>\n      <VertList>\n        ${vertices}\n      </VertList>\n      <PrimList>LineClosed</PrimList>\n    </Shape>`;
+    const id = geometryId++;
+    const vertices = points.slice(0, -1).map(([x, y]) => `V${formatNumber(offsetX + x * pixelSize)} ${formatNumber(offsetY + y * pixelSize)}c0x1c1x1`).join("");
+    return `    <Shape Type="Path" CutIndex="${cutIndex}" VertID="${id}" PrimID="${id}">\n      <XForm>1 0 0 1 0 0</XForm>\n      <VertList>${vertices}</VertList>\n      <PrimList>LineClosed</PrimList>\n    </Shape>`;
   });
   if (options.registrationHoles) {
     const diameter = clamp(Number(options.registrationDiameterMm) || 3, 0.1, Math.min(artworkWidth, artworkHeight));
@@ -348,10 +349,10 @@ function reliefGeometry(layer, width, height, options, cutIndex, firstShapeId) {
     const inset = clamp(Number(options.registrationInsetMm) || 5, radius, Math.max(radius, Math.min(artworkWidth, artworkHeight) / 2));
     const positions = [[inset, inset], [artworkWidth - inset, inset], [artworkWidth - inset, artworkHeight - inset], [inset, artworkHeight - inset]];
     for (const [x, y] of positions) {
-      shapes.push(`    <Shape Type="Ellipse" ShapeID="${shapeId++}" CutIndex="${cutIndex}" Rx="${formatNumber(radius)}" Ry="${formatNumber(radius)}">\n      <XForm>1 0 0 1 ${formatNumber(offsetX + x)} ${formatNumber(offsetY + y)}</XForm>\n    </Shape>`);
+      shapes.push(`    <Shape Type="Ellipse" CutIndex="${cutIndex}" Rx="${formatNumber(radius)}" Ry="${formatNumber(radius)}">\n      <XForm>1 0 0 1 ${formatNumber(offsetX + x)} ${formatNumber(offsetY + y)}</XForm>\n    </Shape>`);
     }
   }
-  return {shapes, nextShapeId:shapeId};
+  return {shapes, nextGeometryId:geometryId};
 }
 
 export function createReliefLightBurn(relief, options = {}) {
@@ -365,15 +366,15 @@ export function createReliefLightBurn(relief, options = {}) {
   const digits = Math.max(2, String(count).length);
   const cutSettings = [];
   const shapes = [];
-  let shapeId = 1;
+  let geometryId = 1;
   for (const layer of relief.layers) {
     const number = layer.index + 1;
     const position = number === 1 ? "BACK" : number === count ? "FRONT" : "MIDDLE";
     const name = `Layer ${String(number).padStart(digits, "0")} of ${String(count).padStart(digits, "0")} - ${position}`;
     cutSettings.push(`  <CutSetting type="Cut">\n    <index Value="${layer.index}"/>\n    <name Value="${xmlEscape(name)}"/>\n    <minPower Value="0"/>\n    <maxPower Value="0"/>\n    <speed Value="100"/>\n    <frequency Value="20"/>\n    <numPasses Value="1"/>\n    <priority Value="${layer.index}"/>\n    <hide Value="${layer.index === 0 ? 0 : 1}"/>\n  </CutSetting>`);
-    const geometry = reliefGeometry(layer, relief.width, relief.height, options, layer.index, shapeId);
+    const geometry = reliefGeometry(layer, relief.width, relief.height, options, layer.index, geometryId);
     shapes.push(...geometry.shapes);
-    shapeId = geometry.nextShapeId;
+    geometryId = geometry.nextGeometryId;
   }
   const notes = xmlEscape([
     "MOPA LASER RASTERIZER - LAYERED RELIEF",
@@ -386,8 +387,5 @@ export function createReliefLightBurn(relief, options = {}) {
     "WARNING: Every layer uses a zero-power placeholder. Assign tested cutting settings before running the laser.",
     "Inspect every contour. Small or disconnected islands may require manual placement or a supporting frame.",
   ].join("\n")).replaceAll("\n", "&#10;");
-  // These paths use Rasterizer's established ShapeID-based LightBurn schema.
-  // Declaring a newer LightBurn writer version makes current LightBurn expect
-  // VertID/PrimID path records and silently discard otherwise valid geometry.
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<LightBurnProject AppVersion="1.2.01" FormatVersion="1" MaterialHeight="0" MirrorX="False" MirrorY="True">\n  <Notes ShowOnLoad="1" Notes="${notes}"/>\n${cutSettings.join("\n")}\n${shapes.join("\n")}\n</LightBurnProject>\n`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<LightBurnProject AppVersion="2.1.04" FormatVersion="1" MaterialHeight="0" MirrorX="False" MirrorY="True" AskForSendName="True">\n  <Notes ShowOnLoad="1" Notes="${notes}"/>\n${cutSettings.join("\n")}\n${shapes.join("\n")}\n</LightBurnProject>\n`;
 }
