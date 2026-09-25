@@ -8,7 +8,7 @@
 
 The browser application turns raster artwork into color-separated laser vector geometry. Users can route colors to different image treatments and geometry styles, optionally associate LightBurn material-library settings, and obtain layered SVG and (when applicable) LightBurn `.lbrn2` projects. It also exposes Color Discovery, Fauxlographic Etching, depth/relief, saved palette/library, and Community Set workflows. It **generates files; it does not drive a laser**. The authoritative feature overview and user instructions are in the [README](../README.md) and the site documentation.
 
-Production is a serverless AWS application: private static S3 behind CloudFront, an HTTP API on API Gateway and Lambda, Cognito sign-in, private artifact S3, a single-table DynamoDB store, SQS/Step Functions dispatch, and one-shot ECS Fargate workers. There is no required production EC2 or K3s node.
+Production is a serverless AWS application: private static S3 behind CloudFront, an HTTP API on API Gateway and Lambda, Cognito sign-in, private artifact S3, a single-table DynamoDB store, SQS/Step Functions dispatch, and one-shot ECS Fargate workers. There is no required production EC2 or K3s node. The Flask interface is retained only for local development and tests; it is not a supported public deployment path.
 
 ### System map
 

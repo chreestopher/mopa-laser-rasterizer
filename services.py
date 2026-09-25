@@ -41,7 +41,7 @@ def _environment_flag(name, default="false"):
 
 
 def create_redis_client():
-    """Create a Redis client usable by local, Kubernetes, and ECS workloads."""
+    """Create a Redis client usable by local and compatible worker runtimes."""
     redis_url = os.environ.get("REDIS_URL", "").strip()
     common_options = {
         "decode_responses": True,

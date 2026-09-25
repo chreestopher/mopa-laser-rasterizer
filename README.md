@@ -135,7 +135,9 @@ python app.py
 
 Open <http://localhost:8000>.
 
-The application does not automatically load `.env` files. Export configuration in the shell or use the repository's environment-loading scripts where appropriate. Local submissions run in background threads by default. Set `RASTER_JOB_QUEUE_ENABLED=true` and run `python worker.py` separately to exercise the Redis-backed worker path.
+> **Local only:** `app.py` and the Flask routes exist for workstation development and automated tests. They are not the deployed web application, do not implement the production API Gateway identity boundary, and must not be exposed as a public service.
+
+The application does not automatically load `.env` files. Export configuration in the shell where appropriate. Local submissions run in background threads by default. Set `RASTER_JOB_QUEUE_ENABLED=true` and run `python worker.py` separately to exercise the Redis-backed worker path.
 
 ### Docker
 
@@ -144,7 +146,7 @@ docker build -t mopa-laser-rasterizer .
 docker run --rm -p 8000:8000 mopa-laser-rasterizer
 ```
 
-The image starts Gunicorn with one process and four threads. AWS production uses the same image for one-shot Fargate processing while serving the public frontend and API through the serverless web stack.
+Running the image without a command override starts the local-only Flask server through Gunicorn. AWS production uses the same image for one-shot Fargate processing but overrides the command with `worker.py`; CloudFront and API Gateway serve the public frontend and API.
 
 ### Command-line rasterizer
 
@@ -174,8 +176,8 @@ Core local/runtime variables include:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `UPLOAD_FOLDER` | `./uploads` | Node-local scratch and local artifact storage |
-| `APP_SESSION_SECRET` | Development-only value | Signs Flask and anonymous browser sessions; replace outside local development |
-| `SESSION_COOKIE_SECURE` | `false` | Restricts session cookies to HTTPS when `true` |
+| `APP_SESSION_SECRET` | Development-only value | Signs sessions in the local-only Flask interface |
+| `SESSION_COOKIE_SECURE` | `false` | Restricts local Flask session cookies to HTTPS when `true` |
 | `PUBLIC_APP_URL` | Request origin | Canonical public URL |
 | `DAILY_JOB_LIMIT` | `3` | Flask-path anonymous daily job allowance |
 | `RASTER_JOB_QUEUE_ENABLED` | `false` | Enables the Redis-backed queued worker path |
@@ -195,7 +197,7 @@ Deployment templates and scripts supply additional environment-specific values. 
 
 ```text
 mopa-laser-rasterizer/
-|-- app.py                       Flask bootstrap and local development server
+|-- app.py                       Local-only Flask development/test server
 |-- services.py                  Shared job, storage, account, and palette services
 |-- worker.py                    Redis or AWS job worker entry point
 |-- job_runtime.py               Redis and DynamoDB runtime adapters
@@ -204,7 +206,7 @@ mopa-laser-rasterizer/
 |-- serverless_web/              Static-site build/runtime support
 |-- serverless_cost_guard/       Budget notification and service-control Lambda
 |-- ecs/                         Active serverless AWS CloudFormation templates
-|-- dev_setup/                   Local setup, build, deployment, and recovery scripts
+|-- dev_setup/                   Local setup plus serverless deployment/recovery scripts
 |-- lib/
 |   |-- vector_processing.py     Quantization and vector geometry pipeline
 |   |-- Material_Library.py      Raster job entry point and library integration
@@ -214,8 +216,7 @@ mopa-laser-rasterizer/
 |-- templates/                   Jinja application pages
 |-- static/                      Shared browser assets, media, and documentation art
 |-- tests/                       Regression and deployment-policy tests
-|-- docs/                        Deployment, recovery, and operational documentation
-`-- k8s/                         Retained legacy Kubernetes manifests; not used by production
+`-- docs/                        Deployment, recovery, and operational documentation
 ```
 
 Route modules are discovered by `routes.register_routes()`. Abstract filters are registered through `lib/abstract_filters`; each filter owns its defaults, controls, normalization, and transform implementation.

@@ -1,4 +1,4 @@
-"""Dedicated Redis-backed raster worker for Kubernetes deployments."""
+"""Raster worker for local Redis queues and one-shot AWS jobs."""
 
 import argparse
 import json
