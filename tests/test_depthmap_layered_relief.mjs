@@ -101,20 +101,20 @@ test("LightBurn layers share workbed coordinates and copy the selected palette s
   assert.equal((project.match(/<doOutput Value="1"\/>/g) || []).length, 2);
   assert.equal((project.match(/<hide Value="0"\/>/g) || []).length, 2);
   assert.doesNotMatch(project, /<maxPower Value="0"\/>/);
-  assert.ok((project.match(/<Shape Type="Path" CutIndex="\d+" VertID="\d+" PrimID="\d+">/g) || []).length >= 2);
-  assert.doesNotMatch(project, /ShapeID=/);
-  assert.match(project, /V4 3c0x1c1x1/);
-  assert.match(project, /V6 5c0x1c1x1/);
+  assert.ok((project.match(/<Shape Type="Path" ShapeID="\d+" CutIndex="\d+">/g) || []).length >= 2);
+  assert.doesNotMatch(project, /VertID=|PrimID=|c0x1c1x1/);
+  assert.match(project, /\n\s+V4 3\n/);
+  assert.match(project, /\n\s+V6 5\n/);
 });
 
-test("LightBurn path geometry uses unique modern vertex and primitive identifiers", () => {
+test("LightBurn geometry uses unique ShapeID values and proven path encoding", () => {
   const relief = createReliefLayers(Float32Array.of(0, 1, 0, 1), 2, 2, {layers:2});
-  const project = createReliefLightBurn(relief, {pixelSizeMm:1, cutSetting:labelsSetting});
-  const identifiers = [...project.matchAll(/<Shape Type="Path" CutIndex="\d+" VertID="(\d+)" PrimID="(\d+)">/g)];
-  assert.ok(identifiers.length >= 2);
-  assert.equal(new Set(identifiers.map(match => match[1])).size, identifiers.length);
-  assert.equal(new Set(identifiers.map(match => match[2])).size, identifiers.length);
-  assert.ok(identifiers.every(match => match[1] === match[2]));
+  const project = createReliefLightBurn(relief, {pixelSizeMm:1, registrationHoles:true, registrationDiameterMm:.5, registrationInsetMm:.5, cutSetting:labelsSetting});
+  const identifiers = [...project.matchAll(/<Shape Type="(?:Path|Ellipse)" ShapeID="(\d+)"/g)].map(match => match[1]);
+  assert.ok(identifiers.length >= 10);
+  assert.equal(new Set(identifiers).size, identifiers.length);
+  assert.match(project, /<VertList>\n\s+V\S+ \S+(?:\n\s+V\S+ \S+)+\n\s+<\/VertList>/);
+  assert.doesNotMatch(project, /VertID=|PrimID=|c0x1c1x1/);
 });
 
 test("multi-layer LightBurn project keeps every relief slice aligned and ordered", () => {
