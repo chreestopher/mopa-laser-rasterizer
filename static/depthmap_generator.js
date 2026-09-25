@@ -1,6 +1,6 @@
 import { createKrasnowParallaxPixels } from "./depthmap_parallax.js";
 import { createKrasnowParallaxSvg, parallaxCellIsEngraved } from "./depthmap_parallax_svg.js";
-import { createReliefLayers, createReliefLightBurn, traceMaskContours } from "./depthmap_layered_relief.js?v=3";
+import { createReliefLayers, createReliefLightBurn, reliefVisibleMasks, traceMaskContours } from "./depthmap_layered_relief.js?v=4";
 
 const MODEL_ID = "onnx-community/depth-anything-v2-small";
 const TRANSFORMERS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2";
@@ -79,6 +79,10 @@ const reliefWorkbedHeightControl = document.querySelector("#depth_relief_workbed
 const reliefPaletteControl = document.querySelector("#depth_relief_palette");
 const reliefSettingControl = document.querySelector("#depth_relief_setting");
 const reliefSettingStatus = document.querySelector("#depth_relief_setting_status");
+const reliefSurfaceEngravingControl = document.querySelector("#depth_relief_surface_engraving");
+const reliefPhotoControls = document.querySelector("#depth_relief_photo_controls");
+const reliefPhotoSettingControl = document.querySelector("#depth_relief_photo_setting");
+const reliefPhotoSettingStatus = document.querySelector("#depth_relief_photo_setting_status");
 const reliefExcludeBackgroundControl = document.querySelector("#depth_relief_exclude_background");
 const reliefRegistrationControl = document.querySelector("#depth_relief_registration");
 const reliefRegistrationControls = document.querySelector("#depth_relief_registration_controls");
@@ -115,8 +119,10 @@ let adjustedDepth = null;
 let guidedDepth = null;
 let colorMatchMap = null;
 let sourceLuminance = null;
+let sourceRgba = null;
 let outputDepth = null;
 let outputSourceLuminance = null;
+let outputSourceRgba = null;
 let outputBackgroundMask = null;
 let outputWidth = 0;
 let outputHeight = 0;
@@ -321,6 +327,7 @@ function createColorMatchMap() {
   const pixels = context.getImageData(0, 0, depthWidth, depthHeight).data;
   colorMatchMap = new Int16Array(depthWidth * depthHeight);
   sourceLuminance = new Uint8Array(depthWidth * depthHeight);
+  sourceRgba = new Uint8ClampedArray(pixels);
   colorMatchMap.fill(-1);
   for (let index = 0; index < colorMatchMap.length; index += 1) {
     const offset = index * 4;
@@ -501,6 +508,8 @@ function buildOutputCanvas() {
   outputDepth.fill(perimeterDepth);
   outputSourceLuminance = new Uint8Array(outputLength);
   outputSourceLuminance.fill(255);
+  outputSourceRgba = new Uint8ClampedArray(outputLength * 4);
+  outputSourceRgba.fill(255);
   outputBackgroundMask = sourceBackgroundMask ? new Uint8Array(outputLength) : null;
   if (outputBackgroundMask) outputBackgroundMask.fill(1);
   for (let y = 0; y < contentHeight; y += 1) {
@@ -511,6 +520,7 @@ function buildOutputCanvas() {
       const sourceIndex = sourceY * depthWidth + sourceX;
       outputDepth[outputIndex] = guidedDepth[sourceIndex];
       outputSourceLuminance[outputIndex] = sourceLuminance[sourceIndex];
+      outputSourceRgba.set(sourceRgba.subarray(sourceIndex * 4, sourceIndex * 4 + 4), outputIndex * 4);
       if (outputBackgroundMask) outputBackgroundMask[outputIndex] = sourceBackgroundMask[sourceIndex];
     }
   }
@@ -889,8 +899,9 @@ function updateParallaxControls() {
 }
 
 function reliefOptions(backgroundMask = outputBackgroundMask) {
+  const maximumLayers = reliefSurfaceEngravingControl.checked ? 15 : 30;
   return {
-    layers:Math.min(30, Math.max(2, Math.round(Number(reliefLayerCountControl.value) || 7))),
+    layers:Math.min(maximumLayers, Math.max(2, Math.round(Number(reliefLayerCountControl.value) || 7))),
     inverted:invertControl.checked,
     spacing:reliefSpacingControl.value,
     smoothing:Math.min(4, Math.max(0, Math.round(Number(reliefSmoothingControl.value) || 0))),
@@ -914,6 +925,8 @@ function reliefExportOptions() {
     registrationDiameterMm:Math.max(.1, Number(reliefRegistrationDiameterControl.value) || 3),
     registrationInsetMm:Math.max(.1, Number(reliefRegistrationInsetControl.value) || 5),
     cutSetting:selectedReliefCutSetting(),
+    surfaceEngraving:reliefSurfaceEngravingControl.checked,
+    photoSetting:selectedReliefPhotoSetting(),
   };
 }
 
@@ -921,9 +934,9 @@ function selectedReliefLibrary() {
   return reliefMaterialLibraries.find(library => String(library.library_id) === reliefPaletteControl.value);
 }
 
-function selectedReliefCutSetting() {
+function selectedReliefSetting(control) {
   const library = selectedReliefLibrary();
-  const entry = (library?.summary?.entries || []).find(item => String(item.entry_id) === reliefSettingControl.value);
+  const entry = (library?.summary?.entries || []).find(item => String(item.entry_id) === control.value);
   if (!entry) return null;
   return {
     description:entry.description || "Selected setting",
@@ -933,17 +946,31 @@ function selectedReliefCutSetting() {
   };
 }
 
+function selectedReliefCutSetting() {
+  return selectedReliefSetting(reliefSettingControl);
+}
+
+function selectedReliefPhotoSetting() {
+  return selectedReliefSetting(reliefPhotoSettingControl);
+}
+
 function populateReliefSettings() {
   const entries = selectedReliefLibrary()?.summary?.entries || [];
   reliefSettingControl.replaceChildren(new Option("Choose a setting…", ""));
+  reliefPhotoSettingControl.replaceChildren(new Option("Choose a Photo setting…", ""));
   for (const entry of entries) {
     const label = entry.description || `Setting ${Number(entry.entry_id) + 1}`;
     reliefSettingControl.add(new Option(label, String(entry.entry_id)));
+    reliefPhotoSettingControl.add(new Option(label, String(entry.entry_id)));
   }
   reliefSettingControl.disabled = !entries.length;
+  reliefPhotoSettingControl.disabled = !entries.length;
+  const cut = entries.find(entry => String(entry.description || "").trim().toLowerCase() === "cut");
   const labels = entries.find(entry => String(entry.description || "").trim().toLowerCase() === "labels");
-  const preferred = labels || entries[0];
+  const photo = entries.find(entry => String(entry.description || "").trim().toLowerCase() === "photo");
+  const preferred = cut || labels || entries[0];
   reliefSettingControl.value = preferred ? String(preferred.entry_id) : "";
+  reliefPhotoSettingControl.value = photo ? String(photo.entry_id) : "";
   updateReliefSettingStatus();
 }
 
@@ -952,11 +979,34 @@ function updateReliefSettingStatus() {
   if (setting) {
     const source = [setting.material, setting.description].filter(Boolean).join(" · ");
     reliefSettingStatus.textContent = `${source} will be copied to every Layered Relief cutting layer. Enable only one layer at a time before running the laser.`;
+    updateReliefPhotoControls();
     return;
   }
   reliefSettingStatus.textContent = reliefMaterialLibraries.length
     ? "Choose a Swatch Palette and setting to use for every Layered Relief cutting layer."
     : "No saved Swatch Palettes are available. Save or import one in the Swatch Palette Vault before exporting a Layered Relief project.";
+  updateReliefPhotoControls();
+}
+
+function updateReliefPhotoControls() {
+  const enabled = reliefSurfaceEngravingControl.checked;
+  const maximumLayers = enabled ? 15 : 30;
+  reliefLayerCountControl.max = String(maximumLayers);
+  if (Number(reliefLayerCountControl.value) > maximumLayers) reliefLayerCountControl.value = String(maximumLayers);
+  reliefPhotoControls.hidden = !enabled;
+  if (!enabled) {
+    reliefPhotoSettingStatus.textContent = "Surface photo engraving is off. The project will contain cutting contours only.";
+    return;
+  }
+  const setting = selectedReliefPhotoSetting();
+  if (setting) {
+    const source = [setting.material, setting.description].filter(Boolean).join(" · ");
+    reliefPhotoSettingStatus.textContent = String(setting.type).toLowerCase() === "image"
+      ? `${source} will be copied to each visible-surface bitmap. Its saved LightBurn image mode and processing options are preserved.`
+      : `${source} is not a LightBurn Image setting. Choose an entry whose Cut Mode is Image so its grayscale or dither mode can be preserved.`;
+  } else {
+    reliefPhotoSettingStatus.textContent = "Choose the LightBurn image setting for the visible-surface bitmaps. A setting named Photo is selected automatically when available.";
+  }
 }
 
 function loadReliefCutSettings() {
@@ -1178,7 +1228,8 @@ function scheduleReliefPreview() {
 }
 
 function updateReliefControls() {
-  const layers = Math.min(30, Math.max(2, Math.round(Number(reliefLayerCountControl.value) || 7)));
+  const maximumLayers = reliefSurfaceEngravingControl.checked ? 15 : 30;
+  const layers = Math.min(maximumLayers, Math.max(2, Math.round(Number(reliefLayerCountControl.value) || 7)));
   reliefLayerCountControl.value = layers;
   reliefPreviewLayerControl.max = String(layers);
   reliefRegistrationControls.hidden = !reliefRegistrationControl.checked;
@@ -1203,12 +1254,50 @@ function updateReliefQuantizationControls() {
   updateReliefControls();
 }
 
+function createReliefSurfaceImages(relief) {
+  if (!outputSourceRgba || outputSourceRgba.length !== relief.width * relief.height * 4) {
+    throw new Error("The uploaded image is not available for Layered Relief surface engraving. Generate the depthmap again and retry.");
+  }
+  const visibleMasks = reliefVisibleMasks(relief);
+  return visibleMasks.map((mask, layerIndex) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = relief.width;
+    canvas.height = relief.height;
+    const context = canvas.getContext("2d");
+    const image = context.createImageData(relief.width, relief.height);
+    image.data.fill(255);
+    for (let index = 0; index < mask.length; index += 1) {
+      if (!mask[index]) continue;
+      const sourceOffset = index * 4;
+      const alpha = outputSourceRgba[sourceOffset + 3] / 255;
+      image.data[sourceOffset] = Math.round(outputSourceRgba[sourceOffset] * alpha + 255 * (1 - alpha));
+      image.data[sourceOffset + 1] = Math.round(outputSourceRgba[sourceOffset + 1] * alpha + 255 * (1 - alpha));
+      image.data[sourceOffset + 2] = Math.round(outputSourceRgba[sourceOffset + 2] * alpha + 255 * (1 - alpha));
+      image.data[sourceOffset + 3] = 255;
+    }
+    context.putImageData(image, 0, 0);
+    const dataUrl = canvas.toDataURL("image/png");
+    return {
+      width:relief.width,
+      height:relief.height,
+      data:dataUrl.slice(dataUrl.indexOf(",") + 1),
+      fileName:`layered-relief-surface-${String(layerIndex + 1).padStart(2, "0")}.png`,
+    };
+  });
+}
+
 async function exportLayeredRelief() {
   if (!outputDepth) return;
   reliefExportButton.disabled = true;
   try {
     if (!selectedReliefCutSetting()) {
       throw new Error("Choose a saved Swatch Palette and setting before downloading the Layered Relief project.");
+    }
+    if (reliefSurfaceEngravingControl.checked && !selectedReliefPhotoSetting()) {
+      throw new Error("Choose a Photo setting before downloading the Layered Relief project with surface engraving.");
+    }
+    if (reliefSurfaceEngravingControl.checked && String(selectedReliefPhotoSetting().type).toLowerCase() !== "image") {
+      throw new Error("The selected Photo setting must use LightBurn Image mode. Configure its grayscale or dither mode in LightBurn, import the palette again, and retry.");
     }
     const layerCount = reliefOptions().layers;
     if (outputWidth * outputHeight * layerCount > 40000000) {
@@ -1217,10 +1306,12 @@ async function exportLayeredRelief() {
     setProcessingStatus("Building layered relief masks and closed SVG contours locally.");
     await new Promise(resolve => setTimeout(resolve, 0));
     const relief = createReliefLayers(outputDepth, outputWidth, outputHeight, reliefOptions());
-    const project = createReliefLightBurn(relief, reliefExportOptions());
+    const exportOptions = reliefExportOptions();
+    if (exportOptions.surfaceEngraving) exportOptions.photoImages = createReliefSurfaceImages(relief);
+    const project = createReliefLightBurn(relief, exportOptions);
     const blob = new Blob([project], {type:"application/xml"});
     downloadBlob(blob, "layered-relief", "lbrn2");
-    setProcessingStatus(`Layered Relief LightBurn project created locally with ${relief.layers.length} aligned cutting layers.`);
+    setProcessingStatus(`Layered Relief LightBurn project created locally with ${relief.layers.length} aligned cutting layers${exportOptions.surfaceEngraving ? " and matching visible-surface Photo layers" : ""}.`);
   } finally {
     reliefExportButton.disabled = false;
   }
@@ -1257,6 +1348,7 @@ function reset() {
   perimeterDepthOverride = null;
   rawDepth = adjustedDepth = guidedDepth = outputDepth = paintedDepth = colorMatchMap = null;
   sourceLuminance = outputSourceLuminance = null;
+  sourceRgba = outputSourceRgba = null;
   sourceBackgroundMask = outputBackgroundMask = null;
   if (sourceUrl) URL.revokeObjectURL(sourceUrl);
   sourceUrl = null;
@@ -1480,6 +1572,11 @@ reliefResetThresholdsButton.addEventListener("click", resetReliefThresholds);
 reliefPreviewLayerControl.addEventListener("input", scheduleReliefPreview);
 reliefPaletteControl.addEventListener("change", populateReliefSettings);
 reliefSettingControl.addEventListener("change", updateReliefSettingStatus);
+reliefSurfaceEngravingControl.addEventListener("change", () => {
+  updateReliefPhotoControls();
+  updateReliefQuantizationControls();
+});
+reliefPhotoSettingControl.addEventListener("change", updateReliefPhotoControls);
 reliefExportButton.addEventListener("click", () => exportLayeredRelief().catch(cause => setProcessingStatus(cause.message, true)));
 drawLegend();
 updateParallaxControls();

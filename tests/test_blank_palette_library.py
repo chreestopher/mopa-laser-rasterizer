@@ -30,7 +30,7 @@ class BlankPaletteLibraryTests(unittest.TestCase):
         self.assertIn('Warning", "PLACEHOLDERS_ONLY_DO_NOT_RUN', script)
         self.assertIn("new Blob([buildBlankPaletteXml(materialName)]", script)
         self.assertNotIn("fetch(", script)
-        self.assertIn('src="/blank-palette.js?v=1"', builder)
+        self.assertIn('src="/blank-palette.js?v=2"', builder)
         self.assertIn('serverless_web/blank-palette.js', deploy)
 
     def test_template_contains_one_safe_placeholder_per_default_swatch(self):
@@ -40,15 +40,18 @@ class BlankPaletteLibraryTests(unittest.TestCase):
         entries = material.findall("Entry")
 
         self.assertEqual("colors - stainless steel", material.attrib["name"])
-        self.assertEqual(32, len(entries))
+        self.assertEqual(34, len(entries))
         self.assertEqual(
             [f"UNCONFIGURED {name}" for name in BLANK_PALETTE_ENTRIES],
             [entry.attrib["Desc"] for entry in entries],
         )
         self.assertEqual(
-            ["UNCONFIGURED Labels", "UNCONFIGURED Fauxlographic"],
+            ["UNCONFIGURED Labels", "UNCONFIGURED Fauxlographic", "UNCONFIGURED Photo", "UNCONFIGURED Cut"],
             [entry.attrib["Desc"] for entry in entries[-len(BLANK_PALETTE_UTILITY_ENTRIES):]],
         )
+        setting_types = {entry.attrib["Desc"]: entry.find("CutSetting").attrib["type"] for entry in entries}
+        self.assertEqual("Image", setting_types["UNCONFIGURED Photo"])
+        self.assertEqual("Cut", setting_types["UNCONFIGURED Cut"])
         for entry in entries:
             self.assertEqual("-1.0000", entry.attrib["Thickness"])
             self.assertNotIn("NoThickTitle", entry.attrib)

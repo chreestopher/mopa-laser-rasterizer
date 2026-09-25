@@ -328,16 +328,47 @@ function xmlEscape(value) {
   return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 }
 
-function reliefCutSettingXml(layer, name, selected) {
+function reliefCutSettingXml(index, priority, name, selected) {
   if (!selected || !selected.settings || typeof selected.settings !== "object") {
     throw new Error("Choose a saved Swatch Palette and setting before exporting the Layered Relief project.");
   }
   const type = /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(String(selected.type || "")) ? String(selected.type) : "Cut";
+  const tagName = type.toLowerCase() === "image" ? "CutSetting_Img" : "CutSetting";
   const reserved = new Set(["index", "name", "priority", "hide", "dooutput", "linkpath"]);
   const values = Object.entries(selected.settings)
     .filter(([key, value]) => /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(key) && !reserved.has(key.toLowerCase()) && value !== null && value !== undefined && typeof value !== "object")
     .map(([key, value]) => `    <${key} Value="${xmlEscape(value)}"/>`);
-  return `  <CutSetting type="${xmlEscape(type)}">\n    <index Value="${layer.index}"/>\n    <name Value="${xmlEscape(name)}"/>\n${values.length ? `${values.join("\n")}\n` : ""}    <doOutput Value="1"/>\n    <priority Value="${layer.index}"/>\n    <hide Value="0"/>\n  </CutSetting>`;
+  return `  <${tagName} type="${xmlEscape(type)}">\n    <index Value="${index}"/>\n    <name Value="${xmlEscape(name)}"/>\n${values.length ? `${values.join("\n")}\n` : ""}    <doOutput Value="1"/>\n    <priority Value="${priority}"/>\n    <hide Value="0"/>\n  </${tagName}>`;
+}
+
+export function reliefVisibleMasks(relief) {
+  const covered = new Uint8Array(relief.width * relief.height);
+  const visible = new Array(relief.layers.length);
+  for (let layerIndex = relief.layers.length - 1; layerIndex >= 0; layerIndex -= 1) {
+    const mask = relief.layers[layerIndex].mask;
+    const surface = new Uint8Array(mask.length);
+    for (let index = 0; index < mask.length; index += 1) {
+      if (mask[index] && !covered[index]) surface[index] = 1;
+      if (mask[index]) covered[index] = 1;
+    }
+    visible[layerIndex] = surface;
+  }
+  return visible;
+}
+
+function reliefBitmapGeometry(image, width, height, options, cutIndex, geometryId) {
+  if (!image?.data) return null;
+  const pixelSize = clamp(Number(options.pixelSizeMm) || 0.1, 0.001, 100);
+  const artworkWidth = width * pixelSize;
+  const artworkHeight = height * pixelSize;
+  const workbedWidth = Math.max(artworkWidth, Number(options.workbedWidthMm) || artworkWidth);
+  const workbedHeight = Math.max(artworkHeight, Number(options.workbedHeightMm) || artworkHeight);
+  const centerX = workbedWidth / 2;
+  const centerY = workbedHeight / 2;
+  const bitmapWidth = Number(image.width) || width;
+  const bitmapHeight = Number(image.height) || height;
+  const fileName = image.fileName || "layered-relief-surface.png";
+  return `    <Shape Type="Bitmap" ShapeID="${geometryId}" CutIndex="${cutIndex}" W="${formatNumber(bitmapWidth)}" H="${formatNumber(bitmapHeight)}" Gamma="1" Contrast="0" Brightness="0" EnhanceAmount="0" EnhanceRadius="0" EnhanceDenoise="0" File="${xmlEscape(fileName)}" SourceHash="0" Data="${xmlEscape(image.data)}">\n      <XForm>${formatNumber(pixelSize)} 0 0 ${formatNumber(pixelSize)} ${formatNumber(centerX)} ${formatNumber(centerY)}</XForm>\n    </Shape>`;
 }
 
 function reliefGeometry(layer, width, height, options, cutIndex, firstGeometryId) {
@@ -383,13 +414,33 @@ export function createReliefLightBurn(relief, options = {}) {
   const shapes = [];
   const selectedSetting = options.cutSetting;
   if (!selectedSetting) throw new Error("Choose a saved Swatch Palette and setting before exporting the Layered Relief project.");
+  const surfaceEngraving = Boolean(options.surfaceEngraving);
+  const photoSetting = options.photoSetting;
+  const photoImages = options.photoImages || [];
+  if (surfaceEngraving && !photoSetting) throw new Error("Choose a Photo setting before exporting the Layered Relief surface engraving.");
+  if (surfaceEngraving && String(photoSetting.type || "").toLowerCase() !== "image") {
+    throw new Error("The selected Photo setting must use LightBurn Image mode.");
+  }
+  if (surfaceEngraving && photoImages.length !== relief.layers.length) {
+    throw new Error("Every Layered Relief sheet needs a matching visible-surface bitmap.");
+  }
   let geometryId = 1;
   for (const layer of relief.layers) {
     const number = layer.index + 1;
     const position = number === 1 ? "BACK" : number === count ? "FRONT" : "MIDDLE";
-    const name = `Layer ${String(number).padStart(digits, "0")} of ${String(count).padStart(digits, "0")} - ${position}`;
-    cutSettings.push(reliefCutSettingXml(layer, name, selectedSetting));
-    const geometry = reliefGeometry(layer, relief.width, relief.height, options, layer.index, geometryId);
+    const baseName = `Layer ${String(number).padStart(digits, "0")} of ${String(count).padStart(digits, "0")} - ${position}`;
+    const photoIndex = surfaceEngraving ? layer.index * 2 : -1;
+    const cutIndex = surfaceEngraving ? photoIndex + 1 : layer.index;
+    if (surfaceEngraving) {
+      cutSettings.push(reliefCutSettingXml(photoIndex, photoIndex, `${baseName} - Photo`, photoSetting));
+      const bitmap = reliefBitmapGeometry(photoImages[layer.index], relief.width, relief.height, options, photoIndex, geometryId);
+      if (bitmap) {
+        shapes.push(bitmap);
+        geometryId += 1;
+      }
+    }
+    cutSettings.push(reliefCutSettingXml(cutIndex, cutIndex, surfaceEngraving ? `${baseName} - Cut` : baseName, selectedSetting));
+    const geometry = reliefGeometry(layer, relief.width, relief.height, options, cutIndex, geometryId);
     shapes.push(...geometry.shapes);
     geometryId = geometry.nextGeometryId;
   }
@@ -400,8 +451,11 @@ export function createReliefLightBurn(relief, options = {}) {
     `Material: ${count} sheets at ${thickness.toFixed(3)} mm; nominal assembled depth ${(thickness * count).toFixed(3)} mm.`,
     `Artwork: ${artworkWidth.toFixed(3)} x ${artworkHeight.toFixed(3)} mm on a ${workbedWidth.toFixed(3)} x ${workbedHeight.toFixed(3)} mm workbed.`,
     "All layers intentionally overlap at identical workspace coordinates.",
-    "CUT ONE SHEET AT A TIME: enable Output for exactly one layer and disable every other layer before starting.",
+    surfaceEngraving
+      ? "PROCESS ONE SHEET AT A TIME: enable only one numbered Photo + Cut pair. Engrave Photo first, then run Cut without moving the sheet."
+      : "CUT ONE SHEET AT A TIME: enable Output for exactly one layer and disable every other layer before starting.",
     `Every layer uses the selected ${selectedSetting.description || "palette"} setting${selectedSetting.material ? ` from ${selectedSetting.material}` : ""}.`,
+    ...(surfaceEngraving ? [`Visible surface artwork uses the selected ${photoSetting.description || "Photo"} setting${photoSetting.material ? ` from ${photoSetting.material}` : ""}. Image mode and processing are copied from that saved LightBurn setting.`] : []),
     "Inspect every contour. Small or disconnected islands may require manual placement or a supporting frame.",
   ].join("\n")).replaceAll("\n", "&#10;");
   return `<?xml version="1.0" encoding="UTF-8"?>\n<LightBurnProject AppVersion="2.1.04" FormatVersion="1" MaterialHeight="0" MirrorX="False" MirrorY="True" AskForSendName="True">\n${cutSettings.join("\n")}\n${shapes.join("\n")}\n  <Notes ShowOnLoad="1" Notes="${notes}"/>\n</LightBurnProject>\n`;

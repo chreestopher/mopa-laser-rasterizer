@@ -4,6 +4,7 @@ import {
   createReliefLayers,
   createReliefLightBurn,
   prepareReliefDepth,
+  reliefVisibleMasks,
   reliefThresholds,
   traceMaskContours,
 } from "../static/depthmap_layered_relief.js";
@@ -13,6 +14,13 @@ const labelsSetting = {
   material:"Stainless steel",
   type:"Scan",
   settings:{minPower:"12", maxPower:"18", speed:"900", frequency:"300000", QPulseWidth:"51", interval:"0.01", LinkPath:"Stainless steel/Colors/Labels", hide:"1", doOutput:"0"},
+};
+
+const photoSetting = {
+  description:"Photo",
+  material:"Stainless steel",
+  type:"Image",
+  settings:{minPower:"8", maxPower:"20", speed:"1200", interval:"0.025", ditherMode:"stucki", LinkPath:"Stainless steel/Photo"},
 };
 
 test("linear thresholds and cumulative layers progress from rear to front", () => {
@@ -91,6 +99,15 @@ test("contour tracing produces closed outer and hole boundaries", () => {
   for (const contour of contours) assert.deepEqual(contour[0], contour.at(-1));
 });
 
+test("visible surface masks assign every stacked pixel to only its frontmost sheet", () => {
+  const relief = createReliefLayers(Float32Array.of(0, .25, .5, .75, 1), 5, 1, {layers:3});
+  const visible = reliefVisibleMasks(relief);
+  assert.deepEqual(visible.map(mask => [...mask].reduce((sum, value) => sum + value, 0)), [2, 1, 2]);
+  for (let index = 0; index < 5; index += 1) {
+    assert.equal(visible.reduce((sum, mask) => sum + mask[index], 0), 1);
+  }
+});
+
 test("LightBurn layers share workbed coordinates and copy the selected palette setting", () => {
   const relief = createReliefLayers(Float32Array.of(1, 1, 1, 1), 2, 2, {layers:2});
   const project = createReliefLightBurn(relief, {pixelSizeMm:1, workbedWidthMm:10, workbedHeightMm:8, cutSetting:labelsSetting});
@@ -137,4 +154,53 @@ test("multi-layer LightBurn project keeps every relief slice aligned and ordered
 test("LightBurn export requires a saved palette setting", () => {
   const relief = createReliefLayers(Float32Array.of(1, 1, 1, 1), 2, 2, {layers:2});
   assert.throws(() => createReliefLightBurn(relief, {pixelSizeMm:1}), /Choose a saved Swatch Palette and setting/);
+});
+
+test("optional surface engraving embeds aligned bitmap layers and preserves Photo image settings", () => {
+  const relief = createReliefLayers(Float32Array.of(0, .25, .5, .75, 1), 5, 1, {layers:3});
+  const photoImages = relief.layers.map((_, index) => ({width:5, height:1, data:`cG5nLWRhdGEt${index}`, fileName:`surface-${index + 1}.png`}));
+  const project = createReliefLightBurn(relief, {
+    pixelSizeMm:1,
+    workbedWidthMm:9,
+    workbedHeightMm:5,
+    cutSetting:labelsSetting,
+    surfaceEngraving:true,
+    photoSetting,
+    photoImages,
+  });
+  assert.equal((project.match(/<CutSetting type="Scan">/g) || []).length, 3);
+  assert.equal((project.match(/<CutSetting_Img type="Image">/g) || []).length, 3);
+  assert.equal((project.match(/<Shape Type="Bitmap"/g) || []).length, 3);
+  assert.equal((project.match(/<ditherMode Value="stucki"\/>/g) || []).length, 3);
+  assert.match(project, /Layer 01 of 03 - BACK - Photo/);
+  assert.match(project, /Layer 01 of 03 - BACK - Cut/);
+  assert.match(project, /<Shape Type="Bitmap" ShapeID="1" CutIndex="0" W="5" H="1"/);
+  assert.match(project, /<XForm>1 0 0 1 4\.5 2\.5<\/XForm>/);
+  assert.match(project, /<Shape Type="Path" ShapeID="2" CutIndex="1">/);
+  assert.match(project, /CutIndex="5"/);
+  assert.doesNotMatch(project, /<LinkPath\b/);
+  assert.match(project, /Engrave Photo first, then run Cut/);
+});
+
+test("surface engraving requires a selected Photo setting", () => {
+  const relief = createReliefLayers(Float32Array.of(0, 1), 2, 1, {layers:2});
+  assert.throws(() => createReliefLightBurn(relief, {pixelSizeMm:1, cutSetting:labelsSetting, surfaceEngraving:true}), /Choose a Photo setting/);
+});
+
+test("surface engraving requires an Image setting and one bitmap per sheet", () => {
+  const relief = createReliefLayers(Float32Array.of(0, 1), 2, 1, {layers:2});
+  assert.throws(() => createReliefLightBurn(relief, {
+    pixelSizeMm:1,
+    cutSetting:labelsSetting,
+    surfaceEngraving:true,
+    photoSetting:labelsSetting,
+    photoImages:[],
+  }), /must use LightBurn Image mode/);
+  assert.throws(() => createReliefLightBurn(relief, {
+    pixelSizeMm:1,
+    cutSetting:labelsSetting,
+    surfaceEngraving:true,
+    photoSetting,
+    photoImages:[{width:2, height:1, data:"cG5n"}],
+  }), /Every Layered Relief sheet needs a matching visible-surface bitmap/);
 });
