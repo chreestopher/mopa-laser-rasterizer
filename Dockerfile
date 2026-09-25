@@ -25,5 +25,7 @@ COPY . /app/
 # Expose port 8000
 EXPOSE 8000
 
-# FIX: Reduce workers to 1 so they share a single unified global memory cache space
+# Local-only Flask web entry point. AWS Fargate overrides this command with
+# ``python -u worker.py --task-id ...`` and never exposes the Flask server.
+# One process keeps the local in-memory cache coherent across request threads.
 CMD ["gunicorn", "--workers=1", "--threads=4", "--timeout=1200", "--bind", "0.0.0.0:8000", "--error-logfile=-", "--capture-output", "app:app"]

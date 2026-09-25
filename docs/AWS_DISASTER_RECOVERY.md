@@ -1,6 +1,6 @@
 # Serverless disaster recovery
 
-Last verified against the repository and production AWS checks: 2026-09-16. This is an operational runbook; an isolated data restore was tested, but a complete application cutover has not been demonstrated. The old EC2/K3s/ALB environment is retired; do not rebuild it as the normal recovery path.
+Last verified against the repository and production AWS checks: 2026-09-16. This is an operational runbook; an isolated data restore was tested, but a complete application cutover has not been demonstrated. The old EC2/K3s/ALB environment is retired and its deployment files were removed from the working tree. They remain recoverable from Git history but must not be rebuilt as the normal recovery path.
 
 ## Recovery priorities
 

@@ -91,18 +91,15 @@ def test_direct_dispatch_uses_six_state_happy_path_and_requeues_paused_jobs():
     assert "JobDeferred:" in template
 
 
-def test_production_deployment_retires_legacy_s3_dispatch_notification():
-    legacy_deploy = (ROOT / "dev_setup" / "deploy_fargate_worker_production.sh").read_text(
-        encoding="utf-8"
-    )
+def test_serverless_production_retires_legacy_s3_dispatch_notification():
+    legacy_deploy = ROOT / "dev_setup" / "deploy_fargate_worker_production.sh"
     serverless_deploy = (ROOT / "dev_setup" / "deploy_serverless_production.sh").read_text(
         encoding="utf-8"
     )
     removal = (ROOT / "dev_setup" / "remove-s3-fargate-dispatch.sh").read_text(
         encoding="utf-8"
     )
-    assert 'remove-s3-fargate-dispatch.sh' in legacy_deploy
-    assert 'ensure-s3-fargate-dispatch.sh' not in legacy_deploy
+    assert not legacy_deploy.exists()
     assert 'remove-s3-fargate-dispatch.sh' in serverless_deploy
     assert 'mopa-raster-fargate-dispatch' in removal
     assert 'item for item in queues if item.get("Id") !=' in removal
