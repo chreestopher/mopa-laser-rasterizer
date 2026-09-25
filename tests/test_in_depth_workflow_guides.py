@@ -85,6 +85,9 @@ def test_in_depth_guides_build_and_cover_the_complete_workflows():
         assert "no-thickness" not in rasterizer.lower()
         assert "Crop transparency" in rasterizer
         assert "Choose by swatch under Geometry Style" in rasterizer
+        assert "Configure the shared Halftone section" in rasterizer
+        assert "Random Rotation gives individual glyphs" in rasterizer
+        assert "Custom Uploaded Glyph accepts closed paths" in rasterizer
         assert "download whichever output files you want or need" in rasterizer
         assert "Download the SVG first" not in rasterizer
         assert "also appear inside it as knockout holes" in fauxlogram

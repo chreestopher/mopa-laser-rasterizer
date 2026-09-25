@@ -24,15 +24,17 @@ Thank you to [@benkrasnow](https://github.com/benkrasnow) for sharing his [MOPA 
 - Select the final Geometry Style independently for compatible Image Styles:
   - Normal Vectors
   - Glyphs
+  - Halftone Newsprint
   - Krasnow Grating
   - Choose by Swatch, which routes different colors to different geometry styles in the same job
-- Configure Glyph geometry, including supported shape families, staggered packing, and invert-fill punch-throughs.
-- Configure Krasnow Grating geometry with patch, spacing, angle, fauxlogram-gradient scope/direction, and painted flow-region controls.
+- Configure Glyph geometry with built-in or uploaded custom shapes, source-driven or seeded size variation, tight packing, independent deterministic rotation, and invert-fill punch-throughs.
+- Configure Halftone Newsprint geometry with multicolor or Black-only output, source-driven or seeded dot sizes, and adjustable physical spacing.
+- Configure Krasnow Grating geometry with built-in or uploaded custom cell shapes, tight packing, independent deterministic rotation, patch, spacing, angle, fauxlogram-gradient scope/direction, and painted flow-region controls.
 - Split globally processed artwork into repeatably positioned panel tiles with configurable blank size, row/column count, assembly gaps, edge inset, workbed origin, ordering, and an assembly manifest/map.
 - Export non-overlapping color geometry as layered SVG.
 - Export LightBurn `.lbrn2` projects using settings imported from `.clb`, `.lbmat`, or compatible `.lbrn` files.
 - Use SVG-Only mode without uploading laser settings or using LightBurn.
-- Review browser-session or account-backed job history and stream active worker logs from CloudWatch.
+- Review browser-session or account-backed job history, identify retained inputs from compact artwork thumbnails, and load active worker logs from CloudWatch on demand.
 
 ### Palette and material tools
 
@@ -46,9 +48,9 @@ Thank you to [@benkrasnow](https://github.com/benkrasnow) for sharing his [MOPA 
 
 ### Experimental laboratories
 
-- **Color Discovery Lab** — generate parameter grids, photograph and align engraved grids, measure cells, select useful colors, and save resulting settings or palettes.
+- **Color Discovery Lab** — generate LightBurn projects or native `.lbmt` Material Test presets, photograph and align engraved grids, measure cells, select useful colors, and save resulting settings or palettes.
 - **Fauxlographic Etching Lab** — create diffraction calibration grids, analyze photographed results, curate fauxlographic swatches, and generate artwork from measured grating settings.
-- **Depthmap/Relief Engraving Lab** — generate or import relative depth data, apply palette guidance and manual corrections, preview relief and parallax interpretations, and export depthmaps or grating geometry.
+- **Depthmap/Relief Engraving Lab** — generate or import relative depth data, apply palette guidance and manual corrections, export depthmaps or Parallax grating geometry, and build aligned multi-layer LightBurn projects for stacked reliefs, shadow boxes, and topographic maps.
 
 The in-depth guides are available at:
 
