@@ -955,7 +955,8 @@ function selectedReliefPhotoSetting() {
 }
 
 function populateReliefSettings() {
-  const entries = selectedReliefLibrary()?.summary?.entries || [];
+  const library = selectedReliefLibrary();
+  const entries = library?.summary?.entries || [];
   reliefSettingControl.replaceChildren(new Option("Choose a setting…", ""));
   reliefPhotoSettingControl.replaceChildren(new Option("Choose a Photo setting…", ""));
   for (const entry of entries) {
@@ -965,10 +966,16 @@ function populateReliefSettings() {
   }
   reliefSettingControl.disabled = !entries.length;
   reliefPhotoSettingControl.disabled = !entries.length;
-  const cut = entries.find(entry => String(entry.description || "").trim().toLowerCase() === "cut");
-  const labels = entries.find(entry => String(entry.description || "").trim().toLowerCase() === "labels");
-  const photo = entries.find(entry => String(entry.description || "").trim().toLowerCase() === "photo");
-  const preferred = cut || labels || entries[0];
+  const roles = (window.serverlessDepthResources?.preferences?.processing_palette_role_assignments || {})[library?.library_id] || {};
+  const roleEntry = role => {
+    const explicitlyAssigned = Object.prototype.hasOwnProperty.call(roles, role);
+    const assigned = String(roles[role] || "").trim().toLowerCase();
+    return entries.find(entry => assigned && String(entry.description || "").trim().toLowerCase() === assigned)
+      || (!explicitlyAssigned ? entries.find(entry => String(entry.description || "").trim().toLowerCase() === role.toLowerCase()) : null);
+  };
+  const cut = roleEntry("Cut");
+  const photo = roleEntry("Photo");
+  const preferred = cut || entries[0];
   reliefSettingControl.value = preferred ? String(preferred.entry_id) : "";
   reliefPhotoSettingControl.value = photo ? String(photo.entry_id) : "";
   updateReliefSettingStatus();
@@ -978,13 +985,15 @@ function updateReliefSettingStatus() {
   const setting = selectedReliefCutSetting();
   if (setting) {
     const source = [setting.material, setting.description].filter(Boolean).join(" · ");
-    reliefSettingStatus.textContent = `${source} will be copied to every Layered Relief cutting layer. Enable only one layer at a time before running the laser.`;
+    reliefSettingStatus.textContent = String(setting.type).toLowerCase() === "cut"
+      ? `${source} will be copied to every Layered Relief cutting layer. Enable only one layer at a time before running the laser.`
+      : `${source} is not a LightBurn Line setting. Choose an entry whose Cut Mode is Line so the relief contours remain editable cutting paths.`;
     updateReliefPhotoControls();
     return;
   }
   reliefSettingStatus.textContent = reliefMaterialLibraries.length
-    ? "Choose a Swatch Palette and setting to use for every Layered Relief cutting layer."
-    : "No saved Swatch Palettes are available. Save or import one in the Swatch Palette Vault before exporting a Layered Relief project.";
+    ? "Choose a Processing Palette and Cut setting to use for every Layered Relief cutting layer."
+    : "No saved Processing Palettes are available. Import one in the Swatch Palette Vault before exporting a Layered Relief project.";
   updateReliefPhotoControls();
 }
 
@@ -1005,16 +1014,16 @@ function updateReliefPhotoControls() {
       ? `${source} will be copied to each visible-surface bitmap. Its saved LightBurn image mode and processing options are preserved.`
       : `${source} is not a LightBurn Image setting. Choose an entry whose Cut Mode is Image so its grayscale or dither mode can be preserved.`;
   } else {
-    reliefPhotoSettingStatus.textContent = "Choose the LightBurn image setting for the visible-surface bitmaps. A setting named Photo is selected automatically when available.";
+    reliefPhotoSettingStatus.textContent = "Choose the LightBurn image setting for the visible-surface bitmaps. The Processing Palette's Photo role is selected automatically when available.";
   }
 }
 
 function loadReliefCutSettings() {
   reliefMaterialLibraries = (window.serverlessDepthResources?.material_libraries || [])
-    .filter(library => library.library_intent !== "hatch_palette" && (library.summary?.entries || []).length);
-  reliefPaletteControl.replaceChildren(new Option("Choose a saved Swatch Palette…", ""));
+    .filter(library => library.library_intent === "processing_palette" && (library.summary?.entries || []).length);
+  reliefPaletteControl.replaceChildren(new Option("Choose a Processing Palette…", ""));
   for (const library of reliefMaterialLibraries) {
-    reliefPaletteControl.add(new Option(library.name || library.material_name || "Swatch Palette", String(library.library_id)));
+    reliefPaletteControl.add(new Option(library.name || library.material_name || "Processing Palette", String(library.library_id)));
   }
   reliefPaletteControl.disabled = !reliefMaterialLibraries.length;
   reliefPaletteControl.value = reliefMaterialLibraries.length ? String(reliefMaterialLibraries[0].library_id) : "";
@@ -1291,7 +1300,10 @@ async function exportLayeredRelief() {
   reliefExportButton.disabled = true;
   try {
     if (!selectedReliefCutSetting()) {
-      throw new Error("Choose a saved Swatch Palette and setting before downloading the Layered Relief project.");
+      throw new Error("Choose a saved Processing Palette and Cut setting before downloading the Layered Relief project.");
+    }
+    if (String(selectedReliefCutSetting().type).toLowerCase() !== "cut") {
+      throw new Error("The selected Cut setting must use LightBurn Line mode. Configure the cutting setting in LightBurn, import the Processing Palette again, and retry.");
     }
     if (reliefSurfaceEngravingControl.checked && !selectedReliefPhotoSetting()) {
       throw new Error("Choose a Photo setting before downloading the Layered Relief project with surface engraving.");

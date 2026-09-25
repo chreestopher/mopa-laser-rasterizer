@@ -1142,7 +1142,7 @@
       const loadSavedMaterialLibraries = () => fetch('/account/material-libraries', { credentials: 'same-origin' })
         .then(response => response.ok ? response.json() : null)
         .then(data => {
-          const libraries = data?.libraries || [];
+          const libraries = (data?.libraries || []).filter(library => library.library_intent !== 'processing_palette');
           if (!libraries.length) return;
           savedMaterialLibrariesById = new Map(libraries.map(library => [library.library_id, library]));
           savedMaterialLibraryRow.hidden = false;

@@ -125,6 +125,8 @@ def _resolve_material_library(task_id, uploaded_library, saved_library_id, histo
         saved_library = get_user_material_library(user_id, saved_library_id)
         if not saved_library:
             raise FileNotFoundError("That saved Material Library is no longer available.")
+        if saved_library.get("library_intent") == "processing_palette":
+            raise ValueError("Processing Palettes are only available to compatible Depthmap tools.")
         filename = secure_filename(
             saved_library.get("original_name") or saved_library.get("name") or "library.clb"
         )

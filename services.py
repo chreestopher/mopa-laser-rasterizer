@@ -28,6 +28,12 @@ from job_runtime import DynamoJobRuntime, RedisJobRuntime, create_job_runtime
 
 
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-2").strip()
+MATERIAL_LIBRARY_INTENTS = {"color_palette", "hatch_palette", "processing_palette"}
+
+
+def normalize_material_library_intent(value):
+    value = str(value or "color_palette").strip()
+    return value if value in MATERIAL_LIBRARY_INTENTS else "color_palette"
 
 
 def _environment_flag(name, default="false"):
@@ -368,7 +374,7 @@ def save_user_material_library(user_id, local_file_path, material_name="", summa
     library_id = str(uuid.uuid4())
     filename = os.path.basename(source_filename or local_file_path)
     library_name = str(display_name or filename).strip()[:160] or filename
-    library_intent = "hatch_palette" if library_intent == "hatch_palette" else "color_palette"
+    library_intent = normalize_material_library_intent(library_intent)
     s3_key = f"users/{user_id}/materials/{library_id}/{filename}"
     try:
         # Material libraries are outside the S3 lifecycle rules, so they do
@@ -765,7 +771,7 @@ def rename_user_material_library(user_id, library_id, display_name, laser_source
     library_intent = (
         library.get("library_intent", "color_palette")
         if library_intent is None
-        else ("hatch_palette" if library_intent == "hatch_palette" else "color_palette")
+        else normalize_material_library_intent(library_intent)
     )
     # Community contribution is permanent once accepted for this library.
     laser_community = library.get("laser_community") is True or laser_community is True

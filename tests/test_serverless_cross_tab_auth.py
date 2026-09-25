@@ -86,7 +86,7 @@ def test_community_set_build_uses_shared_tokens_and_refreshes_expired_sessions()
 def test_changed_auth_assets_have_cache_busting_revisions():
     expected = {
         "index.html": ('/staging-shell.js?v=3',),
-        "vault.html": ('/staging-shell.js?v=3', '/vault.js?v=12'),
+        "vault.html": ('/staging-shell.js?v=3', '/vault.js?v=13'),
         "history.html": ('/staging-shell.js?v=3', '/history.js?v=10'),
         "admin.html": ('/staging-shell.js?v=3', '/admin.js?v=4'),
         "color-lab.html": ('/staging-shell.js?v=3', '/color-lab.js?v=8'),

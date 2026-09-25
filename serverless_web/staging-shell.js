@@ -46,7 +46,7 @@
     "/color-lab.html": ["Controlled laser color experiments", "Color Lab", "Sweep two laser parameters at a time, measure engraved test grids, refine promising settings, and save repeatable results for your exact equipment and material.", isStagingEnvironment ? "Experimental - staging port" : "Experimental - verify all output"],
     "/experimental-laboratories": ["Workflows under active development", "Experimental Laboratories", "Explore engraving tools that extend beyond the standard Rasterizer workflow, including diffraction artwork and depth-relief preparation.", "Experimental - verify all output"],
     "/history.html": ["Retained account processing", "Job History", "Review serverless runs, processing logs, parameters, and downloads retained for the last seven days.", "Authenticated workspace"],
-    "/vault.html": ["Account-owned laser parameters", "Swatch Palette Vault", "Manage Material Libraries, Color Palettes, Hatch Palettes, Depth Palettes, and Fauxlographic Palettes.", "Authenticated workspace"],
+    "/vault.html": ["Account-owned laser parameters", "Swatch Palette Vault", "Manage Color, Hatch, Processing, Depth, and Fauxlographic Palettes.", "Authenticated workspace"],
     "/community-set": ["Anonymous shared settings", "Community Set", "Explore settings voluntarily shared by laser operators using similar machines, lenses, and materials.", "Authenticated workspace"],
     "/admin.html": ["Private operational visibility", "Administration", "Review seven-day job activity, inspect retained logs, manage waiting jobs, and view the Cognito user directory.", "Authorized operator only"],
   };

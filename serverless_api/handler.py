@@ -75,6 +75,14 @@ PALETTE = [
 MAX_LIGHTBURN_LAYERS = len(PALETTE)
 PALETTE_HEX = {name.casefold(): color for name, color in PALETTE}
 PALETTE_NAMES = {color.upper(): name for name, color in PALETTE}
+MATERIAL_LIBRARY_INTENTS = {"color_palette", "hatch_palette", "processing_palette"}
+PROCESSING_PALETTE_ROLES = {"Cut", "Score", "Photo", "Fill", "Shovel", "Cleaning"}
+
+
+def material_library_intent(value):
+    """Normalize saved palette intent while preserving older color-palette records."""
+    value = str(value or "color_palette").strip()
+    return value if value in MATERIAL_LIBRARY_INTENTS else "color_palette"
 RASTER_PRESETS = {"cartoon", "color_photograph", "bw_dither_photograph"}
 ABSTRACT_FILTERS = {
     "wave", "voronoi", "shear", "spiral", "mosaic", "crystal", "ripple",
@@ -619,7 +627,7 @@ def publish_community_palette(event):
         source = owned_material(owner, source_id)
         if not source:
             return response(404, {"message": "Saved palette not found"})
-        if source.get("library_intent") == "hatch_palette":
+        if material_library_intent(source.get("library_intent")) != "color_palette":
             raise ValueError("Only Color Palettes can be added to Community Set")
         summary = public_library_summary(source.get("summary"))
         available = {int(entry["entry_id"]): entry for entry in summary["entries"]}
@@ -802,7 +810,7 @@ def account_resources(event):
             "laser_source": str(item.get("laser_source") or ""),
             "lens_field_of_view": str(item.get("lens_field_of_view") or ""),
             "notes": str(item.get("notes") or ""),
-            "library_intent": "hatch_palette" if item.get("library_intent") == "hatch_palette" else "color_palette",
+            "library_intent": material_library_intent(item.get("library_intent")),
             "summary": public_library_summary(item.get("summary")),
         } for item in materials],
         "depth_palettes": [{
@@ -1032,6 +1040,17 @@ def clean_account_preferences(data):
             for library_id, mapping in list(assignments.items())[:100]
             if str(library_id).strip() and isinstance(mapping, dict)
         }
+    processing_assignments = data.get("processing_palette_role_assignments")
+    if isinstance(processing_assignments, dict):
+        clean["processing_palette_role_assignments"] = {
+            str(library_id)[:80]: {
+                str(role).title(): str(name).strip()[:160]
+                for role, name in list(mapping.items())[:len(PROCESSING_PALETTE_ROLES)]
+                if str(role).title() in PROCESSING_PALETTE_ROLES
+            }
+            for library_id, mapping in list(processing_assignments.items())[:100]
+            if str(library_id).strip() and isinstance(mapping, dict)
+        }
     for name in LAST_USED_FORM_FIELDS:
         snapshot = clean_last_used_form(name, data.get(name))
         if snapshot:
@@ -1076,10 +1095,19 @@ def preserve_material_assignment_names(owner, library_id, old_description, new_d
         if str(description).strip().casefold() == str(old_description).strip().casefold():
             mapping[color] = new_description
             changed = True
+    processing_assignments = dict(preferences.get("processing_palette_role_assignments") or {})
+    processing_mapping = dict(processing_assignments.get(library_id) or {})
+    for role, description in list(processing_mapping.items()):
+        if str(description).strip().casefold() == str(old_description).strip().casefold():
+            processing_mapping[role] = new_description
+            changed = True
     if not changed:
         return
     assignments[library_id] = mapping
     preferences["material_library_color_assignments"] = assignments
+    if processing_mapping:
+        processing_assignments[library_id] = processing_mapping
+        preferences["processing_palette_role_assignments"] = processing_assignments
     preferences = clean_account_preferences(preferences)
     table.put_item(Item={**key, "preferences": dynamo_value(preferences), "updated_at": int(time.time())})
 
@@ -1509,6 +1537,23 @@ def delete_owned_item(event, kind, item_id):
             return response(400, {"message": "We couldn't safely delete this saved item, so it was left unchanged. Report the problem with the item name and your account email."})
         s3.delete_object(Bucket=BUCKET, Key=object_key)
     table.delete_item(Key=key)
+    if kind == "material":
+        preferences_key = {"pk": f"USER#{owner}", "sk": "PREFERENCES"}
+        preferences_item = table.get_item(Key=preferences_key, ConsistentRead=True).get("Item") or {}
+        preferences = dict(preferences_item.get("preferences") or {})
+        changed = False
+        for field in ("material_library_color_assignments", "processing_palette_role_assignments"):
+            assignments = dict(preferences.get(field) or {})
+            if item_id in assignments:
+                assignments.pop(item_id, None)
+                preferences[field] = assignments
+                changed = True
+        if changed:
+            table.put_item(Item={
+                **preferences_key,
+                "preferences": dynamo_value(clean_account_preferences(preferences)),
+                "updated_at": int(time.time()),
+            })
     return response(200, {"deleted": True})
 
 
@@ -1538,7 +1583,7 @@ def rename_material(event, library_id):
     contents = ET.tostring(root, encoding="utf-8", xml_declaration=True)
     summary = material_summary(contents)
     s3.put_object(Bucket=BUCKET, Key=existing["s3_key"], Body=contents, ContentType="application/xml")
-    intent = "hatch_palette" if existing.get("library_intent") == "hatch_palette" else "color_palette"
+    intent = material_library_intent(existing.get("library_intent"))
     table.update_item(Key=key, UpdateExpression="SET #name=:name, material_name=:material, summary=:summary, updated_at=:now",
                       ExpressionAttributeNames={"#name": "name"},
                       ExpressionAttributeValues={":name": name, ":material": material_name,
@@ -2128,6 +2173,7 @@ def delete_selected_palette_settings(owner, selections):
         preferences_item = table.get_item(Key=preferences_key, ConsistentRead=True).get("Item") or {}
         preferences = dict(preferences_item.get("preferences") or {})
         assignments = dict(preferences.get("material_library_color_assignments") or {})
+        processing_assignments = dict(preferences.get("processing_palette_role_assignments") or {})
         changed = False
         for library_id, _library, _contents, _summary, removed_names in material_updates:
             mapping = dict(assignments.get(library_id) or {})
@@ -2138,8 +2184,17 @@ def delete_selected_palette_settings(owner, selections):
                     assignments[library_id] = cleaned
                 else:
                     assignments.pop(library_id, None)
+            role_mapping = dict(processing_assignments.get(library_id) or {})
+            cleaned_roles = {
+                role: ("" if str(name).strip().casefold() in removed_names else name)
+                for role, name in role_mapping.items()
+            }
+            if cleaned_roles != role_mapping:
+                changed = True
+                processing_assignments[library_id] = cleaned_roles
         if changed:
             preferences["material_library_color_assignments"] = assignments
+            preferences["processing_palette_role_assignments"] = processing_assignments
             table.put_item(Item={
                 **preferences_key, "preferences": dynamo_value(clean_account_preferences(preferences)),
                 "updated_at": now,
@@ -2426,6 +2481,8 @@ def create_holographic_calibration(event, guest=False, upload_task_id=""):
     else:
         library = owned_material(owner, library_id)
         if not library: return response(404, {"message":"Choose a saved Material Library"})
+        if library.get("library_intent") == "processing_palette":
+            raise ValueError("Processing Palettes cannot be used for Fauxlographic calibration grids")
         contents = s3.get_object(Bucket=BUCKET, Key=library["s3_key"])["Body"].read(MAX_MATERIAL_BYTES + 1)
     try:
         entry_id = int(data.get("entry_id"))
@@ -2770,6 +2827,8 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
     library_id = str(data.get("library_id") or "")
     library = owned_material(owner, library_id) if library_id and not guest else None
     if not library and contents is None and not refinement: return response(404, {"message":"Choose a saved or uploaded Material Library"})
+    if library and library.get("library_intent") == "processing_palette":
+        raise ValueError("Processing Palettes cannot be used for Color Discovery grids")
     output_format = str(data.get("output_format") or "lbrn2")
     if output_format not in ("lbrn2", "lbmt"):
         raise ValueError("Choose .lbrn2 or .lbmt as the Color Discovery output format.")
@@ -3241,7 +3300,7 @@ def import_upload(event):
         "hatch_operation": str(data.get("hatch_operation") or "setting"),
         "start_angle": str(data.get("start_angle", "0")), "angular_span": str(data.get("angular_span", "180")),
         "first_interval": str(data.get("first_interval", "0.1")), "last_interval": str(data.get("last_interval", "0.1")),
-        "library_intent": "hatch_palette" if data.get("library_intent") == "hatch_palette" else "color_palette",
+        "library_intent": material_library_intent(data.get("library_intent")),
         "created_at": now, "expires_at": now + 900,
     })
     return response(201, {"import_id": import_id, "upload_token": token,
@@ -3632,6 +3691,8 @@ def create_upload(event):
     saved_material = owned_material(owner, saved_library_id) if saved_library_id else None
     if saved_library_id and not saved_material:
         return response(404, {"message": "Saved Material Library not found"})
+    if saved_material and material_library_intent(saved_material.get("library_intent")) == "processing_palette":
+        raise ValueError("Processing Palettes are for Depthmap tools and cannot be used as Rasterizer color input")
     saved_recipe = owned_recipe(owner, saved_recipe_id) if saved_recipe_id else None
     if saved_recipe_id and not saved_recipe:
         return response(404, {"message": "Saved Fauxlographic Palette not found"})
@@ -4001,6 +4062,8 @@ def create_holographic_upload(event):
     recipe = owned_recipe(owner, str(data.get("saved_holographic_recipe_id") or "").strip())
     if not material:
         return response(404, {"message": "Choose a saved Material Library"})
+    if material_library_intent(material.get("library_intent")) == "processing_palette":
+        raise ValueError("Processing Palettes cannot be used for Fauxlographic Artwork")
     if not recipe:
         return response(404, {"message": "Choose a saved Fauxlographic Palette"})
     task_id, token = str(uuid.uuid4()), secrets.token_urlsafe(32)
