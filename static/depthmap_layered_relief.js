@@ -333,9 +333,9 @@ function reliefCutSettingXml(layer, name, selected) {
     throw new Error("Choose a saved Swatch Palette and setting before exporting the Layered Relief project.");
   }
   const type = /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(String(selected.type || "")) ? String(selected.type) : "Cut";
-  const reserved = new Set(["index", "name", "priority", "hide", "doOutput"]);
+  const reserved = new Set(["index", "name", "priority", "hide", "dooutput", "linkpath"]);
   const values = Object.entries(selected.settings)
-    .filter(([key, value]) => /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(key) && !reserved.has(key) && value !== null && value !== undefined && typeof value !== "object")
+    .filter(([key, value]) => /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(key) && !reserved.has(key.toLowerCase()) && value !== null && value !== undefined && typeof value !== "object")
     .map(([key, value]) => `    <${key} Value="${xmlEscape(value)}"/>`);
   return `  <CutSetting type="${xmlEscape(type)}">\n    <index Value="${layer.index}"/>\n    <name Value="${xmlEscape(name)}"/>\n${values.length ? `${values.join("\n")}\n` : ""}    <doOutput Value="1"/>\n    <priority Value="${layer.index}"/>\n    <hide Value="0"/>\n  </CutSetting>`;
 }

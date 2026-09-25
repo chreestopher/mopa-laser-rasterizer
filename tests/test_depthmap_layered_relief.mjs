@@ -12,7 +12,7 @@ const labelsSetting = {
   description:"Labels",
   material:"Stainless steel",
   type:"Scan",
-  settings:{minPower:"12", maxPower:"18", speed:"900", frequency:"300000", QPulseWidth:"51", interval:"0.01", hide:"1", doOutput:"0"},
+  settings:{minPower:"12", maxPower:"18", speed:"900", frequency:"300000", QPulseWidth:"51", interval:"0.01", LinkPath:"Stainless steel/Colors/Labels", hide:"1", doOutput:"0"},
 };
 
 test("linear thresholds and cumulative layers progress from rear to front", () => {
@@ -101,6 +101,7 @@ test("LightBurn layers share workbed coordinates and copy the selected palette s
   assert.equal((project.match(/<doOutput Value="1"\/>/g) || []).length, 2);
   assert.equal((project.match(/<hide Value="0"\/>/g) || []).length, 2);
   assert.doesNotMatch(project, /<maxPower Value="0"\/>/);
+  assert.doesNotMatch(project, /<LinkPath\b/);
   assert.ok((project.match(/<Shape Type="Path" ShapeID="\d+" CutIndex="\d+">/g) || []).length >= 2);
   assert.doesNotMatch(project, /VertID=|PrimID=|c0x1c1x1/);
   assert.match(project, /\n\s+V4 3\n/);
