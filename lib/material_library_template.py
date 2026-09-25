@@ -21,7 +21,7 @@ DEFAULT_RASTERIZER_PALETTE = (
 # These are workflow settings rather than artwork-color mapping targets. Keep
 # them out of DEFAULT_RASTERIZER_PALETTE so they do not consume official
 # Rasterizer layers or alter hatch-palette planning.
-BLANK_PALETTE_UTILITY_ENTRIES = ("Labels", "Fauxlographic", "Photo", "Cut")
+BLANK_PALETTE_UTILITY_ENTRIES = ("Labels", "Fauxlographic")
 BLANK_PALETTE_ENTRIES = (
     tuple(name for name, _layer_index in DEFAULT_RASTERIZER_PALETTE)
     + BLANK_PALETTE_UTILITY_ENTRIES
@@ -46,8 +46,7 @@ def build_blank_palette_library(material_name):
             "Thickness": "-1.0000",
             "Desc": f"UNCONFIGURED {swatch_name}",
         })
-        setting_type = "Image" if swatch_name == "Photo" else "Cut" if swatch_name == "Cut" else "Scan"
-        cut = ET.SubElement(entry, "CutSetting", {"type": setting_type})
+        cut = ET.SubElement(entry, "CutSetting", {"type": "Scan"})
         values = {
             "index": 0, "name": "",
             "LinkPath": f"{material_name}/-1.0000/UNCONFIGURED {swatch_name}",

@@ -160,6 +160,8 @@ def start_task():
             saved_library = get_user_material_library(user_id, saved_library_id)
             if not saved_library:
                 return jsonify({"status": "error", "message": "That saved Material Library is no longer available."}), 404
+            if saved_library.get("library_intent") == "processing_palette":
+                return jsonify({"status": "error", "message": "Processing Palettes are for Depthmap tools and cannot be used as Rasterizer color input."}), 400
             material_filename = secure_filename(
                 saved_library.get("original_name") or saved_library.get("name") or "library.clb"
             )

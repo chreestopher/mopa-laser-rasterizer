@@ -410,7 +410,7 @@ function visibleRasterPalette(){const recipe=selectedRasterRecipe(),library=sele
 async function loadAccountResources(){
   accountResources=await api('/account/resources');
   const choice=document.querySelector('#materialChoice');choice.replaceChildren(new Option('Upload a new LightBurn Material Library',''),new Option('SVG-Only (no laser settings)','svg'));
-  for(const library of accountResources.material_libraries){const kind=library.library_intent==='hatch_palette'?'Hatch':'Color';choice.add(new Option(`${library.name} (${kind})`,`library:${library.library_id}`))}
+  for(const library of accountResources.material_libraries.filter(item=>item.library_intent!=='processing_palette')){const kind=library.library_intent==='hatch_palette'?'Hatch':'Color';choice.add(new Option(`${library.name} (${kind})`,`library:${library.library_id}`))}
   for(const recipe of accountResources.holographic_recipes.filter(item=>item.metadata?.self_contained===true||Number(item.metadata?.schema_version)>=2))choice.add(new Option(`${recipe.name} (Fauxlographic)`,`recipe:${recipe.recipe_id}`));
   const requestedRecipe=new URLSearchParams(location.search).get('recipe'),requestedValue=requestedRecipe?`recipe:${requestedRecipe}`:'',lastRasterizer=lastUsedValues('last_rasterizer_form');if(requestedValue&&hasOption(choice,requestedValue))choice.value=requestedValue;else if(lastRasterizer&&hasOption(choice,lastRasterizer.material_choice))choice.value=lastRasterizer.material_choice;
   const holoMaterial=document.querySelector('#holoMaterial');holoMaterial.replaceChildren(new Option('Choose a library…',''));

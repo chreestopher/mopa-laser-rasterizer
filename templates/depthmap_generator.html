@@ -181,12 +181,12 @@
         </div>
         <div class="dimensions"><label for="depth_relief_material_thickness">Material thickness (mm)<input id="depth_relief_material_thickness" type="number" min="0.01" max="100" step="0.01" value="3"></label><label for="depth_relief_minimum_island">Minimum separate piece (px²)<input id="depth_relief_minimum_island" type="number" min="0" max="100000" step="1" value="4"></label></div>
         <div class="dimensions"><label for="depth_relief_workbed_width">Workbed width (mm; 0 = artwork width)<input id="depth_relief_workbed_width" type="number" min="0" max="3000" step="0.1" value="0"></label><label for="depth_relief_workbed_height">Workbed height (mm; 0 = artwork height)<input id="depth_relief_workbed_height" type="number" min="0" max="3000" step="0.1" value="0"></label></div>
-        <div class="dimensions"><label for="depth_relief_palette">Swatch Palette<select id="depth_relief_palette"><option value="">Choose a saved Swatch Palette…</option></select></label><label for="depth_relief_setting">Cutting setting<select id="depth_relief_setting" disabled><option value="">Choose a setting…</option></select></label></div>
-        <p id="depth_relief_setting_status" class="fine-print">Choose the saved palette and laser setting to apply to every cutting layer. A setting named Cut is selected automatically when available.</p>
+        <div class="dimensions"><label for="depth_relief_palette">Processing Palette<select id="depth_relief_palette"><option value="">Choose a Processing Palette…</option></select></label><label for="depth_relief_setting">Cutting setting<select id="depth_relief_setting" disabled><option value="">Choose a setting…</option></select></label></div>
+        <p id="depth_relief_setting_status" class="fine-print">Choose the Processing Palette and setting to apply to every cutting layer. Its assigned Cut role is selected automatically when available.</p>
         <label><input id="depth_relief_surface_engraving" type="checkbox"> Engrave the uploaded image on the visible relief surfaces</label>
         <div id="depth_relief_photo_controls" hidden>
           <div class="dimensions single"><label for="depth_relief_photo_setting">Photo engraving setting<select id="depth_relief_photo_setting" disabled><option value="">Choose a Photo setting…</option></select></label></div>
-          <p id="depth_relief_photo_setting_status" class="fine-print">Choose the LightBurn image setting to copy to the surface bitmaps. A setting named Photo is selected automatically when available.</p>
+          <p id="depth_relief_photo_setting_status" class="fine-print">Choose the LightBurn image setting to copy to the surface bitmaps. The Processing Palette's assigned Photo role is selected automatically when available.</p>
           <p class="fine-print">Configure the Photo entry's image mode, interval or DPI, speed, power, passes, and other image-processing options in LightBurn before importing the Material Library. Each sheet receives only the part of the uploaded image visible on that assembled surface. Because every sheet uses one Photo and one Cut layer, surface engraving supports up to 15 physical sheets within LightBurn's 30-layer limit.</p>
         </div>
         <label><input id="depth_relief_exclude_background" type="checkbox" checked> Exclude pure-white or transparent source background</label>
@@ -208,6 +208,6 @@
     <aside class="panel note"><strong>Important limitation:</strong> a single photograph cannot provide measured physical depth. The model infers relative depth from visual cues and can misread reflections, transparency, shadows, abstract artwork, or unfamiliar objects. Always inspect and edit the result before using it for relief engraving. The uploaded image is processed locally; the browser downloads the AI model from Hugging Face when first used.</aside>
   </main>
   <script id="depth_palette_data" type="application/json">{{ depth_palette|tojson }}</script>
-  <script type="module" src="/static/depthmap_generator.js?v=16"></script>
+  <script type="module" src="/static/depthmap_generator.js?v=17"></script>
 </body>
 </html>

@@ -34,6 +34,7 @@ from services import (
     get_user_preferences,
     get_user_job_history,
     normalize_dimension,
+    normalize_material_library_intent,
     save_user_preferences,
     save_user_material_library,
     save_user_depth_palette,
@@ -749,11 +750,7 @@ def new_material_library():
         return jsonify({"status": "error", "message": "Sign in to create a Material Library."}), 401
     payload = request.get_json(silent=True) or {}
     name = str(payload.get("name", "")).strip()
-    library_intent = (
-        "hatch_palette"
-        if payload.get("library_intent") == "hatch_palette"
-        else "color_palette"
-    )
+    library_intent = normalize_material_library_intent(payload.get("library_intent"))
     if not name or len(name) > 160:
         return jsonify({"status": "error", "message": "Library names must be between 1 and 160 characters."}), 400
     with tempfile.NamedTemporaryFile(suffix=".clb", delete=False) as temp_file:
@@ -929,7 +926,7 @@ def material_library_detail(library_id):
                 "notes": str(payload.get("notes") or "").strip(),
                 "laser_community": laser_community,
                 "library_intent": (
-                    ("hatch_palette" if payload.get("library_intent") == "hatch_palette" else "color_palette")
+                    normalize_material_library_intent(payload.get("library_intent"))
                     if "library_intent" in payload
                     else existing_library.get("library_intent", "color_palette")
                 ),

@@ -588,7 +588,7 @@
     const loadSavedCalibrationLibraries = () => fetch('/account/material-libraries', {credentials:'same-origin'})
       .then(response => response.ok ? response.json() : null)
       .then(data => {
-        const libraries = data?.libraries || [];
+        const libraries = (data?.libraries || []).filter(library => library.library_intent !== 'processing_palette');
         savedArtworkLibraryRow.hidden = false;
         calibrationLibrarySourceMode.replaceChildren(
           new Option('Upload a LightBurn Material Library', 'upload'),

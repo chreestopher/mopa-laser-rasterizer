@@ -89,11 +89,11 @@ class ServerlessCommunityPublishTests(unittest.TestCase):
 
     def test_only_color_palette_cards_expose_community_action(self):
         self.assertIn('data-community-kind="material"', self.client)
-        self.assertIn('communityButton=hatch?"":', self.client)
+        self.assertIn('communityButton=hatch||processing?"":', self.client)
         self.assertNotIn('data-community-kind="recipe"', self.client)
         self.assertNotIn('data-community-kind="depth"', self.client)
         self.assertIn('if source_kind != "material":', self.handler)
-        self.assertIn('if source.get("library_intent") == "hatch_palette":', self.handler)
+        self.assertIn('if material_library_intent(source.get("library_intent")) != "color_palette":', self.handler)
         self.assertGreaterEqual(self.handler.count('Only Color Palettes can be added to Community Set'), 2)
 
 
