@@ -105,6 +105,8 @@ test("LightBurn layers share workbed coordinates and copy the selected palette s
   assert.doesNotMatch(project, /VertID=|PrimID=|c0x1c1x1/);
   assert.match(project, /\n\s+V4 3\n/);
   assert.match(project, /\n\s+V6 5\n/);
+  assert.ok(project.indexOf("<CutSetting") < project.indexOf("<Shape"));
+  assert.ok(project.indexOf("<Shape") < project.indexOf("<Notes"));
 });
 
 test("LightBurn geometry uses unique ShapeID values and proven path encoding", () => {

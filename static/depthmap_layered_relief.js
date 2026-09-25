@@ -404,5 +404,5 @@ export function createReliefLightBurn(relief, options = {}) {
     `Every layer uses the selected ${selectedSetting.description || "palette"} setting${selectedSetting.material ? ` from ${selectedSetting.material}` : ""}.`,
     "Inspect every contour. Small or disconnected islands may require manual placement or a supporting frame.",
   ].join("\n")).replaceAll("\n", "&#10;");
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<LightBurnProject AppVersion="2.1.04" FormatVersion="1" MaterialHeight="0" MirrorX="False" MirrorY="True" AskForSendName="True">\n  <Notes ShowOnLoad="1" Notes="${notes}"/>\n${cutSettings.join("\n")}\n${shapes.join("\n")}\n</LightBurnProject>\n`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<LightBurnProject AppVersion="2.1.04" FormatVersion="1" MaterialHeight="0" MirrorX="False" MirrorY="True" AskForSendName="True">\n${cutSettings.join("\n")}\n${shapes.join("\n")}\n  <Notes ShowOnLoad="1" Notes="${notes}"/>\n</LightBurnProject>\n`;
 }
