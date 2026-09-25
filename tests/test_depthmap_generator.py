@@ -1,4 +1,7 @@
 import unittest
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
 
@@ -19,9 +22,23 @@ class DepthMapGeneratorCoverageTests(unittest.TestCase):
         self.assertIn('if (window.serverlessDepthGuest)', script)
         self.assertIn('all other Depthmap Lab tools remain available to guests', script)
         self.assertIn('/depthmap_bootstrap.js?v=5', builder)
-        self.assertIn('/static/depthmap_generator.js?v=14', builder)
+        self.assertIn('depthmap_generator\\.js\\?v=\\d+', builder)
         self.assertIn('await import("/depthmap_generator.js?v=17")', bootstrap)
         self.assertIn('static/depthmap_layered_relief.js', deploy)
+
+    def test_serverless_builder_replaces_current_versioned_depthmap_module(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "depthmap.html"
+            subprocess.run([
+                sys.executable,
+                str(ROOT / "dev_setup" / "build_serverless_depthmap.py"),
+                str(ROOT / "templates" / "depthmap_generator.html"),
+                str(output),
+                "https://serverless-staging.mopa-laser-rasterizer.com",
+            ], check=True)
+            page = output.read_text(encoding="utf-8")
+        self.assertIn('src="/depthmap_bootstrap.js?v=5"', page)
+        self.assertNotIn('src="/static/depthmap_generator.js', page)
 
     def test_staging_depthmap_matches_shared_desktop_scale_and_content_width(self):
         styles = (ROOT / "serverless_web" / "staging-pages.css").read_text(encoding="utf-8")

@@ -41,8 +41,12 @@ source = source.replace("/material-libraries", "/")
 source = source.replace("/docs/depthmap-generator", "/")
 source = source.replace("/login", "/")
 source = source.replace("{{ depth_palette|tojson }}", "[]")
-source = source.replace(
-    '<script type="module" src="/static/depthmap_generator.js?v=14"></script>',
+source, bootstrap_replacements = re.subn(
+    r'<script type="module" src="/static/depthmap_generator\.js\?v=\d+"></script>',
     '<script type="module" src="/depthmap_bootstrap.js?v=5"></script>',
+    source,
+    count=1,
 )
+if bootstrap_replacements != 1:
+    raise RuntimeError("Could not replace the Depthmap Lab module with the serverless bootstrap")
 Path(sys.argv[2]).write_text(source, encoding="utf-8")
