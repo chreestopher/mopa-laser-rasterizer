@@ -1047,15 +1047,32 @@ def clean_account_preferences(data):
         }
     processing_assignments = data.get("processing_palette_role_assignments")
     if isinstance(processing_assignments, dict):
-        clean["processing_palette_role_assignments"] = {
-            str(library_id)[:80]: {
-                str(role).title(): str(name).strip()[:160]
-                for role, name in list(mapping.items())[:len(PROCESSING_PALETTE_ROLES)]
-                if str(role).title() in PROCESSING_PALETTE_ROLES
-            }
-            for library_id, mapping in list(processing_assignments.items())[:100]
-            if str(library_id).strip() and isinstance(mapping, dict)
-        }
+        cleaned_processing = {}
+        for library_id, mapping in list(processing_assignments.items())[:100]:
+            if not str(library_id).strip() or not isinstance(mapping, dict):
+                continue
+            materials = mapping.get("materials")
+            if isinstance(materials, dict):
+                cleaned_materials = {}
+                for material, role_mapping in list(materials.items())[:500]:
+                    material_name = str(material).strip()[:160]
+                    if not material_name or not isinstance(role_mapping, dict):
+                        continue
+                    cleaned_materials[material_name] = {
+                        str(role).title(): str(name).strip()[:160]
+                        for role, name in list(role_mapping.items())[:len(PROCESSING_PALETTE_ROLES)]
+                        if str(role).title() in PROCESSING_PALETTE_ROLES
+                    }
+                cleaned_processing[str(library_id)[:80]] = {"materials": cleaned_materials}
+            else:
+                # Retain the original flat format so existing one-material Processing
+                # Palettes keep their saved defaults until they are next edited.
+                cleaned_processing[str(library_id)[:80]] = {
+                    str(role).title(): str(name).strip()[:160]
+                    for role, name in list(mapping.items())[:len(PROCESSING_PALETTE_ROLES)]
+                    if str(role).title() in PROCESSING_PALETTE_ROLES
+                }
+        clean["processing_palette_role_assignments"] = cleaned_processing
     for name in LAST_USED_FORM_FIELDS:
         snapshot = clean_last_used_form(name, data.get(name))
         if snapshot:
@@ -1102,10 +1119,20 @@ def preserve_material_assignment_names(owner, library_id, old_description, new_d
             changed = True
     processing_assignments = dict(preferences.get("processing_palette_role_assignments") or {})
     processing_mapping = dict(processing_assignments.get(library_id) or {})
-    for role, description in list(processing_mapping.items()):
-        if str(description).strip().casefold() == str(old_description).strip().casefold():
-            processing_mapping[role] = new_description
-            changed = True
+    processing_scopes = processing_mapping.get("materials")
+    if isinstance(processing_scopes, dict):
+        for role_mapping in processing_scopes.values():
+            if not isinstance(role_mapping, dict):
+                continue
+            for role, description in list(role_mapping.items()):
+                if str(description).strip().casefold() == str(old_description).strip().casefold():
+                    role_mapping[role] = new_description
+                    changed = True
+    else:
+        for role, description in list(processing_mapping.items()):
+            if str(description).strip().casefold() == str(old_description).strip().casefold():
+                processing_mapping[role] = new_description
+                changed = True
     if not changed:
         return
     assignments[library_id] = mapping
@@ -2180,7 +2207,7 @@ def delete_selected_palette_settings(owner, selections):
         assignments = dict(preferences.get("material_library_color_assignments") or {})
         processing_assignments = dict(preferences.get("processing_palette_role_assignments") or {})
         changed = False
-        for library_id, _library, _contents, _summary, removed_names in material_updates:
+        for library_id, _library, _contents, summary, removed_names in material_updates:
             mapping = dict(assignments.get(library_id) or {})
             cleaned = {color: name for color, name in mapping.items() if str(name).strip().casefold() not in removed_names}
             if cleaned != mapping:
@@ -2190,10 +2217,31 @@ def delete_selected_palette_settings(owner, selections):
                 else:
                     assignments.pop(library_id, None)
             role_mapping = dict(processing_assignments.get(library_id) or {})
-            cleaned_roles = {
-                role: ("" if str(name).strip().casefold() in removed_names else name)
-                for role, name in role_mapping.items()
-            }
+            material_roles = role_mapping.get("materials")
+            if isinstance(material_roles, dict):
+                remaining_by_material = {}
+                for entry in summary.get("entries") or []:
+                    material = str(entry.get("material") or "")
+                    scope = remaining_by_material.setdefault(material, {"refs": set(), "names": set()})
+                    if entry.get("entry_ref"):
+                        scope["refs"].add(str(entry["entry_ref"]))
+                    scope["names"].add(str(entry.get("description") or "").strip().casefold())
+                cleaned_materials = {}
+                for material, roles in material_roles.items():
+                    scope = remaining_by_material.get(str(material), {"refs": set(), "names": set()})
+                    cleaned_materials[str(material)] = {
+                        role: ("" if value and (
+                            (str(value).startswith("setting:") and str(value) not in scope["refs"])
+                            or (not str(value).startswith("setting:") and str(value).strip().casefold() not in scope["names"])
+                        ) else value)
+                        for role, value in (roles.items() if isinstance(roles, dict) else [])
+                    }
+                cleaned_roles = {"materials": cleaned_materials}
+            else:
+                cleaned_roles = {
+                    role: ("" if str(name).strip().casefold() in removed_names else name)
+                    for role, name in role_mapping.items()
+                }
             if cleaned_roles != role_mapping:
                 changed = True
                 processing_assignments[library_id] = cleaned_roles

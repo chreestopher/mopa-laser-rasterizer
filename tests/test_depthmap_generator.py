@@ -166,6 +166,7 @@ class DepthMapGeneratorCoverageTests(unittest.TestCase):
         self.assertIn('id="depth_relief_threshold_sliders"', page)
         self.assertIn('id="depth_relief_reset_thresholds"', page)
         self.assertIn('id="depth_relief_palette"', page)
+        self.assertIn('id="depth_relief_material"', page)
         self.assertIn('id="depth_relief_setting"', page)
         self.assertIn('id="depth_relief_surface_engraving"', page)
         self.assertIn('id="depth_relief_photo_setting"', page)
