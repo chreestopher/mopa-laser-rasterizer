@@ -499,8 +499,12 @@ def public_library_summary(summary):
         settings = item.get("settings") if isinstance(item.get("settings"), dict) else {}
         entries.append({
             "entry_id": int(item.get("entry_id") if item.get("entry_id") is not None else len(entries)),
+            "entry_ref": str(item.get("entry_ref") or ""),
             "description": description,
             "material": str(item.get("material") or ""),
+            "library_material": str(item.get("library_material") or item.get("material") or ""),
+            "material_path": [str(part) for part in item.get("material_path") or []],
+            "thickness": str(item.get("thickness") or ""),
             "type": str(item.get("type") or "Setting"),
             "hex": PALETTE_HEX.get(description.casefold(), ""),
             "angle": str(settings.get("angle") or "0"),
@@ -510,6 +514,7 @@ def public_library_summary(summary):
     return {
         "entry_count": int(summary.get("entry_count") or len(entries)),
         "material_names": [str(name) for name in summary.get("material_names") or []],
+        "logical_material_names": [str(name) for name in summary.get("logical_material_names") or []],
         "entries": entries,
     }
 
@@ -3319,6 +3324,40 @@ def effective_lightburn_settings(setting):
     return values
 
 
+def lightburn_entry_path(material_name, entry):
+    """Recover nested LightBurn library categories without mistaking thickness for a category."""
+    setting = entry.find("./CutSetting")
+    path_node = None
+    if setting is not None:
+        path_node = setting.find("./LinkPath")
+        if path_node is None:
+            path_node = setting.find("./linkPath")
+    raw_path = str(path_node.get("Value") if path_node is not None else "").strip()
+    parts = [part.strip() for part in raw_path.replace("\\", "/").split("/") if part.strip()]
+    if len(parts) < 3 or parts[0].casefold() != str(material_name or "").strip().casefold():
+        return [], raw_path
+    middle = parts[1:-1]
+    if len(middle) == 1:
+        thickness = middle[0].casefold().removesuffix("mm").strip()
+        try:
+            float(thickness)
+            return [], raw_path
+        except ValueError:
+            pass
+    return middle, raw_path
+
+
+def lightburn_entry_ref(material_name, entry, description, occurrence=1):
+    path, raw_path = lightburn_entry_path(material_name, entry)
+    thickness = str(entry.get("Thickness") or "").strip()
+    path_parts = [part.strip() for part in raw_path.replace("\\", "/").split("/") if part.strip()]
+    if path_parts and path_parts[0].casefold() == str(material_name or "").strip().casefold():
+        path_parts = path_parts[1:]
+    identity = "/".join(path_parts) or "/".join([*path, thickness, str(description or "")])
+    digest = hashlib.sha256(f"{identity}\n{occurrence}".encode("utf-8")).hexdigest()[:24]
+    return f"setting:{digest}"
+
+
 def material_summary(contents):
     root = ET.fromstring(contents)
     if root.tag != "LightBurnLibrary":
@@ -3328,31 +3367,46 @@ def material_summary(contents):
         if not populated_materials:
             raise ValueError("The selected material needs at least one laser setting entry. Choose a material with settings or add a setting in LightBurn, then import the library again.")
         raise ValueError("Palette must contain settings for exactly one material")
-    entries, names, description_issues = [], [], []
+    entries, names, logical_names, description_issues = [], [], [], []
     for material in root.findall(".//Material"):
         material_name = str(material.get("name") or "").strip()
         if material_name and material_name not in names: names.append(material_name)
         material_label = material_name or "(unnamed material)"
         descriptions = {}
+        identity_occurrences = {}
         for entry_number, entry in enumerate(material.findall("./Entry"), start=1):
             description = str(entry.get("Desc") or "").strip()
             normalized = description.casefold()
+            material_path, raw_path = lightburn_entry_path(material_name, entry)
+            logical_material = " / ".join(material_path) or material_name
+            logical_key = logical_material.casefold()
+            if logical_material and logical_material not in logical_names:
+                logical_names.append(logical_material)
+            description_key = (logical_key, normalized)
             if not description:
                 description_issues.append(
-                    f"Material '{material_label}' entry {entry_number} has no Description"
+                    f"Material '{logical_material or material_label}' entry {entry_number} has no Description"
                 )
-            elif normalized in descriptions:
+            elif description_key in descriptions:
                 description_issues.append(
-                    f"Material '{material_label}' entries {descriptions[normalized]} and "
+                    f"Material '{logical_material or material_label}' entries {descriptions[description_key]} and "
                     f"{entry_number} both use Description '{description}'"
                 )
             else:
-                descriptions[normalized] = entry_number
+                descriptions[description_key] = entry_number
             setting = entry.find("./CutSetting")
             values = effective_lightburn_settings(setting)
-            entries.append({"material": material_name, "description": description,
+            identity = raw_path or "/".join([material_name, logical_material, str(entry.get("Thickness") or ""), description])
+            identity_occurrences[identity] = identity_occurrences.get(identity, 0) + 1
+            entries.append({"material": logical_material, "library_material": material_name,
+                            "material_path": material_path, "thickness": str(entry.get("Thickness") or ""),
+                            "description": description,
                             "type": str(setting.get("type") if setting is not None else "Setting"),
-                            "entry_id": len(entries), "settings": values})
+                            "entry_id": len(entries),
+                            "entry_ref": lightburn_entry_ref(
+                                material_name, entry, description, identity_occurrences[identity]
+                            ),
+                            "settings": values})
     if description_issues:
         shown = description_issues[:10]
         suffix = f"; plus {len(description_issues) - len(shown)} more issue(s)" if len(description_issues) > len(shown) else ""
@@ -3362,7 +3416,8 @@ def material_summary(contents):
         )
     if not entries or len(entries) > 500:
         raise ValueError("Material Library must contain between 1 and 500 settings")
-    return {"entry_count": len(entries), "material_names": names, "entries": entries}
+    return {"entry_count": len(entries), "material_names": names,
+            "logical_material_names": logical_names, "entries": entries}
 
 
 def normalize_imported_material_descriptions(contents):
@@ -3370,9 +3425,13 @@ def normalize_imported_material_descriptions(contents):
     root = ET.fromstring(contents)
     adjustments = []
     for material in root.findall("./Material"):
-        used = set()
-        next_suffix = {}
+        used_by_material = {}
+        next_suffix_by_material = {}
         for entry_number, entry in enumerate(material.findall("./Entry"), start=1):
+            material_path, _raw_path = lightburn_entry_path(material.get("name"), entry)
+            scope = tuple(part.casefold() for part in material_path)
+            used = used_by_material.setdefault(scope, set())
+            next_suffix = next_suffix_by_material.setdefault(scope, {})
             original = str(entry.get("Desc") or "").strip()
             base = original or "Unnamed setting"
             description = base
@@ -3399,6 +3458,7 @@ def normalize_imported_material_descriptions(contents):
                 name.set("Value", description)
             adjustments.append({
                 "entry": entry_number,
+                "material": " / ".join(material_path) or str(material.get("name") or ""),
                 "from": original,
                 "to": description,
             })
