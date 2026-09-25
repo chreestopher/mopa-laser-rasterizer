@@ -1,4 +1,5 @@
 import ast
+import hashlib
 import unittest
 from copy import deepcopy
 from pathlib import Path
@@ -64,10 +65,11 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
             node for node in tree.body
             if isinstance(node, ast.FunctionDef) and node.name in {
                 "effective_lightburn_settings", "material_summary",
+                "lightburn_entry_path", "lightburn_entry_ref",
                 "normalize_imported_material_descriptions",
             }
         ]
-        namespace = {"ET": ET}
+        namespace = {"ET": ET, "hashlib": hashlib}
         exec(compile(ast.Module(body=functions, type_ignores=[]), str(handler_path), "exec"), namespace)
         library = b'''<LightBurnLibrary><Material name="Steel">
             <Entry Desc="white"><CutSetting><name Value="white"/></CutSetting></Entry>
@@ -94,16 +96,73 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
             handler_path.read_text(encoding="utf-8"),
         )
 
+    def test_hierarchical_processing_library_preserves_material_categories(self):
+        handler_path = ROOT / "serverless_api" / "handler.py"
+        tree = ast.parse(handler_path.read_text(encoding="utf-8"))
+        functions = [
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name in {
+                "effective_lightburn_settings", "lightburn_entry_path", "lightburn_entry_ref",
+                "material_summary", "normalize_imported_material_descriptions",
+            }
+        ]
+        namespace = {"ET": ET, "hashlib": hashlib}
+        exec(compile(ast.Module(body=functions, type_ignores=[]), str(handler_path), "exec"), namespace)
+        library = b'''<LightBurnLibrary><Material name="100w">
+            <Entry Thickness="-1.0000" Desc="CUT"><CutSetting type="Cut"><LinkPath Value="100w/Leather/CUT"/></CutSetting></Entry>
+            <Entry Thickness="-1.0000" Desc="CUT"><CutSetting type="Cut"><LinkPath Value="100w/Carbon Fiber/CUT"/></CutSetting></Entry>
+            <Entry Thickness="-1.0000" Desc="Photo"><CutSetting type="Image"><LinkPath Value="100w/Paper/Cardstock/Photo"/></CutSetting></Entry>
+        </Material></LightBurnLibrary>'''
+
+        normalized, adjustments = namespace["normalize_imported_material_descriptions"](library)
+        summary = namespace["material_summary"](normalized)
+
+        self.assertEqual(adjustments, [])
+        self.assertEqual([entry["description"] for entry in summary["entries"]], ["CUT", "CUT", "Photo"])
+        self.assertEqual(
+            [entry["material"] for entry in summary["entries"]],
+            ["Leather", "Carbon Fiber", "Paper / Cardstock"],
+        )
+        self.assertEqual(summary["material_names"], ["100w"])
+        self.assertEqual(summary["logical_material_names"], ["Leather", "Carbon Fiber", "Paper / Cardstock"])
+        self.assertEqual(len({entry["entry_ref"] for entry in summary["entries"]}), 3)
+
+    def test_standard_thickness_path_is_not_treated_as_nested_material(self):
+        handler_path = ROOT / "serverless_api" / "handler.py"
+        tree = ast.parse(handler_path.read_text(encoding="utf-8"))
+        functions = [
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name in {
+                "effective_lightburn_settings", "lightburn_entry_path", "lightburn_entry_ref", "material_summary",
+            }
+        ]
+        namespace = {"ET": ET, "hashlib": hashlib}
+        exec(compile(ast.Module(body=functions, type_ignores=[]), str(handler_path), "exec"), namespace)
+        library = b'''<LightBurnLibrary><Material name="Steel">
+            <Entry Thickness="3.0000" Desc="Cut"><CutSetting type="Cut"><LinkPath Value="Steel/3.0000/Cut"/></CutSetting></Entry>
+        </Material></LightBurnLibrary>'''
+
+        summary = namespace["material_summary"](library)
+
+        self.assertEqual(summary["entries"][0]["material"], "Steel")
+        self.assertEqual(summary["entries"][0]["material_path"], [])
+        renamed = library.replace(b'name="Steel"', b'name="Stainless"').replace(
+            b'Value="Steel/3.0000/Cut"', b'Value="Stainless/3.0000/Cut"'
+        )
+        renamed_summary = namespace["material_summary"](renamed)
+        self.assertEqual(summary["entries"][0]["entry_ref"], renamed_summary["entries"][0]["entry_ref"])
+
     def test_material_import_retains_only_the_selected_material(self):
         handler_path = ROOT / "serverless_api" / "handler.py"
         tree = ast.parse(handler_path.read_text(encoding="utf-8"))
         functions = [
             node for node in tree.body
             if isinstance(node, ast.FunctionDef) and node.name in {
-                "effective_lightburn_settings", "material_summary", "retain_selected_material"
+                "effective_lightburn_settings", "lightburn_entry_path", "lightburn_entry_ref",
+                "material_summary", "retain_selected_material"
             }
         ]
-        namespace = {"ET": ET}
+        namespace = {"ET": ET, "hashlib": hashlib}
         exec(compile(ast.Module(body=functions, type_ignores=[]), str(handler_path), "exec"), namespace)
         library = b'<LightBurnLibrary><Material name="Steel"><Entry Desc="Hatch"><CutSetting type="Scan"/></Entry></Material><Material name="Brass"><Entry Desc="Hatch"><CutSetting type="Scan"/></Entry></Material></LightBurnLibrary>'
 

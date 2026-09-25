@@ -960,7 +960,8 @@ function populateReliefSettings() {
   reliefSettingControl.replaceChildren(new Option("Choose a setting…", ""));
   reliefPhotoSettingControl.replaceChildren(new Option("Choose a Photo setting…", ""));
   for (const entry of entries) {
-    const label = entry.description || `Setting ${Number(entry.entry_id) + 1}`;
+    const context = entry.material && entry.material !== entry.library_material ? `${entry.material} · ` : "";
+    const label = context + (entry.description || `Setting ${Number(entry.entry_id) + 1}`);
     reliefSettingControl.add(new Option(label, String(entry.entry_id)));
     reliefPhotoSettingControl.add(new Option(label, String(entry.entry_id)));
   }
@@ -970,7 +971,8 @@ function populateReliefSettings() {
   const roleEntry = role => {
     const explicitlyAssigned = Object.prototype.hasOwnProperty.call(roles, role);
     const assigned = String(roles[role] || "").trim().toLowerCase();
-    return entries.find(entry => assigned && String(entry.description || "").trim().toLowerCase() === assigned)
+    return entries.find(entry => assigned && String(entry.entry_ref || "") === String(roles[role] || "").trim())
+      || entries.find(entry => assigned && String(entry.description || "").trim().toLowerCase() === assigned)
       || (!explicitlyAssigned ? entries.find(entry => String(entry.description || "").trim().toLowerCase() === role.toLowerCase()) : null);
   };
   const cut = roleEntry("Cut");

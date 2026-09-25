@@ -1,4 +1,5 @@
 import ast
+import hashlib
 import io
 import json
 import re
@@ -48,13 +49,15 @@ def test_missing_scan_pulse_width_remains_unspecified():
     tree = ast.parse(handler_path.read_text(encoding="utf-8"))
     names = {
         "effective_lightburn_settings",
+        "lightburn_entry_path",
+        "lightburn_entry_ref",
         "material_summary",
     }
     functions = [
         node for node in tree.body
         if isinstance(node, ast.FunctionDef) and node.name in names
     ]
-    namespace = {"ET": ET}
+    namespace = {"ET": ET, "hashlib": hashlib}
     exec(compile(ast.Module(body=functions, type_ignores=[]), str(handler_path), "exec"), namespace)
     source = b'''<LightBurnLibrary><Material name="steel"><Entry Desc="dark-red"><CutSetting type="Scan"><frequency Value="110000"/></CutSetting></Entry></Material></LightBurnLibrary>'''
 
