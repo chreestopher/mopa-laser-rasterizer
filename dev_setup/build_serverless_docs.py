@@ -91,7 +91,7 @@ template_source = template_source.replace(
 template_source = template_source.replace(
     "</body>",
     "{% if slug == 'blank-palette-library' %}"
-    '<script src="/blank-palette.js?v=1" defer></script>'
+    '<script src="/blank-palette.js?v=2" defer></script>'
     "{% endif %}</body>",
     1,
 )

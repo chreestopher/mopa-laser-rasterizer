@@ -4,7 +4,7 @@ const SWATCH_NAMES = [
   "Light-Blue", "Dark-Magenta", "Medium-Gray", "Slate-Blue", "Rose",
   "Periwinkle-Blue", "Raspberry", "Sage-Green", "Peach", "Light-Pink",
   "Orchid-Pink", "Deep-Purple", "Rust-Brown", "Teal", "Bright-Mint-Green",
-  "Light-Gold", "Labels", "Fauxlographic"
+  "Light-Gold", "Labels", "Fauxlographic", "Photo", "Cut"
 ];
 
 const PLACEHOLDER_VALUES = {
@@ -40,7 +40,7 @@ function buildBlankPaletteXml(materialName) {
     entry.setAttribute("Thickness", "-1.0000");
     entry.setAttribute("Desc", `UNCONFIGURED ${swatchName}`);
     const cut = documentXml.createElement("CutSetting");
-    cut.setAttribute("type", "Scan");
+    cut.setAttribute("type", swatchName === "Photo" ? "Image" : swatchName === "Cut" ? "Cut" : "Scan");
     for (const [field, configuredValue] of Object.entries(PLACEHOLDER_VALUES)) {
       const element = documentXml.createElement(field);
       const value = field === "LinkPath"
