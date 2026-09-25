@@ -1,3 +1,4 @@
+import ast
 import unittest
 from pathlib import Path
 
@@ -20,6 +21,50 @@ class ProcessingPaletteTests(unittest.TestCase):
         self.assertIn('["Cut","Score","Photo","Fill","Shovel","Cleaning"]', client)
         self.assertIn('processingRolePicker', client)
         self.assertIn('processing_palette_role_assignments:assignments', client)
+        self.assertIn('processingMaterialNames', client)
+        self.assertIn('[library.library_id]:{materials}', client)
+        self.assertIn('Material:', client)
+
+    def test_processing_role_preferences_accept_material_scopes_and_legacy_values(self):
+        handler_path = ROOT / "serverless_api" / "handler.py"
+        tree = ast.parse(handler_path.read_text(encoding="utf-8"))
+        function = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "clean_account_preferences"
+        )
+        namespace = {
+            "PROCESSING_PALETTE_ROLES": {"Cut", "Score", "Photo", "Fill", "Shovel", "Cleaning"},
+            "PALETTE_NAMES": {},
+            "LAST_USED_FORM_FIELDS": (),
+            "clean_last_used_form": lambda _name, _value: None,
+        }
+        exec(compile(ast.Module(body=[function], type_ignores=[]), str(handler_path), "exec"), namespace)
+
+        nested = namespace["clean_account_preferences"]({
+            "processing_palette_role_assignments": {
+                "co2": {
+                    "materials": {
+                        "Acrylic": {"Cut": "setting:cut-acrylic", "Photo": "setting:photo-acrylic"},
+                        "Hard Wood": {"Cut": "setting:cut-wood", "Unknown": "discard-me"},
+                    }
+                }
+            }
+        })
+        self.assertEqual(
+            nested["processing_palette_role_assignments"]["co2"]["materials"],
+            {
+                "Acrylic": {"Cut": "setting:cut-acrylic", "Photo": "setting:photo-acrylic"},
+                "Hard Wood": {"Cut": "setting:cut-wood"},
+            },
+        )
+
+        legacy = namespace["clean_account_preferences"]({
+            "processing_palette_role_assignments": {"fiber": {"Cut": "Cut", "Photo": "Photo"}}
+        })
+        self.assertEqual(
+            legacy["processing_palette_role_assignments"]["fiber"],
+            {"Cut": "Cut", "Photo": "Photo"},
+        )
 
     def test_processing_palettes_are_scoped_to_depthmap_tools(self):
         rasterizer = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
@@ -29,6 +74,9 @@ class ProcessingPaletteTests(unittest.TestCase):
         self.assertIn("item.library_intent!=='processing_palette'", rasterizer)
         self.assertIn('item.library_intent!=="processing_palette"', color_lab)
         self.assertIn('library.library_intent === "processing_palette"', depthmap)
+        self.assertIn('id="depth_relief_material"', (ROOT / "templates" / "depthmap_generator.html").read_text(encoding="utf-8"))
+        self.assertIn('paletteRoles.materials[selectedReliefMaterial()]', depthmap)
+        self.assertIn('reliefMaterialControl.addEventListener("change", populateReliefSettings)', depthmap)
         self.assertIn('roleEntry("Cut")', depthmap)
         self.assertIn('roleEntry("Photo")', depthmap)
         self.assertIn('selected Cut setting must use LightBurn Line mode', depthmap)

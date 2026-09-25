@@ -77,6 +77,7 @@ const reliefMinimumIslandControl = document.querySelector("#depth_relief_minimum
 const reliefWorkbedWidthControl = document.querySelector("#depth_relief_workbed_width");
 const reliefWorkbedHeightControl = document.querySelector("#depth_relief_workbed_height");
 const reliefPaletteControl = document.querySelector("#depth_relief_palette");
+const reliefMaterialControl = document.querySelector("#depth_relief_material");
 const reliefSettingControl = document.querySelector("#depth_relief_setting");
 const reliefSettingStatus = document.querySelector("#depth_relief_setting_status");
 const reliefSurfaceEngravingControl = document.querySelector("#depth_relief_surface_engraving");
@@ -934,9 +935,25 @@ function selectedReliefLibrary() {
   return reliefMaterialLibraries.find(library => String(library.library_id) === reliefPaletteControl.value);
 }
 
+function reliefMaterialNames(library) {
+  const entries = library?.summary?.entries || [];
+  const names = library?.summary?.logical_material_names || [];
+  return [...new Set([...names, ...entries.map(entry => entry.material)].map(value => String(value || "").trim()).filter(Boolean))];
+}
+
+function selectedReliefMaterial() {
+  return reliefMaterialControl.value;
+}
+
+function selectedReliefEntries() {
+  const library = selectedReliefLibrary();
+  const material = selectedReliefMaterial();
+  return (library?.summary?.entries || []).filter(entry => String(entry.material || "") === material);
+}
+
 function selectedReliefSetting(control) {
   const library = selectedReliefLibrary();
-  const entry = (library?.summary?.entries || []).find(item => String(item.entry_id) === control.value);
+  const entry = selectedReliefEntries().find(item => String(item.entry_id) === control.value);
   if (!entry) return null;
   return {
     description:entry.description || "Selected setting",
@@ -944,6 +961,16 @@ function selectedReliefSetting(control) {
     type:entry.type || "Cut",
     settings:entry.settings || {},
   };
+}
+
+function populateReliefMaterials() {
+  const library = selectedReliefLibrary();
+  const names = reliefMaterialNames(library);
+  reliefMaterialControl.replaceChildren(new Option("Choose a material…", ""));
+  for (const name of names) reliefMaterialControl.add(new Option(name, name));
+  reliefMaterialControl.disabled = !names.length;
+  reliefMaterialControl.value = names[0] || "";
+  populateReliefSettings();
 }
 
 function selectedReliefCutSetting() {
@@ -956,24 +983,30 @@ function selectedReliefPhotoSetting() {
 
 function populateReliefSettings() {
   const library = selectedReliefLibrary();
-  const entries = library?.summary?.entries || [];
+  const entries = selectedReliefEntries();
   reliefSettingControl.replaceChildren(new Option("Choose a setting…", ""));
   reliefPhotoSettingControl.replaceChildren(new Option("Choose a Photo setting…", ""));
   for (const entry of entries) {
-    const context = entry.material && entry.material !== entry.library_material ? `${entry.material} · ` : "";
-    const label = context + (entry.description || `Setting ${Number(entry.entry_id) + 1}`);
+    const label = entry.description || `Setting ${Number(entry.entry_id) + 1}`;
     reliefSettingControl.add(new Option(label, String(entry.entry_id)));
     reliefPhotoSettingControl.add(new Option(label, String(entry.entry_id)));
   }
   reliefSettingControl.disabled = !entries.length;
   reliefPhotoSettingControl.disabled = !entries.length;
-  const roles = (window.serverlessDepthResources?.preferences?.processing_palette_role_assignments || {})[library?.library_id] || {};
+  const paletteRoles = (window.serverlessDepthResources?.preferences?.processing_palette_role_assignments || {})[library?.library_id] || {};
+  const materialScopedRoles = paletteRoles.materials && typeof paletteRoles.materials === "object";
+  const materialRoles = materialScopedRoles
+    ? (paletteRoles.materials[selectedReliefMaterial()] || {})
+    : paletteRoles;
   const roleEntry = role => {
-    const explicitlyAssigned = Object.prototype.hasOwnProperty.call(roles, role);
-    const assigned = String(roles[role] || "").trim().toLowerCase();
-    return entries.find(entry => assigned && String(entry.entry_ref || "") === String(roles[role] || "").trim())
-      || entries.find(entry => assigned && String(entry.description || "").trim().toLowerCase() === assigned)
-      || (!explicitlyAssigned ? entries.find(entry => String(entry.description || "").trim().toLowerCase() === role.toLowerCase()) : null);
+    const explicitlyAssigned = Object.prototype.hasOwnProperty.call(materialRoles, role);
+    const assigned = String(materialRoles[role] || "").trim().toLowerCase();
+    const assignedEntry = entries.find(entry => assigned && String(entry.entry_ref || "") === String(materialRoles[role] || "").trim())
+      || entries.find(entry => assigned && String(entry.description || "").trim().toLowerCase() === assigned);
+    if (assignedEntry) return assignedEntry;
+    return !explicitlyAssigned || (!materialScopedRoles && assigned)
+      ? entries.find(entry => String(entry.description || "").trim().toLowerCase() === role.toLowerCase())
+      : null;
   };
   const cut = roleEntry("Cut");
   const photo = roleEntry("Photo");
@@ -994,7 +1027,7 @@ function updateReliefSettingStatus() {
     return;
   }
   reliefSettingStatus.textContent = reliefMaterialLibraries.length
-    ? "Choose a Processing Palette and Cut setting to use for every Layered Relief cutting layer."
+    ? "Choose a Processing Palette, Material, and Cut setting to use for every Layered Relief cutting layer."
     : "No saved Processing Palettes are available. Import one in the Swatch Palette Vault before exporting a Layered Relief project.";
   updateReliefPhotoControls();
 }
@@ -1029,7 +1062,7 @@ function loadReliefCutSettings() {
   }
   reliefPaletteControl.disabled = !reliefMaterialLibraries.length;
   reliefPaletteControl.value = reliefMaterialLibraries.length ? String(reliefMaterialLibraries[0].library_id) : "";
-  populateReliefSettings();
+  populateReliefMaterials();
 }
 
 function paintReliefCutPaths(context, mask, width, height, options) {
@@ -1584,7 +1617,8 @@ for (const control of [reliefLayerCountControl, reliefSpacingControl, reliefSmoo
 for (const control of [reliefConstructionControl, reliefPixelSizeControl, reliefMaterialThicknessControl, reliefMinimumIslandControl, reliefWorkbedWidthControl, reliefWorkbedHeightControl, reliefRegistrationControl, reliefRegistrationDiameterControl, reliefRegistrationInsetControl]) control.addEventListener("input", updateReliefControls);
 reliefResetThresholdsButton.addEventListener("click", resetReliefThresholds);
 reliefPreviewLayerControl.addEventListener("input", scheduleReliefPreview);
-reliefPaletteControl.addEventListener("change", populateReliefSettings);
+reliefPaletteControl.addEventListener("change", populateReliefMaterials);
+reliefMaterialControl.addEventListener("change", populateReliefSettings);
 reliefSettingControl.addEventListener("change", updateReliefSettingStatus);
 reliefSurfaceEngravingControl.addEventListener("change", () => {
   updateReliefPhotoControls();
