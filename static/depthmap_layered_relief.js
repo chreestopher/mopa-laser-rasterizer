@@ -352,8 +352,10 @@ function reliefGeometry(layer, width, height, options, cutIndex, firstGeometryId
   let geometryId = firstGeometryId;
   const shapes = contours.map(points => {
     const id = geometryId++;
-    const vertices = points.slice(0, -1).map(([x, y]) => `V${formatNumber(offsetX + x * pixelSize)} ${formatNumber(offsetY + y * pixelSize)}c0x1c1x1`).join("");
-    return `    <Shape Type="Path" CutIndex="${cutIndex}" VertID="${id}" PrimID="${id}">\n      <XForm>1 0 0 1 0 0</XForm>\n      <VertList>${vertices}</VertList>\n      <PrimList>LineClosed</PrimList>\n    </Shape>`;
+    const vertices = points.slice(0, -1)
+      .map(([x, y]) => `        V${formatNumber(offsetX + x * pixelSize)} ${formatNumber(offsetY + y * pixelSize)}`)
+      .join("\n");
+    return `    <Shape Type="Path" ShapeID="${id}" CutIndex="${cutIndex}">\n      <XForm>1 0 0 1 0 0</XForm>\n      <VertList>\n${vertices}\n      </VertList>\n      <PrimList>LineClosed</PrimList>\n    </Shape>`;
   });
   if (options.registrationHoles) {
     const diameter = clamp(Number(options.registrationDiameterMm) || 3, 0.1, Math.min(artworkWidth, artworkHeight));
@@ -361,7 +363,8 @@ function reliefGeometry(layer, width, height, options, cutIndex, firstGeometryId
     const inset = clamp(Number(options.registrationInsetMm) || 5, radius, Math.max(radius, Math.min(artworkWidth, artworkHeight) / 2));
     const positions = [[inset, inset], [artworkWidth - inset, inset], [artworkWidth - inset, artworkHeight - inset], [inset, artworkHeight - inset]];
     for (const [x, y] of positions) {
-      shapes.push(`    <Shape Type="Ellipse" CutIndex="${cutIndex}" Rx="${formatNumber(radius)}" Ry="${formatNumber(radius)}">\n      <XForm>1 0 0 1 ${formatNumber(offsetX + x)} ${formatNumber(offsetY + y)}</XForm>\n    </Shape>`);
+      const id = geometryId++;
+      shapes.push(`    <Shape Type="Ellipse" ShapeID="${id}" CutIndex="${cutIndex}" Rx="${formatNumber(radius)}" Ry="${formatNumber(radius)}">\n      <XForm>1 0 0 1 ${formatNumber(offsetX + x)} ${formatNumber(offsetY + y)}</XForm>\n    </Shape>`);
     }
   }
   return {shapes, nextGeometryId:geometryId};
