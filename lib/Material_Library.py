@@ -12,7 +12,7 @@ import tempfile
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from PIL import Image
+from PIL import Image, ImageColor, ImageDraw
 
 # Support deployment with this file under lib/ and modules either beside it
 # or one project directory above it.
@@ -66,6 +66,62 @@ def high_resolution_panel_plan(panel_tiling, pixel_mm):
     }
 
 
+def _alignment_offset(available, alignment):
+    if alignment == "start":
+        return 0
+    if alignment == "end":
+        return available
+    return round(available / 2)
+
+
+def render_panel_layout_image(source, width_px, height_px, panel_tiling, pixel_mm):
+    """Fit source artwork into the assembled panel canvas and draw optional borders."""
+    source = source.convert("RGBA")
+    fit_mode = panel_tiling.get("fit_mode", "stretch")
+    padding_hex = panel_tiling.get("padding_swatch_hex", "")
+    padding_mode = panel_tiling.get("padding_mode", "unengraved")
+    background = ImageColor.getrgb(padding_hex) + (255,) if padding_mode == "swatch" else (0, 0, 0, 0)
+    canvas = Image.new("RGBA", (width_px, height_px), background)
+    if fit_mode == "stretch":
+        resized = source.resize((width_px, height_px), Image.Resampling.LANCZOS)
+        canvas.alpha_composite(resized)
+    else:
+        scale_x, scale_y = width_px / source.width, height_px / source.height
+        scale = min(scale_x, scale_y) if fit_mode == "fit" else max(scale_x, scale_y)
+        resized_width = max(1, round(source.width * scale))
+        resized_height = max(1, round(source.height * scale))
+        resized = source.resize((resized_width, resized_height), Image.Resampling.LANCZOS)
+        available_x, available_y = width_px - resized_width, height_px - resized_height
+        offset_x = _alignment_offset(available_x, panel_tiling.get("align_x", "center"))
+        offset_y = _alignment_offset(available_y, panel_tiling.get("align_y", "center"))
+        canvas.paste(resized, (offset_x, offset_y), resized)
+
+    border_mode = panel_tiling.get("border_mode", "none")
+    border_hex = panel_tiling.get("border_swatch_hex", "")
+    if border_mode != "none" and border_hex:
+        color = ImageColor.getrgb(border_hex) + (255,)
+        width = max(1, round(panel_tiling.get("border_width_mm", 0) / pixel_mm))
+        draw = ImageDraw.Draw(canvas)
+        if border_mode == "assembly":
+            draw.rectangle((0, 0, width_px - 1, height_px - 1), outline=color, width=width)
+        else:
+            assembled_width_mm, assembled_height_mm = vector_processing.panel_tiling_dimensions(panel_tiling)
+            for row in range(panel_tiling["rows"]):
+                for column in range(panel_tiling["columns"]):
+                    left_mm = column * (panel_tiling["tile_width_mm"] + panel_tiling["gap_x_mm"])
+                    top_mm = row * (panel_tiling["tile_height_mm"] + panel_tiling["gap_y_mm"])
+                    left = round(left_mm / assembled_width_mm * width_px)
+                    top = round(top_mm / assembled_height_mm * height_px)
+                    right = round((left_mm + panel_tiling["tile_width_mm"]) / assembled_width_mm * width_px) - 1
+                    bottom = round((top_mm + panel_tiling["tile_height_mm"]) / assembled_height_mm * height_px) - 1
+                    draw.rectangle((left, top, right, bottom), outline=color, width=width)
+    return canvas
+
+
+def panel_layout_uses_transparency(panel_tiling):
+    return panel_tiling.get("fit_mode") == "fit" and panel_tiling.get("padding_mode") == "unengraved"
+
+
 def _extract_single_panel_archive(archive_path, destination, stem):
     with zipfile.ZipFile(archive_path) as archive:
         names = set(archive.namelist())
@@ -108,7 +164,13 @@ def run_high_resolution_panel_job(argv, panel_tiling, pixel_mm, plan):
     jobs = []
     try:
         with Image.open(input_file) as opened:
-            source = opened.convert("RGBA")
+            source = render_panel_layout_image(
+                opened,
+                plan["assembled_width_px"],
+                plan["assembled_height_px"],
+                panel_tiling,
+                pixel_mm,
+            )
         assembled_width_mm, assembled_height_mm = vector_processing.panel_tiling_dimensions(panel_tiling)
         for sequence, (row, column) in enumerate(vector_processing._ordered_panel_tiles(panel_tiling), 1):
             source_x_mm = column * (panel_tiling["tile_width_mm"] + panel_tiling["gap_x_mm"])
@@ -135,10 +197,21 @@ def run_high_resolution_panel_job(argv, panel_tiling, pixel_mm, plan):
             child[3] = str(plan["tile_width_px"])
             child[4] = str(plan["tile_height_px"])
             child_panel = dict(panel_tiling)
-            child_panel.update({"columns": 1, "rows": 1, "gap_x_mm": 0, "gap_y_mm": 0})
+            child_panel.update({
+                "columns": 1,
+                "rows": 1,
+                "gap_x_mm": 0,
+                "gap_y_mm": 0,
+                "fit_mode": "stretch",
+                "padding_mode": "unengraved",
+                "padding_swatch_hex": "",
+                "border_mode": "none",
+                "border_swatch_hex": "",
+                "border_width_mm": 0,
+            })
             while len(child) <= 19:
                 child.append("")
-            child[17] = "transparency" if child[17] in {"oval", "circle", "transparency"} else child[17]
+            child[17] = "transparency" if panel_layout_uses_transparency(panel_tiling) or child[17] in {"oval", "circle", "transparency"} else child[17]
             child[19] = json.dumps(child_panel, separators=(",", ":"))
             jobs.append((sequence, row, column, stem, source_x_mm, source_y_mm, child))
         del source
@@ -374,6 +447,22 @@ def main(argv=None):
             # already emitted the useful material list, so avoid adding a Python
             # traceback to the task console.
             user_input_error(error)
+    if panel_tiling.get("enabled"):
+        selected_panel_colors = {
+            str(color).upper() for color in target_colors
+        }
+        for role, required in (
+            ("extra-area", panel_tiling.get("padding_mode") == "swatch"),
+            ("border", panel_tiling.get("border_mode") != "none"),
+        ):
+            color = panel_tiling.get(
+                "padding_swatch_hex" if role == "extra-area" else "border_swatch_hex", ""
+            )
+            if required and color not in selected_panel_colors:
+                user_input_error(
+                    f"The selected Panel Tiling {role} swatch is not enabled in this job. "
+                    "Choose an enabled swatch or turn that layout treatment off."
+                )
     if required_setting and not svg_only:
         setting_layer_id = filter_setting_layers[required_setting.casefold()]
         setting_parameters["_setting_layer_id"] = setting_layer_id
@@ -437,60 +526,97 @@ def main(argv=None):
         run_high_resolution_panel_job(argv, panel_tiling, float(square_mm), high_resolution_panel)
         return
 
+    temporary_panel_source = ""
+    processing_crop_shape = crop_shape
+    if panel_tiling.get("enabled") and (
+        panel_tiling.get("fit_mode") != "stretch"
+        or panel_tiling.get("border_mode") != "none"
+    ):
+        try:
+            with Image.open(input_file) as source:
+                composed = render_panel_layout_image(
+                    source,
+                    int(new_width),
+                    int(new_height),
+                    panel_tiling,
+                    float(square_mm),
+                )
+            descriptor, temporary_panel_source = tempfile.mkstemp(
+                prefix="panel-layout-", suffix=".png", dir=os.path.dirname(output_file) or None
+            )
+            os.close(descriptor)
+            composed.save(temporary_panel_source, format="PNG")
+            input_file = temporary_panel_source
+            if panel_layout_uses_transparency(panel_tiling):
+                processing_crop_shape = "transparency"
+        except Exception as error:
+            if temporary_panel_source and os.path.exists(temporary_panel_source):
+                os.remove(temporary_panel_source)
+            user_input_error(f"Panel Tiling could not prepare the aspect-ratio layout: {error}")
+
     if validate_only:
         # Exercise the same image decoding, dimension handling, palette setup,
         # Material Library parsing, and filter-setting validation as a real run,
         # but stop before expensive geometry construction. Guest quota is claimed
         # only after this exits successfully.
-        vector_processing.prepare_raster_image(
-            raster_image_path=input_file,
-            new_height=new_height,
-            new_width=new_width,
-            quantize_colors=vector_settings["quantize_colors"],
-            target_colors=target_colors,
-            color_matching=color_matching,
-        )
+        try:
+            vector_processing.prepare_raster_image(
+                raster_image_path=input_file,
+                new_height=new_height,
+                new_width=new_width,
+                quantize_colors=vector_settings["quantize_colors"],
+                target_colors=target_colors,
+                color_matching=color_matching,
+            )
+        finally:
+            if temporary_panel_source and os.path.exists(temporary_panel_source):
+                os.remove(temporary_panel_source)
         float(square_mm)
         print("Guest input validation complete; processing may begin.", flush=True)
         return
 
-    vector_processing.raster_to_puzzle_and_lightburn(
-        raster_image_path=input_file,
-        output_svg_path=f"{output_file}.vector.svg",
-        new_height=new_height,
-        new_width=new_width,
-        lb_project_instance=lb,
-        TARGET_COLORS=target_colors,
-        scale_factor=float(square_mm),
-        ignore_background_hex="#ffffff",
-        quantize_colors=vector_settings["quantize_colors"],
-        min_island_area=vector_settings["min_island_area"],
-        simplification_factor=vector_settings["simplification_factor"],
-        smoothing_radius=vector_settings["smoothing_radius"],
-        image_preset=image_preset,
-        abstract_filter=abstract_filter,
-        filter_parameters=filter_parameters,
-        color_matching=color_matching,
-        job_settings={
-            "image_preset": image_preset,
-            "preset_settings": vector_settings,
-            "material_library_path": material_library_file,
-            "selected_material": material_name,
-            "palette_names": {metadata[2]: color_hex for color_hex, metadata in target_colors.items()},
-            "requested_limit_colors": limit_colors or "all",
-            "effective_limit_colors": limit_list,
-            "material_library_layers": material_layer_report,
-            "artwork_crop_shape": crop_shape or "none",
-            "white_is": white_is,
-            "panel_tiling": panel_tiling,
-        },
-        export_lightburn=not svg_only,
-        geometry_style=geometry_style,
-        geometry_style_parameters=geometry_style_parameters,
-        crop_shape=crop_shape,
-        white_is=white_is,
-        panel_tiling=panel_tiling,
-    )
+    crop_shape = processing_crop_shape
+    try:
+        vector_processing.raster_to_puzzle_and_lightburn(
+            raster_image_path=input_file,
+            output_svg_path=f"{output_file}.vector.svg",
+            new_height=new_height,
+            new_width=new_width,
+            lb_project_instance=lb,
+            TARGET_COLORS=target_colors,
+            scale_factor=float(square_mm),
+            ignore_background_hex="#ffffff",
+            quantize_colors=vector_settings["quantize_colors"],
+            min_island_area=vector_settings["min_island_area"],
+            simplification_factor=vector_settings["simplification_factor"],
+            smoothing_radius=vector_settings["smoothing_radius"],
+            image_preset=image_preset,
+            abstract_filter=abstract_filter,
+            filter_parameters=filter_parameters,
+            color_matching=color_matching,
+            job_settings={
+                "image_preset": image_preset,
+                "preset_settings": vector_settings,
+                "material_library_path": material_library_file,
+                "selected_material": material_name,
+                "palette_names": {metadata[2]: color_hex for color_hex, metadata in target_colors.items()},
+                "requested_limit_colors": limit_colors or "all",
+                "effective_limit_colors": limit_list,
+                "material_library_layers": material_layer_report,
+                "artwork_crop_shape": crop_shape or "none",
+                "white_is": white_is,
+                "panel_tiling": panel_tiling,
+            },
+            export_lightburn=not svg_only,
+            geometry_style=geometry_style,
+            geometry_style_parameters=geometry_style_parameters,
+            crop_shape=crop_shape,
+            white_is=white_is,
+            panel_tiling=panel_tiling,
+        )
+    finally:
+        if temporary_panel_source and os.path.exists(temporary_panel_source):
+            os.remove(temporary_panel_source)
 
 
 if __name__ == "__main__":

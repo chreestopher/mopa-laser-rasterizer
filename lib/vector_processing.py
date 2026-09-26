@@ -104,6 +104,37 @@ def normalize_panel_tiling(value):
     order = str(value.get("order") or "row_major").strip().lower()
     if order not in PANEL_TILE_ORDERS:
         raise ValueError("Choose Row major, Column major, or Serpentine for Panel Tiling order.")
+    fit_mode = str(value.get("fit_mode") or "stretch").strip().lower()
+    if fit_mode not in {"stretch", "fit", "fill"}:
+        raise ValueError("Choose Stretch, Fit, or Fill for Panel Tiling image fitting.")
+    align_x = str(value.get("align_x") or "center").strip().lower()
+    align_y = str(value.get("align_y") or "center").strip().lower()
+    if align_x not in {"start", "center", "end"} or align_y not in {"start", "center", "end"}:
+        raise ValueError("Choose a valid horizontal and vertical Panel Tiling alignment.")
+    padding_mode = str(value.get("padding_mode") or "unengraved").strip().lower()
+    if padding_mode not in {"unengraved", "swatch"}:
+        raise ValueError("Choose Unengraved or Selected swatch for Panel Tiling extra space.")
+    if fit_mode != "fit":
+        padding_mode = "unengraved"
+    border_mode = str(value.get("border_mode") or "none").strip().lower()
+    if border_mode not in {"none", "assembly", "panel"}:
+        raise ValueError("Choose no border, an assembled-design border, or per-panel borders.")
+    border_width_mm = number("border_width_mm", 0, 100, 0)
+    if border_mode != "none" and (border_width_mm <= 0 or border_width_mm * 2 >= min(tile_width_mm, tile_height_mm)):
+        raise ValueError("Panel Tiling border width must be positive and leave visible space inside every tile.")
+    def color_hex(name):
+        result = str(value.get(name) or "").strip().upper()
+        if result and (len(result) != 7 or result[0] != "#" or any(character not in "0123456789ABCDEF" for character in result[1:])):
+            raise ValueError(f"Panel Tiling {name.replace('_', ' ')} must be a six-digit color.")
+        return result
+    padding_swatch_hex = color_hex("padding_swatch_hex")
+    border_swatch_hex = color_hex("border_swatch_hex")
+    if fit_mode != "fit":
+        padding_swatch_hex = ""
+    if padding_mode == "swatch" and not padding_swatch_hex:
+        raise ValueError("Choose an enabled swatch for Panel Tiling extra space.")
+    if border_mode != "none" and not border_swatch_hex:
+        raise ValueError("Choose an enabled swatch for the Panel Tiling border.")
     return {
         "enabled": True,
         "tile_width_mm": tile_width_mm,
@@ -117,6 +148,14 @@ def normalize_panel_tiling(value):
         "workbed_height_mm": workbed_height_mm,
         "order": order,
         "include_tile_ids": enabled_value(value.get("include_tile_ids"), default=True),
+        "fit_mode": fit_mode,
+        "align_x": align_x,
+        "align_y": align_y,
+        "padding_mode": padding_mode,
+        "padding_swatch_hex": padding_swatch_hex,
+        "border_mode": border_mode,
+        "border_swatch_hex": border_swatch_hex,
+        "border_width_mm": border_width_mm,
     }
 
 

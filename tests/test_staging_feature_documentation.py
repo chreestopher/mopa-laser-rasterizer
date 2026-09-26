@@ -44,6 +44,11 @@ def test_panel_tiling_guide_covers_layout_outputs_and_workbed_center():
         "panel-manifest.json",
         "panel-assembly.svg",
         "no more than 100 tiles",
+        "Stretch to layout",
+        "Fit whole image",
+        "Fill layout",
+        "live assembled-layout preview",
+        "separate border around every physical panel",
     ):
         assert expected in text
 
