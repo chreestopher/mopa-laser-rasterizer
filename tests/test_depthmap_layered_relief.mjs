@@ -4,6 +4,7 @@ import {
   createReliefLayers,
   createReliefLightBurn,
   prepareReliefDepth,
+  reliefLayerPlan,
   reliefVisibleMasks,
   reliefThresholds,
   traceMaskContours,
@@ -22,6 +23,37 @@ const photoSetting = {
   type:"Image",
   settings:{minPower:"8", maxPower:"20", speed:"1200", interval:"0.025", ditherMode:"stucki", LinkPath:"Stainless steel/Photo"},
 };
+
+test("total relief depth and stock thickness derive physical and LightBurn layer counts", () => {
+  const plan = reliefLayerPlan(10, 3, false);
+  assert.equal(plan.layerCount, 3);
+  assert.equal(plan.actualDepthMm, 9);
+  assert.equal(plan.lightBurnLayerCount, 3);
+  assert.equal(plan.valid, true);
+
+  const engraved = reliefLayerPlan(21, 3, true);
+  assert.equal(engraved.layerCount, 7);
+  assert.equal(engraved.lightBurnLayerCount, 14);
+  assert.equal(engraved.valid, true);
+});
+
+test("derived layer plans fail instead of silently exceeding LightBurn's layer budget", () => {
+  const contourOnly = reliefLayerPlan(93, 3, false);
+  assert.equal(contourOnly.layerCount, 31);
+  assert.equal(contourOnly.lightBurnLayerCount, 31);
+  assert.equal(contourOnly.valid, false);
+  assert.match(contourOnly.message, /LightBurn supports 30/);
+
+  const engraved = reliefLayerPlan(48, 3, true);
+  assert.equal(engraved.layerCount, 16);
+  assert.equal(engraved.lightBurnLayerCount, 32);
+  assert.equal(engraved.valid, false);
+  assert.match(engraved.message, /disable surface engraving/);
+
+  const tooShallow = reliefLayerPlan(3, 3, false);
+  assert.equal(tooShallow.valid, false);
+  assert.match(tooShallow.message, /at least 2/);
+});
 
 test("linear thresholds and cumulative layers progress from rear to front", () => {
   const depth = Float32Array.of(0, .25, .5, .75, 1);
@@ -203,4 +235,17 @@ test("surface engraving requires an Image setting and one bitmap per sheet", () 
     photoSetting,
     photoImages:[{width:2, height:1, data:"cG5n"}],
   }), /Every Layered Relief sheet needs a matching visible-surface bitmap/);
+});
+
+test("LightBurn export independently rejects projects over the 30-layer limit", () => {
+  const depth = Float32Array.from({length:31}, (_, index) => index / 30);
+  const relief = createReliefLayers(depth, 31, 1, {layers:30});
+  const photoImages = relief.layers.map((_, index) => ({width:31, height:1, data:`cG5nLWRhdGEt${index}`}));
+  assert.throws(() => createReliefLightBurn(relief, {
+    pixelSizeMm:1,
+    cutSetting:labelsSetting,
+    surfaceEngraving:true,
+    photoSetting,
+    photoImages,
+  }), /requires 60 LightBurn layers/);
 });

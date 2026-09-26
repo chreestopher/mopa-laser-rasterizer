@@ -1,6 +1,6 @@
 import { createKrasnowParallaxPixels } from "./depthmap_parallax.js";
 import { createKrasnowParallaxSvg, parallaxCellIsEngraved } from "./depthmap_parallax_svg.js";
-import { createReliefLayers, createReliefLightBurn, reliefVisibleMasks, traceMaskContours } from "./depthmap_layered_relief.js?v=4";
+import { createReliefLayers, createReliefLightBurn, reliefLayerPlan, reliefVisibleMasks, traceMaskContours } from "./depthmap_layered_relief.js?v=5";
 
 const MODEL_ID = "onnx-community/depth-anything-v2-small";
 const TRANSFORMERS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2";
@@ -56,7 +56,10 @@ const parallaxSvgButton = document.querySelector("#depth_export_parallax_svg");
 const parallaxPreviewCanvas = document.querySelector("#depth_parallax_preview_canvas");
 const parallaxMaskCanvas = document.querySelector("#depth_parallax_mask_canvas");
 const parallaxPreviewSummary = document.querySelector("#depth_parallax_preview_summary");
-const reliefLayerCountControl = document.querySelector("#depth_relief_layers");
+const reliefTotalDepthControl = document.querySelector("#depth_relief_total_depth");
+const reliefLayerCountOutput = document.querySelector("#depth_relief_layers");
+const reliefLightBurnLayerOutput = document.querySelector("#depth_relief_lightburn_layers");
+const reliefDepthStatus = document.querySelector("#depth_relief_depth_status");
 const reliefConstructionControl = document.querySelector("#depth_relief_construction");
 const reliefSpacingControl = document.querySelector("#depth_relief_spacing");
 const reliefSmoothingControl = document.querySelector("#depth_relief_smoothing");
@@ -900,9 +903,9 @@ function updateParallaxControls() {
 }
 
 function reliefOptions(backgroundMask = outputBackgroundMask) {
-  const maximumLayers = reliefSurfaceEngravingControl.checked ? 15 : 30;
+  const plan = currentReliefLayerPlan();
   return {
-    layers:Math.min(maximumLayers, Math.max(2, Math.round(Number(reliefLayerCountControl.value) || 7))),
+    layers:plan.layerCount,
     inverted:invertControl.checked,
     spacing:reliefSpacingControl.value,
     smoothing:Math.min(4, Math.max(0, Math.round(Number(reliefSmoothingControl.value) || 0))),
@@ -914,6 +917,24 @@ function reliefOptions(backgroundMask = outputBackgroundMask) {
     minimumIslandArea:Math.max(0, Math.round(Number(reliefMinimumIslandControl.value) || 0)),
     backgroundMask:reliefExcludeBackgroundControl.checked ? backgroundMask : null,
   };
+}
+
+function currentReliefLayerPlan() {
+  return reliefLayerPlan(
+    reliefTotalDepthControl.value,
+    reliefMaterialThicknessControl.value,
+    reliefSurfaceEngravingControl.checked,
+  );
+}
+
+function renderReliefLayerPlan() {
+  const plan = currentReliefLayerPlan();
+  reliefLayerCountOutput.value = String(plan.layerCount);
+  reliefLightBurnLayerOutput.value = `${plan.lightBurnLayerCount} of 30`;
+  reliefDepthStatus.textContent = plan.message;
+  reliefDepthStatus.classList.toggle("error", !plan.valid);
+  reliefExportButton.disabled = !plan.valid;
+  return plan;
 }
 
 function reliefExportOptions() {
@@ -1034,9 +1055,6 @@ function updateReliefSettingStatus() {
 
 function updateReliefPhotoControls() {
   const enabled = reliefSurfaceEngravingControl.checked;
-  const maximumLayers = enabled ? 15 : 30;
-  reliefLayerCountControl.max = String(maximumLayers);
-  if (Number(reliefLayerCountControl.value) > maximumLayers) reliefLayerCountControl.value = String(maximumLayers);
   reliefPhotoControls.hidden = !enabled;
   if (!enabled) {
     reliefPhotoSettingStatus.textContent = "Surface photo engraving is off. The project will contain cutting contours only.";
@@ -1243,9 +1261,17 @@ function renderReliefThresholdControls(relief, backgroundMask) {
 function drawReliefPreview() {
   reliefPreviewTimer = null;
   if (!outputDepth || !outputWidth || !outputHeight) return;
+  const plan = renderReliefLayerPlan();
+  if (!plan.valid) {
+    reliefLayerCanvas.width = 0;
+    reliefLayerCanvas.height = 0;
+    reliefCompositeCanvas.width = 0;
+    reliefCompositeCanvas.height = 0;
+    reliefSummary.textContent = plan.message;
+    return;
+  }
   const preview = previewDepthMap();
   const options = reliefOptions(preview.backgroundMask);
-  reliefLayerCountControl.value = options.layers;
   const relief = createReliefLayers(preview.depth, preview.width, preview.height, options);
   const actualLayers = relief.layers.length;
   reliefPreviewLayerControl.max = String(actualLayers);
@@ -1272,10 +1298,8 @@ function scheduleReliefPreview() {
 }
 
 function updateReliefControls() {
-  const maximumLayers = reliefSurfaceEngravingControl.checked ? 15 : 30;
-  const layers = Math.min(maximumLayers, Math.max(2, Math.round(Number(reliefLayerCountControl.value) || 7)));
-  reliefLayerCountControl.value = layers;
-  reliefPreviewLayerControl.max = String(layers);
+  const plan = renderReliefLayerPlan();
+  reliefPreviewLayerControl.max = String(Math.max(1, plan.layerCount));
   reliefRegistrationControls.hidden = !reliefRegistrationControl.checked;
   reliefNaturalControls.hidden = reliefSpacingControl.value !== "natural";
   const smoothing = Math.min(4, Math.max(0, Math.round(Number(reliefSmoothingControl.value) || 0)));
@@ -1334,6 +1358,8 @@ async function exportLayeredRelief() {
   if (!outputDepth) return;
   reliefExportButton.disabled = true;
   try {
+    const plan = currentReliefLayerPlan();
+    if (!plan.valid) throw new Error(plan.message);
     if (!selectedReliefCutSetting()) {
       throw new Error("Choose a saved Processing Palette and Cut setting before downloading the Layered Relief project.");
     }
@@ -1346,9 +1372,9 @@ async function exportLayeredRelief() {
     if (reliefSurfaceEngravingControl.checked && String(selectedReliefPhotoSetting().type).toLowerCase() !== "image") {
       throw new Error("The selected Photo setting must use LightBurn Image mode. Configure its grayscale or dither mode in LightBurn, import the palette again, and retry.");
     }
-    const layerCount = reliefOptions().layers;
+    const layerCount = plan.layerCount;
     if (outputWidth * outputHeight * layerCount > 40000000) {
-      throw new Error(`This ${outputWidth.toLocaleString()} × ${outputHeight.toLocaleString()} depthmap with ${layerCount} layers is too large to vectorize safely in the browser. Reduce Final Canvas Size or the number of physical layers.`);
+      throw new Error(`This ${outputWidth.toLocaleString()} × ${outputHeight.toLocaleString()} depthmap with ${layerCount} layers is too large to vectorize safely in the browser. Reduce Final Canvas Size, reduce total relief depth, or use thicker material.`);
     }
     setProcessingStatus("Building layered relief masks and closed SVG contours locally.");
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -1360,7 +1386,7 @@ async function exportLayeredRelief() {
     downloadBlob(blob, "layered-relief", "lbrn2");
     setProcessingStatus(`Layered Relief LightBurn project created locally with ${relief.layers.length} aligned cutting layers${exportOptions.surfaceEngraving ? " and matching visible-surface Photo layers" : ""}.`);
   } finally {
-    reliefExportButton.disabled = false;
+    reliefExportButton.disabled = !currentReliefLayerPlan().valid;
   }
 }
 
@@ -1613,8 +1639,8 @@ parallaxScaleControl.addEventListener("input", updateParallaxControls);
 parallaxBackgroundControl.addEventListener("input", updateParallaxControls);
 parallaxPatchSizeControl.addEventListener("input", updateParallaxControls);
 parallaxAppearanceControl.addEventListener("input", updateParallaxControls);
-for (const control of [reliefLayerCountControl, reliefSpacingControl, reliefSmoothingControl, reliefGroupingStrengthControl, reliefMinimumBandControl, reliefEmphasisControl, reliefExcludeBackgroundControl]) control.addEventListener("input", updateReliefQuantizationControls);
-for (const control of [reliefConstructionControl, reliefPixelSizeControl, reliefMaterialThicknessControl, reliefMinimumIslandControl, reliefWorkbedWidthControl, reliefWorkbedHeightControl, reliefRegistrationControl, reliefRegistrationDiameterControl, reliefRegistrationInsetControl]) control.addEventListener("input", updateReliefControls);
+for (const control of [reliefTotalDepthControl, reliefMaterialThicknessControl, reliefSpacingControl, reliefSmoothingControl, reliefGroupingStrengthControl, reliefMinimumBandControl, reliefEmphasisControl, reliefExcludeBackgroundControl]) control.addEventListener("input", updateReliefQuantizationControls);
+for (const control of [reliefConstructionControl, reliefPixelSizeControl, reliefMinimumIslandControl, reliefWorkbedWidthControl, reliefWorkbedHeightControl, reliefRegistrationControl, reliefRegistrationDiameterControl, reliefRegistrationInsetControl]) control.addEventListener("input", updateReliefControls);
 reliefResetThresholdsButton.addEventListener("click", resetReliefThresholds);
 reliefPreviewLayerControl.addEventListener("input", scheduleReliefPreview);
 reliefPaletteControl.addEventListener("change", populateReliefMaterials);
