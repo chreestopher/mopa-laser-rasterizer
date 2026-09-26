@@ -45,6 +45,8 @@ WORKER_LOG_GROUP_NAME = os.environ.get("WORKER_LOG_GROUP_NAME", "").strip()
 PIPE_NAME = os.environ.get("WORKER_PIPE_NAME", "").strip()
 AWS_ACCOUNT_ID = os.environ.get("DEPLOYMENT_ACCOUNT_ID", "").strip()
 MAX_JOB_LOG_EVENTS = max(1, min(10000, int(os.environ.get("MAX_JOB_LOG_EVENTS", "10000"))))
+MAX_STANDARD_PROCESSING_AXIS = 1600
+MAX_HIGH_RES_PANEL_PIXELS = 40_000_000
 
 s3 = boto3.client(
     "s3", region_name=REGION,
@@ -4499,8 +4501,14 @@ def submit_job(event, task_id, guest=False):
             assembled_height = rows * tile_height + (rows - 1) * gap_y
             processing_width = round(assembled_width / pixel_square_mm)
             processing_height = round(assembled_height / pixel_square_mm)
-            if max(processing_width, processing_height) > 1600:
-                return response(400, {"message": "Panel Tiling needs more than 1,600 processing pixels on an axis. Increase Pixel size, reduce the tile count, or use smaller tile and gap dimensions."})
+            tile_processing_width = max(1, round(tile_width / pixel_square_mm))
+            tile_processing_height = max(1, round(tile_height / pixel_square_mm))
+            high_resolution_panel = max(processing_width, processing_height) > MAX_STANDARD_PROCESSING_AXIS
+            if high_resolution_panel and max(tile_processing_width, tile_processing_height) > MAX_STANDARD_PROCESSING_AXIS:
+                return response(400, {"message": "Each high-resolution panel must fit within 1,600 processing pixels on each axis. Increase Pixel size or use smaller tile dimensions."})
+            total_panel_pixels = tile_processing_width * tile_processing_height * columns * rows
+            if high_resolution_panel and total_panel_pixels > MAX_HIGH_RES_PANEL_PIXELS:
+                return response(400, {"message": "This high-resolution panel layout exceeds the 40-million processed-pixel job limit. Increase Pixel size, reduce the tile count, or use smaller tiles."})
         except (TypeError, ValueError):
             return response(400, {"message": "Panel Tiling contains an invalid tile size, count, gap, inset, workbed size, or tile order. Review the Panel Tiling controls and submit again."})
         panel_tiling = {
@@ -4517,8 +4525,10 @@ def submit_job(event, task_id, guest=False):
         }
         data["new_width"] = str(processing_width)
         data["new_height"] = str(processing_height)
+        data["high_resolution_panel"] = high_resolution_panel
     else:
         panel_tiling = {"enabled": False}
+        data["high_resolution_panel"] = False
     data["panel_tiling"] = panel_tiling
     crop_shape = str(data.get("crop_shape") or "").strip().lower()
     if crop_shape not in {"", "rectangle", "square", "oval", "circle", "transparency"}:
@@ -5112,7 +5122,10 @@ def submit_job(event, task_id, guest=False):
             admin_index["expires_at"] = now + GUEST_JOB_SECONDS
         batch.put_item(Item=admin_index)
     try:
-        sqs.send_message(QueueUrl=QUEUE_URL, MessageBody=json.dumps({"task_id": task_id}, separators=(",", ":")))
+        queue_message = {"task_id": task_id}
+        if data.get("high_resolution_panel") is True:
+            queue_message["worker_type"] = "high_resolution_panel"
+        sqs.send_message(QueueUrl=QUEUE_URL, MessageBody=json.dumps(queue_message, separators=(",", ":")))
     except Exception:
         # Restore the capability so a transient SQS error is safely retryable.
         table.update_item(

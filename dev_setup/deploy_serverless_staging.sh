@@ -178,6 +178,9 @@ aws cloudformation deploy --region "$REGION" --stack-name "$WORKER_STACK" \
     "Cpu=${SERVERLESS_FARGATE_CPU:-${SERVERLESS_STAGING_FARGATE_CPU:-${FARGATE_CPU:-2048}}}" \
     "Memory=${SERVERLESS_FARGATE_MEMORY:-${SERVERLESS_STAGING_FARGATE_MEMORY:-${FARGATE_MEMORY:-4096}}}" \
     "WorkerProcesses=${SERVERLESS_WORKER_PROCESSES:-${SERVERLESS_STAGING_WORKER_PROCESSES:-${FARGATE_WORKER_PROCESSES:-2}}}" \
+    "PanelCpu=${SERVERLESS_PANEL_FARGATE_CPU:-${SERVERLESS_STAGING_PANEL_FARGATE_CPU:-4096}}" \
+    "PanelMemory=${SERVERLESS_PANEL_FARGATE_MEMORY:-${SERVERLESS_STAGING_PANEL_FARGATE_MEMORY:-8192}}" \
+    "PanelProcesses=${SERVERLESS_PANEL_PROCESSES:-${SERVERLESS_STAGING_PANEL_PROCESSES:-4}}" \
     "KrasnowProgress=${SERVERLESS_KRASNOW_PROGRESS:-${SERVERLESS_STAGING_KRASNOW_PROGRESS:-true}}" \
     "SourceBlackComponents=${SERVERLESS_SOURCE_BLACK_COMPONENTS:-${SERVERLESS_STAGING_SOURCE_BLACK_COMPONENTS:-true}}" \
     "AssignPublicIp=${FARGATE_ASSIGN_PUBLIC_IP:-DISABLED}" \
@@ -190,6 +193,7 @@ aws cloudformation deploy --region "$REGION" --stack-name "$ORCHESTRATION_STACK"
     "StateMachineName=$STATE_MACHINE_NAME" \
     "ClusterName=$(output "$WORKER_STACK" ClusterName)" \
     "TaskDefinitionArn=$(output "$WORKER_STACK" TaskDefinitionArn)" \
+    "PanelTaskDefinitionArn=$(output "$WORKER_STACK" PanelTaskDefinitionArn)" \
     "SubnetIds=$SUBNET_IDS" \
     "WorkerSecurityGroupId=$(output "$WORKER_STACK" WorkerSecurityGroupId)" \
     "AssignPublicIp=${FARGATE_ASSIGN_PUBLIC_IP:-DISABLED}" \

@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "lib"))
 
 import lightburn  # noqa: E402
 import vector_processing  # noqa: E402
+import Material_Library  # noqa: E402
 
 
 def panel_settings(**overrides):
@@ -37,6 +38,109 @@ def panel_settings(**overrides):
 def test_panel_dimensions_include_physical_gaps():
     settings = panel_settings(rows=3, columns=4, gap_x_mm=2, gap_y_mm=3)
     assert vector_processing.panel_tiling_dimensions(settings) == (46, 36)
+
+
+def test_high_resolution_plan_keeps_limit_per_panel_not_per_assembly():
+    settings = panel_settings(
+        tile_width_mm=100,
+        tile_height_mm=80,
+        workbed_width_mm=100,
+        workbed_height_mm=80,
+        columns=2,
+        rows=1,
+    )
+
+    plan = Material_Library.high_resolution_panel_plan(settings, 0.1)
+
+    assert plan["assembled_width_px"] == 2020
+    assert plan["tile_width_px"] == 1000
+    assert plan["tile_height_px"] == 800
+    assert plan["oversized"] is True
+
+
+def test_high_resolution_plan_rejects_an_individually_oversized_panel():
+    settings = panel_settings(
+        tile_width_mm=170,
+        tile_height_mm=80,
+        workbed_width_mm=170,
+        workbed_height_mm=80,
+        columns=2,
+        rows=1,
+    )
+
+    with pytest.raises(ValueError, match="Each high-resolution panel"):
+        Material_Library.high_resolution_panel_plan(settings, 0.1)
+
+
+def test_high_resolution_plan_caps_total_work_without_lowering_axis_limit():
+    settings = panel_settings(
+        tile_width_mm=160,
+        tile_height_mm=160,
+        workbed_width_mm=160,
+        workbed_height_mm=160,
+        columns=4,
+        rows=4,
+    )
+
+    with pytest.raises(ValueError, match="40-million"):
+        Material_Library.high_resolution_panel_plan(settings, 0.1)
+
+
+def test_high_resolution_panel_job_packages_bounded_parallel_children(tmp_path, monkeypatch):
+    source = Image.new("RGB", (20, 10), "red")
+    source_path = tmp_path / "source.png"
+    source.save(source_path)
+    output_path = tmp_path / "output"
+    settings = panel_settings(
+        tile_width_mm=4,
+        tile_height_mm=4,
+        workbed_width_mm=8,
+        workbed_height_mm=8,
+        columns=2,
+        rows=1,
+        gap_x_mm=1,
+        gap_y_mm=0,
+        edge_inset_mm=0,
+    )
+    plan = {
+        "assembled_width_px": 9,
+        "assembled_height_px": 4,
+        "tile_width_px": 4,
+        "tile_height_px": 4,
+        "total_tile_pixels": 32,
+        "oversized": True,
+    }
+    child_sizes = []
+
+    class Result:
+        returncode = 0
+        stdout = "child complete"
+
+    def fake_run(command, **_options):
+        child = command[3:]
+        with Image.open(child[0]) as tile:
+            child_sizes.append(tile.size)
+        archive_path = f"{child[1]}.panel-tiles.zip"
+        with zipfile.ZipFile(archive_path, "w") as archive:
+            archive.writestr("tile-01-r01-c01.svg", "<svg/>")
+            archive.writestr("tile-01-r01-c01.svg.lbrn2", "<LightBurnProject/>")
+        return Result()
+
+    monkeypatch.setattr(Material_Library.subprocess, "run", fake_run)
+    monkeypatch.setenv("RASTER_PANEL_PROCESSES", "2")
+    argv = [str(source_path), str(output_path), "1", "0", "0"] + [""] * 15
+
+    Material_Library.run_high_resolution_panel_job(argv, settings, 1, plan)
+
+    assert sorted(child_sizes) == [(4, 4), (4, 4)]
+    with zipfile.ZipFile(f"{output_path}.panel-tiles.zip") as archive:
+        names = set(archive.namelist())
+        assert "tile-01-r01-c01.svg.lbrn2" in names
+        assert "tile-02-r01-c02.svg.lbrn2" in names
+        manifest = json.loads(archive.read("panel-manifest.json"))
+    assert manifest["processing_mode"] == "independent-high-resolution-panels"
+    assert manifest["assembled_size_px"] == {"width": 9, "height": 4}
+    assert [tile["source_origin_mm"]["x"] for tile in manifest["tiles"]] == [0, 5]
 
 
 def test_panel_validation_rejects_too_many_tiles_and_impossible_inset():
@@ -102,6 +206,9 @@ def test_panel_tiling_settings_are_disclosed_only_when_enabled():
     assert 'panel_number("tile_height_mm", 1, 3000, 100)' in api
     assert 'panel_number("gap_x_mm", 0, 1000, 0)' in api
     assert 'panel_number("gap_y_mm", 0, 1000, 0)' in api
+    assert 'queue_message["worker_type"] = "high_resolution_panel"' in api
+    assert 'data["high_resolution_panel"] = high_resolution_panel' in api
+    assert "MAX_HIGH_RES_PANEL_PIXELS = 40_000_000" in api
 
 
 def test_panel_dimensions_resize_the_complete_source_before_clipping():

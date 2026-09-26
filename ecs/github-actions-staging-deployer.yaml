@@ -126,6 +126,7 @@ Resources:
                 Resource:
                   - !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/mopa-rasterizer-serverless-staging
                   - !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/mopa-rasterizer-serverless-staging-worker:*
+                  - !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/mopa-rasterizer-serverless-staging-worker-panel:*
               - Sid: RegisterTaskDefinition
                 Effect: Allow
                 Action: ecs:RegisterTaskDefinition

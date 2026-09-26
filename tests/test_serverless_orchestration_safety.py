@@ -91,6 +91,24 @@ def test_direct_dispatch_uses_six_state_happy_path_and_requeues_paused_jobs():
     assert "JobDeferred:" in template
 
 
+def test_oversized_panel_jobs_select_the_dedicated_task_definition():
+    orchestration = (ROOT / "ecs" / "rasterizer-orchestration.yaml").read_text(
+        encoding="utf-8"
+    )
+    worker = (ROOT / "ecs" / "rasterizer-worker.yaml").read_text(encoding="utf-8")
+    deploy = (ROOT / "dev_setup" / "deploy_serverless_staging.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "PanelTaskDefinitionArn:" in orchestration
+    assert "StringEquals: high_resolution_panel" in orchestration
+    assert "Next: ConfigurePanelWorker" in orchestration
+    assert "TaskDefinition.$: $.task_definition" in orchestration
+    assert "PanelTaskDefinition:" in worker
+    assert "RASTER_PANEL_PROCESSES" in worker
+    assert '"PanelTaskDefinitionArn=$(output "$WORKER_STACK" PanelTaskDefinitionArn)"' in deploy
+
+
 def test_serverless_production_retires_legacy_s3_dispatch_notification():
     legacy_deploy = ROOT / "dev_setup" / "deploy_fargate_worker_production.sh"
     serverless_deploy = (ROOT / "dev_setup" / "deploy_serverless_production.sh").read_text(

@@ -56,6 +56,21 @@ Parameters:
     MinValue: 1
     MaxValue: 16
     Description: Maximum CPU workers used inside one raster or holographic task.
+  PanelCpu:
+    Type: String
+    Default: "4096"
+    AllowedValues: ["2048", "4096", "8192", "16384"]
+    Description: CPU units reserved only for oversized high-resolution panel jobs.
+  PanelMemory:
+    Type: String
+    Default: "8192"
+    Description: Memory in MiB reserved only for oversized high-resolution panel jobs.
+  PanelProcesses:
+    Type: Number
+    Default: 4
+    MinValue: 1
+    MaxValue: 4
+    Description: Panels processed concurrently inside the high-resolution panel task.
   KrasnowProgress:
     Type: String
     Default: "true"
@@ -217,11 +232,65 @@ Resources:
               awslogs-region: !Ref "AWS::Region"
               awslogs-stream-prefix: worker
 
+  PanelTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${WorkerName}-panel
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: !Ref PanelCpu
+      Memory: !Ref PanelMemory
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      RuntimePlatform:
+        CpuArchitecture: X86_64
+        OperatingSystemFamily: LINUX
+      ContainerDefinitions:
+        - Name: raster-worker
+          Image: !Ref ImageUri
+          Essential: true
+          Command: [python, -u, worker.py, --task-id, REQUIRED_TASK_ID]
+          StopTimeout: 120
+          Environment:
+            - {Name: AWS_REGION, Value: !Ref "AWS::Region"}
+            - {Name: REDIS_HOST, Value: !Ref RedisHost}
+            - {Name: REDIS_PORT, Value: !Sub "${RedisPort}"}
+            - {Name: REDIS_SSL, Value: !Ref RedisSsl}
+            - {Name: S3_BUCKET_NAME, Value: !Ref S3BucketName}
+            - {Name: DYNAMODB_TABLE_NAME, Value: !Ref DynamoDbTableName}
+            - {Name: JOB_RUNTIME_TABLE_NAME, Value: !Ref DynamoDbTableName}
+            - {Name: JOB_BACKEND, Value: !If [HasRedis, redis, aws]}
+            - {Name: CLOUDWATCH_LOG_GROUP, Value: !Ref LogGroup}
+            - {Name: CLOUDWATCH_LOG_STREAM_PREFIX, Value: worker}
+            - {Name: CLOUDWATCH_LOG_CONTAINER_NAME, Value: raster-worker}
+            - {Name: RASTER_WORKER_PROCESSES, Value: "1"}
+            - {Name: RASTER_PANEL_PROCESSES, Value: !Sub "${PanelProcesses}"}
+            - {Name: RASTER_KRASNOW_PROGRESS, Value: !Ref KrasnowProgress}
+            - {Name: RASTER_SOURCE_BLACK_COMPONENTS, Value: !Ref SourceBlackComponents}
+            - {Name: UPLOAD_FOLDER, Value: /tmp/uploads}
+            - {Name: RASTER_JOB_LEASE_SECONDS, Value: "90"}
+            - {Name: RASTER_JOB_HEARTBEAT_SECONDS, Value: "20"}
+            - {Name: RASTER_JOB_RECOVERY_INTERVAL_SECONDS, Value: "15"}
+            - {Name: RASTER_JOB_RECOVERY_LOCK_SECONDS, Value: "10"}
+          Secrets:
+            - !If
+              - HasRedisPassword
+              - {Name: REDIS_PASSWORD, ValueFrom: !Ref RedisPasswordSecretArn}
+              - !Ref AWS::NoValue
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: worker
+
 Outputs:
   ClusterName:
     Value: !Ref Cluster
   TaskDefinitionArn:
     Value: !Ref TaskDefinition
+  PanelTaskDefinitionArn:
+    Value: !Ref PanelTaskDefinition
   TaskExecutionRoleArn:
     Value: !GetAtt ExecutionRole.Arn
   TaskRoleArn:

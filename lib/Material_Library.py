@@ -5,7 +5,14 @@ Flask continues to execute this filename. All processing lives in
 """
 import json
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
+import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from PIL import Image
 
 # Support deployment with this file under lib/ and modules either beside it
 # or one project directory above it.
@@ -16,6 +23,185 @@ for path in (MODULE_DIR, PROJECT_DIR):
         sys.path.insert(0, path)
 
 import vector_processing
+
+
+MAX_STANDARD_PROCESSING_AXIS = 1600
+MAX_HIGH_RES_PANEL_PIXELS = 40_000_000
+
+
+def panel_processing_dimensions(panel_tiling, pixel_mm):
+    assembled_width_mm, assembled_height_mm = vector_processing.panel_tiling_dimensions(panel_tiling)
+    return (
+        max(1, round(assembled_width_mm / pixel_mm)),
+        max(1, round(assembled_height_mm / pixel_mm)),
+    )
+
+
+def high_resolution_panel_plan(panel_tiling, pixel_mm):
+    """Return bounded per-panel dimensions for an oversized assembled canvas."""
+    assembled_width_px, assembled_height_px = panel_processing_dimensions(panel_tiling, pixel_mm)
+    tile_width_px = max(1, round(panel_tiling["tile_width_mm"] / pixel_mm))
+    tile_height_px = max(1, round(panel_tiling["tile_height_mm"] / pixel_mm))
+    if max(tile_width_px, tile_height_px) > MAX_STANDARD_PROCESSING_AXIS:
+        raise ValueError(
+            "Each high-resolution panel must fit within 1,600 processing pixels on each axis. "
+            "Increase Pixel size or use smaller tile dimensions."
+        )
+    total_tile_pixels = (
+        tile_width_px * tile_height_px
+        * panel_tiling["columns"] * panel_tiling["rows"]
+    )
+    if total_tile_pixels > MAX_HIGH_RES_PANEL_PIXELS:
+        raise ValueError(
+            "This high-resolution panel layout exceeds the 40-million processed-pixel job limit. "
+            "Increase Pixel size, reduce the tile count, or use smaller tiles."
+        )
+    return {
+        "assembled_width_px": assembled_width_px,
+        "assembled_height_px": assembled_height_px,
+        "tile_width_px": tile_width_px,
+        "tile_height_px": tile_height_px,
+        "total_tile_pixels": total_tile_pixels,
+        "oversized": max(assembled_width_px, assembled_height_px) > MAX_STANDARD_PROCESSING_AXIS,
+    }
+
+
+def _extract_single_panel_archive(archive_path, destination, stem):
+    with zipfile.ZipFile(archive_path) as archive:
+        names = set(archive.namelist())
+        source_svg = "tile-01-r01-c01.svg"
+        source_lbrn = f"{source_svg}.lbrn2"
+        if source_svg not in names:
+            raise ValueError("A high-resolution panel worker did not produce its SVG tile.")
+        with archive.open(source_svg) as source, open(os.path.join(destination, f"{stem}.svg"), "wb") as output:
+            shutil.copyfileobj(source, output)
+        if source_lbrn in names:
+            with archive.open(source_lbrn) as source, open(os.path.join(destination, f"{stem}.svg.lbrn2"), "wb") as output:
+                shutil.copyfileobj(source, output)
+
+
+def run_high_resolution_panel_job(argv, panel_tiling, pixel_mm, plan):
+    """Render oversized panel layouts as bounded child processes in one task."""
+    input_file, output_file = argv[0], argv[1]
+    temp_dir = tempfile.mkdtemp(prefix="high-resolution-panels-", dir=os.path.dirname(output_file) or None)
+    render_dir = os.path.join(temp_dir, "rendered")
+    os.makedirs(render_dir)
+    manifest = {
+        "format": "mopa-rasterizer-panel-tiles-v2",
+        "processing_mode": "independent-high-resolution-panels",
+        "layout": panel_tiling,
+        "assembled_size_mm": dict(zip(("width", "height"), vector_processing.panel_tiling_dimensions(panel_tiling))),
+        "assembled_size_px": {
+            "width": plan["assembled_width_px"],
+            "height": plan["assembled_height_px"],
+        },
+        "tile_processing_px": {
+            "width": plan["tile_width_px"],
+            "height": plan["tile_height_px"],
+        },
+        "tiles": [],
+    }
+    workbed_center_x = panel_tiling["workbed_width_mm"] / 2
+    workbed_center_y = panel_tiling["workbed_height_mm"] / 2
+    workbed_x = workbed_center_x - panel_tiling["tile_width_mm"] / 2
+    workbed_y = workbed_center_y - panel_tiling["tile_height_mm"] / 2
+    jobs = []
+    try:
+        with Image.open(input_file) as opened:
+            source = opened.convert("RGBA")
+        assembled_width_mm, assembled_height_mm = vector_processing.panel_tiling_dimensions(panel_tiling)
+        for sequence, (row, column) in enumerate(vector_processing._ordered_panel_tiles(panel_tiling), 1):
+            source_x_mm = column * (panel_tiling["tile_width_mm"] + panel_tiling["gap_x_mm"])
+            source_y_mm = row * (panel_tiling["tile_height_mm"] + panel_tiling["gap_y_mm"])
+            extent = (
+                source.width * source_x_mm / assembled_width_mm,
+                source.height * source_y_mm / assembled_height_mm,
+                source.width * (source_x_mm + panel_tiling["tile_width_mm"]) / assembled_width_mm,
+                source.height * (source_y_mm + panel_tiling["tile_height_mm"]) / assembled_height_mm,
+            )
+            tile_image = source.transform(
+                (plan["tile_width_px"], plan["tile_height_px"]),
+                Image.Transform.EXTENT,
+                extent,
+                resample=Image.Resampling.BICUBIC,
+            )
+            stem = f"tile-{sequence:02d}-r{row + 1:02d}-c{column + 1:02d}"
+            tile_input = os.path.join(temp_dir, f"{stem}.png")
+            tile_output = os.path.join(render_dir, stem)
+            tile_image.save(tile_input, format="PNG")
+            child = list(argv)
+            child[0] = tile_input
+            child[1] = tile_output
+            child[3] = str(plan["tile_width_px"])
+            child[4] = str(plan["tile_height_px"])
+            child_panel = dict(panel_tiling)
+            child_panel.update({"columns": 1, "rows": 1, "gap_x_mm": 0, "gap_y_mm": 0})
+            while len(child) <= 19:
+                child.append("")
+            child[17] = "transparency" if child[17] in {"oval", "circle", "transparency"} else child[17]
+            child[19] = json.dumps(child_panel, separators=(",", ":"))
+            jobs.append((sequence, row, column, stem, source_x_mm, source_y_mm, child))
+        del source
+
+        parallelism = max(1, min(int(os.environ.get("RASTER_PANEL_PROCESSES", "2")), 4, len(jobs)))
+        print(
+            f"High-resolution Panel Tiling: processing {len(jobs)} tiles with "
+            f"{parallelism} concurrent panel process(es); assembled canvas is "
+            f"{plan['assembled_width_px']}x{plan['assembled_height_px']} pixels.",
+            flush=True,
+        )
+
+        def render(job):
+            *_, child = job
+            result = subprocess.run(
+                [sys.executable, "-u", os.path.abspath(__file__), *child],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                check=False,
+            )
+            return job, result
+
+        completed = {}
+        with ThreadPoolExecutor(max_workers=parallelism) as executor:
+            futures = [executor.submit(render, job) for job in jobs]
+            for future in as_completed(futures):
+                job, result = future.result()
+                sequence, row, column, stem, source_x_mm, source_y_mm, _ = job
+                for line in result.stdout.splitlines():
+                    print(f"[{stem}] {line}", flush=True)
+                if result.returncode:
+                    raise ValueError(
+                        f"High-resolution panel {sequence} (row {row + 1}, column {column + 1}) "
+                        f"failed with exit code {result.returncode}."
+                    )
+                child_archive = os.path.join(render_dir, f"{stem}.panel-tiles.zip")
+                _extract_single_panel_archive(child_archive, temp_dir, stem)
+                completed[sequence] = {
+                    "sequence": sequence,
+                    "row": row + 1,
+                    "column": column + 1,
+                    "source_origin_mm": {"x": source_x_mm, "y": source_y_mm},
+                    "workbed_center_mm": {"x": workbed_center_x, "y": workbed_center_y},
+                    "workbed_origin_mm": {"x": workbed_x, "y": workbed_y},
+                    "svg": f"{stem}.svg",
+                    "lightburn": f"{stem}.svg.lbrn2" if os.path.exists(os.path.join(temp_dir, f"{stem}.svg.lbrn2")) else None,
+                }
+        manifest["tiles"] = [completed[index] for index in sorted(completed)]
+        with open(os.path.join(temp_dir, "panel-manifest.json"), "w", encoding="utf-8") as output:
+            json.dump(manifest, output, indent=2)
+        vector_processing._write_panel_assembly_map(os.path.join(temp_dir, "panel-assembly.svg"), panel_tiling)
+        assembly_path = f"{output_file}.panel-assembly.svg"
+        vector_processing._write_panel_assembly_map(assembly_path, panel_tiling)
+        archive_path = f"{output_file}.panel-tiles.zip"
+        with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for name in sorted(os.listdir(temp_dir)):
+                path = os.path.join(temp_dir, name)
+                if os.path.isfile(path):
+                    archive.write(path, arcname=name)
+        print(f"High-resolution Panel Tiling complete: wrote {archive_path} and {assembly_path}.", flush=True)
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def user_input_error(message):
@@ -57,24 +243,23 @@ def main(argv=None):
     if white_is not in {"engraved", "unengraved"}:
         user_input_error("Choose whether White is engraved or unengraved")
     panel_tiling = {}
+    high_resolution_panel = None
     if len(argv) > 19 and argv[19].strip():
         try:
             panel_tiling = vector_processing.normalize_panel_tiling(json.loads(argv[19]))
         except (json.JSONDecodeError, ValueError) as error:
             user_input_error(f"Invalid Panel Tiling settings: {error}")
     if panel_tiling.get("enabled"):
-        assembled_width_mm, assembled_height_mm = vector_processing.panel_tiling_dimensions(panel_tiling)
         try:
             pixel_mm = float(square_mm)
         except (TypeError, ValueError):
             user_input_error("Pixel size must be a number before Panel Tiling can calculate the assembled artwork size")
-        new_width = str(max(1, round(assembled_width_mm / pixel_mm)))
-        new_height = str(max(1, round(assembled_height_mm / pixel_mm)))
-        if int(new_width) > 1600 or int(new_height) > 1600:
-            user_input_error(
-                "Panel Tiling needs more than 1,600 processing pixels on an axis. "
-                "Increase Pixel size, reduce the tile count, or use smaller tile and gap dimensions."
-            )
+        try:
+            high_resolution_panel = high_resolution_panel_plan(panel_tiling, pixel_mm)
+        except ValueError as error:
+            user_input_error(error)
+        new_width = str(high_resolution_panel["assembled_width_px"])
+        new_height = str(high_resolution_panel["assembled_height_px"])
     svg_only = len(argv) > 12 and argv[12].strip().lower() in ("true", "1", "yes", "on")
     # Accept the former argv[13]=validate-only layout for compatibility while
     # reserving argv[13] for the new, independent color-matching object.
@@ -235,6 +420,22 @@ def main(argv=None):
     for name in ("min_island_area", "simplification_factor", "smoothing_radius"):
         if name in filter_parameters:
             vector_settings[name] = filter_parameters[name]
+
+    if high_resolution_panel and high_resolution_panel["oversized"]:
+        if validate_only:
+            try:
+                with Image.open(input_file) as source:
+                    source.verify()
+            except Exception as error:
+                user_input_error(f"The high-resolution panel artwork could not be decoded: {error}")
+            print(
+                "Guest high-resolution panel validation complete; every tile fits the "
+                "1,600-pixel per-axis limit and the total workload is within the job budget.",
+                flush=True,
+            )
+            return
+        run_high_resolution_panel_job(argv, panel_tiling, float(square_mm), high_resolution_panel)
+        return
 
     if validate_only:
         # Exercise the same image decoding, dimension handling, palette setup,

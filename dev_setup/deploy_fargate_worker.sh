@@ -75,6 +75,9 @@ parameters=(
   "Cpu=${FARGATE_CPU:-1024}"
   "Memory=${FARGATE_MEMORY:-4096}"
   "WorkerProcesses=${FARGATE_WORKER_PROCESSES:-1}"
+  "PanelCpu=${FARGATE_PANEL_CPU:-4096}"
+  "PanelMemory=${FARGATE_PANEL_MEMORY:-8192}"
+  "PanelProcesses=${FARGATE_PANEL_PROCESSES:-4}"
   "SourceBlackComponents=${FARGATE_SOURCE_BLACK_COMPONENTS:-false}"
   "AssignPublicIp=${FARGATE_ASSIGN_PUBLIC_IP:-DISABLED}"
 )
@@ -93,6 +96,7 @@ aws cloudformation deploy --region "$REGION" --stack-name "$ORCHESTRATION_STACK_
   --parameter-overrides \
     "ClusterName=$(stack_output ClusterName)" \
     "TaskDefinitionArn=$(stack_output TaskDefinitionArn)" \
+    "PanelTaskDefinitionArn=$(stack_output PanelTaskDefinitionArn)" \
     "SubnetIds=$SUBNET_IDS" \
     "WorkerSecurityGroupId=$(stack_output WorkerSecurityGroupId)" \
     "AssignPublicIp=${FARGATE_ASSIGN_PUBLIC_IP:-DISABLED}" \
