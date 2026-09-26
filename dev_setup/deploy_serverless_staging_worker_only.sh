@@ -37,15 +37,21 @@ fi
 aws cloudformation deploy --region "$REGION" --stack-name "$WORKER_STACK" \
   --template-file "$REPO_ROOT/ecs/rasterizer-worker.yaml" --capabilities CAPABILITY_IAM \
   --parameter-overrides "ImageUri=$IMAGE_URI" \
+    "PanelCpu=${SERVERLESS_STAGING_PANEL_FARGATE_CPU:-4096}" \
+    "PanelMemory=${SERVERLESS_STAGING_PANEL_FARGATE_MEMORY:-8192}" \
+    "PanelProcesses=${SERVERLESS_STAGING_PANEL_PROCESSES:-4}" \
   --no-fail-on-empty-changeset
 
 TASK_DEFINITION_ARN="$(aws cloudformation describe-stacks --region "$REGION" --stack-name "$WORKER_STACK" \
   --query "Stacks[0].Outputs[?OutputKey=='TaskDefinitionArn'].OutputValue" --output text)"
+PANEL_TASK_DEFINITION_ARN="$(aws cloudformation describe-stacks --region "$REGION" --stack-name "$WORKER_STACK" \
+  --query "Stacks[0].Outputs[?OutputKey=='PanelTaskDefinitionArn'].OutputValue" --output text)"
 QUEUE_URL="$(aws cloudformation describe-stacks --region "$REGION" --stack-name "$FOUNDATION_STACK" \
   --query "Stacks[0].Outputs[?OutputKey=='JobQueueUrl'].OutputValue" --output text)"
 aws cloudformation deploy --region "$REGION" --stack-name "$ORCHESTRATION_STACK" \
   --template-file "$REPO_ROOT/ecs/rasterizer-orchestration.yaml" --capabilities CAPABILITY_IAM \
-  --parameter-overrides "TaskDefinitionArn=$TASK_DEFINITION_ARN" "SqsQueueUrl=$QUEUE_URL" \
+  --parameter-overrides "TaskDefinitionArn=$TASK_DEFINITION_ARN" \
+    "PanelTaskDefinitionArn=$PANEL_TASK_DEFINITION_ARN" "SqsQueueUrl=$QUEUE_URL" \
   --no-fail-on-empty-changeset
 
 echo "Serverless staging worker-only update complete: $IMAGE_URI"

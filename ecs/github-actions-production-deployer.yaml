@@ -109,6 +109,7 @@ Resources:
                 Resource:
                   - !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:cluster/mopa-rasterizer-serverless-production
                   - !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/mopa-rasterizer-serverless-production-worker:*
+                  - !Sub arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/mopa-rasterizer-serverless-production-worker-panel:*
               - Sid: RegisterTaskDefinition
                 Effect: Allow
                 Action: ecs:RegisterTaskDefinition

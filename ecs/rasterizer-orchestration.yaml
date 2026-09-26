@@ -12,6 +12,8 @@ Parameters:
     Type: String
   TaskDefinitionArn:
     Type: String
+  PanelTaskDefinitionArn:
+    Type: String
   SubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
   WorkerSecurityGroupId:
@@ -56,7 +58,7 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: ecs:RunTask
-                Resource: !Ref TaskDefinitionArn
+                Resource: [!Ref TaskDefinitionArn, !Ref PanelTaskDefinitionArn]
               - Effect: Allow
                 Action: [ecs:DescribeTasks, ecs:StopTask]
                 Resource: "*"
@@ -90,7 +92,27 @@ Resources:
             Type: Pass
             Parameters:
               message.$: States.StringToJson($[0].body)
+            Next: SelectWorker
+          SelectWorker:
+            Type: Choice
+            Choices:
+              - Variable: $.message.worker_type
+                StringEquals: high_resolution_panel
+                Next: ConfigurePanelWorker
+            Default: ConfigureStandardWorker
+          ConfigureStandardWorker:
+            Type: Pass
+            Parameters:
+              message.$: $.message
               spot_attempt: 1
+              task_definition: !Ref TaskDefinitionArn
+            Next: CheckServiceAvailability
+          ConfigurePanelWorker:
+            Type: Pass
+            Parameters:
+              message.$: $.message
+              spot_attempt: 1
+              task_definition: !Ref PanelTaskDefinitionArn
             Next: CheckServiceAvailability
           CheckServiceAvailability:
             Type: Task
@@ -128,7 +150,7 @@ Resources:
             Resource: arn:aws:states:::ecs:runTask.sync
             Parameters:
               Cluster: !Ref ClusterName
-              TaskDefinition: !Ref TaskDefinitionArn
+              TaskDefinition.$: $.task_definition
               CapacityProviderStrategy:
                 - CapacityProvider: FARGATE_SPOT
                   Weight: 1
@@ -171,13 +193,14 @@ Resources:
             Parameters:
               message.$: $.message
               spot_attempt.$: States.MathAdd($.spot_attempt, 1)
+              task_definition.$: $.task_definition
             Next: RunSpotWorker
           RunOnDemandWorker:
             Type: Task
             Resource: arn:aws:states:::ecs:runTask.sync
             Parameters:
               Cluster: !Ref ClusterName
-              TaskDefinition: !Ref TaskDefinitionArn
+              TaskDefinition.$: $.task_definition
               CapacityProviderStrategy:
                 - CapacityProvider: FARGATE
                   Weight: 1
