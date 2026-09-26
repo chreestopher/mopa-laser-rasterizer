@@ -142,7 +142,7 @@ class ServerlessSelectedSettingDeleteTests(unittest.TestCase):
         self.assertIn('material.set("name", material_name)', rename)
         self.assertIn('for link in material.findall(".//LinkPath")', rename)
         self.assertIn('material_name + value[len(old_material_name):]', rename)
-        self.assertIn('material_name=:material, summary=:summary', rename)
+        self.assertIn('material_name=:material, laser_source_type=:source_type, motion_system_type=:motion_type, summary=:summary', rename)
         self.assertIn('class="paletteMaterialName"', self.client)
         self.assertIn('materialName=card.querySelector(".paletteMaterialName").value.trim()', self.client)
         self.assertIn('material_name:materialName', self.client)

@@ -77,12 +77,26 @@ PALETTE_HEX = {name.casefold(): color for name, color in PALETTE}
 PALETTE_NAMES = {color.upper(): name for name, color in PALETTE}
 MATERIAL_LIBRARY_INTENTS = {"color_palette", "hatch_palette", "processing_palette"}
 PROCESSING_PALETTE_ROLES = {"Cut", "Score", "Photo", "Fill", "Shovel", "Cleaning"}
+LASER_SOURCE_TYPES = {"", "fiber", "co2", "diode"}
+MOTION_SYSTEM_TYPES = {"", "galvo", "gantry"}
 
 
 def material_library_intent(value):
     """Normalize saved palette intent while preserving older color-palette records."""
     value = str(value or "color_palette").strip()
     return value if value in MATERIAL_LIBRARY_INTENTS else "color_palette"
+
+
+def laser_source_type(value):
+    """Normalize the optional machine family used to filter Processing Palette fields."""
+    value = str(value or "").strip().casefold()
+    return value if value in LASER_SOURCE_TYPES else ""
+
+
+def motion_system_type(value):
+    """Normalize the optional motion system used to filter Processing Palette fields."""
+    value = str(value or "").strip().casefold()
+    return value if value in MOTION_SYSTEM_TYPES else ""
 RASTER_PRESETS = {"cartoon", "color_photograph", "bw_dither_photograph"}
 ABSTRACT_FILTERS = {
     "wave", "voronoi", "shear", "spiral", "mosaic", "crystal", "ripple",
@@ -816,6 +830,8 @@ def account_resources(event):
             "lens_field_of_view": str(item.get("lens_field_of_view") or ""),
             "notes": str(item.get("notes") or ""),
             "library_intent": material_library_intent(item.get("library_intent")),
+            "laser_source_type": laser_source_type(item.get("laser_source_type")),
+            "motion_system_type": motion_system_type(item.get("motion_system_type")),
             "summary": public_library_summary(item.get("summary")),
         } for item in materials],
         "depth_palettes": [{
@@ -1598,6 +1614,8 @@ def rename_material(event, library_id):
     name = str(data.get("name") or "").strip()
     if not name or len(name) > 160:
         raise ValueError("Material Library names must be between 1 and 160 characters")
+    source_type = laser_source_type(data.get("laser_source_type"))
+    motion_type = motion_system_type(data.get("motion_system_type"))
     source = s3.get_object(Bucket=BUCKET, Key=existing["s3_key"])["Body"].read(MAX_MATERIAL_BYTES + 1)
     if len(source) > MAX_MATERIAL_BYTES:
         raise ValueError(f"This Material Library exceeds the {MATERIAL_LIMIT_MB} limit. Export a smaller library from LightBurn and import it again.")
@@ -1616,12 +1634,16 @@ def rename_material(event, library_id):
     summary = material_summary(contents)
     s3.put_object(Bucket=BUCKET, Key=existing["s3_key"], Body=contents, ContentType="application/xml")
     intent = material_library_intent(existing.get("library_intent"))
-    table.update_item(Key=key, UpdateExpression="SET #name=:name, material_name=:material, summary=:summary, updated_at=:now",
+    table.update_item(Key=key, UpdateExpression="SET #name=:name, material_name=:material, laser_source_type=:source_type, motion_system_type=:motion_type, summary=:summary, updated_at=:now",
                       ExpressionAttributeNames={"#name": "name"},
                       ExpressionAttributeValues={":name": name, ":material": material_name,
+                                                 ":source_type": source_type,
+                                                 ":motion_type": motion_type,
                                                  ":summary": dynamo_value(summary), ":now": int(time.time())})
     return response(200, {"name": name, "material_name": material_name,
-                          "library_intent": intent, "summary": public_library_summary(summary)})
+                          "library_intent": intent, "laser_source_type": source_type,
+                          "motion_system_type": motion_type,
+                          "summary": public_library_summary(summary)})
 
 
 def single_palette_material(root, context="Palette"):
@@ -3354,6 +3376,8 @@ def import_upload(event):
         "start_angle": str(data.get("start_angle", "0")), "angular_span": str(data.get("angular_span", "180")),
         "first_interval": str(data.get("first_interval", "0.1")), "last_interval": str(data.get("last_interval", "0.1")),
         "library_intent": material_library_intent(data.get("library_intent")),
+        "laser_source_type": laser_source_type(data.get("laser_source_type")),
+        "motion_system_type": motion_system_type(data.get("motion_system_type")),
         "created_at": now, "expires_at": now + 900,
     })
     return response(201, {"import_id": import_id, "upload_token": token,
@@ -3673,9 +3697,13 @@ def finalize_import(event, import_id):
                     "name": pending.get("display_name") or os.path.splitext(filename)[0] or "Material Library",
                     "original_name": filename, "material_name": ", ".join(summary["material_names"])[:160],
                     "library_intent": pending.get("library_intent") or "color_palette",
+                    "laser_source_type": laser_source_type(pending.get("laser_source_type")),
+                    "motion_system_type": motion_system_type(pending.get("motion_system_type")),
                     "summary": dynamo_value(summary), "s3_key": destination, "created_at": now}
             response_body = {"material_library": public_library_summary(summary) | {
-                "library_id": asset_id, "name": item["name"], "library_intent": item["library_intent"]},
+                "library_id": asset_id, "name": item["name"], "library_intent": item["library_intent"],
+                "laser_source_type": item["laser_source_type"],
+                "motion_system_type": item["motion_system_type"]},
                 "import_adjustments": import_adjustments}
         else:
             recipe = json.loads(contents.decode("utf-8"))
