@@ -36,6 +36,38 @@ class ProcessingPaletteTests(unittest.TestCase):
         self.assertIn('processingMaterialSelections.set(item.library_id,material)', client)
         self.assertIn('event.target.matches(".processingMaterialFilter")', client)
 
+    def test_processing_palette_laser_source_type_filters_only_the_display(self):
+        handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
+        client = (ROOT / "serverless_web" / "vault.js").read_text(encoding="utf-8")
+        page = (ROOT / "serverless_web" / "vault.html").read_text(encoding="utf-8")
+
+        self.assertIn('LASER_SOURCE_TYPES = {"", "fiber", "co2", "diode"}', handler)
+        self.assertIn('MOTION_SYSTEM_TYPES = {"", "galvo", "gantry"}', handler)
+        self.assertIn('"laser_source_type": laser_source_type(item.get("laser_source_type"))', handler)
+        self.assertIn('"laser_source_type": laser_source_type(data.get("laser_source_type"))', handler)
+        self.assertIn('"laser_source_type": laser_source_type(pending.get("laser_source_type"))', handler)
+        self.assertIn('"motion_system_type": motion_system_type(item.get("motion_system_type"))', handler)
+        self.assertIn('"motion_system_type": motion_system_type(data.get("motion_system_type"))', handler)
+        self.assertIn('"motion_system_type": motion_system_type(pending.get("motion_system_type"))', handler)
+        self.assertIn('["","Not specified"]', client)
+        self.assertIn('["fiber","Fiber"]', client)
+        self.assertIn('["co2","CO2"]', client)
+        self.assertIn('["diode","Diode"]', client)
+        self.assertIn('["galvo","Galvo"]', client)
+        self.assertIn('["gantry","Gantry"]', client)
+        self.assertIn('co2:new Set(["qpulsewidth"', client)
+        self.assertIn('diode:new Set(["qpulsewidth","qpulseduration","mopulsewidth","openmodelay","overridefrequency"]', client)
+        self.assertNotIn('diode:new Set(["qpulsewidth","qpulseduration","mopulsewidth","frequency"', client)
+        self.assertIn('Laser source, motion system, and controller are independent dimensions', client)
+        self.assertIn('processingSettingVisible(key,sourceType,motionType="")', client)
+        self.assertIn('processingMotionExcludedSettings', client)
+        self.assertIn('gantry:new Set(["frequency","qpulsewidth"', client)
+        self.assertIn('class="processingMotionSystemType"', client)
+        self.assertIn('imported values remain stored', client)
+        self.assertIn('payload.laser_source_type=', client)
+        self.assertIn('payload.motion_system_type=', client)
+        self.assertIn('src="/vault.js?v=15"', page)
+
     def test_processing_role_preferences_accept_material_scopes_and_legacy_values(self):
         handler_path = ROOT / "serverless_api" / "handler.py"
         tree = ast.parse(handler_path.read_text(encoding="utf-8"))
