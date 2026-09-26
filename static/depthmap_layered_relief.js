@@ -2,6 +2,44 @@ function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
+export const LIGHTBURN_LAYER_LIMIT = 30;
+
+export function reliefLayerPlan(totalDepthMm, materialThicknessMm, surfaceEngraving = false) {
+  const totalDepth = Number(totalDepthMm);
+  const materialThickness = Number(materialThicknessMm);
+  if (!Number.isFinite(totalDepth) || totalDepth <= 0 || !Number.isFinite(materialThickness) || materialThickness <= 0) {
+    return {
+      valid:false,
+      layerCount:0,
+      lightBurnLayerCount:0,
+      actualDepthMm:0,
+      maximumPhysicalLayers:surfaceEngraving ? 15 : LIGHTBURN_LAYER_LIMIT,
+      message:"Enter a total relief depth and material thickness greater than zero.",
+    };
+  }
+  const layerCount = Math.round(totalDepth / materialThickness);
+  const layersPerSheet = surfaceEngraving ? 2 : 1;
+  const lightBurnLayerCount = layerCount * layersPerSheet;
+  const maximumPhysicalLayers = Math.floor(LIGHTBURN_LAYER_LIMIT / layersPerSheet);
+  const actualDepthMm = layerCount * materialThickness;
+  if (layerCount < 2) {
+    return {
+      valid:false, layerCount, lightBurnLayerCount, actualDepthMm, maximumPhysicalLayers,
+      message:`This combination produces ${layerCount} physical layer${layerCount === 1 ? "" : "s"}. Layered Relief needs at least 2; increase total relief depth or use thinner material.`,
+    };
+  }
+  if (lightBurnLayerCount > LIGHTBURN_LAYER_LIMIT) {
+    return {
+      valid:false, layerCount, lightBurnLayerCount, actualDepthMm, maximumPhysicalLayers,
+      message:`This combination requires ${layerCount} physical layers and ${lightBurnLayerCount} LightBurn layers, but LightBurn supports ${LIGHTBURN_LAYER_LIMIT}. Reduce total relief depth, use thicker material${surfaceEngraving ? ", or disable surface engraving" : ""}.`,
+    };
+  }
+  return {
+    valid:true, layerCount, lightBurnLayerCount, actualDepthMm, maximumPhysicalLayers,
+    message:`${totalDepth.toFixed(2)} mm requested ÷ ${materialThickness.toFixed(2)} mm material = ${layerCount} physical layers. Actual assembled depth: ${actualDepthMm.toFixed(2)} mm. LightBurn layers: ${lightBurnLayerCount} of ${LIGHTBURN_LAYER_LIMIT}.`,
+  };
+}
+
 function quantile(sortedValues, fraction) {
   if (!sortedValues.length) return 0;
   const position = clamp(fraction, 0, 1) * (sortedValues.length - 1);
@@ -415,6 +453,10 @@ export function createReliefLightBurn(relief, options = {}) {
   const selectedSetting = options.cutSetting;
   if (!selectedSetting) throw new Error("Choose a saved Swatch Palette and setting before exporting the Layered Relief project.");
   const surfaceEngraving = Boolean(options.surfaceEngraving);
+  const requiredLightBurnLayers = count * (surfaceEngraving ? 2 : 1);
+  if (requiredLightBurnLayers > LIGHTBURN_LAYER_LIMIT) {
+    throw new Error(`This export requires ${requiredLightBurnLayers} LightBurn layers, but LightBurn supports ${LIGHTBURN_LAYER_LIMIT}. Reduce the number of physical layers${surfaceEngraving ? " or disable surface engraving" : ""}.`);
+  }
   const photoSetting = options.photoSetting;
   const photoImages = options.photoImages || [];
   if (surfaceEngraving && !photoSetting) throw new Error("Choose a Photo setting before exporting the Layered Relief surface engraving.");
