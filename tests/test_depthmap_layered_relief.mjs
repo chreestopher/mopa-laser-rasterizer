@@ -24,6 +24,13 @@ const photoSetting = {
   settings:{minPower:"8", maxPower:"20", speed:"1200", interval:"0.025", ditherMode:"stucki", LinkPath:"Stainless steel/Photo"},
 };
 
+const scoreSetting = {
+  description:"Score",
+  material:"Stainless steel",
+  type:"Cut",
+  settings:{minPower:"4", maxPower:"6", speed:"1500", frequency:"20000", passes:"1", LinkPath:"Stainless steel/Score"},
+};
+
 test("total relief depth and stock thickness derive physical and LightBurn layer counts", () => {
   const plan = reliefLayerPlan(10, 3, false);
   assert.equal(plan.layerCount, 3);
@@ -35,6 +42,15 @@ test("total relief depth and stock thickness derive physical and LightBurn layer
   assert.equal(engraved.layerCount, 7);
   assert.equal(engraved.lightBurnLayerCount, 14);
   assert.equal(engraved.valid, true);
+
+  const scored = reliefLayerPlan(21, 3, false, true);
+  assert.equal(scored.layerCount, 7);
+  assert.equal(scored.lightBurnLayerCount, 13);
+  assert.equal(scored.valid, true);
+
+  const engravedAndScored = reliefLayerPlan(21, 3, true, true);
+  assert.equal(engravedAndScored.lightBurnLayerCount, 20);
+  assert.equal(engravedAndScored.valid, true);
 });
 
 test("derived layer plans fail instead of silently exceeding LightBurn's layer budget", () => {
@@ -49,6 +65,15 @@ test("derived layer plans fail instead of silently exceeding LightBurn's layer b
   assert.equal(engraved.lightBurnLayerCount, 32);
   assert.equal(engraved.valid, false);
   assert.match(engraved.message, /disable surface engraving/);
+
+  const scored = reliefLayerPlan(48, 3, false, true);
+  assert.equal(scored.lightBurnLayerCount, 31);
+  assert.equal(scored.valid, false);
+  assert.match(scored.message, /disable next-layer scoring/);
+
+  const engravedAndScored = reliefLayerPlan(33, 3, true, true);
+  assert.equal(engravedAndScored.lightBurnLayerCount, 32);
+  assert.equal(engravedAndScored.valid, false);
 
   const tooShallow = reliefLayerPlan(3, 3, false);
   assert.equal(tooShallow.valid, false);
@@ -211,7 +236,7 @@ test("optional surface engraving embeds aligned bitmap layers and preserves Phot
   assert.match(project, /<Shape Type="Path" ShapeID="2" CutIndex="1">/);
   assert.match(project, /CutIndex="5"/);
   assert.doesNotMatch(project, /<LinkPath\b/);
-  assert.match(project, /Engrave Photo first, then run Cut/);
+  assert.match(project, /Run Photo, then Cut/);
 });
 
 test("surface engraving requires a selected Photo setting", () => {
@@ -235,6 +260,42 @@ test("surface engraving requires an Image setting and one bitmap per sheet", () 
     photoSetting,
     photoImages:[{width:2, height:1, data:"cG5n"}],
   }), /Every Layered Relief sheet needs a matching visible-surface bitmap/);
+});
+
+test("optional assembly scoring traces the next sheet on every supporting sheet", () => {
+  const relief = createReliefLayers(Float32Array.of(0, .25, .5, .75, 1), 5, 1, {layers:3});
+  const project = createReliefLightBurn(relief, {
+    pixelSizeMm:1,
+    workbedWidthMm:9,
+    workbedHeightMm:5,
+    cutSetting:labelsSetting,
+    alignmentScore:true,
+    scoreSetting,
+  });
+  assert.equal((project.match(/<CutSetting type="Cut">/g) || []).length, 2);
+  assert.equal((project.match(/<CutSetting type="Scan">/g) || []).length, 3);
+  assert.match(project, /Layer 01 of 03 - BACK - Score Layer 02 Placement/);
+  assert.match(project, /Layer 02 of 03 - MIDDLE - Score Layer 03 Placement/);
+  assert.doesNotMatch(project, /Layer 03 of 03 - FRONT - Score/);
+  assert.equal((project.match(/<speed Value="1500"\/>/g) || []).length, 2);
+  assert.doesNotMatch(project, /<LinkPath\b/);
+  assert.match(project, /Run Score, then Cut/);
+  assert.match(project, /exact placement contour of the next sheet/);
+});
+
+test("assembly scoring requires a LightBurn Line setting", () => {
+  const relief = createReliefLayers(Float32Array.of(0, 1), 2, 1, {layers:2});
+  assert.throws(() => createReliefLightBurn(relief, {
+    pixelSizeMm:1,
+    cutSetting:labelsSetting,
+    alignmentScore:true,
+  }), /Choose a Score setting/);
+  assert.throws(() => createReliefLightBurn(relief, {
+    pixelSizeMm:1,
+    cutSetting:labelsSetting,
+    alignmentScore:true,
+    scoreSetting:photoSetting,
+  }), /must use LightBurn Line mode/);
 });
 
 test("LightBurn export independently rejects projects over the 30-layer limit", () => {

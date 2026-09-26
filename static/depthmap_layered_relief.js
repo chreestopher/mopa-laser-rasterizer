@@ -4,7 +4,7 @@ function clamp(value, minimum, maximum) {
 
 export const LIGHTBURN_LAYER_LIMIT = 30;
 
-export function reliefLayerPlan(totalDepthMm, materialThicknessMm, surfaceEngraving = false) {
+export function reliefLayerPlan(totalDepthMm, materialThicknessMm, surfaceEngraving = false, alignmentScore = false) {
   const totalDepth = Number(totalDepthMm);
   const materialThickness = Number(materialThicknessMm);
   if (!Number.isFinite(totalDepth) || totalDepth <= 0 || !Number.isFinite(materialThickness) || materialThickness <= 0) {
@@ -13,14 +13,14 @@ export function reliefLayerPlan(totalDepthMm, materialThicknessMm, surfaceEngrav
       layerCount:0,
       lightBurnLayerCount:0,
       actualDepthMm:0,
-      maximumPhysicalLayers:surfaceEngraving ? 15 : LIGHTBURN_LAYER_LIMIT,
+      maximumPhysicalLayers:Math.floor((LIGHTBURN_LAYER_LIMIT + (alignmentScore ? 1 : 0)) / (1 + Number(surfaceEngraving) + Number(alignmentScore))),
       message:"Enter a total relief depth and material thickness greater than zero.",
     };
   }
   const layerCount = Math.round(totalDepth / materialThickness);
-  const layersPerSheet = surfaceEngraving ? 2 : 1;
-  const lightBurnLayerCount = layerCount * layersPerSheet;
-  const maximumPhysicalLayers = Math.floor(LIGHTBURN_LAYER_LIMIT / layersPerSheet);
+  const layersPerSheet = 1 + Number(surfaceEngraving) + Number(alignmentScore);
+  const lightBurnLayerCount = layerCount * layersPerSheet - (alignmentScore ? 1 : 0);
+  const maximumPhysicalLayers = Math.floor((LIGHTBURN_LAYER_LIMIT + (alignmentScore ? 1 : 0)) / layersPerSheet);
   const actualDepthMm = layerCount * materialThickness;
   if (layerCount < 2) {
     return {
@@ -31,7 +31,7 @@ export function reliefLayerPlan(totalDepthMm, materialThicknessMm, surfaceEngrav
   if (lightBurnLayerCount > LIGHTBURN_LAYER_LIMIT) {
     return {
       valid:false, layerCount, lightBurnLayerCount, actualDepthMm, maximumPhysicalLayers,
-      message:`This combination requires ${layerCount} physical layers and ${lightBurnLayerCount} LightBurn layers, but LightBurn supports ${LIGHTBURN_LAYER_LIMIT}. Reduce total relief depth, use thicker material${surfaceEngraving ? ", or disable surface engraving" : ""}.`,
+      message:`This combination requires ${layerCount} physical layers and ${lightBurnLayerCount} LightBurn layers, but LightBurn supports ${LIGHTBURN_LAYER_LIMIT}. Reduce total relief depth, use thicker material${surfaceEngraving ? ", disable surface engraving" : ""}${alignmentScore ? ", or disable next-layer scoring" : ""}.`,
     };
   }
   return {
@@ -453,9 +453,10 @@ export function createReliefLightBurn(relief, options = {}) {
   const selectedSetting = options.cutSetting;
   if (!selectedSetting) throw new Error("Choose a saved Swatch Palette and setting before exporting the Layered Relief project.");
   const surfaceEngraving = Boolean(options.surfaceEngraving);
-  const requiredLightBurnLayers = count * (surfaceEngraving ? 2 : 1);
+  const alignmentScore = Boolean(options.alignmentScore);
+  const requiredLightBurnLayers = count * (1 + Number(surfaceEngraving) + Number(alignmentScore)) - (alignmentScore ? 1 : 0);
   if (requiredLightBurnLayers > LIGHTBURN_LAYER_LIMIT) {
-    throw new Error(`This export requires ${requiredLightBurnLayers} LightBurn layers, but LightBurn supports ${LIGHTBURN_LAYER_LIMIT}. Reduce the number of physical layers${surfaceEngraving ? " or disable surface engraving" : ""}.`);
+    throw new Error(`This export requires ${requiredLightBurnLayers} LightBurn layers, but LightBurn supports ${LIGHTBURN_LAYER_LIMIT}. Reduce the number of physical layers${surfaceEngraving ? ", disable surface engraving" : ""}${alignmentScore ? ", or disable next-layer scoring" : ""}.`);
   }
   const photoSetting = options.photoSetting;
   const photoImages = options.photoImages || [];
@@ -466,14 +467,19 @@ export function createReliefLightBurn(relief, options = {}) {
   if (surfaceEngraving && photoImages.length !== relief.layers.length) {
     throw new Error("Every Layered Relief sheet needs a matching visible-surface bitmap.");
   }
+  const scoreSetting = options.scoreSetting;
+  if (alignmentScore && !scoreSetting) throw new Error("Choose a Score setting before exporting Layered Relief assembly guides.");
+  if (alignmentScore && String(scoreSetting.type || "").toLowerCase() !== "cut") {
+    throw new Error("The selected Score setting must use LightBurn Line mode.");
+  }
   let geometryId = 1;
   for (const layer of relief.layers) {
     const number = layer.index + 1;
     const position = number === 1 ? "BACK" : number === count ? "FRONT" : "MIDDLE";
     const baseName = `Layer ${String(number).padStart(digits, "0")} of ${String(count).padStart(digits, "0")} - ${position}`;
-    const photoIndex = surfaceEngraving ? layer.index * 2 : -1;
-    const cutIndex = surfaceEngraving ? photoIndex + 1 : layer.index;
+    let photoIndex = -1;
     if (surfaceEngraving) {
+      photoIndex = cutSettings.length;
       cutSettings.push(reliefCutSettingXml(photoIndex, photoIndex, `${baseName} - Photo`, photoSetting));
       const bitmap = reliefBitmapGeometry(photoImages[layer.index], relief.width, relief.height, options, photoIndex, geometryId);
       if (bitmap) {
@@ -481,7 +487,16 @@ export function createReliefLightBurn(relief, options = {}) {
         geometryId += 1;
       }
     }
-    cutSettings.push(reliefCutSettingXml(cutIndex, cutIndex, surfaceEngraving ? `${baseName} - Cut` : baseName, selectedSetting));
+    if (alignmentScore && layer.index + 1 < count) {
+      const scoreIndex = cutSettings.length;
+      const nextNumber = number + 1;
+      cutSettings.push(reliefCutSettingXml(scoreIndex, scoreIndex, `${baseName} - Score Layer ${String(nextNumber).padStart(digits, "0")} Placement`, scoreSetting));
+      const scoreGeometry = reliefGeometry(relief.layers[layer.index + 1], relief.width, relief.height, {...options, registrationHoles:false}, scoreIndex, geometryId);
+      shapes.push(...scoreGeometry.shapes);
+      geometryId = scoreGeometry.nextGeometryId;
+    }
+    const cutIndex = cutSettings.length;
+    cutSettings.push(reliefCutSettingXml(cutIndex, cutIndex, surfaceEngraving || alignmentScore ? `${baseName} - Cut` : baseName, selectedSetting));
     const geometry = reliefGeometry(layer, relief.width, relief.height, options, cutIndex, geometryId);
     shapes.push(...geometry.shapes);
     geometryId = geometry.nextGeometryId;
@@ -493,11 +508,12 @@ export function createReliefLightBurn(relief, options = {}) {
     `Material: ${count} sheets at ${thickness.toFixed(3)} mm; nominal assembled depth ${(thickness * count).toFixed(3)} mm.`,
     `Artwork: ${artworkWidth.toFixed(3)} x ${artworkHeight.toFixed(3)} mm on a ${workbedWidth.toFixed(3)} x ${workbedHeight.toFixed(3)} mm workbed.`,
     "All layers intentionally overlap at identical workspace coordinates.",
-    surfaceEngraving
-      ? "PROCESS ONE SHEET AT A TIME: enable only one numbered Photo + Cut pair. Engrave Photo first, then run Cut without moving the sheet."
+    surfaceEngraving || alignmentScore
+      ? `PROCESS ONE SHEET AT A TIME: enable only one numbered group. Run ${surfaceEngraving ? "Photo, then " : ""}${alignmentScore ? "Score, then " : ""}Cut without moving the sheet.`
       : "CUT ONE SHEET AT A TIME: enable Output for exactly one layer and disable every other layer before starting.",
     `Every layer uses the selected ${selectedSetting.description || "palette"} setting${selectedSetting.material ? ` from ${selectedSetting.material}` : ""}.`,
     ...(surfaceEngraving ? [`Visible surface artwork uses the selected ${photoSetting.description || "Photo"} setting${photoSetting.material ? ` from ${photoSetting.material}` : ""}. Image mode and processing are copied from that saved LightBurn setting.`] : []),
+    ...(alignmentScore ? [`Each sheet except the frontmost uses the selected ${scoreSetting.description || "Score"} setting to mark the exact placement contour of the next sheet. Score guides are most useful for cumulative stacked reliefs; only guide marks on retained material remain after cutting.`] : []),
     "Inspect every contour. Small or disconnected islands may require manual placement or a supporting frame.",
   ].join("\n")).replaceAll("\n", "&#10;");
   return `<?xml version="1.0" encoding="UTF-8"?>\n<LightBurnProject AppVersion="2.1.04" FormatVersion="1" MaterialHeight="0" MirrorX="False" MirrorY="True" AskForSendName="True">\n${cutSettings.join("\n")}\n${shapes.join("\n")}\n  <Notes ShowOnLoad="1" Notes="${notes}"/>\n</LightBurnProject>\n`;

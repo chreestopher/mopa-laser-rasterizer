@@ -1,6 +1,6 @@
 import { createKrasnowParallaxPixels } from "./depthmap_parallax.js";
 import { createKrasnowParallaxSvg, parallaxCellIsEngraved } from "./depthmap_parallax_svg.js";
-import { createReliefLayers, createReliefLightBurn, reliefLayerPlan, reliefVisibleMasks, traceMaskContours } from "./depthmap_layered_relief.js?v=5";
+import { createReliefLayers, createReliefLightBurn, reliefLayerPlan, reliefVisibleMasks, traceMaskContours } from "./depthmap_layered_relief.js?v=6";
 
 const MODEL_ID = "onnx-community/depth-anything-v2-small";
 const TRANSFORMERS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2";
@@ -87,6 +87,10 @@ const reliefSurfaceEngravingControl = document.querySelector("#depth_relief_surf
 const reliefPhotoControls = document.querySelector("#depth_relief_photo_controls");
 const reliefPhotoSettingControl = document.querySelector("#depth_relief_photo_setting");
 const reliefPhotoSettingStatus = document.querySelector("#depth_relief_photo_setting_status");
+const reliefAlignmentScoreControl = document.querySelector("#depth_relief_alignment_score");
+const reliefScoreControls = document.querySelector("#depth_relief_score_controls");
+const reliefScoreSettingControl = document.querySelector("#depth_relief_score_setting");
+const reliefScoreSettingStatus = document.querySelector("#depth_relief_score_setting_status");
 const reliefExcludeBackgroundControl = document.querySelector("#depth_relief_exclude_background");
 const reliefRegistrationControl = document.querySelector("#depth_relief_registration");
 const reliefRegistrationControls = document.querySelector("#depth_relief_registration_controls");
@@ -924,6 +928,7 @@ function currentReliefLayerPlan() {
     reliefTotalDepthControl.value,
     reliefMaterialThicknessControl.value,
     reliefSurfaceEngravingControl.checked,
+    reliefAlignmentScoreControl.checked,
   );
 }
 
@@ -949,6 +954,8 @@ function reliefExportOptions() {
     cutSetting:selectedReliefCutSetting(),
     surfaceEngraving:reliefSurfaceEngravingControl.checked,
     photoSetting:selectedReliefPhotoSetting(),
+    alignmentScore:reliefAlignmentScoreControl.checked,
+    scoreSetting:selectedReliefScoreSetting(),
   };
 }
 
@@ -1002,18 +1009,25 @@ function selectedReliefPhotoSetting() {
   return selectedReliefSetting(reliefPhotoSettingControl);
 }
 
+function selectedReliefScoreSetting() {
+  return selectedReliefSetting(reliefScoreSettingControl);
+}
+
 function populateReliefSettings() {
   const library = selectedReliefLibrary();
   const entries = selectedReliefEntries();
   reliefSettingControl.replaceChildren(new Option("Choose a setting…", ""));
   reliefPhotoSettingControl.replaceChildren(new Option("Choose a Photo setting…", ""));
+  reliefScoreSettingControl.replaceChildren(new Option("Choose a Score setting…", ""));
   for (const entry of entries) {
     const label = entry.description || `Setting ${Number(entry.entry_id) + 1}`;
     reliefSettingControl.add(new Option(label, String(entry.entry_id)));
     reliefPhotoSettingControl.add(new Option(label, String(entry.entry_id)));
+    reliefScoreSettingControl.add(new Option(label, String(entry.entry_id)));
   }
   reliefSettingControl.disabled = !entries.length;
   reliefPhotoSettingControl.disabled = !entries.length;
+  reliefScoreSettingControl.disabled = !entries.length;
   const paletteRoles = (window.serverlessDepthResources?.preferences?.processing_palette_role_assignments || {})[library?.library_id] || {};
   const materialScopedRoles = paletteRoles.materials && typeof paletteRoles.materials === "object";
   const materialRoles = materialScopedRoles
@@ -1031,9 +1045,11 @@ function populateReliefSettings() {
   };
   const cut = roleEntry("Cut");
   const photo = roleEntry("Photo");
+  const score = roleEntry("Score");
   const preferred = cut || entries[0];
   reliefSettingControl.value = preferred ? String(preferred.entry_id) : "";
   reliefPhotoSettingControl.value = photo ? String(photo.entry_id) : "";
+  reliefScoreSettingControl.value = score ? String(score.entry_id) : "";
   updateReliefSettingStatus();
 }
 
@@ -1045,12 +1061,14 @@ function updateReliefSettingStatus() {
       ? `${source} will be copied to every Layered Relief cutting layer. Enable only one layer at a time before running the laser.`
       : `${source} is not a LightBurn Line setting. Choose an entry whose Cut Mode is Line so the relief contours remain editable cutting paths.`;
     updateReliefPhotoControls();
+    updateReliefScoreControls();
     return;
   }
   reliefSettingStatus.textContent = reliefMaterialLibraries.length
     ? "Choose a Processing Palette, Material, and Cut setting to use for every Layered Relief cutting layer."
     : "No saved Processing Palettes are available. Import one in the Swatch Palette Vault before exporting a Layered Relief project.";
   updateReliefPhotoControls();
+  updateReliefScoreControls();
 }
 
 function updateReliefPhotoControls() {
@@ -1071,6 +1089,24 @@ function updateReliefPhotoControls() {
   }
 }
 
+function updateReliefScoreControls() {
+  const enabled = reliefAlignmentScoreControl.checked;
+  reliefScoreControls.hidden = !enabled;
+  if (!enabled) {
+    reliefScoreSettingStatus.textContent = "Next-layer assembly scoring is off.";
+    return;
+  }
+  const setting = selectedReliefScoreSetting();
+  if (setting) {
+    const source = [setting.material, setting.description].filter(Boolean).join(" · ");
+    reliefScoreSettingStatus.textContent = String(setting.type).toLowerCase() === "cut"
+      ? `${source} will mark the placement of the following sheet before the current sheet is cut.`
+      : `${source} is not a LightBurn Line setting. Choose an entry whose Cut Mode is Line for editable score paths.`;
+  } else {
+    reliefScoreSettingStatus.textContent = "Choose a LightBurn Line setting for the assembly guides. The selected material's assigned Score role is selected automatically when available.";
+  }
+}
+
 function loadReliefCutSettings() {
   reliefMaterialLibraries = (window.serverlessDepthResources?.material_libraries || [])
     .filter(library => library.library_intent === "processing_palette" && (library.summary?.entries || []).length);
@@ -1083,7 +1119,7 @@ function loadReliefCutSettings() {
   populateReliefMaterials();
 }
 
-function paintReliefCutPaths(context, mask, width, height, options) {
+function paintReliefCutPaths(context, mask, width, height, options, nextLayerMask = null) {
   const lineWidth = Math.max(1, Math.min(width, height) / 350);
   context.save();
   context.strokeStyle = "#ff3030";
@@ -1110,10 +1146,18 @@ function paintReliefCutPaths(context, mask, width, height, options) {
       context.stroke();
     }
   }
+  if (options.alignmentScore && nextLayerMask) {
+    context.strokeStyle = "#00bcd4";
+    for (const contour of traceMaskContours(nextLayerMask, width, height)) {
+      context.beginPath();
+      contour.forEach(([x, y], index) => index ? context.lineTo(x, y) : context.moveTo(x, y));
+      context.stroke();
+    }
+  }
   context.restore();
 }
 
-function paintReliefMask(canvas, mask, width, height, options) {
+function paintReliefMask(canvas, mask, width, height, options, nextLayerMask = null) {
   canvas.width = width;
   canvas.height = height;
   const context = canvas.getContext("2d");
@@ -1127,7 +1171,7 @@ function paintReliefMask(canvas, mask, width, height, options) {
     image.data[offset + 3] = 255;
   }
   context.putImageData(image, 0, 0);
-  paintReliefCutPaths(context, mask, width, height, options);
+  paintReliefCutPaths(context, mask, width, height, options, nextLayerMask);
 }
 
 function paintReliefComposite(canvas, relief) {
@@ -1278,7 +1322,7 @@ function drawReliefPreview() {
   reliefPreviewLayerControl.value = String(Math.min(actualLayers, Math.max(1, Number(reliefPreviewLayerControl.value) || 1)));
   const selectedIndex = Number(reliefPreviewLayerControl.value) - 1;
   const exportOptions = reliefExportOptions();
-  paintReliefMask(reliefLayerCanvas, relief.layers[selectedIndex].mask, relief.width, relief.height, exportOptions);
+  paintReliefMask(reliefLayerCanvas, relief.layers[selectedIndex].mask, relief.width, relief.height, exportOptions, relief.layers[selectedIndex + 1]?.mask || null);
   paintReliefComposite(reliefCompositeCanvas, relief);
   reliefPreviewLayerValue.value = `${selectedIndex + 1} of ${actualLayers} · ${selectedIndex === 0 ? "rear" : selectedIndex === actualLayers - 1 ? "front" : "middle"}`;
   const physicalWidth = outputWidth * exportOptions.pixelSizeMm;
@@ -1372,6 +1416,12 @@ async function exportLayeredRelief() {
     if (reliefSurfaceEngravingControl.checked && String(selectedReliefPhotoSetting().type).toLowerCase() !== "image") {
       throw new Error("The selected Photo setting must use LightBurn Image mode. Configure its grayscale or dither mode in LightBurn, import the palette again, and retry.");
     }
+    if (reliefAlignmentScoreControl.checked && !selectedReliefScoreSetting()) {
+      throw new Error("Choose a Score setting before downloading the Layered Relief project with assembly guides.");
+    }
+    if (reliefAlignmentScoreControl.checked && String(selectedReliefScoreSetting().type).toLowerCase() !== "cut") {
+      throw new Error("The selected Score setting must use LightBurn Line mode. Configure the scoring setting in LightBurn, import the Processing Palette again, and retry.");
+    }
     const layerCount = plan.layerCount;
     if (outputWidth * outputHeight * layerCount > 40000000) {
       throw new Error(`This ${outputWidth.toLocaleString()} × ${outputHeight.toLocaleString()} depthmap with ${layerCount} layers is too large to vectorize safely in the browser. Reduce Final Canvas Size, reduce total relief depth, or use thicker material.`);
@@ -1384,7 +1434,7 @@ async function exportLayeredRelief() {
     const project = createReliefLightBurn(relief, exportOptions);
     const blob = new Blob([project], {type:"application/xml"});
     downloadBlob(blob, "layered-relief", "lbrn2");
-    setProcessingStatus(`Layered Relief LightBurn project created locally with ${relief.layers.length} aligned cutting layers${exportOptions.surfaceEngraving ? " and matching visible-surface Photo layers" : ""}.`);
+    setProcessingStatus(`Layered Relief LightBurn project created locally with ${relief.layers.length} aligned cutting layers${exportOptions.surfaceEngraving ? ", matching visible-surface Photo layers" : ""}${exportOptions.alignmentScore ? `, and ${Math.max(0, relief.layers.length - 1)} next-layer Score guides` : ""}.`);
   } finally {
     reliefExportButton.disabled = !currentReliefLayerPlan().valid;
   }
@@ -1651,6 +1701,11 @@ reliefSurfaceEngravingControl.addEventListener("change", () => {
   updateReliefQuantizationControls();
 });
 reliefPhotoSettingControl.addEventListener("change", updateReliefPhotoControls);
+reliefAlignmentScoreControl.addEventListener("change", () => {
+  updateReliefScoreControls();
+  updateReliefQuantizationControls();
+});
+reliefScoreSettingControl.addEventListener("change", updateReliefScoreControls);
 reliefExportButton.addEventListener("click", () => exportLayeredRelief().catch(cause => setProcessingStatus(cause.message, true)));
 drawLegend();
 updateParallaxControls();
