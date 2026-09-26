@@ -290,6 +290,8 @@ def test_panel_tiling_settings_are_disclosed_only_when_enabled():
     assert 'id="tileWorkbedWidth" type="number" min="1" max="3000"' in page
     assert 'id="tileWorkbedHeight" type="number" min="1" max="3000"' in page
     assert 'id="tileFitMode"' in page
+    assert 'id="tileAutoAspect" type="button"' in page
+    assert 'id="tileAutoAspectStatus"' in page
     assert 'id="tilePaddingSwatchField" hidden' in page
     assert 'id="tileBorderSwatchField" hidden' in page
     assert 'id="tileBorderWidthField" hidden' in page
@@ -299,6 +301,8 @@ def test_panel_tiling_settings_are_disclosed_only_when_enabled():
     details_markup = page.split('id="panelTilingDetails"', 1)[1].split("</div></div></section>", 1)[0]
     for control_id in (
         "tileFitMode",
+        "tileAutoAspect",
+        "tileAutoAspectStatus",
         "tileAlignX",
         "tileAlignY",
         "tilePaddingMode",
@@ -317,9 +321,28 @@ def test_panel_tiling_settings_are_disclosed_only_when_enabled():
     assert 'panel_number("gap_y_mm", 0, 1000, 0)' in api
     assert 'fit_mode = str(panel_tiling.get("fit_mode") or "stretch")' in api
     assert 'border_width = panel_number("border_width_mm", 0, 100, 0)' in api
+    assert 'Ordinary Rasterizer jobs are limited to 1,600 processing pixels per axis' in api
     assert 'queue_message["worker_type"] = "high_resolution_panel"' in api
     assert 'data["high_resolution_panel"] = high_resolution_panel' in api
     assert "MAX_HIGH_RES_PANEL_PIXELS = 40_000_000" in api
+
+
+def test_panel_tiling_controls_oversized_dimension_fields_and_aspect_matching():
+    page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+
+    assert "width.max=height.max=panelEnabled?'32000':'1600'" in page
+    assert "width.disabled=height.disabled=panelEnabled" in page
+    assert "width.value=dimensions.width" in page
+    assert "height.value=dimensions.height" in page
+    assert "async function autoMatchPanelAspect()" in page
+    assert "const orientations=[{width:current.tile_width_mm,height:current.tile_height_mm,rotated:false}]" in page
+    assert "orientation.rotated?0.25:0" in page
+    assert "document.querySelector('#tileFitMode').value='fit'" in page
+    assert "document.querySelector('#tileAutoAspect').onclick=autoMatchPanelAspect" in page
+    assert "panel-preview-key image" in page
+    assert "panel-preview-key space" in page
+    assert "panel-preview-key panel" in page
+    assert "panel-preview-key layout" in page
 
 
 def test_panel_dimensions_resize_the_complete_source_before_clipping():

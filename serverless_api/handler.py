@@ -4565,6 +4565,14 @@ def submit_job(event, task_id, guest=False):
     else:
         panel_tiling = {"enabled": False}
         data["high_resolution_panel"] = False
+        try:
+            standard_dimensions = [
+                int(data.get(name) or 0) for name in ("new_width", "new_height")
+            ]
+            if any(value < 0 or value > MAX_STANDARD_PROCESSING_AXIS for value in standard_dimensions):
+                raise ValueError
+        except (TypeError, ValueError):
+            return response(400, {"message": "Ordinary Rasterizer jobs are limited to 1,600 processing pixels per axis. Enable Panel Tiling for a larger assembled image."})
     data["panel_tiling"] = panel_tiling
     crop_shape = str(data.get("crop_shape") or "").strip().lower()
     if crop_shape not in {"", "rectangle", "square", "oval", "circle", "transparency"}:
