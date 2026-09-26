@@ -96,8 +96,11 @@ Resources:
           SelectWorker:
             Type: Choice
             Choices:
-              - Variable: $.message.worker_type
-                StringEquals: high_resolution_panel
+              - And:
+                  - Variable: $.message.worker_type
+                    IsPresent: true
+                  - Variable: $.message.worker_type
+                    StringEquals: high_resolution_panel
                 Next: ConfigurePanelWorker
             Default: ConfigureStandardWorker
           ConfigureStandardWorker:
