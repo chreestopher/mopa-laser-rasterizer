@@ -49,6 +49,13 @@ def test_in_depth_guides_build_and_cover_the_complete_workflows():
         assert 'href="/docs/multi-geometry-rasterizer-guide"' in index
         assert 'href="/docs/manual-krasnow-geometry-workflow"' in index
         assert "MOPA Madness: The Wizzard of Awes" in fauxlogram
+        assert "That legacy filter has been removed" in fauxlogram
+        assert "select Krasnow Grating under Geometry Style" in fauxlogram
+        assert "Nothing from the former baseline is lost" in fauxlogram
+        assert "route every eligible swatch to Krasnow" in fauxlogram
+        assert "The Geometry Style is also more capable than the retired filter" in fauxlogram
+        assert "custom closed-path SVG cells" in fauxlogram
+        assert "experimental LightBurn Fill output" in fauxlogram
         assert "Geometric Alchemy: The Wizzard of Awes" in rasterizer
         assert "Reproducing Krasnow Grating Geometry by Hand" in manual_krasnow
         assert "In-depth workflow guide" in manual_krasnow
