@@ -49,6 +49,9 @@ def test_panel_tiling_guide_covers_layout_outputs_and_workbed_center():
         "Fill layout",
         "live assembled-layout preview",
         "separate border around every physical panel",
+        "Auto-match image aspect",
+        "rotating every rectangular blank by 90 degrees",
+        "calculated read-only values",
     ):
         assert expected in text
 
