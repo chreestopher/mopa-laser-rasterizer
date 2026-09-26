@@ -23,7 +23,18 @@ class ProcessingPaletteTests(unittest.TestCase):
         self.assertIn('processing_palette_role_assignments:assignments', client)
         self.assertIn('processingMaterialNames', client)
         self.assertIn('[library.library_id]:{materials}', client)
-        self.assertIn('Material:', client)
+        self.assertIn('processingMaterialFilterMarkup', client)
+        self.assertIn('applyProcessingMaterialFilter', client)
+        self.assertIn('data-processing-material', client)
+        self.assertIn('class="processingMaterialFilter"', client)
+
+    def test_vault_processing_material_filter_hides_other_material_rows(self):
+        page = (ROOT / "serverless_web" / "vault.html").read_text(encoding="utf-8")
+        client = (ROOT / "serverless_web" / "vault.js").read_text(encoding="utf-8")
+        self.assertIn('.library-entry[hidden]{display:none!important}', page)
+        self.assertIn('row.dataset.processingMaterial===material', client)
+        self.assertIn('processingMaterialSelections.set(item.library_id,material)', client)
+        self.assertIn('event.target.matches(".processingMaterialFilter")', client)
 
     def test_processing_role_preferences_accept_material_scopes_and_legacy_values(self):
         handler_path = ROOT / "serverless_api" / "handler.py"
