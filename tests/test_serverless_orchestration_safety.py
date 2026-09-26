@@ -109,6 +109,21 @@ def test_oversized_panel_jobs_select_the_dedicated_task_definition():
     assert '"PanelTaskDefinitionArn=$(output "$WORKER_STACK" PanelTaskDefinitionArn)"' in deploy
 
 
+def test_small_jobs_without_worker_type_default_to_the_standard_worker():
+    orchestration = (ROOT / "ecs" / "rasterizer-orchestration.yaml").read_text(
+        encoding="utf-8"
+    )
+
+    select_worker = orchestration[
+        orchestration.index("          SelectWorker:"):
+        orchestration.index("          ConfigureStandardWorker:")
+    ]
+    assert "- And:" in select_worker
+    assert "Variable: $.message.worker_type\n                    IsPresent: true" in select_worker
+    assert "Variable: $.message.worker_type\n                    StringEquals: high_resolution_panel" in select_worker
+    assert "Default: ConfigureStandardWorker" in select_worker
+
+
 def test_serverless_production_retires_legacy_s3_dispatch_notification():
     legacy_deploy = ROOT / "dev_setup" / "deploy_fargate_worker_production.sh"
     serverless_deploy = (ROOT / "dev_setup" / "deploy_serverless_production.sh").read_text(
