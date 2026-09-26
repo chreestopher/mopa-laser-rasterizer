@@ -36,7 +36,7 @@ def test_color_palette_inline_editor_uses_fixed_public_setting_contract():
     assert "colorPaletteSettingMarkup(settings)" in script
     assert 'importedSettingMarkup(settings,sourceType,motionType):colorPaletteSettingMarkup(settings)' in script
     assert "<label>Cut Mode<select" in script
-    assert 'src="/vault.js?v=16"' in page
+    assert 'src="/vault.js?v=17"' in page
     assert 'return [["","Not specified"],...field.options]' in script
     assert 'normalized==="true"' in script
     assert 'normalized==="false"' in script

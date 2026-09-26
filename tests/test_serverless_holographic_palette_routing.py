@@ -111,7 +111,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         library = b'''<LightBurnLibrary><Material name="100w">
             <Entry Thickness="-1.0000" Desc="CUT"><CutSetting type="Cut"><LinkPath Value="100w/Leather/CUT"/></CutSetting></Entry>
             <Entry Thickness="-1.0000" Desc="CUT"><CutSetting type="Cut"><LinkPath Value="100w/Carbon Fiber/CUT"/></CutSetting></Entry>
-            <Entry Thickness="-1.0000" Desc="Photo"><CutSetting type="Image"><LinkPath Value="100w/Paper/Cardstock/Photo"/></CutSetting></Entry>
+            <Entry Thickness="-1.0000" Desc="Photo"><CutSetting type="Image"><LinkPath Value="100w/Paper/Cardstock/Photo"/><cleanupPass Value="2"/><SubLayer type="Scan"><maxPower Value="20"/><numPasses Value="4"/><isCleanup Value="1"/></SubLayer></CutSetting></Entry>
         </Material></LightBurnLibrary>'''
 
         normalized, adjustments = namespace["normalize_imported_material_descriptions"](library)
@@ -126,6 +126,11 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertEqual(summary["material_names"], ["100w"])
         self.assertEqual(summary["logical_material_names"], ["Leather", "Carbon Fiber", "Paper / Cardstock"])
         self.assertEqual(len({entry["entry_ref"] for entry in summary["entries"]}), 3)
+        self.assertEqual(summary["entries"][2]["settings"]["cleanupPass"], "2")
+        self.assertEqual(summary["entries"][2]["sub_layers"], [{
+            "type": "Scan",
+            "settings": {"maxPower": "20", "numPasses": "4", "isCleanup": "1"},
+        }])
 
     def test_standard_thickness_path_is_not_treated_as_nested_material(self):
         handler_path = ROOT / "serverless_api" / "handler.py"

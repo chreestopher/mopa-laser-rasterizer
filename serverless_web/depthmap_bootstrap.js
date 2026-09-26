@@ -62,7 +62,7 @@ async function start() {
   document.querySelector("#depth_palette_data").textContent = JSON.stringify(
     window.serverlessDepthResources.palette || [],
   );
-await import("/depthmap_generator.js?v=19");
+await import("/depthmap_generator.js?v=20");
   if (window.serverlessDepthGuest) {
     fail("Guest access ready. Choose an image to create a depth map entirely in this browser.");
   }
