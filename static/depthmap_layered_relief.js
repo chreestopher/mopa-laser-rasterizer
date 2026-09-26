@@ -473,7 +473,7 @@ export function createReliefLightBurn(relief, options = {}) {
     throw new Error("The selected Score setting must use LightBurn Line mode.");
   }
   let geometryId = 1;
-  for (const layer of relief.layers) {
+  for (const layer of [...relief.layers].reverse()) {
     const number = layer.index + 1;
     const position = number === 1 ? "BACK" : number === count ? "FRONT" : "MIDDLE";
     const baseName = `Layer ${String(number).padStart(digits, "0")} of ${String(count).padStart(digits, "0")} - ${position}`;
@@ -504,6 +504,7 @@ export function createReliefLightBurn(relief, options = {}) {
   const notes = xmlEscape([
     "MOPA LASER RASTERIZER - LAYERED RELIEF",
     `Assembly order: Layer 01 is the rear; Layer ${String(count).padStart(digits, "0")} is closest to the viewer.`,
+    "LightBurn layer-list order: frontmost sheet first, continuing toward the rear. Physical assembly still starts with Layer 01 at the rear.",
     `Construction: ${relief.construction === "stacked" ? "cumulative stacked relief" : "separated depth bands / shadow box"}.`,
     `Material: ${count} sheets at ${thickness.toFixed(3)} mm; nominal assembled depth ${(thickness * count).toFixed(3)} mm.`,
     `Artwork: ${artworkWidth.toFixed(3)} x ${artworkHeight.toFixed(3)} mm on a ${workbedWidth.toFixed(3)} x ${workbedHeight.toFixed(3)} mm workbed.`,

@@ -200,6 +200,9 @@ test("multi-layer LightBurn project keeps every relief slice aligned and ordered
   assert.equal((project.match(/<CutSetting type="Scan">/g) || []).length, 3);
   assert.match(project, /Layer 01 of 03 - BACK/);
   assert.match(project, /Layer 03 of 03 - FRONT/);
+  assert.ok(project.indexOf("Layer 03 of 03 - FRONT") < project.indexOf("Layer 02 of 03 - MIDDLE"));
+  assert.ok(project.indexOf("Layer 02 of 03 - MIDDLE") < project.indexOf("Layer 01 of 03 - BACK"));
+  assert.match(project, /LightBurn layer-list order: frontmost sheet first/);
   assert.match(project, /<hide Value="0"\/>/);
   assert.equal((project.match(/<hide Value="0"\/>/g) || []).length, 3);
   assert.match(project, /CutIndex="0"/);
