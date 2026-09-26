@@ -18,7 +18,7 @@ class ProcessingPaletteTests(unittest.TestCase):
         page = (ROOT / "serverless_web" / "vault.html").read_text(encoding="utf-8")
         client = (ROOT / "serverless_web" / "vault.js").read_text(encoding="utf-8")
         self.assertIn('<option value="processing_palette">Processing palette</option>', page)
-        self.assertIn('["Cut","Score","Photo","Fill","Shovel","Cleaning"]', client)
+        self.assertIn('["Cut","Score","Photo","Fill","Shovel","Cleaning","3D-Slice"]', client)
         self.assertIn('processingRolePicker', client)
         self.assertIn('processing_palette_role_assignments:assignments', client)
         self.assertIn('processingMaterialNames', client)
@@ -66,7 +66,7 @@ class ProcessingPaletteTests(unittest.TestCase):
         self.assertIn('imported values remain stored', client)
         self.assertIn('payload.laser_source_type=', client)
         self.assertIn('payload.motion_system_type=', client)
-        self.assertIn('src="/vault.js?v=16"', page)
+        self.assertIn('src="/vault.js?v=17"', page)
 
     def test_tab_and_perforation_settings_are_preserved_but_not_displayed(self):
         handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
@@ -98,7 +98,7 @@ class ProcessingPaletteTests(unittest.TestCase):
             if isinstance(node, ast.FunctionDef) and node.name == "clean_account_preferences"
         )
         namespace = {
-            "PROCESSING_PALETTE_ROLES": {"Cut", "Score", "Photo", "Fill", "Shovel", "Cleaning"},
+            "PROCESSING_PALETTE_ROLES": {"Cut", "Score", "Photo", "Fill", "Shovel", "Cleaning", "3D-Slice"},
             "PALETTE_NAMES": {},
             "LAST_USED_FORM_FIELDS": (),
             "clean_last_used_form": lambda _name, _value: None,
@@ -144,6 +144,8 @@ class ProcessingPaletteTests(unittest.TestCase):
         self.assertIn('reliefMaterialControl.addEventListener("change", populateReliefSettings)', depthmap)
         self.assertIn('roleEntry("Cut")', depthmap)
         self.assertIn('roleEntry("Photo")', depthmap)
+        self.assertIn('processingRoleEntry(library, depthLightBurnMaterialControl.value, "3D-Slice"', depthmap)
+        self.assertIn('processingRoleEntry(library, depthLightBurnMaterialControl.value, "Cleaning"', depthmap)
         self.assertIn('selected Cut setting must use LightBurn Line mode', depthmap)
         self.assertIn('Processing Palettes are for Depthmap tools', handler)
         self.assertIn('Processing Palettes cannot be used for Color Discovery grids', handler)

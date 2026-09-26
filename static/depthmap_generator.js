@@ -1,6 +1,7 @@
 import { createKrasnowParallaxPixels } from "./depthmap_parallax.js";
 import { createKrasnowParallaxSvg, parallaxCellIsEngraved } from "./depthmap_parallax_svg.js";
 import { createReliefLayers, createReliefLightBurn, reliefLayerPlan, reliefVisibleMasks, traceMaskContours } from "./depthmap_layered_relief.js?v=6";
+import { createDepthmapLightBurn, hasEmbeddedCleanup } from "./depthmap_lightburn.js?v=1";
 
 const MODEL_ID = "onnx-community/depth-anything-v2-small";
 const TRANSFORMERS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2";
@@ -56,6 +57,23 @@ const parallaxSvgButton = document.querySelector("#depth_export_parallax_svg");
 const parallaxPreviewCanvas = document.querySelector("#depth_parallax_preview_canvas");
 const parallaxMaskCanvas = document.querySelector("#depth_parallax_mask_canvas");
 const parallaxPreviewSummary = document.querySelector("#depth_parallax_preview_summary");
+const depthLightBurnPaletteControl = document.querySelector("#depth_lb_palette");
+const depthLightBurnMaterialControl = document.querySelector("#depth_lb_material");
+const depthLightBurnSlicingControl = document.querySelector("#depth_lb_slicing_setting");
+const depthLightBurnSettingStatus = document.querySelector("#depth_lb_setting_status");
+const depthLightBurnModeControl = document.querySelector("#depth_lb_mode");
+const depthLightBurnModeStatus = document.querySelector("#depth_lb_mode_status");
+const depthLightBurnCleanupGroup = document.querySelector("#depth_lb_cleanup_group");
+const depthLightBurnCleanupOverrideControls = document.querySelector("#depth_lb_cleanup_override_controls");
+const depthLightBurnCleanupControl = document.querySelector("#depth_lb_cleanup_setting");
+const depthLightBurnCleanAfterControl = document.querySelector("#depth_lb_clean_after");
+const depthLightBurnCleanupPassesControl = document.querySelector("#depth_lb_cleanup_passes");
+const depthLightBurnCleanupStatus = document.querySelector("#depth_lb_cleanup_status");
+const depthLightBurnPixelSizeControl = document.querySelector("#depth_lb_pixel_size");
+const depthLightBurnArtworkSize = document.querySelector("#depth_lb_artwork_size");
+const depthLightBurnWorkbedWidthControl = document.querySelector("#depth_lb_workbed_width");
+const depthLightBurnWorkbedHeightControl = document.querySelector("#depth_lb_workbed_height");
+const depthLightBurnExportButton = document.querySelector("#depth_export_lightburn");
 const reliefTotalDepthControl = document.querySelector("#depth_relief_total_depth");
 const reliefLayerCountOutput = document.querySelector("#depth_relief_layers");
 const reliefLightBurnLayerOutput = document.querySelector("#depth_relief_lightburn_layers");
@@ -115,6 +133,7 @@ const depthPalette = JSON.parse(document.querySelector("#depth_palette_data").te
 const paletteState = depthPalette.map(swatch => ({...swatch, rgb:hexToRgb(swatch.hex), enabled:true, depth:50, influence:0}));
 let savedDepthPalettes = [];
 let reliefMaterialLibraries = [];
+let depthLightBurnLibraries = [];
 
 let sourceFile = null;
 let sourceUrl = null;
@@ -494,6 +513,7 @@ function buildOutputCanvas() {
   borderPaddingControl.value = borderPadding;
   outputWidth = artworkWidth + borderPadding * 2;
   outputHeight = artworkHeight + borderPadding * 2;
+  updateDepthLightBurnArtworkSize();
   const scale = Math.min(artworkWidth / depthWidth, artworkHeight / depthHeight);
   const contentWidth = Math.max(1, Math.round(depthWidth * scale));
   const contentHeight = Math.max(1, Math.round(depthHeight * scale));
@@ -959,6 +979,174 @@ function reliefExportOptions() {
   };
 }
 
+function processingMaterialNames(library) {
+  const entries = library?.summary?.entries || [];
+  const names = library?.summary?.logical_material_names || [];
+  return [...new Set([...names, ...entries.map(entry => entry.material)]
+    .map(value => String(value || "").trim()).filter(Boolean))];
+}
+
+function processingEntries(library, material) {
+  return (library?.summary?.entries || []).filter(entry => String(entry.material || "") === material);
+}
+
+function processingRoleEntry(library, material, role, entries = processingEntries(library, material)) {
+  const paletteRoles = (window.serverlessDepthResources?.preferences?.processing_palette_role_assignments || {})[library?.library_id] || {};
+  const materialScopedRoles = paletteRoles.materials && typeof paletteRoles.materials === "object";
+  const materialRoles = materialScopedRoles ? (paletteRoles.materials[material] || {}) : paletteRoles;
+  const explicitlyAssigned = Object.prototype.hasOwnProperty.call(materialRoles, role);
+  const assignedValue = String(materialRoles[role] || "").trim();
+  const assigned = assignedValue.toLowerCase();
+  const match = entries.find(entry => assignedValue && String(entry.entry_ref || "") === assignedValue)
+    || entries.find(entry => assigned && String(entry.description || "").trim().toLowerCase() === assigned);
+  if (match) return match;
+  return !explicitlyAssigned || (!materialScopedRoles && assigned)
+    ? entries.find(entry => String(entry.description || "").trim().toLowerCase() === role.toLowerCase())
+    : null;
+}
+
+function portableProcessingSetting(library, entry) {
+  if (!entry) return null;
+  return {
+    description:entry.description || "Selected setting",
+    material:entry.material || library?.material_name || "",
+    type:entry.type || "Cut",
+    settings:entry.settings || {},
+    subLayers:entry.sub_layers || [],
+  };
+}
+
+function selectedDepthLightBurnLibrary() {
+  return depthLightBurnLibraries.find(library => String(library.library_id) === depthLightBurnPaletteControl.value);
+}
+
+function selectedDepthLightBurnEntries() {
+  return processingEntries(selectedDepthLightBurnLibrary(), depthLightBurnMaterialControl.value);
+}
+
+function selectedDepthLightBurnSetting(control) {
+  const library = selectedDepthLightBurnLibrary();
+  const entry = selectedDepthLightBurnEntries().find(item => String(item.entry_id) === control.value);
+  return portableProcessingSetting(library, entry);
+}
+
+function updateDepthLightBurnArtworkSize() {
+  if (!outputWidth || !outputHeight) {
+    depthLightBurnArtworkSize.value = "Generate a depthmap first";
+    return;
+  }
+  const pixelSize = Math.max(.001, Number(depthLightBurnPixelSizeControl.value) || .1);
+  depthLightBurnArtworkSize.value = `${(outputWidth * pixelSize).toFixed(2)} × ${(outputHeight * pixelSize).toFixed(2)} mm`;
+}
+
+function updateDepthLightBurnControls() {
+  const library = selectedDepthLightBurnLibrary();
+  const galvo = String(library?.motion_system_type || "").toLowerCase() === "galvo";
+  const slicedOption = [...depthLightBurnModeControl.options].find(option => option.value === "3dslice");
+  slicedOption.disabled = !galvo;
+  if (!galvo && depthLightBurnModeControl.value === "3dslice") depthLightBurnModeControl.value = "grayscale";
+  depthLightBurnModeStatus.textContent = galvo
+    ? "This Galvo Processing Palette supports Grayscale or 3D Sliced export."
+    : "This Processing Palette is not marked Galvo, so the export uses Grayscale mode.";
+  const slicing = selectedDepthLightBurnSetting(depthLightBurnSlicingControl);
+  if (slicing) {
+    const source = [slicing.material, slicing.description].filter(Boolean).join(" · ");
+    depthLightBurnSettingStatus.textContent = String(slicing.type).toLowerCase() === "image"
+      ? `${source} supplies the primary image/depth-pass settings.`
+      : `${source} is not a LightBurn Image setting. Choose an Image entry for the 3D-Slice role.`;
+  } else {
+    depthLightBurnSettingStatus.textContent = "Choose an Image setting. The material's assigned 3D-Slice role is selected automatically when available.";
+  }
+  const sliced = galvo && depthLightBurnModeControl.value === "3dslice";
+  depthLightBurnCleanupGroup.hidden = !sliced;
+  const embedded = sliced && hasEmbeddedCleanup(slicing);
+  depthLightBurnCleanupOverrideControls.hidden = embedded;
+  if (embedded) {
+    depthLightBurnCleanupStatus.textContent = "The selected 3D-Slice setting already contains cleanup passes. Its imported cleanup timing and sub-layer settings will be preserved as-is.";
+  } else if (sliced) {
+    const cleanup = selectedDepthLightBurnSetting(depthLightBurnCleanupControl);
+    depthLightBurnCleanupStatus.textContent = cleanup
+      ? String(cleanup.type).toLowerCase() === "scan"
+        ? `${[cleanup.material, cleanup.description].filter(Boolean).join(" · ")} supplies cleanup laser settings; timing and pass count come from the controls above.`
+        : `${[cleanup.material, cleanup.description].filter(Boolean).join(" · ")} is not a LightBurn Fill (Scan) setting. Choose a Fill setting for automatic cleanup.`
+      : "No cleanup setting is selected. The 3D Sliced project will contain depth passes only.";
+  }
+  updateDepthLightBurnArtworkSize();
+}
+
+function populateDepthLightBurnSettings() {
+  const library = selectedDepthLightBurnLibrary();
+  const entries = selectedDepthLightBurnEntries();
+  depthLightBurnSlicingControl.replaceChildren(new Option("Choose an Image setting…", ""));
+  depthLightBurnCleanupControl.replaceChildren(new Option("No automatic cleanup", ""));
+  for (const entry of entries) {
+    const label = entry.description || `Setting ${Number(entry.entry_id) + 1}`;
+    depthLightBurnSlicingControl.add(new Option(label, String(entry.entry_id)));
+    depthLightBurnCleanupControl.add(new Option(label, String(entry.entry_id)));
+  }
+  depthLightBurnSlicingControl.disabled = !entries.length;
+  depthLightBurnCleanupControl.disabled = !entries.length;
+  const slicing = processingRoleEntry(library, depthLightBurnMaterialControl.value, "3D-Slice", entries);
+  const cleaning = processingRoleEntry(library, depthLightBurnMaterialControl.value, "Cleaning", entries);
+  depthLightBurnSlicingControl.value = slicing ? String(slicing.entry_id) : "";
+  depthLightBurnCleanupControl.value = cleaning ? String(cleaning.entry_id) : "";
+  updateDepthLightBurnControls();
+}
+
+function populateDepthLightBurnMaterials() {
+  const names = processingMaterialNames(selectedDepthLightBurnLibrary());
+  depthLightBurnMaterialControl.replaceChildren(new Option("Choose a material…", ""));
+  for (const name of names) depthLightBurnMaterialControl.add(new Option(name, name));
+  depthLightBurnMaterialControl.disabled = !names.length;
+  depthLightBurnMaterialControl.value = names[0] || "";
+  populateDepthLightBurnSettings();
+}
+
+function loadDepthLightBurnSettings() {
+  depthLightBurnLibraries = (window.serverlessDepthResources?.material_libraries || [])
+    .filter(library => library.library_intent === "processing_palette" && (library.summary?.entries || []).length);
+  depthLightBurnPaletteControl.replaceChildren(new Option("Choose a Processing Palette…", ""));
+  for (const library of depthLightBurnLibraries) {
+    depthLightBurnPaletteControl.add(new Option(library.name || library.material_name || "Processing Palette", String(library.library_id)));
+  }
+  depthLightBurnPaletteControl.disabled = !depthLightBurnLibraries.length;
+  depthLightBurnPaletteControl.value = depthLightBurnLibraries.length ? String(depthLightBurnLibraries[0].library_id) : "";
+  populateDepthLightBurnMaterials();
+}
+
+function exportDepthLightBurn() {
+  if (!outputDepth) throw new Error("Create or import a depthmap before downloading a LightBurn project.");
+  const slicingSetting = selectedDepthLightBurnSetting(depthLightBurnSlicingControl);
+  if (!slicingSetting) throw new Error("Choose a Processing Palette 3D-Slice setting before downloading the LightBurn project.");
+  if (String(slicingSetting.type).toLowerCase() !== "image") throw new Error("The selected 3D-Slice setting must use LightBurn Image mode.");
+  const library = selectedDepthLightBurnLibrary();
+  const mode = String(library?.motion_system_type || "").toLowerCase() === "galvo" && depthLightBurnModeControl.value === "3dslice"
+    ? "3dslice" : "grayscale";
+  const dataUrl = mapCanvas.toDataURL("image/png");
+  const cleanupSetting = mode === "3dslice" && !hasEmbeddedCleanup(slicingSetting)
+    ? selectedDepthLightBurnSetting(depthLightBurnCleanupControl) : null;
+  if (cleanupSetting && String(cleanupSetting.type).toLowerCase() !== "scan") {
+    throw new Error("The selected cleanup setting must use LightBurn Fill (Scan) mode.");
+  }
+  const project = createDepthmapLightBurn({
+    width:outputWidth,
+    height:outputHeight,
+    data:dataUrl.slice(dataUrl.indexOf(",") + 1),
+    fileName:"depthmap.png",
+  }, {
+    mode,
+    slicingSetting,
+    cleanupSetting,
+    cleanAfter:depthLightBurnCleanAfterControl.value,
+    cleanupPasses:depthLightBurnCleanupPassesControl.value,
+    pixelSizeMm:depthLightBurnPixelSizeControl.value,
+    workbedWidthMm:depthLightBurnWorkbedWidthControl.value,
+    workbedHeightMm:depthLightBurnWorkbedHeightControl.value,
+  });
+  downloadBlob(new Blob([project], {type:"application/xml"}), "depthmap", "lbrn2");
+  setProcessingStatus(`Depthmap LightBurn project created locally in ${mode === "3dslice" ? "3D Sliced" : "Grayscale"} mode.`);
+}
+
 function selectedReliefLibrary() {
   return reliefMaterialLibraries.find(library => String(library.library_id) === reliefPaletteControl.value);
 }
@@ -983,12 +1171,7 @@ function selectedReliefSetting(control) {
   const library = selectedReliefLibrary();
   const entry = selectedReliefEntries().find(item => String(item.entry_id) === control.value);
   if (!entry) return null;
-  return {
-    description:entry.description || "Selected setting",
-    material:entry.material || library.material_name || "",
-    type:entry.type || "Cut",
-    settings:entry.settings || {},
-  };
+  return portableProcessingSetting(library, entry);
 }
 
 function populateReliefMaterials() {
@@ -1707,6 +1890,19 @@ reliefAlignmentScoreControl.addEventListener("change", () => {
 });
 reliefScoreSettingControl.addEventListener("change", updateReliefScoreControls);
 reliefExportButton.addEventListener("click", () => exportLayeredRelief().catch(cause => setProcessingStatus(cause.message, true)));
+depthLightBurnPaletteControl.addEventListener("change", populateDepthLightBurnMaterials);
+depthLightBurnMaterialControl.addEventListener("change", populateDepthLightBurnSettings);
+depthLightBurnSlicingControl.addEventListener("change", updateDepthLightBurnControls);
+depthLightBurnCleanupControl.addEventListener("change", updateDepthLightBurnControls);
+depthLightBurnModeControl.addEventListener("change", updateDepthLightBurnControls);
+depthLightBurnPixelSizeControl.addEventListener("input", updateDepthLightBurnArtworkSize);
+depthLightBurnExportButton.addEventListener("click", () => {
+  try {
+    exportDepthLightBurn();
+  } catch (cause) {
+    setProcessingStatus(cause.message, true);
+  }
+});
 drawLegend();
 updateParallaxControls();
 updateReliefControls();
@@ -1715,4 +1911,5 @@ updateBrushDepthPreview();
 updateBrushSizePreview();
 createSwatchControls();
 loadReliefCutSettings();
+loadDepthLightBurnSettings();
 loadSavedDepthPalettes().catch(cause => setProcessingStatus(cause.message, true));

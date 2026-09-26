@@ -76,7 +76,7 @@ MAX_LIGHTBURN_LAYERS = len(PALETTE)
 PALETTE_HEX = {name.casefold(): color for name, color in PALETTE}
 PALETTE_NAMES = {color.upper(): name for name, color in PALETTE}
 MATERIAL_LIBRARY_INTENTS = {"color_palette", "hatch_palette", "processing_palette"}
-PROCESSING_PALETTE_ROLES = {"Cut", "Score", "Photo", "Fill", "Shovel", "Cleaning"}
+PROCESSING_PALETTE_ROLES = {"Cut", "Score", "Photo", "Fill", "Shovel", "Cleaning", "3D-Slice"}
 LASER_SOURCE_TYPES = {"", "fiber", "co2", "diode"}
 MOTION_SYSTEM_TYPES = {"", "galvo", "gantry"}
 
@@ -524,6 +524,7 @@ def public_library_summary(summary):
             "angle": str(settings.get("angle") or "0"),
             "interval": str(settings.get("interval") or ""),
             "settings": settings,
+            "sub_layers": item.get("sub_layers") if isinstance(item.get("sub_layers"), list) else [],
         })
     return {
         "entry_count": int(summary.get("entry_count") or len(entries)),
@@ -3431,6 +3432,21 @@ def lightburn_entry_ref(material_name, entry, description, occurrence=1):
 
 
 def material_summary(contents):
+    def summarized_sub_layers(setting):
+        layers = []
+        if setting is None:
+            return layers
+        for child in setting.findall("./SubLayer"):
+            layer = {
+                "type": str(child.get("type") or "Setting"),
+                "settings": effective_lightburn_settings(child),
+            }
+            nested = summarized_sub_layers(child)
+            if nested:
+                layer["sub_layers"] = nested
+            layers.append(layer)
+        return layers
+
     root = ET.fromstring(contents)
     if root.tag != "LightBurnLibrary":
         raise ValueError("The file is not a LightBurn Material Library")
@@ -3478,7 +3494,8 @@ def material_summary(contents):
                             "entry_ref": lightburn_entry_ref(
                                 material_name, entry, description, identity_occurrences[identity]
                             ),
-                            "settings": values})
+                            "settings": values,
+                            "sub_layers": summarized_sub_layers(setting)})
     if description_issues:
         shown = description_issues[:10]
         suffix = f"; plus {len(description_issues) - len(shown)} more issue(s)" if len(description_issues) > len(shown) else ""
