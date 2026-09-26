@@ -36,7 +36,7 @@ def test_color_palette_inline_editor_uses_fixed_public_setting_contract():
     assert "colorPaletteSettingMarkup(settings)" in script
     assert 'importedSettingMarkup(settings,sourceType,motionType):colorPaletteSettingMarkup(settings)' in script
     assert "<label>Cut Mode<select" in script
-    assert 'src="/vault.js?v=15"' in page
+    assert 'src="/vault.js?v=16"' in page
     assert 'return [["","Not specified"],...field.options]' in script
     assert 'normalized==="true"' in script
     assert 'normalized==="false"' in script
@@ -99,7 +99,8 @@ def test_hidden_imported_fields_remain_preserved_by_server_patch():
 def test_link_path_is_not_exposed_in_any_palette_inline_editor():
     script = (ROOT / "serverless_web" / "vault.js").read_text(encoding="utf-8")
 
-    assert 'hidden=new Set(["LinkPath"])' in script
+    assert 'hiddenImportedSettingNames=new Set(["linkpath"' in script
+    assert "hiddenImportedSettingNames.has(key.toLowerCase())" in script
 
 
 def test_server_patch_writes_bidirectional_and_crosshatch_values():

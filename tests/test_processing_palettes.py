@@ -66,7 +66,29 @@ class ProcessingPaletteTests(unittest.TestCase):
         self.assertIn('imported values remain stored', client)
         self.assertIn('payload.laser_source_type=', client)
         self.assertIn('payload.motion_system_type=', client)
-        self.assertIn('src="/vault.js?v=15"', page)
+        self.assertIn('src="/vault.js?v=16"', page)
+
+    def test_tab_and_perforation_settings_are_preserved_but_not_displayed(self):
+        handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
+        client = (ROOT / "serverless_web" / "vault.js").read_text(encoding="utf-8")
+
+        hidden = (
+            "perflen",
+            "perfskip",
+            "tabsenabled",
+            "tabsize",
+            "tabcount",
+            "tabcountmax",
+            "tabspacing",
+            "manualtabs",
+            "tabsusespacing",
+        )
+        for setting in hidden:
+            self.assertIn(f'"{setting}"', client)
+        self.assertIn("hiddenImportedSettingNames.has(key.toLowerCase())", client)
+        self.assertIn("hiddenImportedSettingNames.has(name)", client)
+        self.assertIn('"perfLen", "perfSkip"', handler)
+        self.assertIn('"tabSize", "tabCount", "tabCountMax", "tabSpacing"', handler)
 
     def test_processing_role_preferences_accept_material_scopes_and_legacy_values(self):
         handler_path = ROOT / "serverless_api" / "handler.py"
