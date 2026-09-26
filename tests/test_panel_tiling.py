@@ -40,6 +40,95 @@ def test_panel_dimensions_include_physical_gaps():
     assert vector_processing.panel_tiling_dimensions(settings) == (46, 36)
 
 
+def test_panel_layout_defaults_preserve_existing_stretch_behavior():
+    settings = panel_settings()
+
+    assert settings["fit_mode"] == "stretch"
+    assert settings["align_x"] == "center"
+    assert settings["align_y"] == "center"
+    assert settings["padding_mode"] == "unengraved"
+    assert settings["border_mode"] == "none"
+
+
+def test_padding_swatch_is_ignored_outside_fit_mode():
+    settings = panel_settings(
+        fit_mode="fill",
+        padding_mode="swatch",
+        padding_swatch_hex="#0000FF",
+    )
+
+    assert settings["padding_mode"] == "unengraved"
+    assert settings["padding_swatch_hex"] == ""
+
+
+def test_fit_layout_preserves_aspect_ratio_with_transparent_padding():
+    source = Image.new("RGBA", (4, 2), "red")
+    settings = panel_settings(
+        tile_width_mm=4,
+        tile_height_mm=4,
+        workbed_width_mm=4,
+        workbed_height_mm=4,
+        columns=1,
+        rows=1,
+        gap_x_mm=0,
+        edge_inset_mm=0,
+        fit_mode="fit",
+    )
+
+    output = Material_Library.render_panel_layout_image(source, 4, 4, settings, 1)
+
+    assert output.getpixel((2, 0))[3] == 0
+    assert output.getpixel((2, 1)) == (255, 0, 0, 255)
+    assert output.getpixel((2, 3))[3] == 0
+    assert Material_Library.panel_layout_uses_transparency(settings) is True
+
+
+def test_fit_layout_can_engrave_padding_with_an_enabled_swatch_color():
+    source = Image.new("RGBA", (4, 2), "red")
+    settings = panel_settings(
+        tile_width_mm=4,
+        tile_height_mm=4,
+        workbed_width_mm=4,
+        workbed_height_mm=4,
+        columns=1,
+        rows=1,
+        gap_x_mm=0,
+        edge_inset_mm=0,
+        fit_mode="fit",
+        padding_mode="swatch",
+        padding_swatch_hex="#0000FF",
+    )
+
+    output = Material_Library.render_panel_layout_image(source, 4, 4, settings, 1)
+
+    assert output.getpixel((2, 0)) == (0, 0, 255, 255)
+    assert output.getpixel((2, 1)) == (255, 0, 0, 255)
+    assert Material_Library.panel_layout_uses_transparency(settings) is False
+
+
+def test_panel_border_uses_selected_swatch_without_changing_the_interior():
+    source = Image.new("RGBA", (8, 4), "red")
+    settings = panel_settings(
+        tile_width_mm=4,
+        tile_height_mm=4,
+        workbed_width_mm=4,
+        workbed_height_mm=4,
+        columns=2,
+        rows=1,
+        gap_x_mm=0,
+        edge_inset_mm=0,
+        border_mode="panel",
+        border_swatch_hex="#00FF00",
+        border_width_mm=1,
+    )
+
+    output = Material_Library.render_panel_layout_image(source, 8, 4, settings, 1)
+
+    assert output.getpixel((0, 0)) == (0, 255, 0, 255)
+    assert output.getpixel((3, 2)) == (0, 255, 0, 255)
+    assert output.getpixel((2, 2)) == (255, 0, 0, 255)
+
+
 def test_high_resolution_plan_keeps_limit_per_panel_not_per_assembly():
     settings = panel_settings(
         tile_width_mm=100,
@@ -192,20 +281,42 @@ def test_panel_tiling_settings_are_disclosed_only_when_enabled():
     assert 'id="panelTilingEnabled" type="checkbox" aria-controls="panelTilingDetails" aria-expanded="false"' in page
     assert 'id="panelTilingDetails" class="layout-details" hidden' in page
     assert ".layout-details[hidden]{display:none}" in page
-    assert "details.hidden=!settings.enabled" in page
-    assert "toggle.setAttribute('aria-expanded',String(settings.enabled))" in page
+    assert "details.hidden=!toggle.checked" in page
+    assert "toggle.setAttribute('aria-expanded',String(toggle.checked))" in page
     assert 'id="tileWidth" type="number" min="1" max="3000"' in page
     assert 'id="tileHeight" type="number" min="1" max="3000"' in page
     assert 'id="tileGapX" type="number" min="0" max="1000"' in page
     assert 'id="tileGapY" type="number" min="0" max="1000"' in page
     assert 'id="tileWorkbedWidth" type="number" min="1" max="3000"' in page
     assert 'id="tileWorkbedHeight" type="number" min="1" max="3000"' in page
+    assert 'id="tileFitMode"' in page
+    assert 'id="tilePaddingSwatchField" hidden' in page
+    assert 'id="tileBorderSwatchField" hidden' in page
+    assert 'id="tileBorderWidthField" hidden' in page
+    assert 'id="panelLayoutPreview"' in page
+    assert "fit_mode:fitMode" in page
+    assert "renderPanelLayoutPreview()" in page
+    details_markup = page.split('id="panelTilingDetails"', 1)[1].split("</div></div></section>", 1)[0]
+    for control_id in (
+        "tileFitMode",
+        "tileAlignX",
+        "tileAlignY",
+        "tilePaddingMode",
+        "tilePaddingSwatch",
+        "tileBorderMode",
+        "tileBorderSwatch",
+        "tileBorderWidth",
+        "panelLayoutPreview",
+    ):
+        assert f'id="{control_id}"' in details_markup
 
     api = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
     assert 'panel_number("tile_width_mm", 1, 3000, 100)' in api
     assert 'panel_number("tile_height_mm", 1, 3000, 100)' in api
     assert 'panel_number("gap_x_mm", 0, 1000, 0)' in api
     assert 'panel_number("gap_y_mm", 0, 1000, 0)' in api
+    assert 'fit_mode = str(panel_tiling.get("fit_mode") or "stretch")' in api
+    assert 'border_width = panel_number("border_width_mm", 0, 100, 0)' in api
     assert 'queue_message["worker_type"] = "high_resolution_panel"' in api
     assert 'data["high_resolution_panel"] = high_resolution_panel' in api
     assert "MAX_HIGH_RES_PANEL_PIXELS = 40_000_000" in api

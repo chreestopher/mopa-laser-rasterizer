@@ -1020,11 +1020,20 @@ def clean_last_used_form(name, snapshot):
                     "enabled", "tile_width_mm", "tile_height_mm", "columns", "rows",
                     "gap_x_mm", "gap_y_mm", "edge_inset_mm", "workbed_width_mm",
                     "workbed_height_mm", "origin_x_mm", "origin_y_mm", "order", "include_tile_ids",
+                    "fit_mode", "align_x", "align_y", "padding_mode", "padding_swatch_hex",
+                    "border_mode", "border_swatch_hex", "border_width_mm",
                 }
                 and (
                     isinstance(parameter_value, bool)
                     or clean_number(parameter_value) is not None
                     or parameter == "order" and parameter_value in {"row_major", "column_major", "serpentine"}
+                    or parameter == "fit_mode" and parameter_value in {"stretch", "fit", "fill"}
+                    or parameter in {"align_x", "align_y"} and parameter_value in {"start", "center", "end"}
+                    or parameter == "padding_mode" and parameter_value in {"unengraved", "swatch"}
+                    or parameter == "border_mode" and parameter_value in {"none", "assembly", "panel"}
+                    or parameter in {"padding_swatch_hex", "border_swatch_hex"}
+                    and isinstance(parameter_value, str)
+                    and (not parameter_value or re.fullmatch(r"#[0-9A-Fa-f]{6}", parameter_value))
                 )
             }
         elif key == "geometry_style" and value in {"vectors", "glyphs", "halftone_newsprint", "krasnow_grating", "by_swatch"}:
@@ -4491,11 +4500,34 @@ def submit_job(event, task_id, guest=False):
             workbed_width = panel_number("workbed_width_mm", 1, 3000, 350, "origin_x_mm")
             workbed_height = panel_number("workbed_height_mm", 1, 3000, 350, "origin_y_mm")
             order = str(panel_tiling.get("order") or "row_major").strip().lower()
+            fit_mode = str(panel_tiling.get("fit_mode") or "stretch").strip().lower()
+            align_x = str(panel_tiling.get("align_x") or "center").strip().lower()
+            align_y = str(panel_tiling.get("align_y") or "center").strip().lower()
+            padding_mode = str(panel_tiling.get("padding_mode") or "unengraved").strip().lower()
+            border_mode = str(panel_tiling.get("border_mode") or "none").strip().lower()
+            border_width = panel_number("border_width_mm", 0, 100, 0)
+            padding_swatch = str(panel_tiling.get("padding_swatch_hex") or "").strip().upper()
+            border_swatch = str(panel_tiling.get("border_swatch_hex") or "").strip().upper()
             if columns * rows > 100 or inset * 2 >= min(tile_width, tile_height):
                 raise ValueError
             if tile_width > workbed_width or tile_height > workbed_height:
                 return response(400, {"message": "Panel Tiling tile dimensions must fit inside the described workbed. Increase the workbed dimensions or use smaller tiles."})
             if order not in {"row_major", "column_major", "serpentine"}:
+                raise ValueError
+            if fit_mode not in {"stretch", "fit", "fill"} or align_x not in {"start", "center", "end"} or align_y not in {"start", "center", "end"}:
+                raise ValueError
+            if padding_mode not in {"unengraved", "swatch"} or border_mode not in {"none", "assembly", "panel"}:
+                raise ValueError
+            if fit_mode != "fit":
+                padding_mode = "unengraved"
+                padding_swatch = ""
+            if padding_swatch and not re.fullmatch(r"#[0-9A-F]{6}", padding_swatch):
+                raise ValueError
+            if border_swatch and not re.fullmatch(r"#[0-9A-F]{6}", border_swatch):
+                raise ValueError
+            if padding_mode == "swatch" and not padding_swatch:
+                raise ValueError
+            if border_mode != "none" and (not border_swatch or border_width <= 0 or border_width * 2 >= min(tile_width, tile_height)):
                 raise ValueError
             assembled_width = columns * tile_width + (columns - 1) * gap_x
             assembled_height = rows * tile_height + (rows - 1) * gap_y
@@ -4510,12 +4542,16 @@ def submit_job(event, task_id, guest=False):
             if high_resolution_panel and total_panel_pixels > MAX_HIGH_RES_PANEL_PIXELS:
                 return response(400, {"message": "This high-resolution panel layout exceeds the 40-million processed-pixel job limit. Increase Pixel size, reduce the tile count, or use smaller tiles."})
         except (TypeError, ValueError):
-            return response(400, {"message": "Panel Tiling contains an invalid tile size, count, gap, inset, workbed size, or tile order. Review the Panel Tiling controls and submit again."})
+            return response(400, {"message": "Panel Tiling contains an invalid size, count, gap, inset, workbed, image-fitting, padding, border, or tile-order setting. Review the Panel Tiling controls and submit again."})
         panel_tiling = {
             "enabled": True, "tile_width_mm": tile_width, "tile_height_mm": tile_height,
             "columns": columns, "rows": rows, "gap_x_mm": gap_x, "gap_y_mm": gap_y,
             "edge_inset_mm": inset, "workbed_width_mm": workbed_width, "workbed_height_mm": workbed_height,
             "order": order,
+            "fit_mode": fit_mode, "align_x": align_x, "align_y": align_y,
+            "padding_mode": padding_mode, "padding_swatch_hex": padding_swatch,
+            "border_mode": border_mode, "border_swatch_hex": border_swatch,
+            "border_width_mm": border_width,
             "include_tile_ids": not (
                 panel_tiling.get("include_tile_ids") is False
                 or panel_tiling.get("include_tile_ids") == 0
@@ -4981,6 +5017,12 @@ def submit_job(event, task_id, guest=False):
             return response(400, {"message": "Select at least one valid raster palette swatch"})
         selected_hexes = [allowed_names[name.casefold()] for name in requested_names]
     data["selected_color_hexes"] = selected_hexes
+    if panel_tiling.get("enabled"):
+        selected_panel_hexes = {str(color).upper() for color in selected_hexes}
+        if panel_tiling.get("padding_mode") == "swatch" and panel_tiling.get("padding_swatch_hex") not in selected_panel_hexes:
+            return response(400, {"message": "Choose an enabled raster swatch for the Panel Tiling extra area."})
+        if panel_tiling.get("border_mode") != "none" and panel_tiling.get("border_swatch_hex") not in selected_panel_hexes:
+            return response(400, {"message": "Choose an enabled raster swatch for the Panel Tiling border."})
     if generated_recipe_id:
         data["selected_holographic_recipe_indexes"] = selected_recipe_indexes
         data["image_preset"] = "holographic_artwork"
