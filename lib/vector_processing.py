@@ -17,7 +17,7 @@ import potrace
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from shapely.geometry import Polygon, box, Point, MultiPoint, LineString, GeometryCollection
-from shapely.ops import unary_union, voronoi_diagram, transform
+from shapely.ops import split, unary_union, voronoi_diagram, transform
 from shapely.affinity import scale, affine_transform, translate
 from shapely.validation import make_valid
 from svgelements import SVG, Path, Polygon as SVGPolygon
@@ -2688,6 +2688,70 @@ def add_geometry_to_svg(
 # LIGHTBURN
 # ============================================================================
 
+def _lightburn_hole_free_polygons(polygon):
+    """Split a polygon-with-holes into equivalent polygons without interiors.
+
+    LightBurn stores each ``Path`` as an independently fillable object. Writing
+    a Shapely interior ring as a second Path can therefore turn the intended
+    hole back into filled geometry. Opening each interior ring with a straight
+    cut produces adjacent, ordinary polygons whose union is the original
+    polygon and whose individual objects never cover the hole.
+    """
+    if polygon.is_empty:
+        return []
+    if not polygon.interiors:
+        return [polygon]
+
+    pending = [polygon]
+    finished = []
+    while pending:
+        candidate = pending.pop()
+        if candidate.is_empty:
+            continue
+        if not candidate.interiors:
+            finished.append(candidate)
+            continue
+
+        hole = Polygon(candidate.interiors[0])
+        hole_point = hole.representative_point()
+        min_x, min_y, max_x, max_y = candidate.bounds
+        margin = max(max_x - min_x, max_y - min_y, 1.0) + 1.0
+        cutters = (
+            LineString([
+                (min_x - margin, hole_point.y),
+                (max_x + margin, hole_point.y),
+            ]),
+            LineString([
+                (hole_point.x, min_y - margin),
+                (hole_point.x, max_y + margin),
+            ]),
+        )
+
+        original_hole_count = len(candidate.interiors)
+        split_parts = None
+        for cutter in cutters:
+            result = split(candidate, cutter)
+            parts = [
+                item for item in result.geoms
+                if item.geom_type == "Polygon" and not item.is_empty and item.area > 0
+            ]
+            if (
+                len(parts) > 1
+                and sum(len(item.interiors) for item in parts) < original_hole_count
+            ):
+                split_parts = parts
+                break
+
+        if split_parts is None:
+            raise ValueError(
+                "LightBurn export could not safely divide geometry around an "
+                "interior opening. Try reducing smoothing or changing the "
+                "geometry settings."
+            )
+        pending.extend(split_parts)
+
+    return finished
+
 def push_geometry_to_lightburn(
     geometry,
     color_hex,
@@ -2713,59 +2777,14 @@ def push_geometry_to_lightburn(
     layer_id = override_layer_id if override_layer_id is not None else layer_meta[1]
 
     if geometry.geom_type == "Polygon":
-
-        # --------------------------------------------------------------------
-        # Exterior boundary
-        # --------------------------------------------------------------------
-
-        exterior_coords = [
-            [
-                round(x, 3),
-                round(y, 3)
+        for polygon in _lightburn_hole_free_polygons(geometry):
+            exterior_coords = [
+                [round(x, 3), round(y, 3)]
+                for x, y in polygon.exterior.coords
             ]
-            for x, y
-            in geometry.exterior.coords
-        ]
-
-        if exterior_coords:
-
-            lb_shape = (
-                lightburn.Path(
-                    exterior_coords
-                )
-                .layer(layer_id)
-            )
-
-            lb_project_instance.add(
-                lb_shape
-            )
-
-        # --------------------------------------------------------------------
-        # Interior holes
-        # --------------------------------------------------------------------
-
-        for interior in geometry.interiors:
-
-            interior_coords = [
-                [
-                    round(x, 3),
-                    round(y, 3)
-                ]
-                for x, y
-                in interior.coords
-            ]
-
-            if interior_coords:
-
-                lb_hole = (
-                    lightburn.Path(
-                        interior_coords
-                    )
-                    .layer(layer_id)
-                )
-
+            if exterior_coords:
                 lb_project_instance.add(
-                    lb_hole
+                    lightburn.Path(exterior_coords).layer(layer_id)
                 )
 
     elif geometry.geom_type == "LineString":
