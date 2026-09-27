@@ -89,8 +89,74 @@ def test_lightburn_line_export_uses_open_paths_without_duplicate_return_edges():
     assert project.items[0].closed is False
     output = StringIO()
     project.items[0].write(output, 0)
-    assert "<PrimList>LineOpen</PrimList>" in output.getvalue()
+    assert "<PrimList>L0 1</PrimList>" in output.getvalue()
     assert "LineClosed" not in output.getvalue()
+
+
+def test_lightburn_open_path_writes_explicit_connected_primitives():
+    path = lightburn.Path([(0, 0), (1, 1), (2, 0)], closed=False)
+    output = StringIO()
+
+    path.write(output, 0)
+
+    assert "<PrimList>L0 1L1 2</PrimList>" in output.getvalue()
+
+
+def test_lightburn_micro_path_cleanup_is_layer_scoped_and_open_only():
+    project = lightburn.Lightburn()
+    keep = lightburn.Path([(10.000, 10.000), (10.008, 10.000)], closed=False).layer(2)
+    near_duplicate = lightburn.Path(
+        [(10.004, 10.004), (10.012, 10.004)], closed=False
+    ).layer(2)
+    other_layer = lightburn.Path(
+        [(10.004, 10.004), (10.012, 10.004)], closed=False
+    ).layer(3)
+    closed = lightburn.Path(
+        [(10.004, 10.004), (10.012, 10.004)], closed=True
+    ).layer(2)
+    long_stroke = lightburn.Path([(10, 10), (10.1, 10)], closed=False).layer(2)
+    for item in (keep, near_duplicate, other_layer, closed, long_stroke):
+        project.add(item)
+
+    removed = project.cleanup_near_duplicate_open_paths()
+
+    assert removed == 1
+    assert keep in project.objects
+    assert near_duplicate not in project.objects
+    assert other_layer in project.objects
+    assert closed in project.objects
+    assert long_stroke in project.objects
+
+
+def test_lightburn_micro_path_cleanup_flag_controls_serialization(tmp_path):
+    def build_project():
+        project = lightburn.Lightburn()
+        project.add(
+            lightburn.Path([(2.000, 3.000), (2.008, 3.000)], closed=False).layer(4)
+        )
+        project.add(
+            lightburn.Path([(2.004, 3.004), (2.012, 3.004)], closed=False).layer(4)
+        )
+        return project
+
+    disabled_output = tmp_path / "disabled.lbrn2"
+    with patch.dict(
+        "os.environ", {"RASTER_LIGHTBURN_MICRO_PATH_CLEANUP": "false"}
+    ):
+        build_project().write(disabled_output)
+
+    enabled_output = tmp_path / "enabled.lbrn2"
+    with patch.dict(
+        "os.environ", {"RASTER_LIGHTBURN_MICRO_PATH_CLEANUP": "true"}
+    ):
+        build_project().write(enabled_output)
+
+    assert disabled_output.read_text(encoding="utf-8").count(
+        '<Shape Type="Path"'
+    ) == 2
+    assert enabled_output.read_text(encoding="utf-8").count(
+        '<Shape Type="Path"'
+    ) == 1
 
 
 def test_lightburn_line_export_drops_paths_collapsed_by_coordinate_rounding():

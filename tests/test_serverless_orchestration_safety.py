@@ -120,6 +120,17 @@ def test_lightburn_open_paths_are_feature_flagged_for_easy_worker_rollback():
     assert "SERVERLESS_STAGING_LIGHTBURN_OPEN_PATHS:-true" in deploy
 
 
+def test_lightburn_micro_path_cleanup_is_feature_flagged_for_rollback():
+    worker = (ROOT / "ecs" / "rasterizer-worker.yaml").read_text(encoding="utf-8")
+    deploy = (ROOT / "dev_setup" / "deploy_serverless_staging.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "LightBurnMicroPathCleanup:" in worker
+    assert worker.count("RASTER_LIGHTBURN_MICRO_PATH_CLEANUP") == 2
+    assert "SERVERLESS_STAGING_LIGHTBURN_MICRO_PATH_CLEANUP:-true" in deploy
+
+
 def test_small_jobs_without_worker_type_default_to_the_standard_worker():
     orchestration = (ROOT / "ecs" / "rasterizer-orchestration.yaml").read_text(
         encoding="utf-8"
