@@ -9,7 +9,7 @@ const COLORS=["#e44d61","#f39c49","#e4d354","#72c66a","#43b7a7","#4c9dde","#6c70
 const $=selector=>document.querySelector(selector);
 const esc=value=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
 
-function newLayer(index){return{name:`Layer ${index+1}`,motif:["petal","leaf","star","diamond"][index%4],custom_svg:null,construction:"cutout",support_mode:"automatic_bridges",rim_style:"closed",repetitions:12,rings:3,inner_radius_ratio:.18,motif_scale:.72,radial_stretch:1,tangent_stretch:1,twist_degrees:index%2? -18:18,rotation_degrees:index*8,alternate_rotation:true,mirror_alternating:false,rim_width_mm:4,bridge_width_mm:2,support_sweep_degrees:0,bridge_wave_amount:0,bridge_wave_amplitude_mm:6,bridge_wave_position:.5,layer_openness:0,opening_inner_ratio:.25,opening_rotation_degrees:0}}
+function newLayer(index){return{name:`Layer ${index+1}`,motif:["petal","leaf","star","diamond"][index%4],ornament_style:["lotus","billow","paisley","rose_lace"][index%4],custom_svg:null,construction:"cutout",support_mode:"automatic_bridges",rim_style:index===0?"petal":"open",repetitions:12,rings:3,inner_radius_ratio:.18,motif_scale:.72,radial_stretch:1,tangent_stretch:1,twist_degrees:index%2?-28:28,rotation_degrees:index*8,alternate_rotation:true,mirror_alternating:false,flow_amount:.92,petal_fullness:1.15,tip_sharpness:1.4,curl_degrees:index%2?-28:28,band_overlap:.25,mirror_wedges:true,rim_width_mm:4,bridge_width_mm:1.5,support_sweep_degrees:index%2?-18:18,bridge_wave_amount:.65,bridge_wave_amplitude_mm:8,bridge_wave_position:.5,layer_openness:.1,opening_inner_ratio:.25,opening_rotation_degrees:0}}
 function processingPalettes(){return(resources.material_libraries||[]).filter(item=>item.library_intent==="processing_palette")}
 function selectedPalette(){return processingPalettes().find(item=>item.library_id===$("#processingPalette").value)}
 function materialNames(library){return[...new Set([...(library?.summary?.logical_material_names||[]),...(library?.summary?.entries||[]).map(entry=>entry.material)].map(value=>String(value||"").trim()).filter(Boolean))]}
@@ -22,14 +22,16 @@ function populateCutSettings(){const library=selectedPalette(),material=$("#proc
 
 function layerCard(layer,index){return`<article class="layer-card" data-layer="${index}"><div class="layer-heading"><div><h3>Layer ${index+1}</h3><p>Front-to-back position ${index+1}</p></div><div class="layer-actions"><button type="button" class="mandala-button" data-action="duplicate">Duplicate</button><button type="button" class="mandala-button" data-action="up" ${index===0?"disabled":""}>Earlier</button><button type="button" class="mandala-button" data-action="down" ${index===layers.length-1?"disabled":""}>Later</button><button type="button" class="mandala-button" data-action="remove" ${layers.length===1?"disabled":""}>Remove</button></div></div><div class="layer-controls">
 <label>Layer name<input data-field="name" maxlength="80" value="${esc(layer.name)}"></label>
-<label>Motif<select data-field="motif">${[["petal","Petal"],["leaf","Leaf"],["diamond","Diamond"],["circle","Circle"],["triangle","Triangle"],["star","Star"],["heart","Heart"],["custom","Custom SVG"]].map(([value,label])=>`<option value="${value}" ${layer.motif===value?"selected":""}>${label}</option>`).join("")}</select></label>
+<label>Shape character<select data-field="motif">${[["petal","Petal"],["leaf","Leaf"],["diamond","Diamond"],["circle","Circle"],["triangle","Triangle"],["star","Star"],["heart","Heart"],["custom","Custom SVG"]].map(([value,label])=>`<option value="${value}" ${layer.motif===value?"selected":""}>${label}</option>`).join("")}</select></label>
+<label>Ornament family<select data-field="ornament_style">${[["lotus","Lotus petals"],["billow","Billowing scallops"],["paisley","Paisley curls"],["rose_lace","Rose-curve lace"],["leaf_lace","Interlocking leaves"]].map(([value,label])=>`<option value="${value}" ${(layer.ornament_style??"lotus")===value?"selected":""}>${label}</option>`).join("")}</select></label>
 <label class="custom-svg-field" ${layer.motif==="custom"?"":"hidden"}>Custom SVG<input data-field="custom_file" type="file" accept="image/svg+xml,.svg"></label>
 <p class="custom-svg-status" ${layer.motif==="custom"?"":"hidden"}>${layer.custom_svg?`Loaded ${esc(layer.custom_svg.name)}`:"Choose a plain SVG containing closed vector shapes."}</p>
 <label>Construction<select data-field="construction"><option value="cutout" ${layer.construction==="cutout"?"selected":""}>Cutout lace</option><option value="positive" ${layer.construction==="positive"?"selected":""}>Built-up motif</option></select></label>
 <label>Structural support<select data-field="support_mode"><option value="outer_rim" ${layer.support_mode==="outer_rim"?"selected":""}>Rim and hub; motifs may remain loose</option><option value="automatic_bridges" ${layer.support_mode==="automatic_bridges"?"selected":""}>Automatic bridges — one piece</option><option value="fully_connected" ${layer.support_mode==="fully_connected"?"selected":""}>Fully connected — one piece</option><option value="loose" ${layer.support_mode==="loose"?"selected":""}>Loose pieces allowed</option></select></label>
 <label>Outer edge<select data-field="rim_style"><option value="closed" ${(layer.rim_style??"closed")==="closed"?"selected":""}>Closed rim</option><option value="petal" ${layer.rim_style==="petal"?"selected":""}>Petal crown</option><option value="open" ${layer.rim_style==="open"?"selected":""}>Open support ends</option></select></label>
+${numberControl("flow_amount","Flowing form",layer.flow_amount??.92,0,1,.01)}${numberControl("petal_fullness","Petal fullness",layer.petal_fullness??1.15,.35,1.8,.01)}${numberControl("tip_sharpness","Tip sharpness",layer.tip_sharpness??1.4,.35,3,.01)}${numberControl("curl_degrees","Petal curl",layer.curl_degrees??28,-90,90,1)}${numberControl("band_overlap","Band overlap",layer.band_overlap??.25,0,.65,.01)}
 ${numberControl("repetitions","Radial repetitions",layer.repetitions,4,32,1)}${numberControl("rings","Concentric rings",layer.rings,1,8,1)}${numberControl("inner_radius_ratio","Inner radius",layer.inner_radius_ratio,.05,.55,.01)}${numberControl("motif_scale","Motif scale",layer.motif_scale,.2,.95,.01)}${numberControl("radial_stretch","Radial stretch",layer.radial_stretch,.4,1.8,.05)}${numberControl("tangent_stretch","Tangential stretch",layer.tangent_stretch,.4,1.8,.05)}${numberControl("twist_degrees","Outward twist",layer.twist_degrees,-180,180,1)}${numberControl("rotation_degrees","Layer rotation",layer.rotation_degrees,-180,180,1)}${numberControl("rim_width_mm","Outer rim (mm)",layer.rim_width_mm,.5,30,.1)}${numberControl("bridge_width_mm","Bridge width (mm)",layer.bridge_width_mm,.4,20,.1)}${numberControl("support_sweep_degrees","Support sweep angle (°)",layer.support_sweep_degrees??0,-75,75,1)}${numberControl("bridge_wave_amount","Bridge wave amount",layer.bridge_wave_amount??0,0,1,.01)}${numberControl("bridge_wave_amplitude_mm","Wave amplitude (mm)",layer.bridge_wave_amplitude_mm??6,0,30,.1)}${numberControl("bridge_wave_position","Wave position along bridge",layer.bridge_wave_position??.5,.1,.9,.01)}${numberControl("layer_openness","Layer openness",layer.layer_openness??0,0,1,.01)}${numberControl("opening_inner_ratio","Opening inner position",layer.opening_inner_ratio??.25,.05,.85,.01)}${numberControl("opening_rotation_degrees","Opening rotation (°)",layer.opening_rotation_degrees??0,-180,180,1)}
-<label class="check-control"><input data-field="alternate_rotation" type="checkbox" ${layer.alternate_rotation?"checked":""}> Alternate ring phase</label><label class="check-control"><input data-field="mirror_alternating" type="checkbox" ${layer.mirror_alternating?"checked":""}> Mirror alternating motifs</label>
+<label class="check-control"><input data-field="alternate_rotation" type="checkbox" ${layer.alternate_rotation?"checked":""}> Alternate band phase</label><label class="check-control"><input data-field="mirror_wedges" type="checkbox" ${layer.mirror_wedges!==false?"checked":""}> Mirrored flowing wedge pairs</label><label class="check-control"><input data-field="mirror_alternating" type="checkbox" ${layer.mirror_alternating?"checked":""}> Mirror alternating custom motifs</label>
 </div></article>`}
 function numberControl(field,label,value,min,max,step){return`<label>${label}<input data-field="${field}" type="number" value="${value}" min="${min}" max="${max}" step="${step}"></label>`}
 function syncPreviewSelector(){activeLayer=Math.max(0,Math.min(activeLayer,layers.length-1));const slider=$("#layerPreviewSlider"),layer=layers[activeLayer];slider.max=String(Math.max(1,layers.length));slider.value=String(activeLayer+1);$("#layerPreviewPosition").textContent=`Layer ${activeLayer+1} of ${layers.length}`;$("#layerPreviewName").textContent=layer?.name||`Layer ${activeLayer+1}`}
@@ -51,6 +53,38 @@ function supportBridgePath(startRadius,endRadius,startAngle,sweepDegrees,waveAmo
   }
   return path;
 }
+function flowingPetalPath(innerRadius,outerRadius,centerAngle,sectorAngle,layer,handedness=1,widthScale=1){
+  const left=[],right=[],style=layer.ornament_style??"lotus",motif=layer.motif??"petal",flow=Number(layer.flow_amount??.92),fullness=Number(layer.petal_fullness??1.15)*Number(layer.tangent_stretch??1)*widthScale,sharpness=Number(layer.tip_sharpness??1.4),curl=Number(layer.curl_degrees??28)*Math.PI/180*flow*handedness;
+  for(let index=0;index<=48;index++){
+    const fraction=index/48,smooth=fraction*fraction*(3-2*fraction),radius=innerRadius+(outerRadius-innerRadius)*fraction,envelope=Math.max(0,Math.sin(Math.PI*fraction))**sharpness;
+    let billow=1,centerShift=curl*Math.sin(Math.PI*fraction);
+    if(style==="billow"){billow=1+.28*Math.sin(2*Math.PI*fraction)**2;centerShift*=.72}
+    else if(style==="paisley"){billow=.82+.42*fraction;centerShift*=1.45}
+    else if(style==="rose_lace"){billow=.82+.26*Math.sin(3*Math.PI*fraction)**2;centerShift+=handedness*sectorAngle*.045*Math.sin(2*Math.PI*fraction)}
+    else if(style==="leaf_lace"){billow=.72+.2*Math.sin(Math.PI*fraction);centerShift*=.82}
+    if(motif==="circle")billow*=1.18-.18*Math.cos(2*Math.PI*fraction);
+    else if(motif==="diamond")billow*=.78+.44*Math.abs(2*fraction-1);
+    else if(motif==="triangle")billow*=.62+.62*fraction;
+    else if(motif==="star")billow*=1+.18*Math.sin(4*Math.PI*fraction)**2;
+    else if(motif==="heart")billow*=1+.24*Math.sin(2*Math.PI*fraction);
+    else if(motif==="leaf")billow*=.78+.3*Math.sin(Math.PI*fraction);
+    const halfWidth=sectorAngle*.39*fullness*envelope*billow,angle=centerAngle+centerShift+Number(layer.twist_degrees)*Math.PI/180*flow*smooth/Math.max(1,Number(layer.rings));
+    left.push([Math.cos(angle-halfWidth)*radius,Math.sin(angle-halfWidth)*radius]);right.push([Math.cos(angle+halfWidth)*radius,Math.sin(angle+halfWidth)*radius]);
+  }
+  const path=new Path2D();[...left,...right.reverse()].forEach(([x,y],index)=>index?path.lineTo(x,y):path.moveTo(x,y));path.closePath();return path;
+}
+function drawFlowingPattern(context,layer,inner,outer,rings,repetitions){
+  const span=(outer-inner)/rings,sector=Math.PI*2/repetitions;
+  for(let ring=0;ring<rings;ring++){
+    const center=inner+(ring+.5)*span,halfSpan=span*(.5+Number(layer.band_overlap??.25))*Number(layer.motif_scale??.72)/.72*Number(layer.radial_stretch??1),bandInner=Math.max(inner,center-halfSpan),bandOuter=Math.min(outer,center+halfSpan),fraction=(ring+.5)/rings;
+    let phase=(Number(layer.rotation_degrees)+fraction*Number(layer.twist_degrees)*.34)*Math.PI/180;if(layer.alternate_rotation&&ring%2)phase+=sector/2;
+    for(let repeat=0;repeat<repetitions;repeat++){
+      const angle=phase+repeat*sector;
+      if(layer.mirror_wedges!==false){context.fill(flowingPetalPath(bandInner,bandOuter,angle-sector*.105,sector,layer,-1,.67));context.fill(flowingPetalPath(bandInner,bandOuter,angle+sector*.105,sector,layer,1,.67))}
+      else context.fill(flowingPetalPath(bandInner,bandOuter,angle,sector,layer,layer.mirror_alternating&&repeat%2?-1:1));
+    }
+  }
+}
 function drawLayer(canvas,layer,index,alpha=1){
   const context=canvas.getContext("2d"),size=canvas.width,center=size/2,radius=size*.43;
   const scale=radius/(Number($("#diameter").value)||150)*2;
@@ -62,14 +96,10 @@ function drawLayer(canvas,layer,index,alpha=1){
   context.fillStyle=COLORS[index%COLORS.length];
   if(layer.construction==="cutout"){context.beginPath();context.arc(0,0,radius,0,Math.PI*2);context.fill();context.globalCompositeOperation="destination-out"}
   else context.globalCompositeOperation="source-over";
-  for(let ring=0;ring<rings;ring++){
-    const fraction=(ring+.5)/rings,ringRadius=inner+fraction*(outer-inner),motifSize=ringStep*Number(layer.motif_scale);
-    const phase=Number(layer.rotation_degrees)+fraction*Number(layer.twist_degrees)+(layer.alternate_rotation&&ring%2?180/repetitions:0);
-    for(let repeat=0;repeat<repetitions;repeat++){
-      context.save();context.rotate((phase+repeat*360/repetitions)*Math.PI/180);context.translate(ringRadius,0);
-      context.scale(Number(layer.radial_stretch),Number(layer.tangent_stretch)*(layer.mirror_alternating&&repeat%2?-1:1));
-      context.fillStyle=layer.construction==="cutout"?"#000":COLORS[index%COLORS.length];drawMotif(context,layer,motifSize);context.restore();
-    }
+  if(layer.motif!=="custom"&&Number(layer.flow_amount??.92)>0)drawFlowingPattern(context,layer,inner,outer,rings,repetitions);
+  else for(let ring=0;ring<rings;ring++){
+    const fraction=(ring+.5)/rings,ringRadius=inner+fraction*(outer-inner),motifSize=ringStep*Number(layer.motif_scale),phase=Number(layer.rotation_degrees)+fraction*Number(layer.twist_degrees)+(layer.alternate_rotation&&ring%2?180/repetitions:0);
+    for(let repeat=0;repeat<repetitions;repeat++){context.save();context.rotate((phase+repeat*360/repetitions)*Math.PI/180);context.translate(ringRadius,0);context.scale(Number(layer.radial_stretch),Number(layer.tangent_stretch)*(layer.mirror_alternating&&repeat%2?-1:1));drawMotif(context,layer,motifSize);context.restore()}
   }
   if(Number(layer.layer_openness??0)>0){
     context.globalCompositeOperation="destination-out";
@@ -80,7 +110,7 @@ function drawLayer(canvas,layer,index,alpha=1){
     }
   }
   context.globalCompositeOperation="source-over";
-  const rimStyle=layer.rim_style??"closed",petalRadial=Math.max(rim*3,radius*.1),outerAnchor=rimStyle==="petal"?radius-petalRadial*.42:rimStyle==="open"?radius-bridgeWidth/2:radius-rim/2;
+  const rimStyle=layer.rim_style??"closed",petalRadial=Math.max(rim*3,radius*.1),outerAnchor=rimStyle==="petal"?radius-petalRadial*.58:rimStyle==="open"?radius-bridgeWidth/2:radius-rim/2;
   if(layer.support_mode!=="loose"){
     context.strokeStyle=COLORS[index%COLORS.length];context.lineWidth=rim;
     if(rimStyle==="closed"){context.beginPath();context.arc(0,0,radius-rim/2,0,Math.PI*2);context.stroke()}

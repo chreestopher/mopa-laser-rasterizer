@@ -4243,13 +4243,15 @@ def validate_mandala_request(data):
     if not isinstance(layers, list) or not 1 <= len(layers) <= 12:
         raise ValueError("A Layered Mandala needs 1 to 12 layers")
     permitted = {
-        "name", "motif", "custom_svg", "construction", "support_mode", "rim_style",
+        "name", "motif", "ornament_style", "custom_svg", "construction", "support_mode", "rim_style",
         "repetitions", "rings", "inner_radius_ratio", "motif_scale",
         "radial_stretch", "tangent_stretch", "twist_degrees",
         "rotation_degrees", "alternate_rotation", "mirror_alternating",
         "rim_width_mm", "bridge_width_mm", "support_sweep_degrees",
         "bridge_wave_amount", "bridge_wave_amplitude_mm", "bridge_wave_position",
         "layer_openness", "opening_inner_ratio", "opening_rotation_degrees",
+        "flow_amount", "petal_fullness", "tip_sharpness", "curl_degrees",
+        "band_overlap", "mirror_wedges",
     }
     total_svg = 0
     cleaned_layers = []
@@ -4302,12 +4304,15 @@ def validate_mandala_request(data):
         construction = str(layer.get("construction") or "cutout").strip().lower()
         support_mode = str(layer.get("support_mode") or "automatic_bridges").strip().lower()
         rim_style = str(layer.get("rim_style") or "closed").strip().lower()
+        ornament_style = str(layer.get("ornament_style") or "lotus").strip().lower()
         if construction not in {"cutout", "positive"}:
             raise ValueError(f"Mandala layer {index} has an invalid construction mode")
         if support_mode not in {"outer_rim", "automatic_bridges", "fully_connected", "loose"}:
             raise ValueError(f"Mandala layer {index} has an invalid structural support mode")
         if rim_style not in {"closed", "petal", "open"}:
             raise ValueError(f"Mandala layer {index} has an invalid outer edge style")
+        if ornament_style not in {"lotus", "billow", "paisley", "rose_lace", "leaf_lace"}:
+            raise ValueError(f"Mandala layer {index} has an invalid ornament family")
         cleaned = {key: value for key, value in layer.items() if key in permitted}
         cleaned.update({
             "name": str(layer.get("name") or f"Layer {index}").strip()[:80] or f"Layer {index}",
@@ -4316,6 +4321,7 @@ def validate_mandala_request(data):
             "construction": construction,
             "support_mode": support_mode,
             "rim_style": rim_style,
+            "ornament_style": ornament_style,
             "repetitions": layer_integer("repetitions", "repetitions", 4, 32, 12),
             "rings": layer_integer("rings", "rings", 1, 8, 3),
             "inner_radius_ratio": layer_number("inner_radius_ratio", "inner radius", .05, .55, .18),
@@ -4335,6 +4341,12 @@ def validate_mandala_request(data):
             "layer_openness": layer_number("layer_openness", "openness", 0, 1, 0),
             "opening_inner_ratio": layer_number("opening_inner_ratio", "opening inner position", .05, .85, .25),
             "opening_rotation_degrees": layer_number("opening_rotation_degrees", "opening rotation", -180, 180, 0),
+            "flow_amount": layer_number("flow_amount", "flowing form", 0, 1, 0),
+            "petal_fullness": layer_number("petal_fullness", "petal fullness", .35, 1.8, 1),
+            "tip_sharpness": layer_number("tip_sharpness", "tip sharpness", .35, 3, 1.25),
+            "curl_degrees": layer_number("curl_degrees", "petal curl", -90, 90, 18),
+            "band_overlap": layer_number("band_overlap", "band overlap", 0, .65, .18),
+            "mirror_wedges": layer_boolean("mirror_wedges", "mirrored wedge pairs", True),
         })
         cleaned_layers.append(cleaned)
     if total_svg > 120_000:
