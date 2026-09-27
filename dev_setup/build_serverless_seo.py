@@ -93,6 +93,10 @@ write_static_page(
     "color-lab.html", "color-lab.html",
     "Explore laser color settings through test grids, photograph and measure the results, and save selected swatches to your palette.",
 )
+write_static_page(
+    "mandala.html", "mandala.html",
+    "Build cuttable multi-layer radial mandala projects from built-in and custom SVG motifs.",
+)
 
 public_paths = [
     "",
@@ -102,6 +106,7 @@ public_paths = [
     "fauxlographic.html",
     "depthmap.html",
     "color-lab.html",
+    "mandala.html",
     "community-set",
     "docs",
 ]

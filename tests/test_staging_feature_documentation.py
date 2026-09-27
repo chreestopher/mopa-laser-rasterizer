@@ -17,7 +17,7 @@ def _page_text(slug):
 
 def test_all_staging_features_have_public_documentation():
     catalogued = {slug for _group, slugs in DOC_GROUPS for slug in slugs}
-    assert {"panel-tiling", "color-discovery-material-test-presets"} <= catalogued
+    assert {"panel-tiling", "color-discovery-material-test-presets", "layered-mandala-lab"} <= catalogued
 
     preset_text = _page_text("preset-controls")
     assert "White Is" in preset_text

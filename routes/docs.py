@@ -1309,6 +1309,24 @@ DOCS.update({
 
 
 DOCS.update({
+    "layered-mandala-lab": _page(
+        "Layered Mandala Lab",
+        "Build structurally constrained radial artwork as ordered physical layers, then export editable SVG and LightBurn files for review and cutting.",
+        "Layered Mandala Lab combines a browser editor with deterministic server-side vector generation. Every layer keeps a recognizable radial center, concentric organization, and exact rotational repetition while still allowing substantial variation in motif, ring count, twist, mirroring, and structural support.",
+        [
+            ("Open the laboratory", [{"before": "Signed-in members can open ", "link_text": "Layered Mandala Lab", "path": "/mandala.html", "after": ". The Lab uses a saved Processing Palette and records each generated project in Job History."}]),
+            ("Choose the project dimensions and Cut setting", ["Set the finished diameter and describe the machine workbed. Each generated LightBurn file places its layer at the center of that workbed. Select a Processing Palette, Material, and Line-mode Cut setting. The material's Cut role supplies the initial setting when one is assigned, but you can choose another compatible entry before generation.", "The copied setting is a preparation aid, not a safety guarantee. Confirm the device, workbed, origin, dimensions, speed, power, passes, Output state, and every other applicable parameter in LightBurn before operating a laser."]),
+            ("Build front-to-back physical layers", ["Add, duplicate, remove, and reorder up to 12 layers. The list, combined LightBurn project, individual files, and manifest all use front-to-back order. Give each layer a useful name so its place in the physical stack remains clear during cutting and assembly.", "The first implementation offers Petal, Leaf, Diamond, Circle, Triangle, Star, and Heart motifs. Custom accepts a plain SVG made from closed vector paths. Embedded images, scripts, external references, and linked resources are rejected."]),
+            ("Shape a recognizable mandala", ["Repetitions control rotational symmetry, while Rings organize copies from the center toward the rim. Inner Radius, Motif Scale, radial and tangent stretch, twist, overall rotation, alternating phase, and mirroring change the composition without removing its radial organization.", "Cutout construction begins with a complete disc and removes the repeated motif. Positive construction keeps the motif and selected supports. Automatic Bridges and Fully Connected are validated as one physical piece. Rim and Hub may leave motifs loose, while Loose Pieces Allowed deliberately omits structural connections. Bridge widths are bounded relative to ring spacing so supports do not silently consume the pattern. Always inspect thin bridges, sharp corners, trapped pieces, and minimum feature size against the chosen material and cutting process."]),
+            ("Inspect previews, then generate", ["The Active Layer preview isolates the selected sheet. The Stacked Assembly preview overlays the ordered sheets so you can inspect their visual relationship. Browser previews are responsive design aids; the backend rebuilds and validates the authoritative geometry before export.", "Generation produces a combined LightBurn project, a stacked assembly SVG, and a ZIP containing each numbered layer as an individual SVG and LightBurn project plus a machine-readable manifest. The retained job and its downloads appear in Job History."]),
+            ("Current scope", ["This initial release can generate from built-in motifs or a user-provided closed-vector SVG motif. Selecting regions from an uploaded raster image and automatically turning them into a single reusable motif is planned separately; it is not silently approximated in this version.", "The Lab generates vector construction files but does not send work to a laser, compensate for kerf, add alignment pins, or determine safe settings for a machine and material. Automatic Bridges and Fully Connected are checked for a single connected result; other support modes may intentionally contain separate pieces. Test a small project on expendable material before committing valuable stock."]),
+        ],
+        ["material-vault", "job-history", "lightburn-export", "why-fixturing-is-so-important"],
+    ),
+})
+
+
+DOCS.update({
     "fauxlogram-tutorial": _page(
         "MOPA Madness: The Wizzard of Awes' Full Tutorial on Fauxlographic Laser Engraving",
         "A calibration-first, step-by-step guide to making angular and iridescent laser artwork with Fauxlographic Etching Lab and Krasnow Grating geometry.",
@@ -1564,6 +1582,7 @@ DOC_GROUPS = [
     ("LightBurn and materials", ["works-with-lightburn", "material-vault", "hatch-palettes", "material-coupon-generator", "community-set", "material-libraries", "blank-palette-library", "lightburn-export", "lightburn-large-projects", "reduce-lightburn-object-count", "mopa-laser-workflow"]),
     ("Fauxlographic Etching Lab", ["holographic-etching", "what-is-iridescence", "iridescent-laser-engraving", "iridescent-engraving-challenges", "holographic-lab-workflow", "holographic-calibration", "analyze-calibration-photo", "holographic-recipes", "holographic-artwork", "diffraction-gratings", "choose-cut-mode"]),
     ("Depthmap / Relief Engraving Lab", ["depthmap-generator", "depthmap-workflow", "depth-palettes", "depthmap-adjustments", "depthmap-manual-editing", "depthmap-export", "depthmap-limitations"]),
+    ("Layered Mandala Lab", ["layered-mandala-lab"]),
     ("Jobs and support", ["membership-benefits", "job-history", "troubleshooting"]),
 ]
 DOC_ORDER = [slug for _group, slugs in DOC_GROUPS for slug in slugs]

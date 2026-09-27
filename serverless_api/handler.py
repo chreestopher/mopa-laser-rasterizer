@@ -4219,6 +4219,229 @@ def verify_saved_recipe(key, owner, maximum):
         raise ValueError(f"The saved Fauxlographic Palette exceeds the {maximum / (1024 * 1024):g} MB limit. Choose a smaller palette or import a smaller palette file.")
 
 
+def validate_mandala_request(data):
+    """Validate bounded browser-authored Mandala Lab parameters without geometry work."""
+    if not isinstance(data, dict):
+        raise ValueError("Layered Mandala settings could not be read")
+
+    def number(name, minimum, maximum, default):
+        try:
+            value = float(data.get(name, default))
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"{name.replace('_', ' ').capitalize()} must be a number") from error
+        if not math.isfinite(value) or not minimum <= value <= maximum:
+            raise ValueError(f"{name.replace('_', ' ').capitalize()} must be between {minimum:g} and {maximum:g}")
+        return value
+
+    name = str(data.get("project_name") or "Layered Mandala").strip()[:120]
+    if not name:
+        raise ValueError("Enter a project name")
+    diameter = number("diameter_mm", 20, 1000, 150)
+    workbed_width = number("workbed_width_mm", diameter, 3000, diameter)
+    workbed_height = number("workbed_height_mm", diameter, 3000, diameter)
+    layers = data.get("layers")
+    if not isinstance(layers, list) or not 1 <= len(layers) <= 12:
+        raise ValueError("A Layered Mandala needs 1 to 12 layers")
+    permitted = {
+        "name", "motif", "custom_svg", "construction", "support_mode",
+        "repetitions", "rings", "inner_radius_ratio", "motif_scale",
+        "radial_stretch", "tangent_stretch", "twist_degrees",
+        "rotation_degrees", "alternate_rotation", "mirror_alternating",
+        "rim_width_mm", "bridge_width_mm",
+    }
+    total_svg = 0
+    cleaned_layers = []
+    for index, layer in enumerate(layers, start=1):
+        if not isinstance(layer, dict) or set(layer) - permitted:
+            raise ValueError(f"Mandala layer {index} contains unsupported settings")
+        motif = str(layer.get("motif") or "petal").strip().lower()
+        if motif not in {"petal", "leaf", "diamond", "circle", "triangle", "star", "heart", "custom"}:
+            raise ValueError(f"Mandala layer {index} uses an unsupported motif")
+        custom_svg = layer.get("custom_svg")
+        if motif == "custom":
+            if not isinstance(custom_svg, dict) or set(custom_svg) - {"name", "svg"}:
+                raise ValueError(f"Mandala layer {index} needs a custom SVG motif")
+            svg_text = custom_svg.get("svg")
+            if not isinstance(svg_text, str) or not svg_text.strip() or len(svg_text) > 65_536:
+                raise ValueError(f"Mandala layer {index}'s custom SVG must be a plain SVG no larger than 64 KB")
+            lowered = svg_text.lower()
+            if not re.search(r"<svg(?:\s|>)", lowered) or any(token in lowered for token in (
+                "<!doctype", "<!entity", "<script", "<foreignobject", "<image", "<use",
+                "javascript:", "data:", "url(", "href=", "xlink:href=",
+            )):
+                raise ValueError(f"Mandala layer {index}'s custom SVG contains unsupported embedded or external content")
+            total_svg += len(svg_text)
+        else:
+            custom_svg = None
+
+        def layer_number(key, label, minimum, maximum, default):
+            try:
+                value = float(layer.get(key, default))
+            except (TypeError, ValueError) as error:
+                raise ValueError(f"Mandala layer {index} {label} must be a number") from error
+            if not math.isfinite(value) or not minimum <= value <= maximum:
+                raise ValueError(
+                    f"Mandala layer {index} {label} must be between {minimum:g} and {maximum:g}"
+                )
+            return value
+
+        def layer_integer(key, label, minimum, maximum, default):
+            value = layer_number(key, label, minimum, maximum, default)
+            if not value.is_integer():
+                raise ValueError(f"Mandala layer {index} {label} must be a whole number")
+            return int(value)
+
+        def layer_boolean(key, label, default):
+            value = layer.get(key, default)
+            if not isinstance(value, bool):
+                raise ValueError(f"Mandala layer {index} {label} must be on or off")
+            return value
+
+        construction = str(layer.get("construction") or "cutout").strip().lower()
+        support_mode = str(layer.get("support_mode") or "automatic_bridges").strip().lower()
+        if construction not in {"cutout", "positive"}:
+            raise ValueError(f"Mandala layer {index} has an invalid construction mode")
+        if support_mode not in {"outer_rim", "automatic_bridges", "fully_connected", "loose"}:
+            raise ValueError(f"Mandala layer {index} has an invalid structural support mode")
+        cleaned = {key: value for key, value in layer.items() if key in permitted}
+        cleaned.update({
+            "name": str(layer.get("name") or f"Layer {index}").strip()[:80] or f"Layer {index}",
+            "motif": motif,
+            "custom_svg": custom_svg,
+            "construction": construction,
+            "support_mode": support_mode,
+            "repetitions": layer_integer("repetitions", "repetitions", 4, 32, 12),
+            "rings": layer_integer("rings", "rings", 1, 8, 3),
+            "inner_radius_ratio": layer_number("inner_radius_ratio", "inner radius", .05, .55, .18),
+            "motif_scale": layer_number("motif_scale", "motif scale", .2, .95, .72),
+            "radial_stretch": layer_number("radial_stretch", "radial stretch", .4, 1.8, 1),
+            "tangent_stretch": layer_number("tangent_stretch", "tangent stretch", .4, 1.8, 1),
+            "twist_degrees": layer_number("twist_degrees", "twist", -180, 180, 18),
+            "rotation_degrees": layer_number("rotation_degrees", "rotation", -180, 180, 0),
+            "alternate_rotation": layer_boolean("alternate_rotation", "alternate ring phase", True),
+            "mirror_alternating": layer_boolean("mirror_alternating", "mirror alternating motifs", False),
+            "rim_width_mm": layer_number("rim_width_mm", "rim width", .5, diameter * .15, max(2, diameter * .025)),
+            "bridge_width_mm": layer_number("bridge_width_mm", "bridge width", .4, diameter * .08, max(1, diameter * .012)),
+        })
+        cleaned_layers.append(cleaned)
+    if total_svg > 120_000:
+        raise ValueError("Custom SVG motifs contain too much data; simplify the motifs or use fewer custom layers")
+    return {
+        "project_name": name,
+        "diameter_mm": diameter,
+        "workbed_width_mm": workbed_width,
+        "workbed_height_mm": workbed_height,
+        "layers": cleaned_layers,
+        "processing_palette_id": str(data.get("processing_palette_id") or "")[:80],
+        "material": str(data.get("material") or "")[:160],
+        "cut_entry_ref": str(data.get("cut_entry_ref") or "")[:120],
+    }
+
+
+def processing_role_assignment(owner, library_id, material_name, role):
+    item = table.get_item(
+        Key={"pk": f"USER#{owner}", "sk": "PREFERENCES"}, ConsistentRead=True,
+    ).get("Item") or {}
+    preferences = item.get("preferences") if isinstance(item.get("preferences"), dict) else {}
+    palette = (preferences.get("processing_palette_role_assignments") or {}).get(library_id) or {}
+    mappings = palette.get("materials") if isinstance(palette.get("materials"), dict) else None
+    roles = mappings.get(material_name, {}) if mappings is not None else palette
+    return str(roles.get(role) or "").strip() if isinstance(roles, dict) else ""
+
+
+def submit_mandala_job(event):
+    """Create a history-backed worker job for the Layered Mandala Lab."""
+    paused = service_paused_response()
+    if paused:
+        return paused
+    owner = user_id(event)
+    config = validate_mandala_request(body_json(event))
+    library = owned_material(owner, config["processing_palette_id"])
+    if not library:
+        return response(404, {"message": "Choose a saved Processing Palette"})
+    if material_library_intent(library.get("library_intent")) != "processing_palette":
+        raise ValueError("Layered Mandala jobs require a Processing Palette")
+    entries = (library.get("summary") or {}).get("entries") or []
+    material_name = config["material"]
+    material_entries = [entry for entry in entries if str(entry.get("material") or "") == material_name]
+    if not material_entries:
+        raise ValueError("Choose a material from the selected Processing Palette")
+    selected_ref = config["cut_entry_ref"] or processing_role_assignment(
+        owner, config["processing_palette_id"], material_name, "Cut",
+    )
+    selected = next((entry for entry in material_entries if str(entry.get("entry_ref") or "") == selected_ref), None)
+    if selected is None and not config["cut_entry_ref"]:
+        selected = next(
+            (entry for entry in material_entries if str(entry.get("description") or "").strip().casefold() == "cut"),
+            None,
+        )
+    if selected is None:
+        raise ValueError("Choose a Cut setting for the selected material")
+    if str(selected.get("type") or "").strip().casefold() != "cut":
+        raise ValueError("The selected Mandala Cut setting must use LightBurn Line mode")
+    config.update({
+        "processing_palette_name": str(library.get("name") or library.get("original_name") or "Processing Palette")[:160],
+        "cut_entry_ref": str(selected.get("entry_ref") or ""),
+        "cut_setting": {
+            "description": str(selected.get("description") or "Cut")[:160],
+            "material": material_name,
+            "type": str(selected.get("type") or "Cut"),
+            "settings": selected.get("settings") if isinstance(selected.get("settings"), dict) else {},
+        },
+    })
+    task_id = str(uuid.uuid4())
+    now = int(time.time())
+    payload = {"task_id": task_id, "job_type": "layered_mandala", "mandala": config, "user_id": owner}
+    history_config = deepcopy(config)
+    for layer in history_config["layers"]:
+        if isinstance(layer.get("custom_svg"), dict):
+            layer["custom_svg"] = {"name": str(layer["custom_svg"].get("name") or "custom-motif.svg")}
+    history = {
+        "pk": f"USER#{owner}", "sk": f"JOB#{now:010d}#{task_id}",
+        "task_id": task_id, "job_type": "layered_mandala",
+        "source_name": config["project_name"], "material_name": material_name,
+        "image_preset": "layered_mandala", "abstract_filter": "none",
+        "run_parameters": dynamo_value({"job_type": "layered_mandala", "mandala": history_config}),
+        "created_at": now, "updated_at": now, "status": "pending",
+        "artifact_prefix": f"users/{owner}/jobs/{task_id}/", "input_keys": [],
+        "expires_at": now + TTL_SECONDS,
+    }
+    owner_record = {
+        "pk": f"JOB#{task_id}", "sk": "OWNER", "user_id": owner,
+        "job_type": "layered_mandala", "source_name": config["project_name"],
+        "material_name": material_name, "image_preset": "layered_mandala",
+        "abstract_filter": "none", "created_at": now, "updated_at": now,
+        "history_sk": history["sk"], "status": "pending",
+        "artifact_prefix": history["artifact_prefix"], "input_keys": [],
+        "expires_at": now + TTL_SECONDS,
+    }
+    runtime_item = {
+        **runtime_key(task_id), "task_id": task_id, "user_id": owner,
+        "status": "pending", "payload": dynamo_value(payload), "log_count": 0,
+        "created_at": now, "updated_at": now, "expires_at": now + TTL_SECONDS,
+    }
+    with table.batch_writer() as batch:
+        batch.put_item(Item=runtime_item)
+        batch.put_item(Item=history)
+        batch.put_item(Item=owner_record)
+        batch.put_item(Item=admin_job_index_item(event, history))
+    try:
+        sqs.send_message(
+            QueueUrl=QUEUE_URL,
+            MessageBody=json.dumps({"task_id": task_id}, separators=(",", ":")),
+        )
+    except Exception:
+        # Nothing has been uploaded for a Mandala job, so remove the records
+        # atomically authored for this submission and let the client retry.
+        with table.batch_writer() as batch:
+            batch.delete_item(Key=runtime_key(task_id))
+            batch.delete_item(Key={"pk": history["pk"], "sk": history["sk"]})
+            batch.delete_item(Key={"pk": owner_record["pk"], "sk": owner_record["sk"]})
+            batch.delete_item(Key={"pk": "ADMIN#JOBS", "sk": history["sk"]})
+        raise
+    return response(202, {"task_id": task_id, "status": "pending"})
+
+
 def create_holographic_upload(event):
     data = body_json(event)
     owner = user_id(event)
@@ -5276,6 +5499,8 @@ def handler(event, _context):
             return create_holographic_calibration(event, upload_task_id=holographic_parts[2])
         if method == "POST" and path == "/color-discovery/grids":
             return create_color_discovery_grid(event)
+        if method == "POST" and path == "/mandala/jobs":
+            return submit_mandala_job(event)
         color_parts = path.strip("/").split("/")
         if (method == "POST" and len(color_parts) == 3
                 and color_parts[:2] == ["color-discovery", "grids"]):
