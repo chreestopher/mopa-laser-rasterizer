@@ -80,6 +80,7 @@ parameters=(
   "PanelProcesses=${FARGATE_PANEL_PROCESSES:-4}"
   "SourceBlackComponents=${FARGATE_SOURCE_BLACK_COMPONENTS:-false}"
   "LightBurnOpenPaths=${FARGATE_LIGHTBURN_OPEN_PATHS:-false}"
+  "LightBurnMicroPathCleanup=${FARGATE_LIGHTBURN_MICRO_PATH_CLEANUP:-false}"
   "AssignPublicIp=${FARGATE_ASSIGN_PUBLIC_IP:-DISABLED}"
 )
 

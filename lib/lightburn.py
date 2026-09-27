@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import PIL
 import base64
 import io
+import os
 from xml.sax.saxutils import escape
 
 file_header = '''<?xml version="1.0" encoding="UTF-8"?>
@@ -265,7 +266,13 @@ class Path(Obj):
         f.write(" "*offset + f'<Shape Type="Path" {self._power_scale_str()} ShapeID="{self.shape_id}" CutIndex="{self._layer}">\n')
         self.transform.write(f, offset)
         self._vertex_list_write(f, offset)
-        primitive_type = "LineClosed" if self.closed else "LineOpen"
+        if self.closed:
+            primitive_type = "LineClosed"
+        else:
+            primitive_type = "".join(
+                f"L{index} {index + 1}"
+                for index in range(max(0, len(self.points) - 1))
+            )
         f.write(" "*offset + f"<PrimList>{primitive_type}</PrimList>\n")
         f.write(" "*offset + f'</Shape>\n')
 
@@ -410,6 +417,7 @@ class Lightburn:
         self._layers = list()
         self.notes = ""
         self.show_notes_on_load = False
+        self._micro_path_cleanup_applied = False
 
     def startgroup(self):
         self.current["children"].append(
@@ -427,7 +435,108 @@ class Lightburn:
         
     def add(self, obj: Obj):
         self.objects.append(obj)
+        self._micro_path_cleanup_applied = False
         return self
+
+    def _object_lists(self, node=None):
+        """Yield every mutable object list, including lists inside groups."""
+        if node is None:
+            node = self.top
+        yield node["objects"]
+        for child in node["children"]:
+            yield from self._object_lists(child)
+
+    def cleanup_near_duplicate_open_paths(
+        self,
+        maximum_length=0.025,
+        endpoint_tolerance=0.018,
+    ):
+        """Remove LightBurn-equivalent microscopic open paths.
+
+        LightBurn's duplicate finder treats some distinct, sub-0.025 mm line
+        fragments as duplicates when both endpoint pairs are extremely close.
+        Restrict cleanup to two-point open paths on the same layer and with the
+        same per-shape power scale. Closed paths and ordinary strokes are never
+        candidates.
+        """
+        from collections import defaultdict
+        from scipy.spatial import cKDTree
+
+        candidates = defaultdict(list)
+        for object_list in self._object_lists():
+            for obj in object_list:
+                if not isinstance(obj, Path) or obj.closed or len(obj.points) != 2:
+                    continue
+
+                transformed = []
+                for point in obj.points:
+                    value = np.matmul(obj.transform.A, np.asarray(point))
+                    value = value + obj.transform.B
+                    transformed.append(tuple(float(item) for item in value))
+
+                if transformed[0] == transformed[1]:
+                    continue
+                if np.linalg.norm(
+                    np.asarray(transformed[1]) - np.asarray(transformed[0])
+                ) > maximum_length:
+                    continue
+
+                endpoints = min(tuple(transformed), tuple(reversed(transformed)))
+                key = (obj._layer, obj._power)
+                candidates[key].append((obj, endpoints))
+
+        removed_ids = set()
+        for entries in candidates.values():
+            if len(entries) < 2:
+                continue
+
+            endpoint_vectors = np.asarray(
+                [
+                    [
+                        endpoints[0][0],
+                        endpoints[0][1],
+                        endpoints[1][0],
+                        endpoints[1][1],
+                    ]
+                    for _, endpoints in entries
+                ],
+                dtype=np.float64,
+            )
+            pairs = cKDTree(endpoint_vectors).query_pairs(endpoint_tolerance)
+            if not pairs:
+                continue
+
+            parents = list(range(len(entries)))
+
+            def find(index):
+                while parents[index] != index:
+                    parents[index] = parents[parents[index]]
+                    index = parents[index]
+                return index
+
+            for left, right in pairs:
+                left_root = find(left)
+                right_root = find(right)
+                if left_root != right_root:
+                    parents[right_root] = left_root
+
+            clusters = defaultdict(list)
+            for index in range(len(entries)):
+                clusters[find(index)].append(index)
+
+            for indexes in clusters.values():
+                if len(indexes) < 2:
+                    continue
+                # Preserve the first-emitted stroke for deterministic output.
+                for index in indexes[1:]:
+                    removed_ids.add(id(entries[index][0]))
+
+        if removed_ids:
+            for object_list in self._object_lists():
+                object_list[:] = [
+                    obj for obj in object_list if id(obj) not in removed_ids
+                ]
+        return len(removed_ids)
 
     def reverse_layers(self):
         self._layers = self._layers[::-1]
@@ -464,6 +573,17 @@ class Lightburn:
             f.write(new_tail)
 
     def write(self, filename):
+        cleanup_enabled = str(
+            os.environ.get("RASTER_LIGHTBURN_MICRO_PATH_CLEANUP", "false")
+        ).strip().lower() in ("1", "true", "yes", "on")
+        if cleanup_enabled and not self._micro_path_cleanup_applied:
+            removed = self.cleanup_near_duplicate_open_paths()
+            self._micro_path_cleanup_applied = True
+            print(
+                "LightBurn micro-path cleanup removed "
+                f"{removed} near-duplicate open path(s).",
+                flush=True,
+            )
         with open(filename, "w", encoding="utf-8", newline="\n") as f:
             f.write(file_header)
             self.write_cuts(f)
