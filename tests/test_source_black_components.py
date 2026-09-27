@@ -1,4 +1,5 @@
 import sys
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -63,6 +64,81 @@ def test_lightburn_writer_never_serializes_an_interior_as_a_filled_path():
     assert all(not item.interiors for item in exported)
     assert rebuilt.symmetric_difference(black).area <= 1e-9
     assert rebuilt.intersection(gray_cutout).area == 0
+
+
+def test_lightburn_line_export_uses_open_paths_without_duplicate_return_edges():
+    class CaptureProject:
+        def __init__(self):
+            self.items = []
+
+        def add(self, item):
+            self.items.append(item)
+
+    project = CaptureProject()
+    vector_processing.lightburn = lightburn
+
+    with patch.dict("os.environ", {"RASTER_LIGHTBURN_OPEN_PATHS": "true"}):
+        vector_processing.push_geometry_to_lightburn(
+            LineString([(1, 2), (3, 4)]),
+            "#FF0000",
+            {"#FF0000": ["Red", 2, "Red"]},
+            project,
+        )
+
+    assert len(project.items) == 1
+    assert project.items[0].closed is False
+    output = StringIO()
+    project.items[0].write(output, 0)
+    assert "<PrimList>LineOpen</PrimList>" in output.getvalue()
+    assert "LineClosed" not in output.getvalue()
+
+
+def test_lightburn_line_export_drops_paths_collapsed_by_coordinate_rounding():
+    class CaptureProject:
+        def __init__(self):
+            self.items = []
+
+        def add(self, item):
+            self.items.append(item)
+
+    project = CaptureProject()
+    vector_processing.lightburn = lightburn
+
+    with patch.dict("os.environ", {"RASTER_LIGHTBURN_OPEN_PATHS": "true"}):
+        vector_processing.push_geometry_to_lightburn(
+            LineString([(1.0001, 2.0001), (1.0002, 2.0002)]),
+            "#FF0000",
+            {"#FF0000": ["Red", 2, "Red"]},
+            project,
+        )
+
+    assert project.items == []
+
+
+def test_lightburn_open_path_flag_disabled_preserves_legacy_krasnow_paths():
+    class CaptureProject:
+        def __init__(self):
+            self.items = []
+
+        def add(self, item):
+            self.items.append(item)
+
+    project = CaptureProject()
+    vector_processing.lightburn = lightburn
+
+    with patch.dict("os.environ", {"RASTER_LIGHTBURN_OPEN_PATHS": "false"}):
+        vector_processing.push_geometry_to_lightburn(
+            LineString([(1, 2), (3, 4)]),
+            "#FF0000",
+            {"#FF0000": ["Red", 2, "Red"]},
+            project,
+        )
+
+    assert len(project.items) == 1
+    assert project.items[0].closed is True
+    output = StringIO()
+    project.items[0].write(output, 0)
+    assert "<PrimList>LineClosed</PrimList>" in output.getvalue()
 
 
 def test_black_run_rectangles_preserve_sparse_outline_exactly():
