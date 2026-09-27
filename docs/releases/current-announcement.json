@@ -1,0 +1,17 @@
+{
+  "release_id": "next-production-release",
+  "status": "draft",
+  "subject": "A new MOPA Laser Rasterizer release is coming",
+  "preheader": "Review the latest Rasterizer improvements before this announcement is approved.",
+  "heading": "The next Rasterizer release",
+  "intro": "This maintained draft is the single source for the release email. Replace this copy with the reviewed release summary and change status to approved only after production acceptance is complete.",
+  "highlights": [
+    "Add the first reviewed release highlight here.",
+    "Add the second reviewed release highlight here.",
+    "Link detailed guidance from the product release story when it is published."
+  ],
+  "cta_label": "Read the release story",
+  "cta_url": "https://mopa-laser-rasterizer.com/release-story",
+  "product_url": "https://mopa-laser-rasterizer.com/",
+  "postal_address": "MOPA Laser Rasterizer · Replace with the legally required sender postal address before approval"
+}
