@@ -10,11 +10,14 @@ def read(path):
 
 def test_mandala_lab_uses_external_assets_and_accessible_previews():
     page = read("serverless_web/mandala.html")
-    assert 'src="/mandala.js?v=2"' in page
+    assert 'src="/mandala.js?v=4"' in page
     assert 'href="/mandala.css?v=1"' in page
     assert "<script>" not in page
-    assert 'id="activePreview"' in page and 'aria-label="Active mandala layer preview"' in page
+    assert 'id="layerPreviewSlider"' in page and 'type="range"' in page
+    assert 'id="layerPreviewName"' in page and 'id="layerPreviewPosition"' in page
+    assert 'id="activePreview"' in page and 'aria-label="Selected mandala layer preview"' in page
     assert 'id="stackPreview"' in page and 'aria-label="Stacked mandala assembly preview"' in page
+    assert "Fully stacked assembly" in page
     assert "Generate projects for review" in page
 
 
@@ -59,6 +62,14 @@ def test_mandala_client_defaults_cut_role_and_limits_custom_svg():
     assert 'api("/mandala/jobs"' in client
 
 
+def test_mandala_preview_uses_slider_and_updates_live_with_layer_settings():
+    client = read("serverless_web/mandala.js")
+    assert '$("#layerPreviewSlider").addEventListener("input"' in client
+    assert "function syncPreviewSelector()" in client
+    assert "syncPreviewSelector();schedulePreview()" in client
+    assert 'data-action="select"' not in client
+
+
 def test_mandala_support_labels_state_connectivity_truthfully():
     client = read("serverless_web/mandala.js")
     page = read("serverless_web/mandala.html")
@@ -66,3 +77,28 @@ def test_mandala_support_labels_state_connectivity_truthfully():
     assert "Automatic bridges — one piece" in client
     assert "Fully connected — one piece" in client
     assert "Generate projects for review" in page
+
+
+def test_mandala_support_and_openwork_controls_are_wired_end_to_end():
+    client = read("serverless_web/mandala.js")
+    api = read("serverless_api/handler.py")
+    backend = read("lib/mandala.py")
+    docs = read("routes/docs.py")
+    for field in (
+        "support_sweep_degrees",
+        "bridge_wave_amount",
+        "bridge_wave_amplitude_mm",
+        "bridge_wave_position",
+        "layer_openness",
+        "opening_inner_ratio",
+        "opening_rotation_degrees",
+        "rim_style",
+    ):
+        assert field in client
+        assert field in api
+        assert field in backend
+    assert "Support sweep angle" in client
+    assert "Layer openness" in client
+    assert "Petal crown" in client
+    assert "Support Sweep Angle" in docs
+    assert "Layer Openness" in docs

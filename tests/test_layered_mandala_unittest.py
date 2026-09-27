@@ -77,6 +77,17 @@ class LayeredMandalaUnittestTests(unittest.TestCase):
                 tangent_stretch=0.4,
             )))
 
+    def test_diagonal_sine_supports_remain_one_piece(self):
+        _, geometries = generate_mandala(_config(_layer(
+            motif="heart",
+            support_mode="fully_connected",
+            support_sweep_degrees=-55,
+            bridge_wave_amount=1,
+            bridge_wave_amplitude_mm=8,
+            bridge_wave_position=0.7,
+        )))
+        self.assertEqual(geometries[0].geom_type, "Polygon")
+
 
 if __name__ == "__main__":
     unittest.main()

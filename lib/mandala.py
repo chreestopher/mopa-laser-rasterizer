@@ -11,7 +11,7 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 from shapely import affinity
-from shapely.geometry import GeometryCollection, Point, Polygon
+from shapely.geometry import GeometryCollection, LineString, Point, Polygon
 from shapely.ops import unary_union
 
 from lib import lightburn
@@ -22,6 +22,7 @@ MANDALA_LAYER_LIMIT = 12
 BUILTIN_MOTIFS = {"petal", "leaf", "diamond", "circle", "triangle", "star", "heart"}
 SUPPORT_MODES = {"outer_rim", "automatic_bridges", "fully_connected", "loose"}
 CONSTRUCTION_MODES = {"cutout", "positive"}
+RIM_STYLES = {"closed", "petal", "open"}
 LAYER_COLORS = (
     "#E44D61", "#F39C49", "#E4D354", "#72C66A", "#43B7A7", "#4C9DDE",
     "#6C70D8", "#9B63C7", "#D05AA8", "#BC7C58", "#8B9A52", "#5E8792",
@@ -96,16 +97,20 @@ def validate_mandala_config(raw):
             raise ValueError(f"Mandala layer {index} uses an unsupported motif")
         construction = str(source.get("construction") or "cutout").strip().lower()
         support = str(source.get("support_mode") or "automatic_bridges").strip().lower()
+        rim_style = str(source.get("rim_style") or "closed").strip().lower()
         if construction not in CONSTRUCTION_MODES:
             raise ValueError(f"Mandala layer {index} has an invalid construction mode")
         if support not in SUPPORT_MODES:
             raise ValueError(f"Mandala layer {index} has an invalid structural support mode")
+        if rim_style not in RIM_STYLES:
+            raise ValueError(f"Mandala layer {index} has an invalid outer edge style")
         cleaned_layers.append({
             "name": str(source.get("name") or f"Layer {index}").strip()[:80] or f"Layer {index}",
             "motif": motif,
             "custom_svg": cleaned_svg,
             "construction": construction,
             "support_mode": support,
+            "rim_style": rim_style,
             "repetitions": _integer(source.get("repetitions", 12), f"Layer {index} repetitions", 4, 32),
             "rings": _integer(source.get("rings", 3), f"Layer {index} rings", 1, 8),
             "inner_radius_ratio": _number(source.get("inner_radius_ratio", 0.18), f"Layer {index} inner radius", 0.05, 0.55),
@@ -118,6 +123,13 @@ def validate_mandala_config(raw):
             "mirror_alternating": _boolean(source.get("mirror_alternating"), f"Layer {index} mirror alternating motifs", False),
             "rim_width_mm": _number(source.get("rim_width_mm", max(2, diameter * 0.025)), f"Layer {index} rim width", 0.5, diameter * 0.15),
             "bridge_width_mm": _number(source.get("bridge_width_mm", max(1, diameter * 0.012)), f"Layer {index} bridge width", 0.4, diameter * 0.08),
+            "support_sweep_degrees": _number(source.get("support_sweep_degrees", 0), f"Layer {index} support sweep", -75, 75),
+            "bridge_wave_amount": _number(source.get("bridge_wave_amount", 0), f"Layer {index} bridge wave amount", 0, 1),
+            "bridge_wave_amplitude_mm": _number(source.get("bridge_wave_amplitude_mm", max(2, diameter * 0.04)), f"Layer {index} bridge wave amplitude", 0, diameter * 0.2),
+            "bridge_wave_position": _number(source.get("bridge_wave_position", 0.5), f"Layer {index} bridge wave position", 0.1, 0.9),
+            "layer_openness": _number(source.get("layer_openness", 0), f"Layer {index} openness", 0, 1),
+            "opening_inner_ratio": _number(source.get("opening_inner_ratio", 0.25), f"Layer {index} opening inner position", 0.05, 0.85),
+            "opening_rotation_degrees": _number(source.get("opening_rotation_degrees", 0), f"Layer {index} opening rotation", -180, 180),
         })
     if custom_svg_characters > 120_000:
         raise ValueError("Custom SVG motifs contain too much data; simplify the motifs or use fewer custom layers")
@@ -185,6 +197,69 @@ def _radial_bar(radius, width, angle):
     return affinity.rotate(bar, angle, origin=(0, 0), use_radians=False)
 
 
+def _support_bridge(start_radius, end_radius, width, start_angle, sweep_degrees,
+                    wave_amount, wave_amplitude, wave_position):
+    """Create a straight, diagonal, or sinusoidal structural bridge.
+
+    The baseline is the chord between an inner and outer polar anchor. The
+    wave is applied normal to that chord, with its middle zero crossing moved
+    by ``wave_position``. Both anchors stay fixed so the bridge continues to
+    overlap the hub and rim even at the strongest supported wave setting.
+    """
+    start_angle_radians = math.radians(start_angle)
+    end_angle_radians = math.radians(start_angle + sweep_degrees)
+    start = (
+        math.cos(start_angle_radians) * start_radius,
+        math.sin(start_angle_radians) * start_radius,
+    )
+    end = (
+        math.cos(end_angle_radians) * end_radius,
+        math.sin(end_angle_radians) * end_radius,
+    )
+    dx, dy = end[0] - start[0], end[1] - start[1]
+    length = math.hypot(dx, dy)
+    if length <= 1e-9:
+        return Point(start).buffer(width / 2)
+    normal = (-dy / length, dx / length)
+    points = []
+    position = min(0.9, max(0.1, wave_position))
+    for index in range(65):
+        fraction = index / 64
+        if fraction <= position:
+            wave_fraction = 0.5 * fraction / position
+        else:
+            wave_fraction = 0.5 + 0.5 * (fraction - position) / (1 - position)
+        displacement = wave_amount * wave_amplitude * math.sin(2 * math.pi * wave_fraction)
+        x = start[0] + dx * fraction + normal[0] * displacement
+        y = start[1] + dy * fraction + normal[1] * displacement
+        distance = math.hypot(x, y)
+        maximum_radius = max(start_radius, end_radius - width / 2)
+        if distance > maximum_radius:
+            scale = maximum_radius / distance
+            x, y = x * scale, y * scale
+        points.append((x, y))
+    return LineString(points).buffer(width / 2, cap_style=1, join_style=1)
+
+
+def _petal_crown(radius, rim_width, repetitions, rotation_degrees=0):
+    """Return repeated outer petals and the radius where support arms meet them."""
+    petal = builtin_motif("petal")
+    radial_size = max(rim_width * 3, radius * 0.1)
+    tangent_room = 2 * math.pi * radius / repetitions
+    tangent_size = min(radial_size * 0.72, tangent_room * 0.68)
+    anchor_radius = radius - radial_size * 0.42
+    petals = []
+    for index in range(repetitions):
+        item = affinity.scale(petal, xfact=radial_size, yfact=tangent_size, origin=(0, 0))
+        item = affinity.translate(item, xoff=anchor_radius)
+        petals.append(affinity.rotate(
+            item,
+            rotation_degrees + index * 360 / repetitions,
+            origin=(0, 0),
+        ))
+    return unary_union(petals).buffer(0), anchor_radius
+
+
 def _radial_circle(radius, repetitions, steps_per_sector=8):
     """Approximate a circle with vertices aligned to the layer symmetry."""
     count = max(repetitions * steps_per_sector, repetitions)
@@ -195,6 +270,37 @@ def _radial_circle(radius, repetitions, steps_per_sector=8):
         )
         for index in range(count)
     )
+
+
+def _openwork_windows(radius, rim_width, hub_radius, repetitions, openness,
+                      inner_ratio, rotation_degrees):
+    """Build repeated annular-sector windows between neighboring supports."""
+    if openness <= 0:
+        return GeometryCollection()
+    inner_radius = max(hub_radius * 1.08, radius * inner_ratio)
+    outer_radius = radius - rim_width * 1.15
+    if outer_radius <= inner_radius:
+        return GeometryCollection()
+    sector_angle = 360 / repetitions
+    half_width = sector_angle * 0.41 * openness
+    windows = []
+    arc_steps = 8
+    for index in range(repetitions):
+        center = rotation_degrees + (index + 0.5) * sector_angle
+        angles = [
+            math.radians(center - half_width + 2 * half_width * step / arc_steps)
+            for step in range(arc_steps + 1)
+        ]
+        points = [
+            (math.cos(angle) * outer_radius, math.sin(angle) * outer_radius)
+            for angle in angles
+        ]
+        points.extend(
+            (math.cos(angle) * inner_radius, math.sin(angle) * inner_radius)
+            for angle in reversed(angles)
+        )
+        windows.append(Polygon(points))
+    return unary_union(windows).buffer(0)
 
 
 def _polygon_components(geometry):
@@ -210,19 +316,31 @@ def _polygon_components(geometry):
     return values
 
 
-def _connect_pattern_to_support(pattern, support, radius, width, repetitions):
+def _connect_pattern_to_support(pattern, support, hub_radius, width, repetitions,
+                                sweep_degrees, wave_amount, wave_amplitude,
+                                wave_position):
     """Join every positive-pattern component to the hub/rim without losing symmetry."""
     if pattern.is_empty or support.is_empty:
         return support
     connected = support
-    tolerance = max(width * 0.05, 1e-6)
     for component in _polygon_components(pattern):
-        if component.intersects(connected.buffer(tolerance)):
+        if component.intersects(connected):
             continue
         point = component.representative_point()
-        base_angle = math.degrees(math.atan2(point.y, point.x)) % (360 / repetitions)
+        end_radius = math.hypot(point.x, point.y)
+        end_angle = math.degrees(math.atan2(point.y, point.x))
+        base_start_angle = (end_angle - sweep_degrees) % (360 / repetitions)
         bridges = [
-            _radial_bar(radius, width, base_angle + index * 360 / repetitions)
+            _support_bridge(
+                hub_radius * 0.75,
+                end_radius,
+                width,
+                base_start_angle + index * 360 / repetitions,
+                sweep_degrees,
+                wave_amount,
+                wave_amplitude,
+                wave_position,
+            )
             for index in range(repetitions)
         ]
         connected = unary_union((connected, *bridges)).buffer(0)
@@ -242,6 +360,7 @@ def generate_layer_geometry(config, layer_index):
     ring_step = (outer_limit - inner_limit) / layer["rings"]
     bridge_cap = max(0.4, ring_step * 0.24)
     bridge_width = min(layer["bridge_width_mm"], bridge_cap)
+    wave_amplitude = min(layer["bridge_wave_amplitude_mm"], ring_step * 1.5)
     placed = []
     for ring in range(layer["rings"]):
         fraction = (ring + 0.5) / layer["rings"]
@@ -273,8 +392,22 @@ def generate_layer_geometry(config, layer_index):
         _radial_circle(max(0, inner_limit * 0.42), layer["repetitions"], 8)
     )
     pattern = pattern.intersection(clip).buffer(0)
-    rim = disc.difference(_radial_circle(radius - rim_width, layer["repetitions"], 12))
-    hub = _radial_circle(max(rim_width, inner_limit * 0.42), layer["repetitions"], 8)
+    if layer["rim_style"] == "closed":
+        rim = disc.difference(_radial_circle(radius - rim_width, layer["repetitions"], 12))
+        outer_anchor_radius = radius - rim_width / 2
+    elif layer["rim_style"] == "petal":
+        rim, outer_anchor_radius = _petal_crown(
+            radius,
+            rim_width,
+            layer["repetitions"],
+            layer["support_sweep_degrees"],
+        )
+        rim = rim.intersection(disc).buffer(0)
+    else:
+        rim = GeometryCollection()
+        outer_anchor_radius = radius - bridge_width / 2
+    hub_radius = max(rim_width, inner_limit * 0.42)
+    hub = _radial_circle(hub_radius, layer["repetitions"], 8)
     support = GeometryCollection()
     if layer["support_mode"] != "loose":
         support = unary_union((rim, hub))
@@ -283,7 +416,19 @@ def generate_layer_geometry(config, layer_index):
         # quietly reduce the layer's promised rotational symmetry.
         spoke_count = layer["repetitions"]
         width = bridge_width * (1.35 if layer["support_mode"] == "fully_connected" else 1)
-        spokes = [_radial_bar(radius - rim_width / 2, width, index * 360 / spoke_count) for index in range(spoke_count)]
+        spokes = [
+            _support_bridge(
+                hub_radius * 0.75,
+                outer_anchor_radius,
+                width,
+                index * 360 / spoke_count,
+                layer["support_sweep_degrees"],
+                layer["bridge_wave_amount"],
+                wave_amplitude,
+                layer["bridge_wave_position"],
+            )
+            for index in range(spoke_count)
+        ]
         support = unary_union((support, *spokes))
     if layer["support_mode"] == "fully_connected":
         middle = _radial_circle(
@@ -300,9 +445,13 @@ def generate_layer_geometry(config, layer_index):
         support = _connect_pattern_to_support(
             pattern,
             support,
-            radius - rim_width / 2,
+            hub_radius,
             bridge_width,
             layer["repetitions"],
+            layer["support_sweep_degrees"],
+            layer["bridge_wave_amount"],
+            wave_amplitude,
+            layer["bridge_wave_position"],
         )
     if layer["construction"] == "cutout":
         geometry = disc.difference(pattern)
@@ -310,6 +459,19 @@ def generate_layer_geometry(config, layer_index):
             geometry = unary_union((geometry, support))
     else:
         geometry = pattern if support.is_empty else unary_union((pattern, support))
+    windows = _openwork_windows(
+        radius,
+        rim_width,
+        hub_radius,
+        layer["repetitions"],
+        layer["layer_openness"],
+        layer["opening_inner_ratio"],
+        layer["opening_rotation_degrees"],
+    )
+    if not windows.is_empty:
+        geometry = geometry.difference(windows)
+        if not support.is_empty:
+            geometry = unary_union((geometry, support))
     geometry = geometry.intersection(disc).buffer(0)
     if geometry.is_empty:
         raise ValueError(f"{layer['name']} generated no usable geometry")
@@ -317,7 +479,7 @@ def generate_layer_geometry(config, layer_index):
     if layer["support_mode"] in {"automatic_bridges", "fully_connected"} and len(components) != 1:
         raise ValueError(
             f"{layer['name']} could not be made into one connected piece; "
-            "increase Bridge Width or reduce motif spacing"
+            "increase Bridge Width, reduce motif spacing, or soften the bridge wave or sweep"
         )
     coverage = geometry.area / disc.area
     if coverage < 0.01:
