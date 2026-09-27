@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en" class="staging-shell-pending">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Changelog | MOPA Laser Rasterizer</title>
+  <meta name="description" content="Cumulative release notes for MOPA Laser Rasterizer, listed newest first.">
+  <meta name="robots" content="index,follow">
+  <link rel="canonical" href="{{ canonical }}">
+  <link rel="stylesheet" href="/machine_chrome.css?v=3">
+  <link rel="stylesheet" href="/staging-shell.css?v=1">
+  <link rel="stylesheet" href="/staging-shell-v2.css">
+  <link rel="stylesheet" href="/changelog-v1.css">
+  <script src="/staging-shell.js?v=4" defer></script>
+</head>
+<body class="changelog-page">
+  <main id="main-content" class="changelog-shell">
+    <header class="changelog-header">
+      <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="/docs">Documentation</a> / Changelog</nav>
+      <h1>Changelog</h1>
+      <p class="changelog-intro">A cumulative record of MOPA Laser Rasterizer releases. New releases are added at the top; earlier release notes remain available below.</p>
+      <span class="release-count">{{ release_count }} release{% if release_count != 1 %}s{% endif %} recorded</span>
+    </header>
+    <div class="release-list">
+      {% for release in releases %}<article class="release" id="{{ release.id }}" data-release-date="{{ release.date }}">
+        <header class="release-heading"><h2><span class="release-version">{{ release.version }}</span> · {{ release.title }}</h2><time datetime="{{ release.date }}">{{ release.display_date }}</time></header>
+        <p class="release-summary">{{ release.summary }}</p>
+        <div class="change-groups">{% for group in release.groups %}<section class="change-group"><h3>{{ group.title }}</h3><ul>{% for item in group["items"] %}<li>{{ item }}</li>{% endfor %}</ul></section>{% endfor %}</div>
+        {% if release.links %}<ul class="release-links" aria-label="Links for {{ release.version }}">{% for link in release.links %}<li><a href="{{ link.href }}"{% if link.external %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ link.label }}</a></li>{% endfor %}</ul>{% endif %}
+      </article>{% endfor %}
+    </div>
+    <footer class="changelog-footer">Release notes describe shipped changes. For current workflows and safety guidance, use the <a href="/docs">documentation</a>.</footer>
+  </main>
+</body>
+</html>

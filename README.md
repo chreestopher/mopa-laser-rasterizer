@@ -114,6 +114,12 @@ feature branch
 
 GitHub Actions uses OpenID Connect to obtain short-lived AWS credentials. No long-lived AWS access key is stored in GitHub. Staging and production use different GitHub environments and narrowly scoped deployment roles. Deployment concurrency is serialized so a new run does not cancel an active deployment.
 
+Release notes live in [`docs/changelog.json`](docs/changelog.json). Add each release to the beginning of the `releases` array; do not replace earlier entries. The serverless build validates the source order and generates `/changelog` for both staging review and production promotion. To preview the deterministic artifact locally:
+
+```bash
+python dev_setup/build_serverless_changelog.py /tmp/changelog.html http://localhost:8000
+```
+
 Workstation deployment remains available through AWS SSO when it is needed. See:
 
 - [GitHub Actions staging deployment](docs/github-actions-staging-deployment.md)

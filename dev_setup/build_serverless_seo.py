@@ -112,6 +112,7 @@ public_paths = [
     *pages,
     "experimental-laboratories",
     "release-story",
+    "changelog",
     "fauxlographic.html",
     "depthmap.html",
     "color-lab.html",

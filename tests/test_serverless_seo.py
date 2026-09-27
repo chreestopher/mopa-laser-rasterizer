@@ -42,6 +42,7 @@ class ServerlessSeoTests(unittest.TestCase):
 
             sitemap = (output / "sitemap.xml").read_text(encoding="utf-8")
             self.assertIn("https://staging.example.com/docs/example-guide", sitemap)
+            self.assertIn("https://staging.example.com/changelog", sitemap)
             self.assertNotIn("history.html</loc>", sitemap)
 
             robots = (output / "robots.txt").read_text(encoding="utf-8")

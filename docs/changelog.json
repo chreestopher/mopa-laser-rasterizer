@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "releases": [
+    {
+      "id": "v1-0-0",
+      "version": "v1.0.0",
+      "date": "2026-08-16",
+      "title": "Initial public checkpoint",
+      "summary": "The first tagged MOPA Laser Rasterizer release established the browser workflow for turning raster artwork into layered laser-ready output.",
+      "groups": [
+        {
+          "title": "Highlights",
+          "items": [
+            "Converted raster artwork into color-separated vector geometry for laser workflows.",
+            "Generated layered SVG output and LightBurn projects backed by Material Library settings.",
+            "Introduced the core MOPA color engraving and fauxlographic experimentation workflows."
+          ]
+        },
+        {
+          "title": "Project foundation",
+          "items": [
+            "Published the initial operator documentation and local development workflow.",
+            "Established the v1 data and output conventions that later releases continue to evolve."
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "Browse the documentation",
+          "href": "/docs"
+        },
+        {
+          "label": "Read the release story",
+          "href": "/release-story"
+        },
+        {
+          "label": "View the v1.0.0 tag",
+          "href": "https://github.com/chreestopher/mopa-laser-rasterizer/releases/tag/v1.0.0"
+        }
+      ]
+    }
+  ]
+}

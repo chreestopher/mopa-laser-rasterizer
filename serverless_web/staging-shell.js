@@ -37,7 +37,7 @@
     { href: "/history.html", label: "Job History", match: path => path === "/history.html" },
     { href: "/vault.html", label: "Swatch Palette Vault", match: path => path === "/vault.html" },
     { href: "/community-set", label: "Community Set", match: path => path === "/community-set" },
-    { href: "/docs", label: "Docs", match: path => path === "/docs" || path.startsWith("/docs/") || path === "/release-story" },
+    { href: "/docs", label: "Docs", match: path => path === "/docs" || path.startsWith("/docs/") || path === "/release-story" || path === "/changelog" },
   ];
   const pageHeroes = {
     "/": ["Serverless raster processing", "MOPA Laser Rasterizer", "Turn artwork into a laser-ready color engraving project using your saved Material Libraries and palettes.", isStagingEnvironment ? "Production-parity staging" : "Production service"],
@@ -77,6 +77,7 @@
       : location.pathname === "/experimental-laboratories" ? "staging-experimental"
       : location.pathname === "/fauxlographic.html" ? "staging-holographic"
       : location.pathname === "/release-story" ? "staging-release-story"
+      : location.pathname === "/changelog" ? "staging-changelog"
       : location.pathname === "/" ? "staging-home" : "";
     if (pageClass) {
       document.body.classList.add("staging-prototype", pageClass);

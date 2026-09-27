@@ -125,6 +125,7 @@ python3 "$SCRIPT_DIR/build_serverless_community.py" "$BUILD_DIR/community-set" "
 python3 "$SCRIPT_DIR/build_serverless_experimental.py" \
   "$REPO_ROOT/templates/experimental_laboratories.html" "$BUILD_DIR/experimental-laboratories" "$PUBLIC_BASE_URL"
 python3 "$SCRIPT_DIR/build_serverless_docs.py" "$BUILD_DIR/docs" "$PUBLIC_BASE_URL"
+python3 "$SCRIPT_DIR/build_serverless_changelog.py" "$BUILD_DIR/changelog" "$PUBLIC_BASE_URL"
 python3 "$SCRIPT_DIR/build_serverless_seo.py" "$BUILD_DIR/seo" "$PUBLIC_BASE_URL"
 CLIENT_ID="$(output "$WEB_STACK" CognitoClientId)"
 DISTRIBUTION_ID="$(output "$WEB_STACK" DistributionId)"
@@ -154,6 +155,8 @@ python3 -c 'import json,os; print(json.dumps({
 },separators=(",",":")))' \
   > "$BUILD_DIR/config.json"
 aws s3 cp "$REPO_ROOT/serverless_web/staging-shell-v2.css" "s3://$STATIC_BUCKET/web/staging-shell-v2.css" \
+  --region "$REGION" --content-type text/css --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/changelog-v1.css" "s3://$STATIC_BUCKET/web/changelog-v1.css" \
   --region "$REGION" --content-type text/css --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/output-rendering-v1.js" "s3://$STATIC_BUCKET/web/rasterizer/output-rendering-v1.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
@@ -290,6 +293,8 @@ aws s3 cp "$BUILD_DIR/experimental-laboratories" "s3://$STATIC_BUCKET/web/experi
 aws s3 cp "$REPO_ROOT/serverless_web/release-story-v1.js" "s3://$STATIC_BUCKET/web/release-story-v1.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/release-story.html" "s3://$STATIC_BUCKET/web/release-story" \
+  --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
+aws s3 cp "$BUILD_DIR/changelog" "s3://$STATIC_BUCKET/web/changelog" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
 # Upload release-story media sequentially so large video transfers do not
 # compete for local CPU, disk, and network resources during deployment.
