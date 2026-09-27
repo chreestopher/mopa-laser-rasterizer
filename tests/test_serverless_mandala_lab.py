@@ -10,11 +10,14 @@ def read(path):
 
 def test_mandala_lab_uses_external_assets_and_accessible_previews():
     page = read("serverless_web/mandala.html")
-    assert 'src="/mandala.js?v=3"' in page
+    assert 'src="/mandala.js?v=4"' in page
     assert 'href="/mandala.css?v=1"' in page
     assert "<script>" not in page
-    assert 'id="activePreview"' in page and 'aria-label="Active mandala layer preview"' in page
+    assert 'id="layerPreviewSlider"' in page and 'type="range"' in page
+    assert 'id="layerPreviewName"' in page and 'id="layerPreviewPosition"' in page
+    assert 'id="activePreview"' in page and 'aria-label="Selected mandala layer preview"' in page
     assert 'id="stackPreview"' in page and 'aria-label="Stacked mandala assembly preview"' in page
+    assert "Fully stacked assembly" in page
     assert "Generate projects for review" in page
 
 
@@ -57,6 +60,14 @@ def test_mandala_client_defaults_cut_role_and_limits_custom_svg():
     assert 'file.size>65536' in client
     assert 'layers.length>=12' in client
     assert 'api("/mandala/jobs"' in client
+
+
+def test_mandala_preview_uses_slider_and_updates_live_with_layer_settings():
+    client = read("serverless_web/mandala.js")
+    assert '$("#layerPreviewSlider").addEventListener("input"' in client
+    assert "function syncPreviewSelector()" in client
+    assert "syncPreviewSelector();schedulePreview()" in client
+    assert 'data-action="select"' not in client
 
 
 def test_mandala_support_labels_state_connectivity_truthfully():

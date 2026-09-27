@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/staging-pages.css?v=3">
   <link rel="stylesheet" href="/mandala.css?v=1">
   <script src="/staging-shell.js?v=3" defer></script>
-  <script src="/mandala.js?v=3" type="module"></script>
+  <script src="/mandala.js?v=4" type="module"></script>
 </head>
 <body>
   <main id="main-content" class="mandala-shell">
@@ -51,12 +51,21 @@
         </section>
 
         <section class="mandala-panel preview-workspace">
-          <div>
-            <h2>Active layer</h2>
-            <canvas id="activePreview" width="620" height="620" aria-label="Active mandala layer preview"></canvas>
+          <div class="single-layer-preview">
+            <div class="preview-heading">
+              <div>
+                <h2>Single layer</h2>
+                <p id="layerPreviewName">Layer 1</p>
+              </div>
+              <output id="layerPreviewPosition" for="layerPreviewSlider">Layer 1 of 1</output>
+            </div>
+            <label class="preview-layer-control" for="layerPreviewSlider">Preview layer
+              <input id="layerPreviewSlider" type="range" min="1" max="1" step="1" value="1">
+            </label>
+            <canvas id="activePreview" width="620" height="620" aria-label="Selected mandala layer preview"></canvas>
           </div>
           <div>
-            <h2>Stacked assembly</h2>
+            <h2>Fully stacked assembly</h2>
             <canvas id="stackPreview" width="620" height="620" aria-label="Stacked mandala assembly preview"></canvas>
           </div>
         </section>
