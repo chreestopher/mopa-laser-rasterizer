@@ -23,6 +23,7 @@ BUILTIN_MOTIFS = {"petal", "leaf", "diamond", "circle", "triangle", "star", "hea
 SUPPORT_MODES = {"outer_rim", "automatic_bridges", "fully_connected", "loose"}
 CONSTRUCTION_MODES = {"cutout", "positive"}
 RIM_STYLES = {"closed", "petal", "open"}
+ORNAMENT_STYLES = {"lotus", "billow", "paisley", "rose_lace", "leaf_lace"}
 LAYER_COLORS = (
     "#E44D61", "#F39C49", "#E4D354", "#72C66A", "#43B7A7", "#4C9DDE",
     "#6C70D8", "#9B63C7", "#D05AA8", "#BC7C58", "#8B9A52", "#5E8792",
@@ -104,6 +105,9 @@ def validate_mandala_config(raw):
             raise ValueError(f"Mandala layer {index} has an invalid structural support mode")
         if rim_style not in RIM_STYLES:
             raise ValueError(f"Mandala layer {index} has an invalid outer edge style")
+        ornament_style = str(source.get("ornament_style") or "lotus").strip().lower()
+        if ornament_style not in ORNAMENT_STYLES:
+            raise ValueError(f"Mandala layer {index} has an invalid ornament family")
         cleaned_layers.append({
             "name": str(source.get("name") or f"Layer {index}").strip()[:80] or f"Layer {index}",
             "motif": motif,
@@ -111,6 +115,7 @@ def validate_mandala_config(raw):
             "construction": construction,
             "support_mode": support,
             "rim_style": rim_style,
+            "ornament_style": ornament_style,
             "repetitions": _integer(source.get("repetitions", 12), f"Layer {index} repetitions", 4, 32),
             "rings": _integer(source.get("rings", 3), f"Layer {index} rings", 1, 8),
             "inner_radius_ratio": _number(source.get("inner_radius_ratio", 0.18), f"Layer {index} inner radius", 0.05, 0.55),
@@ -130,6 +135,12 @@ def validate_mandala_config(raw):
             "layer_openness": _number(source.get("layer_openness", 0), f"Layer {index} openness", 0, 1),
             "opening_inner_ratio": _number(source.get("opening_inner_ratio", 0.25), f"Layer {index} opening inner position", 0.05, 0.85),
             "opening_rotation_degrees": _number(source.get("opening_rotation_degrees", 0), f"Layer {index} opening rotation", -180, 180),
+            "flow_amount": _number(source.get("flow_amount", 0), f"Layer {index} flowing form", 0, 1),
+            "petal_fullness": _number(source.get("petal_fullness", 1), f"Layer {index} petal fullness", 0.35, 1.8),
+            "tip_sharpness": _number(source.get("tip_sharpness", 1.25), f"Layer {index} tip sharpness", 0.35, 3),
+            "curl_degrees": _number(source.get("curl_degrees", 18), f"Layer {index} petal curl", -90, 90),
+            "band_overlap": _number(source.get("band_overlap", 0.18), f"Layer {index} band overlap", 0, 0.65),
+            "mirror_wedges": _boolean(source.get("mirror_wedges"), f"Layer {index} mirrored wedge pairs", True),
         })
     if custom_svg_characters > 120_000:
         raise ValueError("Custom SVG motifs contain too much data; simplify the motifs or use fewer custom layers")
@@ -197,6 +208,93 @@ def _radial_bar(radius, width, angle):
     return affinity.rotate(bar, angle, origin=(0, 0), use_radians=False)
 
 
+def _polar_point(radius, angle):
+    return (math.cos(angle) * radius, math.sin(angle) * radius)
+
+
+def _flowing_petal(inner_radius, outer_radius, center_angle, sector_angle, layer,
+                   handedness=1, width_scale=1):
+    """Create one curved, billowing ornamental lobe inside a radial wedge."""
+    style = layer["ornament_style"]
+    motif = layer["motif"]
+    flow = layer["flow_amount"]
+    fullness = layer["petal_fullness"] * layer["tangent_stretch"] * width_scale
+    sharpness = layer["tip_sharpness"]
+    curl = math.radians(layer["curl_degrees"]) * flow * handedness
+    samples = 48
+    left, right = [], []
+    for index in range(samples + 1):
+        fraction = index / samples
+        smooth = fraction * fraction * (3 - 2 * fraction)
+        radius = inner_radius + (outer_radius - inner_radius) * fraction
+        envelope = max(0, math.sin(math.pi * fraction)) ** sharpness
+        billow = 1.0
+        center_shift = curl * math.sin(math.pi * fraction)
+        if style == "billow":
+            billow = 1 + 0.28 * math.sin(2 * math.pi * fraction) ** 2
+            center_shift *= 0.72
+        elif style == "paisley":
+            billow = 0.82 + 0.42 * fraction
+            center_shift *= 1.45
+        elif style == "rose_lace":
+            billow = 0.82 + 0.26 * math.sin(3 * math.pi * fraction) ** 2
+            center_shift += handedness * sector_angle * 0.045 * math.sin(2 * math.pi * fraction)
+        elif style == "leaf_lace":
+            billow = 0.72 + 0.2 * math.sin(math.pi * fraction)
+            center_shift *= 0.82
+        if motif == "circle":
+            billow *= 1.18 - 0.18 * math.cos(2 * math.pi * fraction)
+        elif motif == "diamond":
+            billow *= 0.78 + 0.44 * abs(2 * fraction - 1)
+        elif motif == "triangle":
+            billow *= 0.62 + 0.62 * fraction
+        elif motif == "star":
+            billow *= 1 + 0.18 * math.sin(4 * math.pi * fraction) ** 2
+        elif motif == "heart":
+            billow *= 1 + 0.24 * math.sin(2 * math.pi * fraction)
+        elif motif == "leaf":
+            billow *= 0.78 + 0.3 * math.sin(math.pi * fraction)
+        half_width = sector_angle * 0.39 * fullness * envelope * billow
+        flow_angle = center_angle + center_shift + math.radians(layer["twist_degrees"]) * flow * smooth / max(1, layer["rings"])
+        left.append(_polar_point(radius, flow_angle - half_width))
+        right.append(_polar_point(radius, flow_angle + half_width))
+    return Polygon((*left, *reversed(right))).buffer(0)
+
+
+def _flowing_band_pattern(layer, inner_limit, outer_limit):
+    """Build coordinated petal bands by repeating complete ornamental wedges."""
+    span = (outer_limit - inner_limit) / layer["rings"]
+    sector = 2 * math.pi / layer["repetitions"]
+    lobes = []
+    for ring in range(layer["rings"]):
+        center = inner_limit + (ring + 0.5) * span
+        half_span = span * (0.5 + layer["band_overlap"]) * layer["motif_scale"] / 0.72 * layer["radial_stretch"]
+        band_inner = max(inner_limit, center - half_span)
+        band_outer = min(outer_limit, center + half_span)
+        ring_fraction = (ring + 0.5) / layer["rings"]
+        phase = math.radians(layer["rotation_degrees"] + ring_fraction * layer["twist_degrees"] * 0.34)
+        if layer["alternate_rotation"] and ring % 2:
+            phase += sector / 2
+        for repeat in range(layer["repetitions"]):
+            angle = phase + repeat * sector
+            if layer["mirror_wedges"]:
+                offset = sector * 0.105
+                lobes.append(_flowing_petal(
+                    band_inner, band_outer, angle - offset, sector, layer,
+                    handedness=-1, width_scale=0.67,
+                ))
+                lobes.append(_flowing_petal(
+                    band_inner, band_outer, angle + offset, sector, layer,
+                    handedness=1, width_scale=0.67,
+                ))
+            else:
+                lobes.append(_flowing_petal(
+                    band_inner, band_outer, angle, sector, layer,
+                    handedness=-1 if layer["mirror_alternating"] and repeat % 2 else 1,
+                ))
+    return unary_union(lobes).buffer(0) if lobes else GeometryCollection()
+
+
 def _support_bridge(start_radius, end_radius, width, start_angle, sweep_degrees,
                     wave_amount, wave_amplitude, wave_position):
     """Create a straight, diagonal, or sinusoidal structural bridge.
@@ -247,7 +345,7 @@ def _petal_crown(radius, rim_width, repetitions, rotation_degrees=0):
     radial_size = max(rim_width * 3, radius * 0.1)
     tangent_room = 2 * math.pi * radius / repetitions
     tangent_size = min(radial_size * 0.72, tangent_room * 0.68)
-    anchor_radius = radius - radial_size * 0.42
+    anchor_radius = radius - radial_size * 0.58
     petals = []
     for index in range(repetitions):
         item = affinity.scale(petal, xfact=radial_size, yfact=tangent_size, origin=(0, 0))
@@ -356,37 +454,37 @@ def generate_layer_geometry(config, layer_index):
     outer_limit = radius - rim_width * 1.2
     if outer_limit <= inner_limit:
         raise ValueError(f"{layer['name']} does not leave enough room between its center and rim")
-    motif = _motif_geometry(layer)
     ring_step = (outer_limit - inner_limit) / layer["rings"]
     bridge_cap = max(0.4, ring_step * 0.24)
     bridge_width = min(layer["bridge_width_mm"], bridge_cap)
     wave_amplitude = min(layer["bridge_wave_amplitude_mm"], ring_step * 1.5)
-    placed = []
-    for ring in range(layer["rings"]):
-        fraction = (ring + 0.5) / layer["rings"]
-        ring_radius = inner_limit + fraction * (outer_limit - inner_limit)
-        radial_size = ring_step * layer["motif_scale"] * layer["radial_stretch"]
-        tangent_room = 2 * math.pi * ring_radius / layer["repetitions"]
-        tangent_size = min(ring_step * layer["motif_scale"], tangent_room * 0.72) * layer["tangent_stretch"]
-        ring_phase = layer["rotation_degrees"] + fraction * layer["twist_degrees"]
-        if layer["alternate_rotation"] and ring % 2:
-            ring_phase += 180 / layer["repetitions"]
-        for repeat in range(layer["repetitions"]):
-            item = affinity.scale(
-                motif,
-                xfact=radial_size,
-                yfact=tangent_size * (-1 if layer["mirror_alternating"] and repeat % 2 else 1),
-                origin=(0, 0),
-            )
-            item = affinity.translate(item, xoff=ring_radius)
-            item = affinity.rotate(
-                item,
-                ring_phase + repeat * 360 / layer["repetitions"],
-                origin=(0, 0),
-                use_radians=False,
-            )
-            placed.append(item)
-    pattern = unary_union(placed).buffer(0) if placed else GeometryCollection()
+    if layer["motif"] == "custom" or layer["flow_amount"] <= 0:
+        motif = _motif_geometry(layer)
+        placed = []
+        for ring in range(layer["rings"]):
+            fraction = (ring + 0.5) / layer["rings"]
+            ring_radius = inner_limit + fraction * (outer_limit - inner_limit)
+            radial_size = ring_step * layer["motif_scale"] * layer["radial_stretch"]
+            tangent_room = 2 * math.pi * ring_radius / layer["repetitions"]
+            tangent_size = min(ring_step * layer["motif_scale"], tangent_room * 0.72) * layer["tangent_stretch"]
+            ring_phase = layer["rotation_degrees"] + fraction * layer["twist_degrees"]
+            if layer["alternate_rotation"] and ring % 2:
+                ring_phase += 180 / layer["repetitions"]
+            for repeat in range(layer["repetitions"]):
+                item = affinity.scale(
+                    motif,
+                    xfact=radial_size,
+                    yfact=tangent_size * (-1 if layer["mirror_alternating"] and repeat % 2 else 1),
+                    origin=(0, 0),
+                )
+                item = affinity.translate(item, xoff=ring_radius)
+                placed.append(affinity.rotate(
+                    item, ring_phase + repeat * 360 / layer["repetitions"],
+                    origin=(0, 0), use_radians=False,
+                ))
+        pattern = unary_union(placed).buffer(0) if placed else GeometryCollection()
+    else:
+        pattern = _flowing_band_pattern(layer, inner_limit, outer_limit)
     disc = _radial_circle(radius, layer["repetitions"], 12)
     clip = _radial_circle(radius - rim_width, layer["repetitions"], 12).difference(
         _radial_circle(max(0, inner_limit * 0.42), layer["repetitions"], 8)
@@ -476,6 +574,12 @@ def generate_layer_geometry(config, layer_index):
     if geometry.is_empty:
         raise ValueError(f"{layer['name']} generated no usable geometry")
     components = _polygon_components(geometry)
+    if layer["construction"] == "cutout" and layer["support_mode"] in {"automatic_bridges", "fully_connected"} and len(components) > 1:
+        # Subtracting overlapping ornamental bands can leave tiny trapped
+        # material islands. They are not part of a usable one-piece layer, so
+        # connected construction intentionally retains the structural body.
+        geometry = max(components, key=lambda component: component.area).buffer(0)
+        components = [geometry]
     if layer["support_mode"] in {"automatic_bridges", "fully_connected"} and len(components) != 1:
         raise ValueError(
             f"{layer['name']} could not be made into one connected piece; "

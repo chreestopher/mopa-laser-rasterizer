@@ -89,6 +89,61 @@ def test_swept_wave_bridges_preserve_symmetry_and_change_geometry():
     assert geometry.symmetric_difference(straight[0]).area > 100
 
 
+@pytest.mark.parametrize("style", ["lotus", "billow", "paisley", "rose_lace", "leaf_lace"])
+def test_flowing_ornament_families_are_symmetric_connected_and_distinct(style):
+    config = sample_config()
+    config["layers"] = [dict(
+        config["layers"][0], ornament_style=style, flow_amount=.82,
+        petal_fullness=1, tip_sharpness=1.25, curl_degrees=22,
+        band_overlap=.18, mirror_wedges=True, rim_style="petal",
+    )]
+    clean, geometries = generate_mandala(config)
+    geometry = geometries[0]
+    rotated = affinity.rotate(geometry, 360 / clean["layers"][0]["repetitions"], origin=(0, 0))
+    assert geometry.geom_type == "Polygon"
+    assert geometry.symmetric_difference(rotated).area < 1e-5
+    assert len(geometry.interiors) >= clean["layers"][0]["repetitions"]
+
+
+def test_flow_controls_materially_change_the_ornamental_wedge():
+    config = sample_config()
+    base = dict(
+        config["layers"][0], ornament_style="lotus", flow_amount=.82,
+        petal_fullness=.7, tip_sharpness=.6, curl_degrees=-35,
+        band_overlap=.05, mirror_wedges=False,
+    )
+    config["layers"] = [base]
+    _, restrained = generate_mandala(config)
+    config["layers"] = [dict(
+        base, petal_fullness=1.5, tip_sharpness=2.4,
+        curl_degrees=50, band_overlap=.5, mirror_wedges=True,
+    )]
+    _, billowing = generate_mandala(config)
+    assert restrained[0].symmetric_difference(billowing[0]).area > 500
+
+
+def test_ornament_families_and_shape_characters_produce_real_variation():
+    config = sample_config()
+    base = dict(
+        config["layers"][0], flow_amount=.9, petal_fullness=1.1,
+        tip_sharpness=1.35, curl_degrees=30, band_overlap=.24,
+        mirror_wedges=True,
+    )
+    geometries = []
+    for style in ("lotus", "billow", "paisley", "rose_lace", "leaf_lace"):
+        config["layers"] = [dict(base, ornament_style=style, motif="petal")]
+        geometries.append(generate_mandala(config)[1][0])
+    assert all(
+        geometries[index].symmetric_difference(geometries[index + 1]).area > 40
+        for index in range(len(geometries) - 1)
+    )
+    config["layers"] = [dict(base, ornament_style="lotus", motif="circle")]
+    circle = generate_mandala(config)[1][0]
+    config["layers"] = [dict(base, ornament_style="lotus", motif="star")]
+    star = generate_mandala(config)[1][0]
+    assert circle.symmetric_difference(star).area > 100
+
+
 @pytest.mark.parametrize("sweep", [-65, -30, 30, 65])
 @pytest.mark.parametrize("position", [.1, .5, .9])
 def test_diagonal_wave_support_extremes_remain_one_piece(sweep, position):

@@ -10,7 +10,7 @@ def read(path):
 
 def test_mandala_lab_uses_external_assets_and_accessible_previews():
     page = read("serverless_web/mandala.html")
-    assert 'src="/mandala.js?v=4"' in page
+    assert 'src="/mandala.js?v=5"' in page
     assert 'href="/mandala.css?v=1"' in page
     assert "<script>" not in page
     assert 'id="layerPreviewSlider"' in page and 'type="range"' in page
@@ -93,6 +93,13 @@ def test_mandala_support_and_openwork_controls_are_wired_end_to_end():
         "opening_inner_ratio",
         "opening_rotation_degrees",
         "rim_style",
+        "ornament_style",
+        "flow_amount",
+        "petal_fullness",
+        "tip_sharpness",
+        "curl_degrees",
+        "band_overlap",
+        "mirror_wedges",
     ):
         assert field in client
         assert field in api
@@ -100,5 +107,7 @@ def test_mandala_support_and_openwork_controls_are_wired_end_to_end():
     assert "Support sweep angle" in client
     assert "Layer openness" in client
     assert "Petal crown" in client
+    assert "Billowing scallops" in client
+    assert "Mirrored flowing wedge pairs" in client
     assert "Support Sweep Angle" in docs
     assert "Layer Openness" in docs
