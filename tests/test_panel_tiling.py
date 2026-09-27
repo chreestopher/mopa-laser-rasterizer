@@ -345,6 +345,17 @@ def test_panel_tiling_controls_oversized_dimension_fields_and_aspect_matching():
     assert "panel-preview-key layout" in page
 
 
+def test_panel_tiling_preferences_restore_layout_but_start_disabled():
+    page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+
+    assert "function panelTilingPreferenceValues()" in page
+    assert "delete settings.enabled" in page
+    assert "panel_tiling:panelTilingPreferenceValues()" in page
+    assert page.count("panel_tiling:panelTilingParameters()") == 1
+    assert "toggle.checked=false" in page
+    assert "toggle.checked=Boolean(settings.enabled)" not in page
+
+
 def test_panel_dimensions_resize_the_complete_source_before_clipping():
     source = Image.new("RGB", (460, 640), "white")
 

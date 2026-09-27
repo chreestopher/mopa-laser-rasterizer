@@ -52,6 +52,7 @@ def test_panel_tiling_guide_covers_layout_outputs_and_workbed_center():
         "Auto-match image aspect",
         "rotating every rectangular blank by 90 degrees",
         "calculated read-only values",
+        "does not remember the enabled checkbox",
     ):
         assert expected in text
 
