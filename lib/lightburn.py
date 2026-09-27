@@ -247,12 +247,13 @@ class Ellipse(Obj):
 
 
 class Path(Obj):
-    def __init__(self, points = None, layer=None):
+    def __init__(self, points=None, layer=None, closed=True):
         super().__init__()
         self.type="path"
         if points is None:
             points = list()
         self.points = points
+        self.closed = bool(closed)
         
     def __str__(self):
         return f"Path (L{self._layer}): points={points_str}"
@@ -264,7 +265,8 @@ class Path(Obj):
         f.write(" "*offset + f'<Shape Type="Path" {self._power_scale_str()} ShapeID="{self.shape_id}" CutIndex="{self._layer}">\n')
         self.transform.write(f, offset)
         self._vertex_list_write(f, offset)
-        f.write(" "*offset + "<PrimList>LineClosed</PrimList>\n")
+        primitive_type = "LineClosed" if self.closed else "LineOpen"
+        f.write(" "*offset + f"<PrimList>{primitive_type}</PrimList>\n")
         f.write(" "*offset + f'</Shape>\n')
 
     def _vertex_list_write(self, f, offset):

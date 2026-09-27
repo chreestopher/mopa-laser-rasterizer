@@ -81,6 +81,11 @@ Parameters:
     Default: "false"
     AllowedValues: ["true", "false"]
     Description: Opt in to sparse source-derived Black components instead of canvas punch-through.
+  LightBurnOpenPaths:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Export line geometry as open LightBurn paths and discard lines collapsed by coordinate rounding.
   AssignPublicIp:
     Type: String
     Default: DISABLED
@@ -215,6 +220,7 @@ Resources:
             - {Name: RASTER_WORKER_PROCESSES, Value: !Sub "${WorkerProcesses}"}
             - {Name: RASTER_KRASNOW_PROGRESS, Value: !Ref KrasnowProgress}
             - {Name: RASTER_SOURCE_BLACK_COMPONENTS, Value: !Ref SourceBlackComponents}
+            - {Name: RASTER_LIGHTBURN_OPEN_PATHS, Value: !Ref LightBurnOpenPaths}
             - {Name: UPLOAD_FOLDER, Value: /tmp/uploads}
             - {Name: RASTER_JOB_LEASE_SECONDS, Value: "90"}
             - {Name: RASTER_JOB_HEARTBEAT_SECONDS, Value: "20"}
@@ -267,6 +273,7 @@ Resources:
             - {Name: RASTER_PANEL_PROCESSES, Value: !Sub "${PanelProcesses}"}
             - {Name: RASTER_KRASNOW_PROGRESS, Value: !Ref KrasnowProgress}
             - {Name: RASTER_SOURCE_BLACK_COMPONENTS, Value: !Ref SourceBlackComponents}
+            - {Name: RASTER_LIGHTBURN_OPEN_PATHS, Value: !Ref LightBurnOpenPaths}
             - {Name: UPLOAD_FOLDER, Value: /tmp/uploads}
             - {Name: RASTER_JOB_LEASE_SECONDS, Value: "90"}
             - {Name: RASTER_JOB_HEARTBEAT_SECONDS, Value: "20"}

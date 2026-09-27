@@ -79,6 +79,7 @@ parameters=(
   "PanelMemory=${FARGATE_PANEL_MEMORY:-8192}"
   "PanelProcesses=${FARGATE_PANEL_PROCESSES:-4}"
   "SourceBlackComponents=${FARGATE_SOURCE_BLACK_COMPONENTS:-false}"
+  "LightBurnOpenPaths=${FARGATE_LIGHTBURN_OPEN_PATHS:-false}"
   "AssignPublicIp=${FARGATE_ASSIGN_PUBLIC_IP:-DISABLED}"
 )
 

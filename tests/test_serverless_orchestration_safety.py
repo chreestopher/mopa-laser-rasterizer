@@ -109,6 +109,17 @@ def test_oversized_panel_jobs_select_the_dedicated_task_definition():
     assert '"PanelTaskDefinitionArn=$(output "$WORKER_STACK" PanelTaskDefinitionArn)"' in deploy
 
 
+def test_lightburn_open_paths_are_feature_flagged_for_easy_worker_rollback():
+    worker = (ROOT / "ecs" / "rasterizer-worker.yaml").read_text(encoding="utf-8")
+    deploy = (ROOT / "dev_setup" / "deploy_serverless_staging.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "LightBurnOpenPaths:" in worker
+    assert worker.count("RASTER_LIGHTBURN_OPEN_PATHS") == 2
+    assert "SERVERLESS_STAGING_LIGHTBURN_OPEN_PATHS:-true" in deploy
+
+
 def test_small_jobs_without_worker_type_default_to_the_standard_worker():
     orchestration = (ROOT / "ecs" / "rasterizer-orchestration.yaml").read_text(
         encoding="utf-8"

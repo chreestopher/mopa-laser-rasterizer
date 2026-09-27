@@ -2788,9 +2788,23 @@ def push_geometry_to_lightburn(
                 )
 
     elif geometry.geom_type == "LineString":
+        use_open_paths = str(
+            os.environ.get("RASTER_LIGHTBURN_OPEN_PATHS", "false")
+        ).strip().lower() in ("1", "true", "yes", "on")
         coordinates = [[round(x, 3), round(y, 3)] for x, y in geometry.coords]
+        if use_open_paths:
+            coordinates = [
+                coordinate
+                for index, coordinate in enumerate(coordinates)
+                if index == 0 or coordinate != coordinates[index - 1]
+            ]
         if len(coordinates) >= 2:
-            lb_project_instance.add(lightburn.Path(coordinates).layer(layer_id))
+            lb_project_instance.add(
+                lightburn.Path(
+                    coordinates,
+                    closed=not use_open_paths or bool(geometry.is_ring),
+                ).layer(layer_id)
+            )
 
     elif geometry.geom_type in (
         "MultiPolygon",

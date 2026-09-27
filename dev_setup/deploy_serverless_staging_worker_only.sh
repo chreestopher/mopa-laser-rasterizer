@@ -40,7 +40,8 @@ aws cloudformation deploy --region "$REGION" --stack-name "$WORKER_STACK" \
     "PanelCpu=${SERVERLESS_STAGING_PANEL_FARGATE_CPU:-4096}" \
     "PanelMemory=${SERVERLESS_STAGING_PANEL_FARGATE_MEMORY:-8192}" \
     "PanelProcesses=${SERVERLESS_STAGING_PANEL_PROCESSES:-4}" \
-  --no-fail-on-empty-changeset
+    "LightBurnOpenPaths=${SERVERLESS_STAGING_LIGHTBURN_OPEN_PATHS:-true}" \
+    --no-fail-on-empty-changeset
 
 TASK_DEFINITION_ARN="$(aws cloudformation describe-stacks --region "$REGION" --stack-name "$WORKER_STACK" \
   --query "Stacks[0].Outputs[?OutputKey=='TaskDefinitionArn'].OutputValue" --output text)"
