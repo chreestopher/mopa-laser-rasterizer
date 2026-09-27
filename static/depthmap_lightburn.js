@@ -14,6 +14,17 @@ function formatNumber(value) {
   return Number(Number(value).toFixed(6)).toString();
 }
 
+function positiveInteger(value, fallback = 1) {
+  const number = Number(value);
+  const fallbackNumber = Number(fallback);
+  return Math.max(1, Math.round(Number.isFinite(number) ? number : (Number.isFinite(fallbackNumber) ? fallbackNumber : 1)));
+}
+
+function finiteNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
 function safeElementName(name) {
   return /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(String(name || ""));
 }
@@ -37,12 +48,18 @@ export function hasEmbeddedCleanup(setting) {
   return Boolean((setting?.subLayers || setting?.sub_layers || []).some(isCleanupSubLayer));
 }
 
+function embeddedCleanupLayer(setting) {
+  return (setting?.subLayers || setting?.sub_layers || []).find(isCleanupSubLayer) || null;
+}
+
 function subLayerXml(layer, options = {}) {
   const settings = {...(layer?.settings || {})};
   if (options.forceCleanup) {
     settings.isCleanup = "1";
     settings.subname = "Cleanup";
-    settings.numPasses = String(Math.max(1, Math.round(Number(options.cleanupPasses) || 1)));
+  }
+  if ((options.forceCleanup || isCleanupSubLayer(layer)) && options.cleanupPasses !== undefined) {
+    settings.numPasses = String(positiveInteger(options.cleanupPasses, settings.numPasses));
   }
   const excluded = new Set(["index", "name", "priority", "hide", "dooutput", "linkpath", "dithermode", "cleanuppass"]);
   const values = settingValuesXml(settings, "      ", excluded);
@@ -50,12 +67,21 @@ function subLayerXml(layer, options = {}) {
   return `    <SubLayer type="${xmlEscape(type)}">\n${values.join("\n")}\n    </SubLayer>`;
 }
 
-function primarySettingXml(setting, mode, cleanupSetting, cleanAfter, cleanupPasses) {
+function primarySettingXml(setting, mode, cleanupSetting, options = {}) {
   if (!setting?.settings || String(setting.type || "").toLowerCase() !== "image") {
     throw new Error("The selected 3D-Slice role must use LightBurn Image mode.");
   }
+  const primarySettings = {...setting.settings};
+  primarySettings.numPasses = String(positiveInteger(options.depthPasses, primarySettings.numPasses));
+  primarySettings.angle = formatNumber(finiteNumber(options.angle, finiteNumber(primarySettings.angle, 0)));
+  primarySettings.anglePerPass = formatNumber(finiteNumber(options.anglePerPass, finiteNumber(primarySettings.anglePerPass, 0)));
+  const sourceDpi = finiteNumber(primarySettings.dpi, 0);
+  const sourceInterval = finiteNumber(primarySettings.interval, sourceDpi > 0 ? 25.4 / sourceDpi : .1);
+  const interval = clamp(finiteNumber(options.interval, sourceInterval), .0001, 100);
+  primarySettings.interval = formatNumber(interval);
+  primarySettings.dpi = formatNumber(finiteNumber(options.dpi, 25.4 / interval));
   const excluded = new Set(["index", "name", "priority", "hide", "dooutput", "linkpath", "dithermode", "cleanuppass"]);
-  const values = settingValuesXml(setting.settings, "    ", excluded);
+  const values = settingValuesXml(primarySettings, "    ", excluded);
   const importedSubLayers = setting.subLayers || setting.sub_layers || [];
   const importedCleanup = importedSubLayers.some(isCleanupSubLayer);
   const subLayers = mode === "3dslice"
@@ -65,10 +91,12 @@ function primarySettingXml(setting, mode, cleanupSetting, cleanAfter, cleanupPas
         ? [{type:String(cleanupSetting.type || "Scan").toLowerCase() === "image" ? "Scan" : cleanupSetting.type, settings:cleanupSetting.settings || {}}]
         : [])
     : importedSubLayers.filter(layer => !isCleanupSubLayer(layer));
-  const cleanupXml = mode === "3dslice" && importedCleanup && setting.settings.cleanupPass !== undefined
-    ? `    <cleanupPass Value="${xmlEscape(setting.settings.cleanupPass)}"/>\n`
+  const cleanAfter = positiveInteger(options.cleanAfter, setting.settings.cleanupPass);
+  const cleanupPasses = options.cleanupPasses;
+  const cleanupXml = mode === "3dslice" && importedCleanup
+    ? `    <cleanupPass Value="${cleanAfter}"/>\n`
     : mode === "3dslice" && !importedCleanup && cleanupSetting
-      ? `    <cleanupPass Value="${Math.max(1, Math.round(Number(cleanAfter) || 1))}"/>\n`
+      ? `    <cleanupPass Value="${cleanAfter}"/>\n`
       : "";
   const renderedSubLayers = subLayers.map(layer => subLayerXml(layer, {
     forceCleanup:mode === "3dslice" && !importedCleanup && Boolean(cleanupSetting),
@@ -93,21 +121,28 @@ export function createDepthmapLightBurn(image, options = {}) {
     options.slicingSetting,
     mode,
     options.cleanupSetting,
-    options.cleanAfter,
-    options.cleanupPasses,
+    options,
   );
   const fileName = image.fileName || "depthmap.png";
   const shape = `  <Shape Type="Bitmap" ShapeID="1" CutIndex="0" W="${formatNumber(image.width)}" H="${formatNumber(image.height)}" Gamma="1" Contrast="0" Brightness="0" EnhanceAmount="0" EnhanceRadius="0" EnhanceDenoise="0" File="${xmlEscape(fileName)}" SourceHash="0" Data="${xmlEscape(image.data)}">\n    <XForm>${formatNumber(pixelSize)} 0 0 ${formatNumber(pixelSize)} ${formatNumber(centerX)} ${formatNumber(centerY)}</XForm>\n  </Shape>`;
   const cleanupDescription = mode === "3dslice"
     ? hasEmbeddedCleanup(options.slicingSetting)
-      ? "The imported 3D-Slice setting's cleanup configuration was preserved."
+      ? `The imported cleanup sub-layer's laser settings were preserved. Cleanup runs after every ${positiveInteger(options.cleanAfter, options.slicingSetting?.settings?.cleanupPass)} depth pass(es), with ${positiveInteger(options.cleanupPasses, embeddedCleanupLayer(options.slicingSetting)?.settings?.numPasses)} cleanup pass(es) per cycle.`
       : options.cleanupSetting
-        ? `Cleanup runs after every ${Math.max(1, Math.round(Number(options.cleanAfter) || 1))} depth pass(es), with ${Math.max(1, Math.round(Number(options.cleanupPasses) || 1))} cleanup pass(es) per cycle.`
+        ? `Cleanup runs after every ${positiveInteger(options.cleanAfter, 1)} depth pass(es), with ${positiveInteger(options.cleanupPasses, options.cleanupSetting?.settings?.numPasses)} cleanup pass(es) per cycle.`
         : "No automatic cleanup sub-layer is configured."
     : "Automatic cleanup is omitted because this project uses Grayscale image mode.";
+  const sourceSettings = options.slicingSetting?.settings || {};
+  const depthPasses = positiveInteger(options.depthPasses, sourceSettings.numPasses);
+  const sourceDpi = finiteNumber(sourceSettings.dpi, 0);
+  const sourceInterval = finiteNumber(sourceSettings.interval, sourceDpi > 0 ? 25.4 / sourceDpi : .1);
+  const interval = clamp(finiteNumber(options.interval, sourceInterval), .0001, 100);
+  const angle = finiteNumber(options.angle, finiteNumber(sourceSettings.angle, 0));
+  const anglePerPass = finiteNumber(options.anglePerPass, finiteNumber(sourceSettings.anglePerPass, 0));
   const notes = xmlEscape([
     "MOPA LASER RASTERIZER - DEPTHMAP IMAGE EXPORT",
     `Image mode: ${mode === "3dslice" ? "3D Sliced" : "Grayscale"}.`,
+    `Depth passes: ${depthPasses}; line interval: ${formatNumber(interval)} mm; starting angle: ${formatNumber(angle)} degrees; angle change per pass: ${formatNumber(anglePerPass)} degrees.`,
     `Artwork: ${artworkWidth.toFixed(3)} x ${artworkHeight.toFixed(3)} mm on a ${workbedWidth.toFixed(3)} x ${workbedHeight.toFixed(3)} mm workbed.`,
     cleanupDescription,
     "Inspect all laser and image settings in LightBurn before running the laser.",

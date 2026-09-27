@@ -167,6 +167,10 @@
             <div class="dimensions"><label for="depth_lb_palette">Processing Palette<select id="depth_lb_palette"><option value="">Choose a Processing Palette…</option></select></label><label for="depth_lb_material">Material<select id="depth_lb_material" disabled><option value="">Choose a material…</option></select></label></div>
             <div class="dimensions single"><label for="depth_lb_slicing_setting">3D-Slice setting<select id="depth_lb_slicing_setting" disabled><option value="">Choose an Image setting…</option></select></label></div>
             <p id="depth_lb_setting_status" class="fine-print">Choose a Processing Palette and Material. That material's assigned 3D-Slice role is selected automatically when available.</p>
+            <div class="dimensions"><label for="depth_lb_depth_passes">Depth passes<input id="depth_lb_depth_passes" type="number" min="1" max="10000" step="1" value="1"></label><label for="depth_lb_interval">Line interval (mm)<input id="depth_lb_interval" type="number" min="0.0001" max="100" step="0.0001" value="0.1"></label></div>
+            <div class="dimensions"><label for="depth_lb_angle">Starting angle (degrees)<input id="depth_lb_angle" type="number" min="-360" max="360" step="0.1" value="0"></label><label for="depth_lb_angle_per_pass">Angle change per pass (degrees)<input id="depth_lb_angle_per_pass" type="number" min="-360" max="360" step="0.1" value="0"></label></div>
+            <div class="dimensions single"><label for="depth_lb_dpi">DPI (linked to line interval)<input id="depth_lb_dpi" type="number" min="0.254" max="254000" step="0.1" value="254"></label></div>
+            <p class="fine-print">These values initialize from the selected 3D-Slice setting when present and can be overridden for this export. Line interval and DPI remain synchronized.</p>
             <div class="dimensions single"><label for="depth_lb_mode">LightBurn image mode<select id="depth_lb_mode"><option value="grayscale">Grayscale</option><option value="3dslice">3D Sliced</option></select></label></div>
             <p id="depth_lb_mode_status" class="fine-print">3D Sliced is available only when the Processing Palette uses Galvo motion.</p>
           </section>
@@ -174,8 +178,8 @@
             <h3 id="depth_lb_cleanup_heading">3D Sliced cleanup</h3>
             <div id="depth_lb_cleanup_override_controls">
               <div class="dimensions single"><label for="depth_lb_cleanup_setting">Cleanup setting<select id="depth_lb_cleanup_setting" disabled><option value="">No automatic cleanup</option></select></label></div>
-              <div class="dimensions"><label for="depth_lb_clean_after">Clean after depth passes<input id="depth_lb_clean_after" type="number" min="1" max="1000" step="1" value="1"></label><label for="depth_lb_cleanup_passes">Cleanup passes per cycle<input id="depth_lb_cleanup_passes" type="number" min="1" max="1000" step="1" value="1"></label></div>
             </div>
+            <div class="dimensions"><label for="depth_lb_clean_after">Clean after every X depth passes<input id="depth_lb_clean_after" type="number" min="1" max="10000" step="1" value="1"></label><label for="depth_lb_cleanup_passes">Cleaning passes per cycle<input id="depth_lb_cleanup_passes" type="number" min="1" max="10000" step="1" value="1"></label></div>
             <p id="depth_lb_cleanup_status" class="fine-print">The material's assigned Cleaning role is selected automatically when available.</p>
           </section>
           <section class="depth-control-group" aria-labelledby="depth_lb_layout_heading">
@@ -301,6 +305,6 @@
     <aside class="panel note"><strong>Important limitation:</strong> a single photograph cannot provide measured physical depth. The model infers relative depth from visual cues and can misread reflections, transparency, shadows, abstract artwork, or unfamiliar objects. Always inspect and edit the result before using it for relief engraving. The uploaded image is processed locally; the browser downloads the AI model from Hugging Face when first used.</aside>
   </main>
   <script id="depth_palette_data" type="application/json">{{ depth_palette|tojson }}</script>
-  <script type="module" src="/static/depthmap_generator.js?v=20"></script>
+  <script type="module" src="/static/depthmap_generator.js?v=21"></script>
 </body>
 </html>
