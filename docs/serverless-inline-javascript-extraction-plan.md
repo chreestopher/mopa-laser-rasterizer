@@ -8,7 +8,7 @@ Non-executable data blocks are a separate concern. `type="application/json"` and
 
 ## Baseline inventory
 
-There is no `AGENTS.md` or existing repository-local skill in the staging baseline. Repository-local Codex guidance therefore belongs in `.agents/skills/`.
+There is no `AGENTS.md` or existing repository-local skill in the staging baseline. OpenAI's published repository-skill convention is `.agents/skills/`, so this branch places the guidance there. `quick_validate.py` proves the package shape, not runtime discovery. This session started from a different worktree before the skill existed, so discovery cannot be demonstrated in-session; after merge, start a fresh Codex session rooted in this repository and confirm `serverless-frontend-javascript` appears in the available-skill catalog and activates for a representative serverless frontend request.
 
 All eight `serverless_web/*.html` files contain executable inline JavaScript. There are ten blocks total and no inline `on*` HTML attributes:
 
@@ -19,7 +19,7 @@ All eight `serverless_web/*.html` files contain executable inline JavaScript. Th
 | `history.html` | shared pending-shell guard | `staging-shell.js` (defer), `history.js` (module) | same |
 | `holographic.html` | shared pending-shell guard | `staging-shell.js` (defer), `holographic.js` (module) | same |
 | `holographic-redirect.html` | 73-character redirect | none | keep the head redirect immediate and preserve query/hash |
-| `index.html` | shared guard plus 445 lines / 137,938 characters of application code | `staging-shell.js` (defer) | application currently executes at the end of parsing, before deferred shell code is guaranteed to run |
+| `index.html` | shared guard plus 446 lines / 138,077 characters of application code | `staging-shell.js` (defer) | application currently executes at the end of parsing, before deferred shell code is guaranteed to run |
 | `release-story.html` | shared guard plus 48-line page enhancement IIFE | `staging-shell.js` (defer) | enhancement runs after its markup exists |
 | `vault.html` | shared pending-shell guard | `staging-shell.js` (defer), `vault.js` (module) | guard must run synchronously in `<head>` |
 
@@ -39,7 +39,6 @@ Keep small page entry points and organize the large Rasterizer client around own
 
 ```text
 serverless_web/
-  shell-pending.js                 synchronous pre-paint guard
   holographic-redirect.js          legacy URL redirect only
   release-story.js                 story progress/TOC/media behavior
   rasterizer.js                    temporary behavior-preserving entry point
@@ -66,13 +65,15 @@ Keep `staging-shell.js` a classic deferred script for the first migration. Its `
 
 ### Phase 0 — lock the baseline
 
-1. Keep `tests/test_serverless_web_javascript.py` as the temporary debt inventory. New or modified inline executable blocks and inline event attributes must fail; extraction only removes hashes.
-2. Extend generated-page tests to build every deployed route into a temporary directory and scan the output with the same executable-script rules.
-3. Add a shared test helper that returns HTML plus referenced JavaScript. Twenty current test modules inspect `serverless_web/index.html`, and many assertions currently assume implementation code lives in the HTML. Move behavior assertions to the owning `.js` source as each block moves; keep markup assertions on HTML.
+1. Keep `tests/test_serverless_web_javascript.py` as the temporary debt inventory. It now builds Depthmap, Community Set, Experimental Labs, every documentation route, and every SEO route exactly as staging does. It fingerprints each allowed inline executable block and rejects new inline blocks, `on*` attributes, and `javascript:` URLs in both source and rendered output. Extraction only removes hashes.
+2. Preserve each script's execution grammar in syntax checks. Classic scripts are checked as `.js`; only `type="module"` scripts are checked as `.mjs`. Every `serverless_web/**/*.js` file must be referenced in exactly one mode.
+3. Keep the deployment-order debt inventory exact. Existing HTML-before-JavaScript pairs are grandfathered temporarily; do not add pairs. Every new extracted asset must have a matching upload and appear before its dependent HTML. Remove existing debt entries when touching those uploads.
+4. Add a shared test helper that returns HTML plus referenced JavaScript. Twenty current test modules inspect `serverless_web/index.html`, and many assertions currently assume implementation code lives in the HTML. Move behavior assertions to the owning `.js` source as each block moves; keep markup assertions on HTML.
+5. Before moving the Rasterizer block, establish a browser-level characterization suite against the current inline implementation. Serve the fully generated static site over HTTP and run a pinned headless browser. Use deterministic API/Cognito/upload fakes and capture DOM state plus outbound request payloads for: signed-out boot and fail-open shell reveal; Cognito callback/refresh/logout and cross-tab auth; guest/member resource loading; initial filter/geometry state; crop pointer flows; quantized preview; Fauxlogram painting; panel-tiling enablement and layout; palette selection; guest and member submission/upload; resumed polling and ordered downloads; release-story enhancement; docs search; and the legacy redirect with query/hash. Record the baseline on the inline client and require the same suite after extraction and after each module split. Unit/string assertions alone are not an adequate modularization gate.
 
 ### Phase 1 — extract low-risk shared and page scripts
 
-1. Copy the pending-shell guard verbatim to `shell-pending.js` and reference it from all checked-in pages and all five builders. Load it as a parser-blocking head script: no `async`, `defer`, or `type="module"`. Moving it later would expose an unstyled/unauthenticated flash; making it external adds a network dependency, so retain the three-second failsafe.
+1. Replace the pending-shell guard without adding a render-blocking JavaScript request. Prefer putting `staging-shell-pending` directly on the generated/static `<html>` element and moving the hide plus a three-second fail-open animation into an external stylesheet. `staging-shell.js` already removes the class after it renders. Browser-test normal load, slow CSS/JS, blocked shell JavaScript, and CSS failure before adopting this alternative. A synchronous external `shell-pending.js` is behaviorally closer to the inline code, but it blocks parsing on a new network request and its three-second timer cannot start until the file arrives; a stalled fetch can therefore delay the page instead of providing the intended fail-open. If the CSS alternative proves unsuitable, document and test that network tradeoff before using the external script.
 2. Move the redirect verbatim to `holographic-redirect.js`, loaded synchronously in the head. Preserve the meta-refresh fallback, `location.replace`, query string, and hash.
 3. Move the release-story IIFE verbatim to `release-story.js` at the current end-of-body position. Use a classic script initially.
 4. Upload these assets before uploading HTML that references them. Keep the old object available for at least one release when renaming an asset.
@@ -94,7 +95,7 @@ Keep `staging-shell.js` a classic deferred script for the first migration. Its `
 
 ### Phase 4 — introduce native modules behind stable behavior
 
-1. Add characterization tests around auth refresh, guest capabilities, crop/preview state, geometry serialization, palette selection, panel tiling, submission payloads, polling, and output ordering.
+1. Do not start this phase until the Phase 0 browser characterization suite passes against both the original inline baseline and the byte-for-byte classic `rasterizer.js` extraction. Expand it for any feature whose boundary is about to move.
 2. Convert `rasterizer.js` into a small `type="module"` entry and extract one cohesive boundary at a time following the target graph. Use explicit imports/exports and a state object rather than relying on top-level bindings becoming globals.
 3. Attach listeners from `main.js` after module evaluation. Verify the changed timing against `staging-shell.js`, Cognito callback handling, resumed jobs, and initial control rendering.
 4. Deploy the complete import graph with `application/javascript`. Prefer an explicit manifest or recursive module-directory upload plus a test that every relative import resolves and is published.
@@ -105,17 +106,17 @@ Keep `staging-shell.js` a classic deferred script for the first migration. Its `
 2. Keep HTML `no-cache`. During migration keep JavaScript `no-cache`; immutable long-lived caching is safe only after content-hashed filenames or an atomic release-prefix strategy exists. Query revisions alone do not prove atomicity.
 3. Remove `'unsafe-inline'` from the report-only `script-src` after generated-output scans reach zero executable inline code. Exercise every route and third-party dependency, including WebAssembly/model loading.
 4. Decide and test the JSON-LD policy before enforcement. If inline structured data needs CSP hashes, the shared CloudFront header must include all rendered hashes or delivery must change; do not drop SEO data merely to simplify CSP.
-5. After a clean staging observation window, promote the CSP from report-only to enforced in a separate change with rollback instructions.
+5. After a clean staging observation window, promote the CSP from report-only to enforced in a separate change with rollback instructions. Do not combine enforcement with extraction, modularization, or cache-policy changes.
 
 ## Verification and acceptance
 
 For every phase:
 
-- Run the focused JavaScript policy/syntax tests and the full Python suite.
+- Run the focused JavaScript policy/syntax tests and the full Python suite. The focused test must parse classic and module scripts in their actual modes.
 - Run all serverless builders and scan their rendered output, not only source templates.
 - Validate deployment scripts (`bash -n` under the repository's existing Linux/CI path) and assert new assets are uploaded with the correct MIME type before dependent HTML.
 - Test a local static origin over HTTP; ES modules cannot be validated reliably through `file://`.
-- In staging, cover signed-out and signed-in landing, Cognito callback/refresh/logout and cross-tab state, guest and member job submission, resume/poll/download, crop and quantized preview, geometry routing/Fauxlogram painter, panel tiling, Vault, History, Admin, Color Lab, Fauxlographic Lab, Depthmap Lab, Community Set, docs search, release story, and the legacy redirect with query/hash.
+- Run the deterministic browser characterization suite locally before and after each boundary change, then repeat its critical signed-out/signed-in flows in staging: Cognito callback/refresh/logout and cross-tab state, guest and member job submission, resume/poll/download, crop and quantized preview, geometry routing/Fauxlogram painter, panel tiling, Vault, History, Admin, Color Lab, Fauxlographic Lab, Depthmap Lab, Community Set, docs search, release story, and the legacy redirect with query/hash.
 - Check the browser console/network panel for module 404s, MIME errors, CSP reports, duplicate listener execution, and flashes caused by the pending-shell guard.
 
 Acceptance is: generated runtime pages contain no inline executable JavaScript or inline event attributes; data-only script blocks are documented and inert; all browser code is syntax-checked; every referenced/imported asset is deployed before its consumer; staging behavior matches the baseline; and CSP can remove `'unsafe-inline'` from `script-src` without runtime violations.
