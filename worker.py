@@ -220,6 +220,8 @@ def record_job_failure(task_id, error):
 def run_job(raw_payload, upload_folder):
     payload = json.loads(raw_payload)
     task_id = str(payload["task_id"])
+    if payload.get("job_type") == "layered_mandala":
+        return run_layered_mandala_job(payload, upload_folder)
     if payload.get("job_type") == "holographic_artwork":
         return run_holographic_artwork_job(payload, upload_folder)
     image_name = secure_artifact_name(payload.get("image_name"), "image")
@@ -248,6 +250,46 @@ def run_job(raw_payload, upload_folder):
         guest_quota_visitor=str(payload.get("guest_quota_visitor") or ""),
         guest_quota_day=str(payload.get("guest_quota_day") or ""),
         guest_daily_job_limit=int(payload.get("guest_daily_job_limit") or 0),
+    )
+
+
+def run_layered_mandala_job(payload, upload_folder):
+    """Generate deterministic layered mandala exports as a retained account job."""
+    from lib.mandala import build_mandala_exports
+
+    task_id = str(payload["task_id"])
+
+    def progress(message):
+        line = f"[{datetime.now().strftime('%H:%M:%S')}] {message}"
+        job_runtime.append_log(task_id, line)
+
+    job_runtime.set_status(task_id, "processing")
+    progress("Dedicated worker claimed the Layered Mandala Lab job.")
+    job_directory = os.path.join(upload_folder, f"{task_id}_mandala")
+    os.makedirs(job_directory, exist_ok=True)
+    config = payload.get("mandala") or {}
+    progress(f"Building {len(config.get('layers') or [])} front-to-back mandala layers.")
+    result = build_mandala_exports(job_directory, config)
+    progress(
+        f"Validated {result['layer_count']} physical layers and "
+        f"{result['path_count']} combined LightBurn paths."
+    )
+    output_keys = []
+    for position, output_path in enumerate(result["outputs"], start=1):
+        progress(f"[Durable output upload {position}/{len(result['outputs'])}] START: {os.path.basename(output_path)}")
+        key = upload_task_artifact(
+            task_id,
+            output_path,
+            category="outputs",
+            user_id=payload.get("user_id"),
+        )
+        if key:
+            output_keys.append(key)
+        progress(f"[Durable output upload {position}/{len(result['outputs'])}] DONE")
+    update_user_job(task_id, "completed", output_keys=output_keys)
+    job_runtime.set_status(task_id, "completed")
+    progress(
+        f"Layered Mandala complete: {len(output_keys)} downloads are ready for manual LightBurn review."
     )
 
 

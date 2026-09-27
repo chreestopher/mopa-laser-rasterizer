@@ -33,7 +33,7 @@
 
   const routes = [
     { href: "/", label: "Rasterizer", match: path => ["/", "/laser-engraving-tool", "/color-laser-engraving-tool"].includes(path) },
-    { href: "/experimental-laboratories", label: "Experimental Laboratories", match: path => ["/experimental-laboratories", "/fauxlographic.html", "/depthmap.html", "/color-lab.html", "/depthmap-relief-engraving-tool"].includes(path) },
+    { href: "/experimental-laboratories", label: "Experimental Laboratories", match: path => ["/experimental-laboratories", "/fauxlographic.html", "/depthmap.html", "/color-lab.html", "/mandala.html", "/depthmap-relief-engraving-tool"].includes(path) },
     { href: "/history.html", label: "Job History", match: path => path === "/history.html" },
     { href: "/vault.html", label: "Swatch Palette Vault", match: path => path === "/vault.html" },
     { href: "/community-set", label: "Community Set", match: path => path === "/community-set" },
@@ -44,6 +44,7 @@
     "/fauxlographic.html": ["Directional engraving workflow", "Fauxlographic Etching Lab", "Map artwork through a saved Fauxlographic Palette and its LightBurn Material Library.", "Experimental - active development"],
     "/depthmap.html": ["Client-side monocular depth estimation", "Depth Map Generator", "Estimate relative scene depth from a single image, inspect a relief-style projection, adjust the usable range, and export grayscale depth maps for further preparation.", "Experimental - active development"],
     "/color-lab.html": ["Controlled laser color experiments", "Color Lab", "Sweep two laser parameters at a time, measure engraved test grids, refine promising settings, and save repeatable results for your exact equipment and material.", isStagingEnvironment ? "Experimental - staging port" : "Experimental - verify all output"],
+    "/mandala.html": ["Layered radial vector construction", "Layered Mandala Lab", "Build physically stackable radial artwork from built-in or custom SVG motifs, preview every layer, and generate retained projects for review.", "Experimental - active development"],
     "/experimental-laboratories": ["Workflows under active development", "Experimental Laboratories", "Explore engraving tools that extend beyond the standard Rasterizer workflow, including diffraction artwork and depth-relief preparation.", "Experimental - verify all output"],
     "/history.html": ["Retained account processing", "Job History", "Review serverless runs, processing logs, parameters, and downloads retained for the last seven days.", "Authenticated workspace"],
     "/vault.html": ["Account-owned laser parameters", "Swatch Palette Vault", "Manage Color, Hatch, Processing, Depth, and Fauxlographic Palettes.", "Authenticated workspace"],
@@ -69,6 +70,7 @@
       : location.pathname === "/admin.html" ? "staging-admin"
       : location.pathname === "/depthmap.html" ? "staging-depthmap"
       : location.pathname === "/color-lab.html" ? "staging-color-lab"
+      : location.pathname === "/mandala.html" ? "staging-mandala"
       : location.pathname === "/experimental-laboratories" ? "staging-experimental"
       : location.pathname === "/fauxlographic.html" ? "staging-holographic"
       : location.pathname === "/release-story" ? "staging-release-story"
