@@ -69,6 +69,87 @@ def test_connected_support_modes_export_one_physical_piece():
         assert geometries[0].geom_type == "Polygon"
 
 
+def test_swept_wave_bridges_preserve_symmetry_and_change_geometry():
+    config = sample_config()
+    base_layer = dict(config["layers"][1], support_mode="fully_connected")
+    config["layers"] = [base_layer]
+    clean, straight = generate_mandala(config)
+    config["layers"] = [dict(
+        base_layer,
+        support_sweep_degrees=42,
+        bridge_wave_amount=1,
+        bridge_wave_amplitude_mm=8,
+        bridge_wave_position=.68,
+    )]
+    clean, waved = generate_mandala(config)
+    geometry = waved[0]
+    rotated = affinity.rotate(geometry, 360 / clean["layers"][0]["repetitions"], origin=(0, 0))
+    assert geometry.symmetric_difference(rotated).area < 1e-5
+    assert geometry.geom_type == "Polygon"
+    assert geometry.symmetric_difference(straight[0]).area > 100
+
+
+@pytest.mark.parametrize("sweep", [-65, -30, 30, 65])
+@pytest.mark.parametrize("position", [.1, .5, .9])
+def test_diagonal_wave_support_extremes_remain_one_piece(sweep, position):
+    config = sample_config()
+    config["layers"] = [dict(
+        config["layers"][1],
+        motif="leaf",
+        support_mode="automatic_bridges",
+        repetitions=14,
+        rings=4,
+        support_sweep_degrees=sweep,
+        bridge_wave_amount=1,
+        bridge_wave_amplitude_mm=10,
+        bridge_wave_position=position,
+    )]
+    _, geometries = generate_mandala(config)
+    assert geometries[0].geom_type == "Polygon"
+
+
+def test_layer_openness_reveals_background_without_removing_connected_supports():
+    config = sample_config()
+    base_layer = dict(
+        config["layers"][0],
+        construction="cutout",
+        support_mode="automatic_bridges",
+        support_sweep_degrees=35,
+        bridge_wave_amount=.7,
+        bridge_wave_amplitude_mm=6,
+    )
+    config["layers"] = [dict(base_layer, layer_openness=0)]
+    _, closed = generate_mandala(config)
+    config["layers"] = [dict(
+        base_layer,
+        layer_openness=.72,
+        opening_inner_ratio=.22,
+        opening_rotation_degrees=11,
+    )]
+    clean, openwork = generate_mandala(config)
+    geometry = openwork[0]
+    assert geometry.geom_type == "Polygon"
+    assert geometry.area < closed[0].area
+    rotated = affinity.rotate(geometry, 360 / clean["layers"][0]["repetitions"], origin=(0, 0))
+    assert geometry.symmetric_difference(rotated).area < 1e-5
+
+
+@pytest.mark.parametrize("rim_style", ["closed", "petal", "open"])
+def test_outer_edge_styles_keep_positive_connected_layers_cuttable(rim_style):
+    config = sample_config()
+    config["layers"] = [dict(
+        config["layers"][1],
+        construction="positive",
+        support_mode="automatic_bridges",
+        rim_style=rim_style,
+        support_sweep_degrees=28,
+        bridge_wave_amount=.55,
+        bridge_wave_amplitude_mm=6,
+    )]
+    _, geometries = generate_mandala(config)
+    assert geometries[0].geom_type == "Polygon"
+
+
 @pytest.mark.parametrize("motif", ["petal", "leaf", "diamond", "circle", "triangle", "star", "heart"])
 @pytest.mark.parametrize("support_mode", ["automatic_bridges", "fully_connected"])
 def test_every_builtin_motif_honors_connected_support_modes(motif, support_mode):

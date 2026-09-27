@@ -9,7 +9,7 @@ const COLORS=["#e44d61","#f39c49","#e4d354","#72c66a","#43b7a7","#4c9dde","#6c70
 const $=selector=>document.querySelector(selector);
 const esc=value=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
 
-function newLayer(index){return{name:`Layer ${index+1}`,motif:["petal","leaf","star","diamond"][index%4],custom_svg:null,construction:"cutout",support_mode:"automatic_bridges",repetitions:12,rings:3,inner_radius_ratio:.18,motif_scale:.72,radial_stretch:1,tangent_stretch:1,twist_degrees:index%2? -18:18,rotation_degrees:index*8,alternate_rotation:true,mirror_alternating:false,rim_width_mm:4,bridge_width_mm:2}}
+function newLayer(index){return{name:`Layer ${index+1}`,motif:["petal","leaf","star","diamond"][index%4],custom_svg:null,construction:"cutout",support_mode:"automatic_bridges",rim_style:"closed",repetitions:12,rings:3,inner_radius_ratio:.18,motif_scale:.72,radial_stretch:1,tangent_stretch:1,twist_degrees:index%2? -18:18,rotation_degrees:index*8,alternate_rotation:true,mirror_alternating:false,rim_width_mm:4,bridge_width_mm:2,support_sweep_degrees:0,bridge_wave_amount:0,bridge_wave_amplitude_mm:6,bridge_wave_position:.5,layer_openness:0,opening_inner_ratio:.25,opening_rotation_degrees:0}}
 function processingPalettes(){return(resources.material_libraries||[]).filter(item=>item.library_intent==="processing_palette")}
 function selectedPalette(){return processingPalettes().find(item=>item.library_id===$("#processingPalette").value)}
 function materialNames(library){return[...new Set([...(library?.summary?.logical_material_names||[]),...(library?.summary?.entries||[]).map(entry=>entry.material)].map(value=>String(value||"").trim()).filter(Boolean))]}
@@ -27,7 +27,8 @@ function layerCard(layer,index){return`<article class="layer-card ${index===acti
 <p class="custom-svg-status" ${layer.motif==="custom"?"":"hidden"}>${layer.custom_svg?`Loaded ${esc(layer.custom_svg.name)}`:"Choose a plain SVG containing closed vector shapes."}</p>
 <label>Construction<select data-field="construction"><option value="cutout" ${layer.construction==="cutout"?"selected":""}>Cutout lace</option><option value="positive" ${layer.construction==="positive"?"selected":""}>Built-up motif</option></select></label>
 <label>Structural support<select data-field="support_mode"><option value="outer_rim" ${layer.support_mode==="outer_rim"?"selected":""}>Rim and hub; motifs may remain loose</option><option value="automatic_bridges" ${layer.support_mode==="automatic_bridges"?"selected":""}>Automatic bridges — one piece</option><option value="fully_connected" ${layer.support_mode==="fully_connected"?"selected":""}>Fully connected — one piece</option><option value="loose" ${layer.support_mode==="loose"?"selected":""}>Loose pieces allowed</option></select></label>
-${numberControl("repetitions","Radial repetitions",layer.repetitions,4,32,1)}${numberControl("rings","Concentric rings",layer.rings,1,8,1)}${numberControl("inner_radius_ratio","Inner radius",layer.inner_radius_ratio,.05,.55,.01)}${numberControl("motif_scale","Motif scale",layer.motif_scale,.2,.95,.01)}${numberControl("radial_stretch","Radial stretch",layer.radial_stretch,.4,1.8,.05)}${numberControl("tangent_stretch","Tangential stretch",layer.tangent_stretch,.4,1.8,.05)}${numberControl("twist_degrees","Outward twist",layer.twist_degrees,-180,180,1)}${numberControl("rotation_degrees","Layer rotation",layer.rotation_degrees,-180,180,1)}${numberControl("rim_width_mm","Outer rim (mm)",layer.rim_width_mm,.5,30,.1)}${numberControl("bridge_width_mm","Bridge width (mm)",layer.bridge_width_mm,.4,20,.1)}
+<label>Outer edge<select data-field="rim_style"><option value="closed" ${(layer.rim_style??"closed")==="closed"?"selected":""}>Closed rim</option><option value="petal" ${layer.rim_style==="petal"?"selected":""}>Petal crown</option><option value="open" ${layer.rim_style==="open"?"selected":""}>Open support ends</option></select></label>
+${numberControl("repetitions","Radial repetitions",layer.repetitions,4,32,1)}${numberControl("rings","Concentric rings",layer.rings,1,8,1)}${numberControl("inner_radius_ratio","Inner radius",layer.inner_radius_ratio,.05,.55,.01)}${numberControl("motif_scale","Motif scale",layer.motif_scale,.2,.95,.01)}${numberControl("radial_stretch","Radial stretch",layer.radial_stretch,.4,1.8,.05)}${numberControl("tangent_stretch","Tangential stretch",layer.tangent_stretch,.4,1.8,.05)}${numberControl("twist_degrees","Outward twist",layer.twist_degrees,-180,180,1)}${numberControl("rotation_degrees","Layer rotation",layer.rotation_degrees,-180,180,1)}${numberControl("rim_width_mm","Outer rim (mm)",layer.rim_width_mm,.5,30,.1)}${numberControl("bridge_width_mm","Bridge width (mm)",layer.bridge_width_mm,.4,20,.1)}${numberControl("support_sweep_degrees","Support sweep angle (°)",layer.support_sweep_degrees??0,-75,75,1)}${numberControl("bridge_wave_amount","Bridge wave amount",layer.bridge_wave_amount??0,0,1,.01)}${numberControl("bridge_wave_amplitude_mm","Wave amplitude (mm)",layer.bridge_wave_amplitude_mm??6,0,30,.1)}${numberControl("bridge_wave_position","Wave position along bridge",layer.bridge_wave_position??.5,.1,.9,.01)}${numberControl("layer_openness","Layer openness",layer.layer_openness??0,0,1,.01)}${numberControl("opening_inner_ratio","Opening inner position",layer.opening_inner_ratio??.25,.05,.85,.01)}${numberControl("opening_rotation_degrees","Opening rotation (°)",layer.opening_rotation_degrees??0,-180,180,1)}
 <label class="check-control"><input data-field="alternate_rotation" type="checkbox" ${layer.alternate_rotation?"checked":""}> Alternate ring phase</label><label class="check-control"><input data-field="mirror_alternating" type="checkbox" ${layer.mirror_alternating?"checked":""}> Mirror alternating motifs</label>
 </div></article>`}
 function numberControl(field,label,value,min,max,step){return`<label>${label}<input data-field="${field}" type="number" value="${value}" min="${min}" max="${max}" step="${step}"></label>`}
@@ -38,6 +39,17 @@ function schedulePreview(){cancelAnimationFrame(previewFrame);previewFrame=reque
 function builtInPath(name){const path=new Path2D();if(name==="circle"){path.arc(0,0,.5,0,Math.PI*2);return path}if(name==="diamond"){path.moveTo(-.5,0);path.lineTo(0,-.34);path.lineTo(.5,0);path.lineTo(0,.34);path.closePath();return path}if(name==="triangle"){path.moveTo(-.45,-.38);path.lineTo(-.45,.38);path.lineTo(.5,0);path.closePath();return path}if(name==="star"){for(let i=0;i<10;i++){const a=Math.PI*i/5,r=i%2?.22:.5,x=Math.cos(a)*r,y=Math.sin(a)*r;i?path.lineTo(x,y):path.moveTo(x,y)}path.closePath();return path}if(name==="heart"){for(let i=0;i<96;i++){const a=Math.PI*2*i/96,x=(13*Math.cos(a)-5*Math.cos(2*a)-2*Math.cos(3*a)-Math.cos(4*a))/34,y=-(16*Math.sin(a)**3)/34;i?path.lineTo(x,y):path.moveTo(x,y)}path.closePath();return path}path.moveTo(-.5,0);path.bezierCurveTo(-.15,name==="petal"?-.22:-.4,.3,name==="petal"?-.22:-.32,.5,0);path.bezierCurveTo(.3,name==="petal"?.22:.32,-.15,name==="petal"?.22:.4,-.5,0);path.closePath();return path}
 async function customImage(layer){if(!layer.custom_svg)return null;if(layer._image)return layer._image;if(layer._imagePromise)return layer._imagePromise;layer._imagePromise=new Promise((resolve,reject)=>{const image=new Image(),url=URL.createObjectURL(new Blob([layer.custom_svg.svg],{type:"image/svg+xml"}));image.onload=()=>{URL.revokeObjectURL(url);layer._image=image;resolve(image)};image.onerror=()=>{URL.revokeObjectURL(url);reject(new Error("Custom SVG preview failed"))};image.src=url}).catch(()=>null);return layer._imagePromise}
 function drawMotif(context,layer,size){if(layer.motif==="custom"&&layer._image){context.drawImage(layer._image,-size/2,-size/2,size,size);return}const path=builtInPath(layer.motif==="custom"?"petal":layer.motif);context.scale(size,size);context.fill(path)}
+function supportBridgePath(startRadius,endRadius,startAngle,sweepDegrees,waveAmount,waveAmplitude,wavePosition){
+  const path=new Path2D(),startAngleRadians=startAngle*Math.PI/180,endAngleRadians=(startAngle+sweepDegrees)*Math.PI/180;
+  const start=[Math.cos(startAngleRadians)*startRadius,Math.sin(startAngleRadians)*startRadius],end=[Math.cos(endAngleRadians)*endRadius,Math.sin(endAngleRadians)*endRadius];
+  const dx=end[0]-start[0],dy=end[1]-start[1],length=Math.hypot(dx,dy)||1,normal=[-dy/length,dx/length],position=Math.max(.1,Math.min(.9,wavePosition));
+  for(let index=0;index<=64;index++){
+    const fraction=index/64,waveFraction=fraction<=position?.5*fraction/position:.5+.5*(fraction-position)/(1-position),displacement=waveAmount*waveAmplitude*Math.sin(2*Math.PI*waveFraction);
+    const x=start[0]+dx*fraction+normal[0]*displacement,y=start[1]+dy*fraction+normal[1]*displacement;
+    index?path.lineTo(x,y):path.moveTo(x,y);
+  }
+  return path;
+}
 function drawLayer(canvas,layer,index,alpha=1){
   const context=canvas.getContext("2d"),size=canvas.width,center=size/2,radius=size*.43;
   const scale=radius/(Number($("#diameter").value)||150)*2;
@@ -58,19 +70,31 @@ function drawLayer(canvas,layer,index,alpha=1){
       context.fillStyle=layer.construction==="cutout"?"#000":COLORS[index%COLORS.length];drawMotif(context,layer,motifSize);context.restore();
     }
   }
+  if(Number(layer.layer_openness??0)>0){
+    context.globalCompositeOperation="destination-out";
+    const openness=Number(layer.layer_openness),innerOpening=Math.max(Math.max(rim,inner*.42)*1.08,radius*Number(layer.opening_inner_ratio??.25)),outerOpening=radius-rim*1.15,sector=Math.PI*2/repetitions,half=sector*.41*openness,openingRotation=Number(layer.opening_rotation_degrees??0)*Math.PI/180;
+    for(let repeat=0;repeat<repetitions;repeat++){
+      const center=openingRotation+(repeat+.5)*sector;
+      context.beginPath();context.arc(0,0,outerOpening,center-half,center+half);context.arc(0,0,innerOpening,center+half,center-half,true);context.closePath();context.fill();
+    }
+  }
   context.globalCompositeOperation="source-over";
+  const rimStyle=layer.rim_style??"closed",petalRadial=Math.max(rim*3,radius*.1),outerAnchor=rimStyle==="petal"?radius-petalRadial*.42:rimStyle==="open"?radius-bridgeWidth/2:radius-rim/2;
   if(layer.support_mode!=="loose"){
-    context.strokeStyle=COLORS[index%COLORS.length];context.lineWidth=rim;context.beginPath();context.arc(0,0,radius-rim/2,0,Math.PI*2);context.stroke();
+    context.strokeStyle=COLORS[index%COLORS.length];context.lineWidth=rim;
+    if(rimStyle==="closed"){context.beginPath();context.arc(0,0,radius-rim/2,0,Math.PI*2);context.stroke()}
+    if(rimStyle==="petal"){
+      const petal=builtInPath("petal"),tangentRoom=Math.PI*2*radius/repetitions,petalTangent=Math.min(petalRadial*.72,tangentRoom*.68);
+      for(let repeat=0;repeat<repetitions;repeat++){context.save();context.rotate((Number(layer.support_sweep_degrees??0)+repeat*360/repetitions)*Math.PI/180);context.translate(outerAnchor,0);context.scale(petalRadial,petalTangent);context.fill(petal);context.restore()}
+    }
     context.beginPath();context.arc(0,0,Math.max(rim,inner*.42),0,Math.PI*2);context.fill();
   }
   if(["automatic_bridges","fully_connected"].includes(layer.support_mode)){
     context.strokeStyle=COLORS[index%COLORS.length];context.lineWidth=Math.max(1,bridgeWidth*(layer.support_mode==="fully_connected"?1.35:1));
-    for(let ring=0;ring<rings;ring++){
-      const fraction=(ring+.5)/rings;
-      const phase=Number(layer.rotation_degrees)+fraction*Number(layer.twist_degrees)+(layer.alternate_rotation&&ring%2?180/repetitions:0);
-      for(let repeat=0;repeat<repetitions;repeat++){
-        context.save();context.rotate((phase+repeat*360/repetitions)*Math.PI/180);context.beginPath();context.moveTo(0,0);context.lineTo(radius-rim/2,0);context.stroke();context.restore();
-      }
+    context.lineCap="round";context.lineJoin="round";
+    const hubRadius=Math.max(rim,inner*.42),waveAmplitude=Math.min(Number(layer.bridge_wave_amplitude_mm??6)*scale,ringStep*1.5);
+    for(let repeat=0;repeat<repetitions;repeat++){
+      context.stroke(supportBridgePath(hubRadius*.75,outerAnchor,repeat*360/repetitions,Number(layer.support_sweep_degrees??0),Number(layer.bridge_wave_amount??0),waveAmplitude,Number(layer.bridge_wave_position??.5)));
     }
   }
   if(layer.support_mode==="fully_connected"){context.lineWidth=Math.max(1,bridgeWidth);context.beginPath();context.arc(0,0,(inner+outer)/2,0,Math.PI*2);context.stroke()}
