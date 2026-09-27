@@ -4243,8 +4243,9 @@ def validate_mandala_request(data):
     if not isinstance(layers, list) or not 1 <= len(layers) <= 12:
         raise ValueError("A Layered Mandala needs 1 to 12 layers")
     permitted = {
-        "name", "motif", "ornament_style", "custom_svg", "construction", "support_mode", "rim_style",
+        "name", "motif", "ornament_style", "motif_composition", "custom_svg", "construction", "support_mode", "rim_style",
         "repetitions", "rings", "inner_radius_ratio", "motif_scale",
+        "motif_radial_position", "motif_tangential_position", "fragment_scale",
         "radial_stretch", "tangent_stretch", "twist_degrees",
         "rotation_degrees", "alternate_rotation", "mirror_alternating",
         "rim_width_mm", "bridge_width_mm", "support_sweep_degrees",
@@ -4305,6 +4306,7 @@ def validate_mandala_request(data):
         support_mode = str(layer.get("support_mode") or "automatic_bridges").strip().lower()
         rim_style = str(layer.get("rim_style") or "closed").strip().lower()
         ornament_style = str(layer.get("ornament_style") or "lotus").strip().lower()
+        motif_composition = str(layer.get("motif_composition") or "flow_character").strip().lower()
         if construction not in {"cutout", "positive"}:
             raise ValueError(f"Mandala layer {index} has an invalid construction mode")
         if support_mode not in {"outer_rim", "automatic_bridges", "fully_connected", "loose"}:
@@ -4313,6 +4315,8 @@ def validate_mandala_request(data):
             raise ValueError(f"Mandala layer {index} has an invalid outer edge style")
         if ornament_style not in {"lotus", "billow", "paisley", "rose_lace", "leaf_lace"}:
             raise ValueError(f"Mandala layer {index} has an invalid ornament family")
+        if motif_composition not in {"flow_character", "whole_repeat", "kaleidoscope", "hybrid"}:
+            raise ValueError(f"Mandala layer {index} has an invalid motif composition")
         cleaned = {key: value for key, value in layer.items() if key in permitted}
         cleaned.update({
             "name": str(layer.get("name") or f"Layer {index}").strip()[:80] or f"Layer {index}",
@@ -4322,10 +4326,14 @@ def validate_mandala_request(data):
             "support_mode": support_mode,
             "rim_style": rim_style,
             "ornament_style": ornament_style,
+            "motif_composition": motif_composition,
             "repetitions": layer_integer("repetitions", "repetitions", 4, 32, 12),
             "rings": layer_integer("rings", "rings", 1, 8, 3),
             "inner_radius_ratio": layer_number("inner_radius_ratio", "inner radius", .05, .55, .18),
             "motif_scale": layer_number("motif_scale", "motif scale", .2, .95, .72),
+            "motif_radial_position": layer_number("motif_radial_position", "motif radial position", -.4, .4, 0),
+            "motif_tangential_position": layer_number("motif_tangential_position", "motif sideways position", -.45, .45, 0),
+            "fragment_scale": layer_number("fragment_scale", "fragment scale", 1, 2.5, 1.7),
             "radial_stretch": layer_number("radial_stretch", "radial stretch", .4, 1.8, 1),
             "tangent_stretch": layer_number("tangent_stretch", "tangent stretch", .4, 1.8, 1),
             "twist_degrees": layer_number("twist_degrees", "twist", -180, 180, 18),

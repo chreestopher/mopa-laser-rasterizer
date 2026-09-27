@@ -24,6 +24,7 @@ SUPPORT_MODES = {"outer_rim", "automatic_bridges", "fully_connected", "loose"}
 CONSTRUCTION_MODES = {"cutout", "positive"}
 RIM_STYLES = {"closed", "petal", "open"}
 ORNAMENT_STYLES = {"lotus", "billow", "paisley", "rose_lace", "leaf_lace"}
+MOTIF_COMPOSITIONS = {"flow_character", "whole_repeat", "kaleidoscope", "hybrid"}
 LAYER_COLORS = (
     "#E44D61", "#F39C49", "#E4D354", "#72C66A", "#43B7A7", "#4C9DDE",
     "#6C70D8", "#9B63C7", "#D05AA8", "#BC7C58", "#8B9A52", "#5E8792",
@@ -108,6 +109,9 @@ def validate_mandala_config(raw):
         ornament_style = str(source.get("ornament_style") or "lotus").strip().lower()
         if ornament_style not in ORNAMENT_STYLES:
             raise ValueError(f"Mandala layer {index} has an invalid ornament family")
+        motif_composition = str(source.get("motif_composition") or "flow_character").strip().lower()
+        if motif_composition not in MOTIF_COMPOSITIONS:
+            raise ValueError(f"Mandala layer {index} has an invalid motif composition")
         cleaned_layers.append({
             "name": str(source.get("name") or f"Layer {index}").strip()[:80] or f"Layer {index}",
             "motif": motif,
@@ -116,10 +120,14 @@ def validate_mandala_config(raw):
             "support_mode": support,
             "rim_style": rim_style,
             "ornament_style": ornament_style,
+            "motif_composition": motif_composition,
             "repetitions": _integer(source.get("repetitions", 12), f"Layer {index} repetitions", 4, 32),
             "rings": _integer(source.get("rings", 3), f"Layer {index} rings", 1, 8),
             "inner_radius_ratio": _number(source.get("inner_radius_ratio", 0.18), f"Layer {index} inner radius", 0.05, 0.55),
             "motif_scale": _number(source.get("motif_scale", 0.72), f"Layer {index} motif scale", 0.2, 0.95),
+            "motif_radial_position": _number(source.get("motif_radial_position", 0), f"Layer {index} motif radial position", -0.4, 0.4),
+            "motif_tangential_position": _number(source.get("motif_tangential_position", 0), f"Layer {index} motif sideways position", -0.45, 0.45),
+            "fragment_scale": _number(source.get("fragment_scale", 1.7), f"Layer {index} fragment scale", 1, 2.5),
             "radial_stretch": _number(source.get("radial_stretch", 1), f"Layer {index} radial stretch", 0.4, 1.8),
             "tangent_stretch": _number(source.get("tangent_stretch", 1), f"Layer {index} tangent stretch", 0.4, 1.8),
             "twist_degrees": _number(source.get("twist_degrees", 18), f"Layer {index} twist", -180, 180),
@@ -295,6 +303,89 @@ def _flowing_band_pattern(layer, inner_limit, outer_limit):
     return unary_union(lobes).buffer(0) if lobes else GeometryCollection()
 
 
+def _annular_wedge(inner_radius, outer_radius, half_angle, steps=18):
+    """Return a wedge centered on the positive X axis."""
+    angles = [-half_angle + 2 * half_angle * index / steps for index in range(steps + 1)]
+    points = [_polar_point(outer_radius, angle) for angle in angles]
+    points.extend(_polar_point(inner_radius, angle) for angle in reversed(angles))
+    return Polygon(points).buffer(0)
+
+
+def _placed_motif(motif, radial_size, tangent_size, ring_radius, mirrored=False,
+                  radial_offset=0, tangent_offset=0, rotation=0):
+    """Scale and place one recognizable motif in a local radial wedge."""
+    item = affinity.scale(
+        motif,
+        xfact=radial_size,
+        yfact=tangent_size * (-1 if mirrored else 1),
+        origin=(0, 0),
+    )
+    if rotation:
+        item = affinity.rotate(item, rotation, origin=(0, 0), use_radians=False)
+    return affinity.translate(item, xoff=ring_radius + radial_offset, yoff=tangent_offset)
+
+
+def _motif_wedge_pattern(layer, inner_limit, outer_limit):
+    """Repeat whole motifs, mirrored slices, or a deterministic mix by wedge.
+
+    Fragment modes clip an oversized, offset motif at the wedge centerline and
+    reflect the slice. Repeating the composed wedge preserves exact rotational
+    symmetry while revealing recognizable motifs among abstract fragments.
+    """
+    motif = _motif_geometry(layer)
+    ring_step = (outer_limit - inner_limit) / layer["rings"]
+    sector_degrees = 360 / layer["repetitions"]
+    half_sector = math.radians(sector_degrees * 0.48)
+    placed = []
+    composition = layer["motif_composition"]
+    for ring in range(layer["rings"]):
+        fraction = (ring + 0.5) / layer["rings"]
+        ring_radius = inner_limit + fraction * (outer_limit - inner_limit)
+        radial_size = ring_step * layer["motif_scale"] * layer["radial_stretch"]
+        tangent_room = 2 * math.pi * ring_radius / layer["repetitions"]
+        tangent_size = min(ring_step * layer["motif_scale"], tangent_room * 0.72) * layer["tangent_stretch"]
+        ring_phase = layer["rotation_degrees"] + fraction * layer["twist_degrees"]
+        if layer["alternate_rotation"] and ring % 2:
+            ring_phase += sector_degrees / 2
+        use_whole = composition == "whole_repeat" or (composition == "hybrid" and ring % 3 == 0)
+        radial_offset = ring_step * layer["motif_radial_position"]
+        tangent_offset = tangent_size * layer["motif_tangential_position"]
+        if use_whole:
+            local = _placed_motif(
+                motif, radial_size, tangent_size, ring_radius,
+                mirrored=layer["mirror_alternating"] and ring % 2,
+                radial_offset=radial_offset, tangent_offset=tangent_offset,
+            )
+        else:
+            wedge = _annular_wedge(
+                max(inner_limit, ring_radius - ring_step * 0.62),
+                min(outer_limit, ring_radius + ring_step * 0.62),
+                half_sector,
+            )
+            fragment = _placed_motif(
+                motif, radial_size * layer["fragment_scale"],
+                tangent_size * layer["fragment_scale"], ring_radius,
+                radial_offset=radial_offset + radial_size * (0.16 if ring % 2 else -0.12),
+                tangent_offset=tangent_offset + tangent_size * 0.42,
+                rotation=180 if ring % 2 else 0,
+            ).intersection(wedge)
+            reflected = affinity.scale(fragment, xfact=1, yfact=-1, origin=(0, 0))
+            local = unary_union((fragment, reflected)).buffer(0)
+            if composition == "hybrid" and ring % 3 == 2:
+                accent = _placed_motif(
+                    motif, radial_size * 0.58, tangent_size * 0.58,
+                    ring_radius, mirrored=True, radial_offset=radial_offset,
+                    tangent_offset=-tangent_offset,
+                )
+                local = unary_union((local, accent)).buffer(0)
+        for repeat in range(layer["repetitions"]):
+            placed.append(affinity.rotate(
+                local, ring_phase + repeat * sector_degrees,
+                origin=(0, 0), use_radians=False,
+            ))
+    return unary_union(placed).buffer(0) if placed else GeometryCollection()
+
+
 def _support_bridge(start_radius, end_radius, width, start_angle, sweep_degrees,
                     wave_amount, wave_amplitude, wave_position):
     """Create a straight, diagonal, or sinusoidal structural bridge.
@@ -458,7 +549,9 @@ def generate_layer_geometry(config, layer_index):
     bridge_cap = max(0.4, ring_step * 0.24)
     bridge_width = min(layer["bridge_width_mm"], bridge_cap)
     wave_amplitude = min(layer["bridge_wave_amplitude_mm"], ring_step * 1.5)
-    if layer["motif"] == "custom" or layer["flow_amount"] <= 0:
+    if layer["motif_composition"] != "flow_character":
+        pattern = _motif_wedge_pattern(layer, inner_limit, outer_limit)
+    elif layer["motif"] == "custom" or layer["flow_amount"] <= 0:
         motif = _motif_geometry(layer)
         placed = []
         for ring in range(layer["rings"]):

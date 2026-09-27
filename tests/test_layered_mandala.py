@@ -122,6 +122,32 @@ def test_flow_controls_materially_change_the_ornamental_wedge():
     assert restrained[0].symmetric_difference(billowing[0]).area > 500
 
 
+def test_motif_compositions_use_real_motif_geometry_and_stay_symmetric():
+    config = sample_config()
+    base = dict(
+        config["layers"][0], motif="heart", ornament_style="paisley",
+        repetitions=10, rings=4, flow_amount=.9,
+    )
+    results = {}
+    for composition in ("whole_repeat", "kaleidoscope", "hybrid", "flow_character"):
+        config["layers"] = [dict(base, motif_composition=composition)]
+        clean, geometries = generate_mandala(config)
+        geometry = geometries[0]
+        results[composition] = geometry
+        rotated = affinity.rotate(geometry, 36, origin=(0, 0))
+        assert geometry.symmetric_difference(rotated).area < .05
+        assert clean["layers"][0]["motif_composition"] == composition
+    assert results["whole_repeat"].symmetric_difference(results["kaleidoscope"]).area > 1
+    assert results["hybrid"].symmetric_difference(results["flow_character"]).area > 1
+
+    config["layers"] = [dict(
+        base, motif_composition="hybrid", motif_radial_position=.35,
+        motif_tangential_position=-.4, fragment_scale=2.4,
+    )]
+    shifted = generate_mandala(config)[1][0]
+    assert results["hybrid"].symmetric_difference(shifted).area > 1
+
+
 def test_ornament_families_and_shape_characters_produce_real_variation():
     config = sample_config()
     base = dict(
