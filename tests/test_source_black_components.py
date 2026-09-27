@@ -17,6 +17,54 @@ import vector_processing
 import lightburn
 
 
+def test_lightburn_hole_free_export_preserves_boolean_cutouts():
+    gray_cutout = box(3, 3, 7, 7)
+    white_cutout = box(1, 7.5, 2.5, 9)
+    black = box(0, 0, 10, 10).difference(
+        unary_union([gray_cutout, white_cutout])
+    )
+
+    pieces = vector_processing._lightburn_hole_free_polygons(black)
+    rebuilt = unary_union(pieces)
+
+    assert pieces
+    assert all(not piece.interiors for piece in pieces)
+    assert rebuilt.symmetric_difference(black).area <= 1e-9
+    assert rebuilt.intersection(gray_cutout).area == 0
+    assert rebuilt.intersection(white_cutout).area == 0
+    for index, left in enumerate(pieces):
+        for right in pieces[index + 1:]:
+            assert left.intersection(right).area == 0
+
+
+def test_lightburn_writer_never_serializes_an_interior_as_a_filled_path():
+    class CaptureProject:
+        def __init__(self):
+            self.items = []
+
+        def add(self, item):
+            self.items.append(item)
+
+    gray_cutout = box(3, 3, 7, 7)
+    black = box(0, 0, 10, 10).difference(gray_cutout)
+    project = CaptureProject()
+    vector_processing.lightburn = lightburn
+
+    vector_processing.push_geometry_to_lightburn(
+        black,
+        "#000000",
+        {"#000000": ["Black", 0, "Black"]},
+        project,
+    )
+
+    exported = [Polygon(item.points) for item in project.items]
+    rebuilt = unary_union(exported)
+    assert len(exported) > 1
+    assert all(not item.interiors for item in exported)
+    assert rebuilt.symmetric_difference(black).area <= 1e-9
+    assert rebuilt.intersection(gray_cutout).area == 0
+
+
 def test_black_run_rectangles_preserve_sparse_outline_exactly():
     black_pixels = [
         box(x, y, x + 1, y + 1)
