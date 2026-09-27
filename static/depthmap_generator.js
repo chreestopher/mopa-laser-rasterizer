@@ -1,7 +1,7 @@
 import { createKrasnowParallaxPixels } from "./depthmap_parallax.js";
 import { createKrasnowParallaxSvg, parallaxCellIsEngraved } from "./depthmap_parallax_svg.js";
 import { createReliefLayers, createReliefLightBurn, reliefLayerPlan, reliefVisibleMasks, traceMaskContours } from "./depthmap_layered_relief.js?v=6";
-import { createDepthmapLightBurn, hasEmbeddedCleanup } from "./depthmap_lightburn.js?v=1";
+import { createDepthmapLightBurn, hasEmbeddedCleanup } from "./depthmap_lightburn.js?v=2";
 
 const MODEL_ID = "onnx-community/depth-anything-v2-small";
 const TRANSFORMERS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.2";
@@ -61,6 +61,11 @@ const depthLightBurnPaletteControl = document.querySelector("#depth_lb_palette")
 const depthLightBurnMaterialControl = document.querySelector("#depth_lb_material");
 const depthLightBurnSlicingControl = document.querySelector("#depth_lb_slicing_setting");
 const depthLightBurnSettingStatus = document.querySelector("#depth_lb_setting_status");
+const depthLightBurnDepthPassesControl = document.querySelector("#depth_lb_depth_passes");
+const depthLightBurnIntervalControl = document.querySelector("#depth_lb_interval");
+const depthLightBurnDpiControl = document.querySelector("#depth_lb_dpi");
+const depthLightBurnAngleControl = document.querySelector("#depth_lb_angle");
+const depthLightBurnAnglePerPassControl = document.querySelector("#depth_lb_angle_per_pass");
 const depthLightBurnModeControl = document.querySelector("#depth_lb_mode");
 const depthLightBurnModeStatus = document.querySelector("#depth_lb_mode_status");
 const depthLightBurnCleanupGroup = document.querySelector("#depth_lb_cleanup_group");
@@ -1030,6 +1035,52 @@ function selectedDepthLightBurnSetting(control) {
   return portableProcessingSetting(library, entry);
 }
 
+function finiteSettingValue(settings, key, fallback) {
+  const value = Number(settings?.[key]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function embeddedDepthLightBurnCleanup(setting) {
+  return (setting?.subLayers || setting?.sub_layers || []).find(layer => {
+    const settings = layer?.settings || {};
+    return String(settings.isCleanup || "") === "1"
+      || String(settings.subname || "").trim().toLowerCase() === "cleanup";
+  }) || null;
+}
+
+function updateDepthLightBurnDpiFromInterval() {
+  const interval = Math.max(.0001, Number(depthLightBurnIntervalControl.value) || .1);
+  depthLightBurnDpiControl.value = Number((25.4 / interval).toFixed(3));
+}
+
+function updateDepthLightBurnIntervalFromDpi() {
+  const dpi = Math.max(.254, Number(depthLightBurnDpiControl.value) || 254);
+  depthLightBurnIntervalControl.value = Number((25.4 / dpi).toFixed(6));
+}
+
+function applyDepthLightBurnCleanupDefaults() {
+  const slicing = selectedDepthLightBurnSetting(depthLightBurnSlicingControl);
+  const cleanup = selectedDepthLightBurnSetting(depthLightBurnCleanupControl);
+  const embedded = embeddedDepthLightBurnCleanup(slicing);
+  depthLightBurnCleanAfterControl.value = Math.max(1, Math.round(finiteSettingValue(slicing?.settings, "cleanupPass", 1)));
+  depthLightBurnCleanupPassesControl.value = Math.max(1, Math.round(
+    finiteSettingValue(embedded?.settings, "numPasses", finiteSettingValue(cleanup?.settings, "numPasses", 1)),
+  ));
+}
+
+function applyDepthLightBurnPrimaryDefaults() {
+  const slicing = selectedDepthLightBurnSetting(depthLightBurnSlicingControl);
+  const settings = slicing?.settings || {};
+  depthLightBurnDepthPassesControl.value = Math.max(1, Math.round(finiteSettingValue(settings, "numPasses", 1)));
+  depthLightBurnAngleControl.value = finiteSettingValue(settings, "angle", 0);
+  depthLightBurnAnglePerPassControl.value = finiteSettingValue(settings, "anglePerPass", 0);
+  const importedDpi = finiteSettingValue(settings, "dpi", 0);
+  const interval = Math.max(.0001, finiteSettingValue(settings, "interval", importedDpi > 0 ? 25.4 / importedDpi : .1));
+  depthLightBurnIntervalControl.value = Number(interval.toFixed(6));
+  updateDepthLightBurnDpiFromInterval();
+  applyDepthLightBurnCleanupDefaults();
+}
+
 function updateDepthLightBurnArtworkSize() {
   if (!outputWidth || !outputHeight) {
     depthLightBurnArtworkSize.value = "Generate a depthmap first";
@@ -1062,7 +1113,7 @@ function updateDepthLightBurnControls() {
   const embedded = sliced && hasEmbeddedCleanup(slicing);
   depthLightBurnCleanupOverrideControls.hidden = embedded;
   if (embedded) {
-    depthLightBurnCleanupStatus.textContent = "The selected 3D-Slice setting already contains cleanup passes. Its imported cleanup timing and sub-layer settings will be preserved as-is.";
+    depthLightBurnCleanupStatus.textContent = "The selected 3D-Slice setting already contains a cleanup sub-layer. Its laser settings are preserved, while cleanup timing and pass count initialize from it and remain editable above.";
   } else if (sliced) {
     const cleanup = selectedDepthLightBurnSetting(depthLightBurnCleanupControl);
     depthLightBurnCleanupStatus.textContent = cleanup
@@ -1090,6 +1141,7 @@ function populateDepthLightBurnSettings() {
   const cleaning = processingRoleEntry(library, depthLightBurnMaterialControl.value, "Cleaning", entries);
   depthLightBurnSlicingControl.value = slicing ? String(slicing.entry_id) : "";
   depthLightBurnCleanupControl.value = cleaning ? String(cleaning.entry_id) : "";
+  applyDepthLightBurnPrimaryDefaults();
   updateDepthLightBurnControls();
 }
 
@@ -1137,6 +1189,11 @@ function exportDepthLightBurn() {
     mode,
     slicingSetting,
     cleanupSetting,
+    depthPasses:depthLightBurnDepthPassesControl.value,
+    interval:depthLightBurnIntervalControl.value,
+    dpi:depthLightBurnDpiControl.value,
+    angle:depthLightBurnAngleControl.value,
+    anglePerPass:depthLightBurnAnglePerPassControl.value,
     cleanAfter:depthLightBurnCleanAfterControl.value,
     cleanupPasses:depthLightBurnCleanupPassesControl.value,
     pixelSizeMm:depthLightBurnPixelSizeControl.value,
@@ -1892,9 +1949,17 @@ reliefScoreSettingControl.addEventListener("change", updateReliefScoreControls);
 reliefExportButton.addEventListener("click", () => exportLayeredRelief().catch(cause => setProcessingStatus(cause.message, true)));
 depthLightBurnPaletteControl.addEventListener("change", populateDepthLightBurnMaterials);
 depthLightBurnMaterialControl.addEventListener("change", populateDepthLightBurnSettings);
-depthLightBurnSlicingControl.addEventListener("change", updateDepthLightBurnControls);
-depthLightBurnCleanupControl.addEventListener("change", updateDepthLightBurnControls);
+depthLightBurnSlicingControl.addEventListener("change", () => {
+  applyDepthLightBurnPrimaryDefaults();
+  updateDepthLightBurnControls();
+});
+depthLightBurnCleanupControl.addEventListener("change", () => {
+  applyDepthLightBurnCleanupDefaults();
+  updateDepthLightBurnControls();
+});
 depthLightBurnModeControl.addEventListener("change", updateDepthLightBurnControls);
+depthLightBurnIntervalControl.addEventListener("change", updateDepthLightBurnDpiFromInterval);
+depthLightBurnDpiControl.addEventListener("change", updateDepthLightBurnIntervalFromDpi);
 depthLightBurnPixelSizeControl.addEventListener("input", updateDepthLightBurnArtworkSize);
 depthLightBurnExportButton.addEventListener("click", () => {
   try {
