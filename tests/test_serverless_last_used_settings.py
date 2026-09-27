@@ -57,6 +57,33 @@ def test_last_used_rasterizer_settings_retain_white_treatment():
     assert result["values"]["white_is"] == "unengraved"
 
 
+def test_last_used_panel_tiling_retains_layout_but_not_enabled_state():
+    clean = load_cleaner()
+    result = clean("last_rasterizer_form", {
+        "saved_at": int(time.time()),
+        "values": {
+            "panel_tiling": {
+                "enabled": True,
+                "tile_width_mm": Decimal("54"),
+                "tile_height_mm": Decimal("86"),
+                "columns": Decimal("4"),
+                "rows": Decimal("3"),
+                "fit_mode": "fit",
+                "border_mode": "panel",
+            },
+        },
+    })
+
+    assert result["values"]["panel_tiling"] == {
+        "tile_width_mm": 54,
+        "tile_height_mm": 86,
+        "columns": 4,
+        "rows": 3,
+        "fit_mode": "fit",
+        "border_mode": "panel",
+    }
+
+
 def test_last_used_rasterizer_settings_retain_krasnow_cell_shape():
     clean = load_cleaner()
     current = {

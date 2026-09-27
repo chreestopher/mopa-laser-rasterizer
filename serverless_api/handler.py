@@ -1017,7 +1017,7 @@ def clean_last_used_form(name, snapshot):
                 parameter: parameter_value
                 for parameter, parameter_value in value.items()
                 if parameter in {
-                    "enabled", "tile_width_mm", "tile_height_mm", "columns", "rows",
+                    "tile_width_mm", "tile_height_mm", "columns", "rows",
                     "gap_x_mm", "gap_y_mm", "edge_inset_mm", "workbed_width_mm",
                     "workbed_height_mm", "origin_x_mm", "origin_y_mm", "order", "include_tile_ids",
                     "fit_mode", "align_x", "align_y", "padding_mode", "padding_swatch_hex",
