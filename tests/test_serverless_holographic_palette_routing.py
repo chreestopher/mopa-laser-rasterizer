@@ -357,14 +357,16 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
 
     def test_community_set_uses_shared_typography_without_an_inner_panel(self):
         page = (ROOT / "templates" / "community_set.html").read_text(encoding="utf-8")
+        script = (ROOT / "static" / "community-set-v1.js").read_text(encoding="utf-8")
         styles = (ROOT / "serverless_web" / "staging-pages.css").read_text(encoding="utf-8")
 
-        self.assertIn("const crossHatchIndex = discoveredParameters.findIndex", page)
-        self.assertIn("const parametersThroughCrossHatch = crossHatchIndex >= 0 ? discoveredParameters.slice(0,crossHatchIndex + 1)", page)
-        self.assertIn("const typeParameter = discoveredParameters.find", page)
-        self.assertIn("[...parametersThroughCrossHatch,typeParameter]", page)
-        self.assertNotIn("...parameters.map(labelFor),'Notes'", page)
-        self.assertNotIn("notes.className='notes-cell'", page)
+        self.assertIn("const crossHatchIndex = discoveredParameters.findIndex", script)
+        self.assertIn("const parametersThroughCrossHatch = crossHatchIndex >= 0 ? discoveredParameters.slice(0,crossHatchIndex + 1)", script)
+        self.assertIn("const typeParameter = discoveredParameters.find", script)
+        self.assertIn("[...parametersThroughCrossHatch,typeParameter]", script)
+        self.assertNotIn("...parameters.map(labelFor),'Notes'", script)
+        self.assertNotIn("notes.className='notes-cell'", script)
+        self.assertIn('<script src="/static/community-set-v1.js"></script>', page)
         self.assertIn("body.staging-community .community-panel{padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important}", styles)
         self.assertIn("body.staging-community .community-panel h2,body.staging-community .community-panel h3{color:#e4e3cf!important", styles)
         self.assertIn("body.staging-community .community-search label,body.staging-community .privacy-note strong,body.staging-community th{color:#8ee474!important", styles)
