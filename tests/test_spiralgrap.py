@@ -65,6 +65,32 @@ def test_exports_preserve_open_lines_and_closed_fill_ribbons(tmp_path):
     assert any(item.get("fill") != "none" and item.get("d", "").endswith(" Z") for item in paths)
 
 
+def test_optional_swatch_controls_svg_lightburn_color_and_per_swatch_setting(tmp_path):
+    blue_fill = {"description": "Blue Fill", "type": "Scan", "settings": {"speed": 250, "interval": 0.08}}
+    red_cut = {"description": "Red Cut", "type": "Cut", "settings": {"speed": 80}}
+    result = build_spiralgrap_exports(tmp_path, config(
+        layer(name="Blue curve", swatch_hex="#0000FF", lightburn_index=1, include_track=True,
+              output_mode="fill", laser_setting=blue_fill),
+        layer(name="Blue curve again", track="oval", swatch_hex="#0000FF", lightburn_index=1,
+              output_mode="fill", laser_setting=blue_fill),
+        layer(name="Red curve", track="rounded_triangle", swatch_hex="#FF0000", lightburn_index=2,
+              output_mode="line", laser_setting=red_cut),
+    ))
+    svg_path = next(Path(path) for path in result["outputs"] if path.endswith(".svg"))
+    lightburn_path = next(Path(path) for path in result["outputs"] if path.endswith(".lbrn2"))
+    svg_text = svg_path.read_text(encoding="utf-8")
+    lightburn_text = lightburn_path.read_text(encoding="utf-8")
+    assert 'stroke="#0000FF"' in svg_text
+    assert 'stroke="#FF0000"' in svg_text
+    assert '<index Value="1"' in lightburn_text
+    assert '<index Value="2"' in lightburn_text
+    assert lightburn_text.count('<index Value="1"') == 1
+    assert '<speed Value="250"' in lightburn_text
+    assert '<speed Value="80"' in lightburn_text
+    assert lightburn_text.count('CutIndex="1"') > 2
+    assert '<PrimList>LineClosed</PrimList>' in lightburn_text
+
+
 def test_unoffered_raw_gear_sizes_are_rejected():
     with pytest.raises(ValueError, match="rolling gear"):
         validate_spiralgrap_config(config(layer(gear_teeth=37)))

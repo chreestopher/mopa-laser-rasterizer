@@ -4491,7 +4491,7 @@ def validate_spiralgrap_request(data):
     layers = data.get("layers")
     if not isinstance(layers, list) or not 1 <= len(layers) <= 6:
         raise ValueError("A SpiralGraph project needs 1 to 6 drawing layers")
-    permitted = {"name", "track", "custom_svg", "gear_teeth", "pen_hole", "side", "start_mark", "direction", "rotation_quarter_turns", "include_track", "output_mode", "fill_thickness_mm"}
+    permitted = {"name", "track", "custom_svg", "gear_teeth", "pen_hole", "side", "start_mark", "direction", "rotation_quarter_turns", "include_track", "output_mode", "fill_thickness_mm", "swatch_hex"}
     clean_layers, total_svg = [], 0
     for index, layer in enumerate(layers, start=1):
         if not isinstance(layer, dict) or set(layer) - permitted:
@@ -4531,6 +4531,9 @@ def validate_spiralgrap_request(data):
         include_track = layer.get("include_track", False)
         if not isinstance(include_track, bool):
             raise ValueError(f"SpiralGraph drawing {index} track outline choice must be on or off")
+        swatch_hex = str(layer.get("swatch_hex") or "").strip().upper()
+        if swatch_hex and swatch_hex not in PALETTE_NAMES:
+            raise ValueError(f"SpiralGraph drawing {index} has an unsupported layer swatch")
         clean_layers.append({
             "name": str(layer.get("name") or f"Drawing {index}").strip()[:80] or f"Drawing {index}",
             "track": track, "custom_svg": custom_svg,
@@ -4543,6 +4546,7 @@ def validate_spiralgrap_request(data):
             "include_track": include_track,
             "output_mode": choice("output_mode", {"line", "fill"}, "line"),
             "fill_thickness_mm": thickness,
+            "swatch_hex": swatch_hex,
         })
     if total_svg > 120_000:
         raise ValueError("Custom SpiralGraph SVG tracks contain too much data")
@@ -4552,6 +4556,7 @@ def validate_spiralgrap_request(data):
         "workbed_width_mm": number("workbed_width_mm", diameter, 3000, diameter),
         "workbed_height_mm": number("workbed_height_mm", diameter, 3000, diameter),
         "processing_palette_id": str(data.get("processing_palette_id") or "")[:80],
+        "color_palette_id": str(data.get("color_palette_id") or "")[:80],
         "material": str(data.get("material") or "")[:160],
         "score_entry_ref": str(data.get("score_entry_ref") or "")[:120],
         "fill_entry_ref": str(data.get("fill_entry_ref") or "")[:120],
@@ -4565,33 +4570,74 @@ def submit_spiralgrap_job(event):
         return paused
     owner = user_id(event)
     config = validate_spiralgrap_request(body_json(event))
-    library = owned_material(owner, config["processing_palette_id"])
-    if not library or material_library_intent(library.get("library_intent")) != "processing_palette":
-        raise ValueError("SpiralGraph jobs require a saved Processing Palette")
-    entries = [entry for entry in ((library.get("summary") or {}).get("entries") or []) if str(entry.get("material") or "") == config["material"]]
-    if not entries:
-        raise ValueError("Choose a material from the selected Processing Palette")
-    def setting(role, entry_ref, expected_type, required):
-        selected_ref = entry_ref or processing_role_assignment(owner, config["processing_palette_id"], config["material"], role)
-        if not selected_ref and role == "Score":
-            selected_ref = processing_role_assignment(owner, config["processing_palette_id"], config["material"], "Cut")
-        selected = next((entry for entry in entries if str(entry.get("entry_ref") or "") == selected_ref), None)
-        if selected is None and not entry_ref:
-            selected = next((entry for entry in entries if str(entry.get("description") or "").strip().casefold() == role.casefold()), None)
-        if selected is None and not entry_ref and role == "Score":
-            selected = next((entry for entry in entries if str(entry.get("description") or "").strip().casefold() == "cut"), None)
-        if selected is None and required:
-            raise ValueError(f"Choose a {role} setting for the selected material")
-        if selected is not None and str(selected.get("type") or "").casefold() != expected_type.casefold():
-            raise ValueError(f"The selected {role} setting must use LightBurn {'Line' if expected_type == 'Cut' else 'Fill'} mode")
-        if selected is None:
-            return "", {}
-        return str(selected.get("entry_ref") or ""), {"description": str(selected.get("description") or role)[:160], "material": config["material"], "type": str(selected.get("type") or expected_type), "settings": selected.get("settings") if isinstance(selected.get("settings"), dict) else {}}
-    needs_line = any(layer["output_mode"] == "line" or layer["include_track"] for layer in config["layers"])
-    needs_fill = any(layer["output_mode"] == "fill" for layer in config["layers"])
-    config["score_entry_ref"], config["score_setting"] = setting("Score", config["score_entry_ref"], "Cut", needs_line)
-    config["fill_entry_ref"], config["fill_setting"] = setting("Fill", config["fill_entry_ref"], "Scan", needs_fill)
-    config["processing_palette_name"] = str(library.get("name") or library.get("original_name") or "Processing Palette")[:160]
+    color_library_id = config.get("color_palette_id") or ""
+    if color_library_id:
+        color_library = owned_material(owner, color_library_id)
+        if not color_library or material_library_intent(color_library.get("library_intent")) != "color_palette":
+            raise ValueError("Choose a saved Color Palette for SpiralGraph layer colors")
+        preferences_item = table.get_item(
+            Key={"pk": f"USER#{owner}", "sk": "PREFERENCES"}, ConsistentRead=True,
+        ).get("Item") or {}
+        preferences = preferences_item.get("preferences") or {}
+        color_entries = public_library_summary(color_library.get("summary"))["entries"]
+        swatch_entries = {
+            community_material_swatch(preferences, color_library_id, entry): entry
+            for entry in color_entries
+            if community_material_swatch(preferences, color_library_id, entry)
+        }
+        selected_swatches = [layer.get("swatch_hex") or "" for layer in config["layers"]]
+        if any(swatch not in swatch_entries for swatch in selected_swatches):
+            raise ValueError("One or more SpiralGraph layer swatches are not available in the selected Color Palette")
+        palette_indexes = {color: index for index, (_name, color) in enumerate(PALETTE)}
+        for layer in config["layers"]:
+            entry = swatch_entries[layer["swatch_hex"]]
+            setting_type = str(entry.get("type") or "Cut")
+            if setting_type.casefold() not in {"cut", "scan", "fill"}:
+                raise ValueError(f"SpiralGraph swatch '{entry.get('description') or layer['swatch_hex']}' must use a LightBurn Line or Fill setting")
+            layer["lightburn_index"] = palette_indexes[layer["swatch_hex"]]
+            layer["output_mode"] = "fill" if setting_type.casefold() in {"scan", "fill"} else "line"
+            layer["laser_setting"] = {
+                "description": str(entry.get("description") or PALETTE_NAMES[layer["swatch_hex"]])[:160],
+                "material": str(entry.get("material") or "")[:160],
+                "type": "Scan" if layer["output_mode"] == "fill" else "Cut",
+                "settings": entry.get("settings") if isinstance(entry.get("settings"), dict) else {},
+            }
+        config["color_palette_name"] = str(color_library.get("name") or color_library.get("original_name") or "Color Palette")[:160]
+        config["processing_palette_name"] = ""
+        config["score_setting"] = {}
+        config["fill_setting"] = {}
+        if not config["material"]:
+            config["material"] = str(color_library.get("material_name") or "Color Palette")[:160]
+    else:
+        for layer in config["layers"]:
+            layer.pop("swatch_hex", None)
+        library = owned_material(owner, config["processing_palette_id"])
+        if not library or material_library_intent(library.get("library_intent")) != "processing_palette":
+            raise ValueError("SpiralGraph jobs require a saved Processing Palette or Color Palette")
+        entries = [entry for entry in ((library.get("summary") or {}).get("entries") or []) if str(entry.get("material") or "") == config["material"]]
+        if not entries:
+            raise ValueError("Choose a material from the selected Processing Palette")
+        def setting(role, entry_ref, expected_type, required):
+            selected_ref = entry_ref or processing_role_assignment(owner, config["processing_palette_id"], config["material"], role)
+            if not selected_ref and role == "Score":
+                selected_ref = processing_role_assignment(owner, config["processing_palette_id"], config["material"], "Cut")
+            selected = next((entry for entry in entries if str(entry.get("entry_ref") or "") == selected_ref), None)
+            if selected is None and not entry_ref:
+                selected = next((entry for entry in entries if str(entry.get("description") or "").strip().casefold() == role.casefold()), None)
+            if selected is None and not entry_ref and role == "Score":
+                selected = next((entry for entry in entries if str(entry.get("description") or "").strip().casefold() == "cut"), None)
+            if selected is None and required:
+                raise ValueError(f"Choose a {role} setting for the selected material")
+            if selected is not None and str(selected.get("type") or "").casefold() != expected_type.casefold():
+                raise ValueError(f"The selected {role} setting must use LightBurn {'Line' if expected_type == 'Cut' else 'Fill'} mode")
+            if selected is None:
+                return "", {}
+            return str(selected.get("entry_ref") or ""), {"description": str(selected.get("description") or role)[:160], "material": config["material"], "type": str(selected.get("type") or expected_type), "settings": selected.get("settings") if isinstance(selected.get("settings"), dict) else {}}
+        needs_line = any(layer["output_mode"] == "line" or layer["include_track"] for layer in config["layers"])
+        needs_fill = any(layer["output_mode"] == "fill" for layer in config["layers"])
+        config["score_entry_ref"], config["score_setting"] = setting("Score", config["score_entry_ref"], "Cut", needs_line)
+        config["fill_entry_ref"], config["fill_setting"] = setting("Fill", config["fill_entry_ref"], "Scan", needs_fill)
+        config["processing_palette_name"] = str(library.get("name") or library.get("original_name") or "Processing Palette")[:160]
     task_id, now = str(uuid.uuid4()), int(time.time())
     payload = {"task_id": task_id, "job_type": "spiralgrap", "spiralgrap": config, "user_id": owner}
     history_config = deepcopy(config)

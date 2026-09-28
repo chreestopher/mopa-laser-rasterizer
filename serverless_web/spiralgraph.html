@@ -8,9 +8,9 @@
   <link rel="stylesheet" href="/machine_chrome.css?v=3">
   <link rel="stylesheet" href="/staging-shell.css?v=1">
   <link rel="stylesheet" href="/staging-pages.css?v=3">
-  <link rel="stylesheet" href="/spiralgraph.css?v=2">
+  <link rel="stylesheet" href="/spiralgraph.css?v=3">
   <script src="/staging-shell.js?v=3" defer></script>
-  <script src="/spiralgraph.js?v=2" type="module"></script>
+  <script src="/spiralgraph.js?v=3" type="module"></script>
 </head>
 <body>
   <main id="main-content" class="spiralgrap-shell">
@@ -23,10 +23,11 @@
           <label>Finished size (mm)<input id="diameter" type="number" min="20" max="1000" step="1" value="150"></label>
           <label>Workbed width (mm)<input id="workbedWidth" type="number" min="20" max="3000" step="1" value="175"></label>
           <label>Workbed height (mm)<input id="workbedHeight" type="number" min="20" max="3000" step="1" value="175"></label>
-          <label>Processing Palette<select id="processingPalette"></select></label>
-          <label>Material<select id="processingMaterial"></select></label>
-          <label>Line / Cut setting<select id="scoreSetting"></select></label>
-          <label>Fill setting<select id="fillSetting"></select></label>
+          <label class="processing-fallback">Fallback Processing Palette<select id="processingPalette"></select></label>
+          <label class="processing-fallback">Material<select id="processingMaterial"></select></label>
+          <label class="processing-fallback">Line / Cut setting<select id="scoreSetting"></select></label>
+          <label class="processing-fallback">Fill setting<select id="fillSetting"></select></label>
+          <label>Optional layer color palette<select id="colorPalette"><option value="">Built-in SpiralGraph colors</option></select></label>
         </div><p id="paletteStatus" class="fine-print">Loading saved Processing Palettes…</p></section>
         <section class="spiralgrap-panel"><div class="section-heading"><div><h2>Drawing layers</h2><p>Layer order is preserved in SVG and LightBurn output.</p></div><button id="addLayer" type="button" class="spiralgrap-button">Add drawing</button></div><div id="layerList" class="layer-list"></div></section>
         <section id="hardwarePreview" class="spiralgrap-panel hardware-preview" aria-labelledby="hardwarePreviewTitle">
