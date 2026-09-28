@@ -29,6 +29,7 @@ def test_spiralgraph_can_use_saved_color_palette_swatches_for_preview_and_output
     backend = read("lib/spiralgrap.py")
     assert 'id="colorPalette"' in page
     assert 'data-field="swatch_hex" type="radio"' in client
+    assert '<div class="layer-heading-swatches">${swatchPicker(layer,index)}</div>' in client
     assert "function paletteSwatches()" in client
     assert "function applySwatchMode(layer)" in client
     assert "context.strokeStyle=previewColor(layer,index)" in client
@@ -39,6 +40,7 @@ def test_spiralgraph_can_use_saved_color_palette_swatches_for_preview_and_output
     assert "allow_reuse=bool(palette_setting)" in backend
     assert 'layer.get("swatch_hex") or COLORS' in backend
     assert ".preview-swatches" in styles
+    assert ".layer-heading-swatches" in styles
 
 
 class SpiralGraphHardwarePreviewTests(unittest.TestCase):
