@@ -36,6 +36,8 @@ def test_spiralgrap_is_deployed_linked_documented_and_history_backed():
     assert '"/spiralgraph/jobs", "/spiralgrap/jobs"' in api
     assert "RouteKey: POST /spiralgraph/jobs" in template
     assert "RouteKey: POST /spiralgrap/jobs" in template
+    assert "SpiralGrapJobsRoute:" in template
+    assert "SpiralGrapLegacyJobsRoute:" not in template
     assert 'url=/spiralgraph.html' in read("serverless_web/spiralgrap.html")
     assert 'payload.get("job_type") == "spiralgrap"' in worker
     assert "run_spiralgrap_job" in worker

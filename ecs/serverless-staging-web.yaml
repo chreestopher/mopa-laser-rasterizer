@@ -423,7 +423,10 @@ Resources:
       AuthorizationType: JWT
       AuthorizerId: !Ref JwtAuthorizer
       Target: !Sub integrations/${ApiIntegration}
-  SpiralGrapLegacyJobsRoute:
+  # Keep the original logical ID for the legacy route. Renaming this resource
+  # makes CloudFormation try to create a duplicate RouteKey before deleting the
+  # existing route, which API Gateway rejects during an in-place update.
+  SpiralGrapJobsRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties:
       ApiId: !Ref HttpApi
