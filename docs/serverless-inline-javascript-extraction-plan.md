@@ -2,129 +2,160 @@
 
 ## Outcome and scope
 
-Move executable browser JavaScript used by the serverless site into tracked `.js` files without changing behavior, URLs, authentication, storage, rendering, or job payloads. This plan covers both the checked-in pages under `serverless_web/` and the generated pages uploaded by `dev_setup/deploy_serverless_staging_web.sh`; the production wrapper calls that same deployment script.
+Move executable browser JavaScript used by the deployed serverless site into tracked `.js` files without changing URLs, authentication, storage, rendering, payloads, exports, or mobile behavior. This covers checked-in pages under `serverless_web/`, browser modules deployed from `static/`, and every HTML artifact produced by the builders called from `dev_setup/deploy_serverless_staging_web.sh`. Production wraps the same web deployment path.
 
-Non-executable data blocks are a separate concern. `type="application/json"` and SEO `type="application/ld+json"` blocks may remain inline when the page generator supplies their data, but they must never contain behavior. Before enforcing CSP, verify how target browsers and crawlers handle those blocks and document any deliberate exception.
+This is not permission to refactor while extracting. Preserve classic versus module execution, DOM-ready timing, script order, globals, and cache revisions. Non-executable `application/json` and `application/ld+json` blocks may remain inline when they contain data only; inventory them separately before CSP enforcement.
 
-## Baseline inventory
+## Current staging inventory
 
-There is no `AGENTS.md` or existing repository-local skill in the staging baseline. OpenAI's published repository-skill convention is `.agents/skills/`, so this branch places the guidance there. `quick_validate.py` proves the package shape, not runtime discovery. This session started from a different worktree before the skill existed, so discovery cannot be demonstrated in-session; after merge, start a fresh Codex session rooted in this repository and confirm `serverless-frontend-javascript` appears in the available-skill catalog and activates for a representative serverless frontend request.
+The inventory below is from `origin/staging` at `aa911ea`. There are 11 checked-in `serverless_web/*.html` files. Eight contain executable inline JavaScript: ten blocks total, with no inline `on*` attributes or `javascript:` URLs currently detected.
 
-All eight `serverless_web/*.html` files contain executable inline JavaScript. There are ten blocks total and no inline `on*` HTML attributes:
-
-| Source | Inline executable code | Existing external code | Ordering constraint |
+| Source | Inline executable code | Existing external code and mode | Ordering/coupling |
 | --- | --- | --- | --- |
-| `admin.html` | shared 151-character pending-shell guard | `staging-shell.js` (defer), `admin.js` (module) | guard must run synchronously in `<head>` |
-| `color-lab.html` | shared pending-shell guard | `staging-shell.js` (defer), `color-lab.js` (module) | same |
-| `history.html` | shared pending-shell guard | `staging-shell.js` (defer), `history.js` (module) | same |
-| `holographic.html` | shared pending-shell guard | `staging-shell.js` (defer), `holographic.js` (module) | same |
-| `holographic-redirect.html` | 73-character redirect | none | keep the head redirect immediate and preserve query/hash |
-| `index.html` | shared guard plus 446 lines / 138,077 characters of application code | `staging-shell.js` (defer) | application currently executes at the end of parsing, before deferred shell code is guaranteed to run |
-| `release-story.html` | shared guard plus 48-line page enhancement IIFE | `staging-shell.js` (defer) | enhancement runs after its markup exists |
-| `vault.html` | shared pending-shell guard | `staging-shell.js` (defer), `vault.js` (module) | guard must run synchronously in `<head>` |
+| `admin.html` | pending-shell guard | `staging-shell.js` classic/defer; `admin.js` module | guard is synchronous in `<head>` |
+| `color-lab.html` | pending-shell guard | shell classic/defer; `color-lab.js` module | same |
+| `history.html` | pending-shell guard | shell classic/defer; `history.js` module | same |
+| `holographic.html` | pending-shell guard | shell classic/defer; `holographic.js` module | same |
+| `holographic-redirect.html` | redirect script | none | synchronous head redirect preserves query/hash; meta refresh is fallback |
+| `index.html` | guard plus 446-line, approximately 138 KB Rasterizer client | shell classic/defer | large block runs at end of body; optional shell globals may not exist yet |
+| `mandala.html` | none | shell classic/defer; `mandala.js` module | static `staging-shell-pending` class; module owns startup |
+| `release-story.html` | guard plus 48-line enhancement IIFE | shell classic/defer | IIFE runs after its markup |
+| `spiralgrap.html` | none | none | misspelled legacy route uses meta refresh only |
+| `spiralgraph.html` | none | shell classic/defer; `spiralgraph.js` module | static pending class; module owns startup |
+| `vault.html` | pending-shell guard | shell classic/defer; `vault.js` module | guard is synchronous in `<head>` |
 
-Generated serverless output adds more inline code:
+Other deployed external browser sources are `blank-palette.js` (classic), `depthmap_bootstrap.js` (module), and the Depthmap module graph under `static/`: `depthmap_generator.js`, `depthmap_parallax.js`, `depthmap_parallax_svg.js`, `depthmap_layered_relief.js`, and `depthmap_lightburn.js`. `depthmap_bootstrap.js` establishes `window.serverlessDepthResources` and `window.serverlessDepthGuest`, updates the JSON data block, then dynamically imports `depthmap_generator.js`; that bootstrap-before-generator contract must survive until an explicit configuration API replaces it.
 
-- `build_serverless_seo.py`, `build_serverless_depthmap.py`, `build_serverless_community.py`, `build_serverless_experimental.py`, and `build_serverless_docs.py` inject the same pending-shell guard.
-- `templates/community_set.html` contains the Community Set client, which `build_serverless_community.py` rewrites for token/API behavior.
-- The documentation hub in `templates/docs.html` contains search behavior and an injected search index.
-- Landing and documentation templates contain JSON-LD; `templates/depthmap_generator.html` contains JSON data. These are data, not executable application code.
-- Other Flask-only templates also contain inline JavaScript. They are outside the static serverless deployment boundary and should be handled in a follow-up inventory, not silently mixed into this migration.
+The builders add or copy more inline debt into deployed artifacts:
 
-The current CloudFront policy sends `Content-Security-Policy-Report-Only` with `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net`. Static HTML and JavaScript are uploaded with `Cache-Control: no-cache`, `config.json` uses `no-store`, and every deploy invalidates `/*`. JavaScript uploads are explicit, so every new entry point and imported module must be added to the deployment.
+- `build_serverless_seo.py` copies the Rasterizer home, Fauxlographic, Color Lab, Mandala, SpiralGraph, and `spiralgrap` pages and renders the SEO landing routes. Copied pages retain their source behavior: Mandala, SpiralGraph, and `spiralgrap` have no inline executable code; copied home has the guard and Rasterizer client; Fauxlographic and Color Lab have the guard. Landing pages receive the guard.
+- `build_serverless_depthmap.py` produces `depthmap.html`, inserts the guard, and points at the Depthmap bootstrap module.
+- `build_serverless_community.py` produces `community-set` with the guard plus a rewritten inline client from `templates/community_set.html`.
+- `build_serverless_experimental.py` produces `experimental-laboratories` with the guard.
+- `build_serverless_docs.py` renders the docs index and every documentation route. All receive the guard; the index also contains generated search behavior and search-index data.
 
-## Target boundaries
+Phase 0 is not green on this staging revision. `tests/test_serverless_web_javascript.py` builds the right route families, but its rendered-debt expectation is stale: it expects shell guards on newly copied Mandala/SpiralGraph/`spiralgrap` SEO pages that intentionally use the newer static-class/no-script pattern, and its docs-search fingerprint predates the current source. Reconcile this from reviewed source intent and retain ordered, multiplicity-aware debt records. Do not blindly replace hashes to make the test pass.
 
-Keep small page entry points and organize the large Rasterizer client around ownership, not arbitrary file size:
+The deploy currently uploads several consumers before dependencies, including Mandala HTML before `mandala.js`/CSS, SpiralGraph HTML before `spiralgraph.js`/CSS, Depthmap HTML before its full module graph, and older page HTML before page modules. This is a real partial-deploy hazard. `Cache-Control: no-cache`, query revisions, and the final CloudFront `/*` invalidation do not make sequential S3 writes atomic.
+
+## Runtime boundaries and dependency direction
+
+Keep the already external lab entry points stable during legacy extraction. Before splitting any monolith, add browser characterization. Proposed boundaries are ownership seams, not a mandate to create every file at once.
 
 ```text
 serverless_web/
-  holographic-redirect.js          legacy URL redirect only
-  release-story.js                 story progress/TOC/media behavior
-  rasterizer.js                    temporary behavior-preserving entry point
+  holographic-redirect.js          legacy redirect only (classic, synchronous)
+  release-story.js                 story progress/TOC/media behavior (classic first)
+  rasterizer.js                    byte-for-byte classic extraction first
   rasterizer/
-    main.js                        composition, listeners, initial load
-    state.js                       mutable session/UI state and explicit accessors
+    main.js                        composition, listeners, startup
+    state.js                       session/UI state and explicit accessors
     dom.js                         selectors, escaping, display helpers
-    auth-api.js                    token lifecycle, API and upload clients
-    shape-assets.js                uploaded mask/SVG normalization and previews
-    geometry-controls.js           preset definitions, routing, control serialization
-    flow-painter.js                Fauxlogram flow editor/canvas behavior
-    artwork-crop.js                crop selection and derived artwork file
-    quantized-preview.js           color matching and preview rendering
-    panel-tiling.js                tiling state, validation, and layout preview
-    palette-resources.js           palettes, libraries, names, saved preferences
-    jobs.js                        request assembly, submit, poll, and outputs
+    auth-api.js                    token lifecycle, API, uploads
+    shape-assets.js                mask/SVG normalization and previews
+    geometry-controls.js           presets, routing, serialization
+    flow-painter.js                Fauxlogram editor/canvas behavior
+    artwork-crop.js                crop selection and derived file
+    quantized-preview.js           matching and preview rendering
+    panel-tiling.js                tiling controls, validation, aspect/layout preview
+    palette-resources.js           processing/color palettes, roles, preferences
+    jobs.js                        payload, submit, poll, outputs
+  spiralgraph.js                   current stable module entry
+  spiralgraph/
+    main.js                        startup and event composition
+    state.js                       drawings, active drawing, dimension constraints
+    palette-routing.js             processing/color palettes, swatches, line/fill roles
+    geometry.js                    built-in/custom tracks and rolling-curve math
+    hardware-preview.js            track/gear/assembled SVG and pen-hole interaction
+    canvas-preview.js              selected/stacked previews and frame scheduling
+    drawing-editor.js              per-drawing controls, order, duplicate/remove
+    auth-jobs.js                   auth/resources, payload, submit/poll/download
+  mandala.js                       current stable module entry
+  mandala/
+    main.js                        startup and event composition
+    state-randomize.js             physical layers, defaults, reset/randomization/order
+    palette-routing.js             processing palette/material/Cut role
+    geometry.js                    motifs, radial composition, bridges/openwork
+    canvas-preview.js              selected/stacked preview scheduling
+    layer-editor.js                per-layer controls and custom SVG
+    auth-jobs.js                   auth/resources, payload, submit/poll/download
 ```
 
-This is a dependency direction, not a requirement to create every file at once: `main.js` composes feature modules; feature modules may depend on `dom.js`, `state.js`, and `auth-api.js`; feature modules must not import `main.js` or communicate through accidental globals. Pass DOM nodes, callbacks, and state explicitly where that prevents circular imports.
+Keep Depthmap sources under `static/` unless a separate move is justified. Its later seams are bootstrap/auth configuration; depth generation and paint/canvas state; color-guided palette controls; 8/16-bit PNG export; Depthmap LightBurn export; Parallax PNG/SVG; and Layered Relief planning/preview/LightBurn. Preserve its existing relative imports and query revisions during extraction work.
 
-Keep `staging-shell.js` a classic deferred script for the first migration. Its `window.stagingShellSetAuthenticated` and `window.stagingShellBeginLogin` functions are deliberate cross-entry integration points. Do not introduce additional `window` exports. Convert that contract to an imported module or `CustomEvent` only as a separately tested change.
+`main.js` composes feature modules. Features may depend on shared state, DOM helpers, and an injected API client; they must not import `main.js` or communicate through new accidental globals. Keep `staging-shell.js` classic initially. Its `window.stagingShellSetAuthenticated` and `window.stagingShellBeginLogin` functions, plus the temporary Depthmap globals above, are the only reviewed cross-entry globals; remove them only in separately characterized changes.
 
 ## Phased migration
 
-### Phase 0 — lock the baseline
+### Phase 0 - make the baseline trustworthy
 
-1. Keep `tests/test_serverless_web_javascript.py` as the temporary debt inventory. It now builds Depthmap, Community Set, Experimental Labs, every documentation route, and every SEO route exactly as staging does. It fingerprints each allowed inline executable block and rejects new inline blocks, `on*` attributes, and `javascript:` URLs in both source and rendered output. Extraction only removes hashes.
-2. Preserve each script's execution grammar in syntax checks. Classic scripts are checked as `.js`; only `type="module"` scripts are checked as `.mjs`. Every `serverless_web/**/*.js` file must be referenced in exactly one mode.
-3. Keep the deployment-order debt inventory exact. Existing HTML-before-JavaScript pairs are grandfathered temporarily; do not add pairs. Every new extracted asset must have a matching upload and appear before its dependent HTML. Remove existing debt entries when touching those uploads.
-4. Add a shared test helper that returns HTML plus referenced JavaScript. Twenty current test modules inspect `serverless_web/index.html`, and many assertions currently assume implementation code lives in the HTML. Move behavior assertions to the owning `.js` source as each block moves; keep markup assertions on HTML.
-5. Before moving the Rasterizer block, establish a browser-level characterization suite against the current inline implementation. Serve the fully generated static site over HTTP and run a pinned headless browser. Use deterministic API/Cognito/upload fakes and capture DOM state plus outbound request payloads for: signed-out boot and fail-open shell reveal; Cognito callback/refresh/logout and cross-tab auth; guest/member resource loading; initial filter/geometry state; crop pointer flows; quantized preview; Fauxlogram painting; panel-tiling enablement and layout; palette selection; guest and member submission/upload; resumed polling and ordered downloads; release-story enhancement; docs search; and the legacy redirect with query/hash. Record the baseline on the inline client and require the same suite after extraction and after each module split. Unit/string assertions alone are not an adequate modularization gate.
+1. Repair `tests/test_serverless_web_javascript.py` against the current generated artifacts. Represent inline blocks as ordered `(execution mode, digest)` lists per route, not digest sets, so duplicates and reordering are visible. Add the new no-inline SEO copies to an explicit zero-debt expectation. Keep scans for inline bodies, case/character-reference-obfuscated `on*` attributes, and whitespace/character-reference-obfuscated `javascript:` URLs.
+2. Enumerate deployment inputs from the actual deploy script and run every invoked builder: SEO, Depthmap, Community Set, Experimental Labs, and all docs. Fail if a deployed HTML artifact is not scanned or a generated artifact appears unexpectedly. Source-only `serverless_web/*.html` scanning is insufficient.
+3. Check scripts in their real modes. Parse classic scripts as `.js`; parse `type="module"` sources and every transitive static/literal dynamic import as modules. Assert each entry is referenced in one mode, all imports resolve, and all deployed sources have an upload. Include Mandala and SpiralGraph in the module allowlist and the complete Depthmap graph under `static/`.
+4. Replace the current hand-maintained HTML-first exceptions with exact temporary debt covering all deployed page/asset pairs, including CSS where the static pending-shell behavior depends on it. New or touched assets must upload before all dependent HTML; only delete debt.
+5. Add a helper that returns HTML plus its referenced/imported scripts. Move the many `index.html` text assertions to the owning `.js` file as extraction proceeds; markup assertions stay on HTML.
+6. Establish a pinned browser characterization suite served over HTTP with deterministic Cognito, API, upload, image, and timer fakes. Capture DOM/accessibility state, canvas/SVG checkpoints, console/network failures, storage changes, and exact outbound payloads. Run it against the inline baseline before moving the Rasterizer block.
 
-### Phase 1 — extract low-risk shared and page scripts
+### Phase 1 - remove low-risk inline code
 
-1. Replace the pending-shell guard without adding a render-blocking JavaScript request. Prefer putting `staging-shell-pending` directly on the generated/static `<html>` element and moving the hide plus a three-second fail-open animation into an external stylesheet. `staging-shell.js` already removes the class after it renders. Browser-test normal load, slow CSS/JS, blocked shell JavaScript, and CSS failure before adopting this alternative. A synchronous external `shell-pending.js` is behaviorally closer to the inline code, but it blocks parsing on a new network request and its three-second timer cannot start until the file arrives; a stalled fetch can therefore delay the page instead of providing the intended fail-open. If the CSS alternative proves unsuitable, document and test that network tradeoff before using the external script.
-2. Move the redirect verbatim to `holographic-redirect.js`, loaded synchronously in the head. Preserve the meta-refresh fallback, `location.replace`, query string, and hash.
-3. Move the release-story IIFE verbatim to `release-story.js` at the current end-of-body position. Use a classic script initially.
-4. Upload these assets before uploading HTML that references them. Keep the old object available for at least one release when renaming an asset.
-5. Remove the corresponding hashes from the debt allowlist and add deploy/reference assertions.
+1. Prefer the Mandala/SpiralGraph pattern for the pending shell: a static `staging-shell-pending` class on `<html>`, an external stylesheet fail-open, and `staging-shell.js` removing the class. Test normal, slow, blocked CSS/JS, JavaScript-disabled, and reduced-motion cases. A synchronous external guard is closer to current timing, but its network request blocks parsing and its timer cannot start until the file arrives; use it only if the CSS approach fails characterized requirements.
+2. Move the redirect verbatim to `holographic-redirect.js`, synchronously in the head. Preserve `location.replace`, query/hash, and meta fallback. Do not add script to the `spiralgrap` meta-only alias without a demonstrated need.
+3. Move the release-story IIFE verbatim to a classic `release-story.js` at the current end-of-body position.
+4. Upload each new asset before switching dependent HTML and remove only its reviewed inline-debt records.
 
-### Phase 2 — extract the Rasterizer monolith without refactoring
+### Phase 2 - mechanical Rasterizer extraction
 
-1. Move the large `index.html` block byte-for-byte to `serverless_web/rasterizer.js` and use a classic end-of-body script. Do not combine extraction with renaming, formatting, event rewrites, or modules.
-2. Preserve the current timing: DOM markup exists; `load()` starts immediately; the deferred shell might not have run; calls to the shell global remain optional.
-3. Update behavior tests to read `rasterizer.js` and markup tests to read `index.html`. Syntax-check the external file and compare critical request payloads and generated DOM snapshots before/after.
-4. Add the asset to the deploy script before switching the HTML reference. Bump the query revision used by the page even though origin metadata is `no-cache`.
+1. In a dedicated change, move the large `index.html` block byte-for-byte into `serverless_web/rasterizer.js`. Load it as a classic end-of-body script. Do not format, rename, deduplicate, change event registration, or convert it to a module.
+2. Preserve current startup timing: markup exists, `load()` starts immediately, and the deferred shell may not yet have run.
+3. Prove byte equality after accounting only for the surrounding `<script>` tags/newline, run classic syntax checks, and compare stored characterization results and payloads.
+4. Upload `rasterizer.js` first, then HTML with a revised query. Keep the previous object/path through at least the rollback window.
 
-### Phase 3 — externalize generated-route behavior
+### Phase 3 - externalize generated-route behavior
 
-1. Extract Community Set behavior to an external client. Replace the builder's source-code string substitution with configuration/data passed through markup or an `application/json` block; do not generate JavaScript strings in Python.
-2. Extract documentation search behavior to `docs-search.js`. Keep the generated search index in a JSON data block and parse it from the external module.
-3. Rebuild SEO, depthmap, community, experimental, and documentation outputs in tests. Require zero inline executable scripts and zero inline event attributes. Keep JSON/JSON-LD explicitly classified as data.
-4. For scripts shared by Flask templates and the serverless site, keep one source file under `static/` and explicitly upload/rewrite its public URL, or keep a serverless-only file under `serverless_web/`. Do not maintain copied implementations.
+1. Move Community Set behavior to an external client. Replace Python source-code substitution with inert JSON/data attributes consumed by that file.
+2. Move docs search behavior to `docs-search.js`; keep the generated search index in an inert JSON block.
+3. Rebuild and scan every output. The executable-inline allowlist should reach zero; JSON and JSON-LD remain explicitly classified data.
+4. For shared Flask/serverless behavior, keep one source under `static/` and upload/rewrite its public path, or use a serverless-only source under `serverless_web/`. Do not fork copies.
 
-### Phase 4 — introduce native modules behind stable behavior
+### Phase 4 - modularize only behind characterization
 
-1. Do not start this phase until the Phase 0 browser characterization suite passes against both the original inline baseline and the byte-for-byte classic `rasterizer.js` extraction. Expand it for any feature whose boundary is about to move.
-2. Convert `rasterizer.js` into a small `type="module"` entry and extract one cohesive boundary at a time following the target graph. Use explicit imports/exports and a state object rather than relying on top-level bindings becoming globals.
-3. Attach listeners from `main.js` after module evaluation. Verify the changed timing against `staging-shell.js`, Cognito callback handling, resumed jobs, and initial control rendering.
-4. Deploy the complete import graph with `application/javascript`. Prefer an explicit manifest or recursive module-directory upload plus a test that every relative import resolves and is published.
+1. Do not split Rasterizer, SpiralGraph, Mandala, or Depthmap until the browser baseline covers the boundary being moved. The classic `rasterizer.js` extraction must remain its own passing checkpoint before Rasterizer becomes a module.
+2. Split one ownership seam at a time with explicit imports/exports. Preserve exact payload types/order, layer order, preview scheduling, storage, URL `?task=` resume, and error/status text unless a separately approved behavior change says otherwise.
+3. SpiralGraph coverage must precede splitting palette routing, drawing state, geometry, hardware SVG, canvas preview, or job code. Mandala coverage must precede splitting randomization, motif/bridge geometry, previews, or job code. Depthmap coverage must precede changing its bootstrap globals or dynamic import.
+4. Publish the complete import graph through an explicit manifest or tested recursive upload. All modules must exist before the entry HTML is uploaded.
 
-### Phase 5 — tighten delivery and CSP
+### Phase 5 - observe, then tighten CSP separately
 
-1. Upload JavaScript before dependent HTML and invalidate only after all objects are present. A full invalidation does not prevent a transient HTML-new/JS-missing window during sequential uploads.
-2. Keep HTML `no-cache`. During migration keep JavaScript `no-cache`; immutable long-lived caching is safe only after content-hashed filenames or an atomic release-prefix strategy exists. Query revisions alone do not prove atomicity.
-3. Remove `'unsafe-inline'` from the report-only `script-src` after generated-output scans reach zero executable inline code. Exercise every route and third-party dependency, including WebAssembly/model loading.
-4. Decide and test the JSON-LD policy before enforcement. If inline structured data needs CSP hashes, the shared CloudFront header must include all rendered hashes or delivery must change; do not drop SEO data merely to simplify CSP.
-5. After a clean staging observation window, promote the CSP from report-only to enforced in a separate change with rollback instructions. Do not combine enforcement with extraction, modularization, or cache-policy changes.
+1. Reach zero executable inline code and deploy to staging without changing CSP enforcement.
+2. Observe report-only violations across every route and feature. Account for jsDelivr/model loading, API/Cognito connections, WebAssembly, workers, blob-backed SVG/image previews and downloads, and `data:` image use. Dynamic style attributes/custom properties in Rasterizer and the labs affect `style-src`, not the `script-src` extraction goal.
+3. Decide how JSON-LD is treated before enforcement; do not remove SEO data merely to simplify policy.
+4. Remove `'unsafe-inline'` from report-only `script-src`, observe again, then enforce CSP in a later isolated change with a header-only rollback. Do not combine enforcement with extraction, modularization, or cache changes.
 
-## Verification and acceptance
+## Characterization and regression matrix
 
-For every phase:
+The browser suite is the main behavior contract; string tests are supporting guardrails.
 
-- Run the focused JavaScript policy/syntax tests and the full Python suite. The focused test must parse classic and module scripts in their actual modes.
-- Run all serverless builders and scan their rendered output, not only source templates.
-- Validate deployment scripts (`bash -n` under the repository's existing Linux/CI path) and assert new assets are uploaded with the correct MIME type before dependent HTML.
-- Test a local static origin over HTTP; ES modules cannot be validated reliably through `file://`.
-- Run the deterministic browser characterization suite locally before and after each boundary change, then repeat its critical signed-out/signed-in flows in staging: Cognito callback/refresh/logout and cross-tab state, guest and member job submission, resume/poll/download, crop and quantized preview, geometry routing/Fauxlogram painter, panel tiling, Vault, History, Admin, Color Lab, Fauxlographic Lab, Depthmap Lab, Community Set, docs search, release story, and the legacy redirect with query/hash.
-- Check the browser console/network panel for module 404s, MIME errors, CSP reports, duplicate listener execution, and flashes caused by the pending-shell guard.
+- Shared shell/auth: signed-out reveal and fail-open; sign-in callback, refresh, logout, cross-tab state; registered-only labs; config failure; no duplicate listeners.
+- Rasterizer: guest/member resource loading; Processing Palette and color mapping; restored preferences; crop and transparent-shape paths; quantized preview; geometry-by-swatch and Fauxlogram flow painter; panel tiling enable/disable, dimensions, gaps/inset, row/column/serpentine order, aspect fit/fill, padding/border swatches, layout preview and payload; guest/member uploads; submit, resume, poll, logs, ordered downloads.
+- SpiralGraph: Processing Palette fallback roles versus Color Palette swatch routing; automatic line/fill mode; add/duplicate/reorder/remove drawings; every per-drawing track, gear, pen-hole, side, start, direction, rotation, track inclusion, ribbon thickness, and custom SVG path; selected/stacked colored canvas previews; hardware track/gear/assembled SVG; pointer and keyboard/radio pen-hole selection; slider/card active-drawing sync; payload equality; `/spiralgraph/jobs`, resume/poll, SVG/LightBurn/manifest downloads. Test narrow mobile widths for no horizontal page/control-card overflow, readable previews, and usable touch/keyboard targets.
+- Layered Mandala: Processing Palette material/Cut-role selection; add/duplicate/reorder/remove (up to 12); reset and bounded randomize; built-in and sanitized custom SVG motifs; ornament/composition, construction, repetitions/rings, transforms, rim/openwork and automatic-bridge controls; selected/stacked previews; dimension constraints; exact payload; `/mandala/jobs`, resume/poll, combined and per-layer LightBurn/SVG/preview/manifest downloads; mobile layout and control accessibility.
+- Depthmap: guest/member bootstrap and palette data; photo inference versus existing depthmap; clip/gamma/invert, resize/border/perimeter, paint/clear; color-guided Depth Palette influence; 8/16-bit PNG; 3D-Slice Processing Palette roles, cleanup and LightBurn export; Parallax strength/background/appearance and PNG/SVG; Layered Relief construction, grouping, smoothing, thresholds, palette roles, surface engraving, scoring, registration, previews, and LightBurn export. Verify the bootstrap runs before the generator exactly once.
+- Other routes: Vault, History, Admin, Color Lab, Fauxlographic Lab, Community Set, docs search/index data, release-story media/TOC/progress, SEO copies, and both legacy redirects.
 
-Acceptance is: generated runtime pages contain no inline executable JavaScript or inline event attributes; data-only script blocks are documented and inert; all browser code is syntax-checked; every referenced/imported asset is deployed before its consumer; staging behavior matches the baseline; and CSP can remove `'unsafe-inline'` from `script-src` without runtime violations.
+At desktop and representative mobile viewports, assert no unexpected horizontal overflow and snapshot key accessible names/states. For canvas output use deterministic dimensions/data checkpoints rather than fragile pixel-perfect full screenshots; use stable SVG/DOM snapshots for hardware/vector previews.
 
-## Main cautions
+## Delivery and rollback
 
-- Extraction and modularization are different risk levels. The 138 KB Rasterizer block should first move unchanged, then be decomposed.
-- Native module timing and scope differ from the current classic inline block. An immediate `type="module"` conversion can reorder startup and hide bindings that tests or other scripts implicitly use.
-- Current tests are coupled to JavaScript text inside `index.html`; moving code without migrating those assertions will create false failures or, worse, lost coverage.
-- The deploy is shared by staging and production and is not atomic. Validate on staging and preserve the staging-to-production promotion gate.
-- CSP is currently report-only and allows inline scripts. Finishing file extraction does not itself authorize enforcement; generated routes, JSON-LD, CDN code, workers, and WebAssembly must be verified first.
+Every phase is a separate commit and staging release. Deployment order is always: upload every new/revised JavaScript, CSS, and transitive module dependency; verify object existence/content type; upload dependent HTML last; then invalidate CloudFront. Query-string revisions improve cache revalidation but are not an atomic release mechanism.
+
+Keep old asset names for at least one release when renaming because cached HTML may still request them. Record the source commit and deployed asset manifest. If a stage fails, stop promotion, revert the phase commit, and redeploy the last known-good repository revision using the same asset-first ordering; do not repair production by manually mixing object generations. Verify root plus affected routes, console/network, auth, one representative payload, and download links after rollback. If CSP later fails, roll back only the security-header change to the prior report-only policy and leave known-good external assets in place.
+
+## Acceptance
+
+For each phase, run the focused JavaScript policy/syntax suite, relevant feature tests, all builders/scans, import resolution, and `bash -n` in the supported Linux/CI path. Serve locally over HTTP; do not use `file://` for module validation. Run the characterization suite before/after each boundary, then repeat critical signed-out/signed-in and job/download flows on staging.
+
+Final acceptance requires: no executable inline script bodies, `on*` attributes, or `javascript:` URLs in any deployed output; data blocks documented and inert; scripts checked in their actual mode; every direct and imported asset uploaded before every consumer; baseline-equivalent desktop/mobile behavior; clean staging console/network; and a report-only CSP observation showing `script-src` can drop `'unsafe-inline'`. CSP enforcement remains a later decision.
+
+## Project skill
+
+The repository-local guidance lives at `.agents/skills/serverless-frontend-javascript/SKILL.md`, following the supported project convention. `quick_validate.py` validates its structure but not runtime discovery. Because this session began in the primary worktree while the skill exists only on this isolated branch, fresh-session discovery cannot be proven here; after merge, start a new Codex session rooted in the repository and confirm the skill appears and activates for a representative serverless frontend change.

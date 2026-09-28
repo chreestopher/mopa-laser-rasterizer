@@ -1,26 +1,33 @@
 ---
 name: serverless-frontend-javascript
-description: Maintain browser behavior for the MOPA Laser Rasterizer static serverless frontend. Use when adding or changing JavaScript in serverless_web or serverless page builders/templates; do not use for backend-only work.
+description: Maintain browser behavior for the MOPA Laser Rasterizer deployed serverless frontend. Use when adding or changing JavaScript in serverless_web, deployed static modules, or serverless builders/templates; do not use for backend-only work.
 ---
 
 # Serverless frontend JavaScript
 
-Put executable browser behavior in external `.js` files. Do not add JavaScript inside HTML `<script>` bodies, Python-generated HTML strings, inline `on*` attributes, or `javascript:` URLs.
+Put executable browser behavior in external `.js` files. Do not add JavaScript to HTML `<script>` bodies, Python-generated source strings, inline `on*` attributes, or `javascript:` URLs. Keep generated values in inert `application/json` blocks or ordinary `data-*` attributes and read them from external code; JSON-LD is data, not behavior.
 
-Before editing, identify whether the page is checked in under `serverless_web/` or rendered by a `dev_setup/build_serverless_*.py` builder. Include browser code deployed from both `serverless_web/` and `static/`; Depthmap entry points and their import graph are part of the serverless frontend even though their sources live under `static/`. Keep generated values as inert `application/json` data or ordinary `data-*` attributes and read them from external code. Treat JSON-LD as structured data, not an invitation to add behavior.
+Before editing, trace the deployed artifact from `dev_setup/deploy_serverless_staging_web.sh`. Cover checked-in `serverless_web/`, all invoked `build_serverless_*.py` output, and browser code deployed from `static/`. Depthmap's bootstrap and transitive imports are in scope even though the feature spans both roots.
 
-Preserve script timing deliberately:
+Preserve execution semantics:
 
-- The current pending-shell guard runs synchronously before body paint. When extracting it, prefer a static class on `<html>` plus an external-CSS fail-open and let `staging-shell.js` remove the class; a parser-blocking external script adds a network stall before its timer can start. Do not change this path without normal, slow, failed-resource, JavaScript-disabled, and reduced-motion browser tests. Reduced-motion styling must not leave the page hidden.
-- Page modules run after parsing; do not change a classic script to `type="module"` as part of an unrelated feature.
-- `staging-shell.js` deliberately exposes `window.stagingShellSetAuthenticated` and `window.stagingShellBeginLogin`; avoid new globals.
+- Do not change classic scripts to modules incidentally. Syntax-check classic code as classic and modules, including transitive imports, as modules.
+- Keep script order and startup timing. `staging-shell.js` intentionally exports `window.stagingShellSetAuthenticated` and `window.stagingShellBeginLogin`. Depthmap currently sets `window.serverlessDepthResources` and `window.serverlessDepthGuest` before dynamically importing its generator; do not break those contracts without characterization.
+- For pending-shell behavior, prefer the existing Mandala/SpiralGraph pattern: static class plus external-CSS fail-open, removed by the shell. A synchronous external guard blocks parsing and cannot start its timer until the network responds. Test normal, slow, failed CSS/JS, JavaScript-disabled, and reduced-motion cases before changing it.
 
-When adding or renaming an asset, resolve direct references and static or literal dynamic imports across both source roots. Update the explicit uploads in `dev_setup/deploy_serverless_staging_web.sh`, use `application/javascript`, upload the complete dependency graph before dependent HTML, and revise the page's cache-busting query. A query revision and the final CloudFront invalidation are not atomic deployment; asset-first ordering is required. Production uses the same deployment path.
+When adding or renaming an asset, resolve direct references plus static and literal dynamic imports across both roots. Update the explicit deployment uploads, use `application/javascript`, and upload the complete JavaScript/CSS dependency graph before dependent HTML. Bump the page query revision, but remember query revisions and CloudFront invalidation are not atomic deployment. Keep old names through the rollback window when renaming.
 
-Keep markup assertions against HTML and behavior assertions against the owning JavaScript file. Run `python -m pytest tests/test_serverless_web_javascript.py -q` plus focused feature tests; this renders and scans all deployed serverless builders. Inline-debt inventories must preserve execution mode, order, and multiplicity so duplicated or reordered blocks cannot hide behind a set of hashes. Never expand or replace inline-script hashes or HTML-before-asset debt to land behavior; only remove entries while extracting legacy blocks. Preserve actual execution mode in syntax tests.
+Keep HTML assertions about markup and JavaScript assertions against the owning source. Run `python -m pytest tests/test_serverless_web_javascript.py -q`, relevant feature tests, every serverless builder scan, import resolution, and `bash -n` in the supported Linux/CI path. The debt inventory must preserve block execution mode, order, and multiplicity, cover every artifact the deployment publishes, reject obfuscated handlers and `javascript:` URLs, and list zero-debt routes explicitly. Never accept a new/replacement hash or HTML-before-asset exception merely to land behavior; investigate source intent and only remove debt during extraction.
 
-Before decomposing the Rasterizer, first move its block byte-for-byte to a classic end-of-body `rasterizer.js` in a dedicated change. Before that mechanical extraction, require deterministic browser smoke coverage for startup, signed-out behavior, restored settings, a representative quantized preview, panel tiling, and submission-payload equality. Build the comprehensive authentication, editing, job lifecycle, and feature characterization suite before module decomposition, then expand it around each boundary being moved. Keep CSP enforcement as a separate post-observation change.
+Before decomposing any large client, establish deterministic HTTP-served browser characterization for its owned behavior, payloads, previews, auth/storage, mobile layout, resume/poll, and downloads. In particular:
 
-This skill uses OpenAI's supported `.agents/skills/` repository convention. `quick_validate.py` checks structure only; after the skill is merged, verify discovery from a fresh Codex session rooted in the repository.
+- Extract the Rasterizer block byte-for-byte to a classic end-of-body `rasterizer.js` in its own passing change before modularizing it. Cover Processing Palettes, geometry/flow, crop/quantized preview, panel tiling, submission, and lifecycle.
+- Cover SpiralGraph palette routing, per-drawing controls, custom SVG, colored and hardware previews, keyboard/touch interaction, mobile overflow, exact payload, and SVG/LightBurn outputs before splitting `spiralgraph.js`.
+- Cover Layered Mandala palette roles, layer order/reset/randomize, motif/bridge/openwork controls, custom SVG, previews, payload, and per-layer/combined exports before splitting `mandala.js`.
+- Cover Depthmap bootstrap order, edit controls, color-guided palettes, 8/16-bit PNG, Depthmap LightBurn, Parallax PNG/SVG, and Layered Relief LightBurn before changing its module graph.
 
-For the staged legacy extraction and module map, read [docs/serverless-inline-javascript-extraction-plan.md](../../../docs/serverless-inline-javascript-extraction-plan.md).
+Keep CSP enforcement separate. First reach zero inline executable code, deploy without enforcement changes, and observe report-only violations for CDN/model, API/Cognito, WebAssembly, workers, blob/data previews/downloads, JSON-LD, and dynamic styles. Enforce only in a later reversible header change.
+
+This uses the supported `.agents/skills/` project convention. `quick_validate.py` checks structure only; after merge, confirm automatic discovery from a fresh Codex session rooted in this repository.
+
+For the inventory, boundaries, migration order, characterization matrix, and rollback process, read [the extraction plan](../../../docs/serverless-inline-javascript-extraction-plan.md).
