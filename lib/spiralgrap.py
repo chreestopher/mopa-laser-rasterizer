@@ -79,6 +79,20 @@ def validate_spiralgrap_config(raw):
         output_mode = str(source.get("output_mode") or "line").strip().lower()
         if output_mode not in OUTPUT_MODES:
             raise ValueError(f"SpiralGraph layer {index} has an invalid output mode")
+        swatch_hex = str(source.get("swatch_hex") or "").strip().upper()
+        if swatch_hex and not (len(swatch_hex) == 7 and swatch_hex.startswith("#") and all(character in "0123456789ABCDEF" for character in swatch_hex[1:])):
+            raise ValueError(f"SpiralGraph layer {index} has an invalid swatch color")
+        lightburn_index = source.get("lightburn_index")
+        if lightburn_index is not None:
+            lightburn_index = _integer(lightburn_index, "LightBurn layer color", range(30))
+        laser_setting = source.get("laser_setting") if isinstance(source.get("laser_setting"), dict) else {}
+        if laser_setting:
+            laser_setting = {
+                "description": str(laser_setting.get("description") or "Palette setting")[:160],
+                "material": str(laser_setting.get("material") or "")[:160],
+                "type": str(laser_setting.get("type") or ("Scan" if output_mode == "fill" else "Cut"))[:40],
+                "settings": deepcopy(laser_setting.get("settings")) if isinstance(laser_setting.get("settings"), dict) else {},
+            }
         clean_layers.append({
             "name": str(source.get("name") or f"Drawing {index}").strip()[:80] or f"Drawing {index}",
             "track": track,
@@ -92,6 +106,9 @@ def validate_spiralgrap_config(raw):
             "include_track": bool(source.get("include_track", False)),
             "output_mode": output_mode,
             "fill_thickness_mm": _number(source.get("fill_thickness_mm", 1.2), "Fill thickness", .1, 25),
+            "swatch_hex": swatch_hex,
+            "lightburn_index": lightburn_index,
+            "laser_setting": laser_setting,
         })
     if svg_characters > 120_000:
         raise ValueError("Custom SpiralGraph SVG tracks contain too much data")
@@ -103,6 +120,8 @@ def validate_spiralgrap_config(raw):
         "layers": clean_layers,
         "processing_palette_id": str(raw.get("processing_palette_id") or "")[:80],
         "processing_palette_name": str(raw.get("processing_palette_name") or "Processing Palette")[:160],
+        "color_palette_id": str(raw.get("color_palette_id") or "")[:80],
+        "color_palette_name": str(raw.get("color_palette_name") or "")[:160],
         "material": str(raw.get("material") or "")[:160],
         "score_entry_ref": str(raw.get("score_entry_ref") or "")[:120],
         "score_setting": deepcopy(raw.get("score_setting") or {}),
@@ -220,6 +239,7 @@ def write_svg(path, config, generated):
     root = ET.Element("svg", {"xmlns": "http://www.w3.org/2000/svg", "version": "1.1", "width": f"{diameter:g}mm", "height": f"{diameter:g}mm", "viewBox": f"0 0 {diameter:g} {diameter:g}"})
     ET.SubElement(root, "title").text = config["project_name"]
     for index, ((curve, outline), layer) in enumerate(zip(generated, config["layers"])):
+        color = layer.get("swatch_hex") or COLORS[index % len(COLORS)]
         if layer["output_mode"] == "fill":
             for number, polygon in enumerate(_fill_polygons(curve, layer["fill_thickness_mm"]), start=1):
                 rings = [polygon.exterior, *polygon.interiors]
@@ -227,15 +247,15 @@ def write_svg(path, config, generated):
                 for ring in rings:
                     points = _coords(LineString(ring.coords), diameter / 2, diameter / 2)
                     commands.append("M " + " L ".join(f"{x:.5f} {y:.5f}" for x, y in points) + " Z")
-                ET.SubElement(root, "path", {"id": f"layer-{index + 1}-curve-{number}", "d": " ".join(commands), "fill": COLORS[index % len(COLORS)], "fill-rule": "evenodd", "stroke": COLORS[index % len(COLORS)], "stroke-width": ".2"})
+                ET.SubElement(root, "path", {"id": f"layer-{index + 1}-curve-{number}", "d": " ".join(commands), "fill": color, "fill-rule": "evenodd", "stroke": color, "stroke-width": ".2"})
         else:
             points = _coords(curve, diameter / 2, diameter / 2)
-            ET.SubElement(root, "path", {"id": f"layer-{index + 1}-curve-1", "d": "M " + " L ".join(f"{x:.5f} {y:.5f}" for x, y in points), "fill": "none", "stroke": COLORS[index % len(COLORS)], "stroke-width": ".2"})
+            ET.SubElement(root, "path", {"id": f"layer-{index + 1}-curve-1", "d": "M " + " L ".join(f"{x:.5f} {y:.5f}" for x, y in points), "fill": "none", "stroke": color, "stroke-width": ".2"})
         for name, line, opacity in (("track", outline, ".35"),):
             if line is None:
                 continue
             points = _coords(line, diameter / 2, diameter / 2)
-            ET.SubElement(root, "path", {"id": f"layer-{index + 1}-{name}", "d": "M " + " L ".join(f"{x:.5f} {y:.5f}" for x, y in points) + " Z", "fill": "none", "stroke": COLORS[index % len(COLORS)], "stroke-width": ".2", "stroke-opacity": opacity})
+            ET.SubElement(root, "path", {"id": f"layer-{index + 1}-{name}", "d": "M " + " L ".join(f"{x:.5f} {y:.5f}" for x, y in points) + " Z", "fill": "none", "stroke": color, "stroke-width": ".2", "stroke-opacity": opacity})
     ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
 
 
@@ -255,21 +275,51 @@ class _PortableLayer:
 def write_lightburn(path, config, generated):
     project = lightburn.Lightburn()
     center_x, center_y = config["workbed_width_mm"] / 2, config["workbed_height_mm"] / 2
-    lightburn_index = 0
+    reserved_indexes = {layer["lightburn_index"] for layer in config["layers"] if layer.get("lightburn_index") is not None}
+    used_indexes = set()
+    written_layers = {}
+    def next_index(preferred=None, allow_reuse=False):
+        if preferred is not None:
+            if preferred in used_indexes and not allow_reuse:
+                raise ValueError("Choose a different LightBurn layer color for every SpiralGraph drawing")
+            used_indexes.add(preferred)
+            return preferred
+        available = next((index for index in range(30) if index not in used_indexes and index not in reserved_indexes), None)
+        if available is None:
+            raise ValueError("SpiralGraph output exceeds LightBurn's 30-layer limit")
+        used_indexes.add(available)
+        return available
+    def ensure_layer(index, setting, name, fallback_type):
+        signature = json.dumps(setting or {}, sort_keys=True, default=str)
+        if index in written_layers:
+            if written_layers[index] != signature:
+                raise ValueError("One LightBurn color cannot use multiple SpiralGraph laser settings")
+            return
+        project.add_layer(_PortableLayer(setting, index, name, fallback_type))
+        written_layers[index] = signature
     for index, ((curve, outline), layer) in enumerate(zip(generated, config["layers"])):
         is_fill = layer["output_mode"] == "fill"
-        setting = config["fill_setting"] if is_fill else config["score_setting"]
-        project.add_layer(_PortableLayer(setting, lightburn_index, f"{index + 1:02d} {layer['name']}", "Scan" if is_fill else "Cut"))
+        palette_setting = layer.get("laser_setting") or {}
+        setting = palette_setting or (config["fill_setting"] if is_fill else config["score_setting"])
+        lightburn_index = next_index(layer.get("lightburn_index"), allow_reuse=bool(palette_setting))
+        layer_name = str(setting.get("description") or f"{index + 1:02d} {layer['name']}")
+        ensure_layer(lightburn_index, setting, layer_name, "Scan" if is_fill else "Cut")
         if is_fill:
             for ring in _fill_rings(curve, layer["fill_thickness_mm"]):
                 project.add(lightburn.Path(_coords(ring, center_x, center_y), closed=True).layer(lightburn_index))
         else:
             project.add(lightburn.Path(_coords(curve, center_x, center_y), closed=False).layer(lightburn_index))
-        lightburn_index += 1
         if outline is not None:
-            project.add_layer(_PortableLayer(config["score_setting"], lightburn_index, f"{index + 1:02d} {layer['name']} track", "Cut"))
-            project.add(lightburn.Path(_coords(outline, center_x, center_y), closed=True).layer(lightburn_index))
-            lightburn_index += 1
+            if palette_setting:
+                if is_fill:
+                    for ring in _fill_rings(outline, layer["fill_thickness_mm"]):
+                        project.add(lightburn.Path(_coords(ring, center_x, center_y), closed=True).layer(lightburn_index))
+                else:
+                    project.add(lightburn.Path(_coords(outline, center_x, center_y), closed=True).layer(lightburn_index))
+            else:
+                track_index = next_index()
+                ensure_layer(track_index, config["score_setting"], f"{index + 1:02d} {layer['name']} track", "Cut")
+                project.add(lightburn.Path(_coords(outline, center_x, center_y), closed=True).layer(track_index))
     project.set_notes(f"SpiralGraph Lab\nProject: {config['project_name']}\nDiameter: {config['diameter_mm']:g} mm\nReview every path and laser setting before execution.", show_on_load=True)
     project.write(path)
 

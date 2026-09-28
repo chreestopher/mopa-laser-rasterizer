@@ -12,13 +12,33 @@ def read(path):
 def test_spiralgrap_page_uses_external_assets_and_classic_controls():
     page = read("serverless_web/spiralgraph.html")
     client = read("serverless_web/spiralgraph.js")
-    assert 'src="/spiralgraph.js?v=2"' in page
-    assert 'href="/spiralgraph.css?v=2"' in page
+    assert 'src="/spiralgraph.js?v=3"' in page
+    assert 'href="/spiralgraph.css?v=3"' in page
     assert "Track plate" in client and "Rolling gear" in client and "Pen hole" in client
     assert "Starting mark" in client and "Rolling position" in client
     assert "output_mode" in client and "fill_thickness_mm" in client
     assert "Line / Cut · open path" in client and "Filled ribbon · closed path" in client
     assert 'api("/spiralgraph/jobs"' in client
+
+
+def test_spiralgraph_can_use_saved_color_palette_swatches_for_preview_and_output_layers():
+    page = read("serverless_web/spiralgraph.html")
+    client = read("serverless_web/spiralgraph.js")
+    styles = read("serverless_web/spiralgraph.css")
+    api = read("serverless_api/handler.py")
+    backend = read("lib/spiralgrap.py")
+    assert 'id="colorPalette"' in page
+    assert 'data-field="swatch_hex" type="radio"' in client
+    assert "function paletteSwatches()" in client
+    assert "function applySwatchMode(layer)" in client
+    assert "context.strokeStyle=previewColor(layer,index)" in client
+    assert "color_palette_id" in client and "color_palette_id" in api
+    assert "community_material_swatch" in api
+    assert 'layer.get("lightburn_index")' in backend
+    assert 'layer.get("laser_setting")' in backend
+    assert "allow_reuse=bool(palette_setting)" in backend
+    assert 'layer.get("swatch_hex") or COLORS' in backend
+    assert ".preview-swatches" in styles
 
 
 class SpiralGraphHardwarePreviewTests(unittest.TestCase):
@@ -85,7 +105,7 @@ def test_spiralgrap_validates_custom_svg_and_processing_modes_on_both_sides():
     client = read("serverless_web/spiralgraph.js")
     api = read("serverless_api/handler.py")
     backend = read("lib/spiralgrap.py")
-    for field in ("track", "gear_teeth", "pen_hole", "side", "start_mark", "direction", "output_mode", "fill_thickness_mm"):
+    for field in ("track", "gear_teeth", "pen_hole", "side", "start_mark", "direction", "output_mode", "fill_thickness_mm", "swatch_hex"):
         assert field in client and field in api and field in backend
     assert "file.size>65536" in client
     assert 'expected_type, required' in api
