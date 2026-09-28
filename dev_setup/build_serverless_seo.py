@@ -31,6 +31,7 @@ route_rewrites = {
 
 
 def static_template(source):
+    source = source.replace('<html lang="en">', '<html lang="en" class="staging-shell-pending">', 1)
     source = source.replace("{% from \"_machine_chrome.html\" import machine_chrome %}\n", "", 1)
     source = source.replace("{% from '_machine_chrome.html' import machine_chrome %}\n", "", 1)
     source = re.sub(r"\s*\{\{ machine_chrome\([^\n]+\) \}\}\n", "\n", source, count=1)
@@ -38,9 +39,9 @@ def static_template(source):
     source = source.replace(
         "</head>",
         "  <meta name=\"robots\" content=\"index,follow,max-image-preview:large\">\n"
-        "  <script>document.documentElement.classList.add('staging-shell-pending');setTimeout(()=>document.documentElement.classList.remove('staging-shell-pending'),3000)</script>\n"
         '  <link rel="stylesheet" href="/machine_chrome.css?v=3">\n'
         '  <link rel="stylesheet" href="/staging-shell.css?v=1">\n'
+        '  <link rel="stylesheet" href="/staging-shell-v2.css">\n'
         '  <script src="/staging-shell.js?v=3" defer></script>\n'
         "</head>",
         1,

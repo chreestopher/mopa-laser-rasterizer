@@ -1,0 +1,2 @@
+@keyframes staging-shell-fail-open{to{visibility:visible}}
+html.staging-shell-pending body{animation:staging-shell-fail-open 0s 3s forwards}

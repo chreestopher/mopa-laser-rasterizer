@@ -8,6 +8,7 @@ from urllib.parse import urljoin
 
 
 source = Path(sys.argv[1]).read_text(encoding="utf-8")
+source = source.replace('<html lang="en">', '<html lang="en" class="staging-shell-pending">', 1)
 canonical = urljoin(sys.argv[3].rstrip("/") + "/", "experimental-laboratories") if len(sys.argv) > 3 else "/experimental-laboratories"
 source = source.replace('{% from "_machine_chrome.html" import machine_chrome %}\n', "", 1)
 source = source.replace('<link rel="canonical" href="{{ canonical }}">',
@@ -28,10 +29,9 @@ source = source.replace('href="/color-discovery"', 'href="/color-lab.html"')
 source = source.replace('href="/depthmap-relief-engraving-tool"', 'href="/docs/depthmap-generator"')
 source = source.replace(
     "</head>",
-    "  <style>html.staging-shell-pending body{visibility:hidden}</style>\n"
-    "  <script>document.documentElement.classList.add('staging-shell-pending');setTimeout(()=>document.documentElement.classList.remove('staging-shell-pending'),3000)</script>\n"
     '  <link rel="stylesheet" href="/machine_chrome.css?v=3">\n'
     '  <link rel="stylesheet" href="/staging-shell.css?v=1">\n'
+    '  <link rel="stylesheet" href="/staging-shell-v2.css">\n'
     '  <link rel="stylesheet" href="/staging-pages.css?v=1">\n'
     '  <script src="/staging-shell.js?v=3" defer></script>\n'
     "</head>",

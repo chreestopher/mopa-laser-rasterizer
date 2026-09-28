@@ -153,10 +153,14 @@ python3 -c 'import json,os; print(json.dumps({
  "client_id":os.environ["CLIENT_ID"], "cognito_domain":os.environ["COGNITO_DOMAIN"]
 },separators=(",",":")))' \
   > "$BUILD_DIR/config.json"
+aws s3 cp "$REPO_ROOT/serverless_web/staging-shell-v2.css" "s3://$STATIC_BUCKET/web/staging-shell-v2.css" \
+  --region "$REGION" --content-type text/css --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$BUILD_DIR/seo/index.html" "s3://$STATIC_BUCKET/web/index.html" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
 aws s3 cp "$BUILD_DIR/seo/fauxlographic.html" "s3://$STATIC_BUCKET/web/fauxlographic.html" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/holographic-redirect-v1.js" "s3://$STATIC_BUCKET/web/holographic-redirect-v1.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/holographic-redirect.html" "s3://$STATIC_BUCKET/web/holographic.html" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/holographic.js" "s3://$STATIC_BUCKET/web/holographic.js" \
@@ -221,6 +225,8 @@ aws s3 cp "$BUILD_DIR/community-set" "s3://$STATIC_BUCKET/web/community-set" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
 aws s3 cp "$BUILD_DIR/experimental-laboratories" "s3://$STATIC_BUCKET/web/experimental-laboratories" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/release-story-v1.js" "s3://$STATIC_BUCKET/web/release-story-v1.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/release-story.html" "s3://$STATIC_BUCKET/web/release-story" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
 # Upload release-story media sequentially so large video transfers do not

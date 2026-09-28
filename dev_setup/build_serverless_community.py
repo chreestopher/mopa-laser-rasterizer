@@ -12,16 +12,16 @@ from jinja2 import Environment
 repo_root = Path(__file__).resolve().parents[1]
 output_path = Path(sys.argv[1])
 source = (repo_root / "templates" / "community_set.html").read_text(encoding="utf-8")
+source = source.replace('<html lang="en">', '<html lang="en" class="staging-shell-pending">', 1)
 source = source.replace("{% from '_machine_chrome.html' import machine_chrome %}\n", "", 1)
 source = re.sub(r"\s*\{\{ machine_chrome\([^\n]+\) \}\}\n", "\n", source, count=1)
 source = source.replace('<link rel="stylesheet" href="/static/machine_chrome.css?v=3">', "")
 source = source.replace('<main class="machine">', '<main id="main-content">', 1)
 source = source.replace(
     "</head>",
-    "  <style>html.staging-shell-pending body{visibility:hidden}</style>\n"
-    "  <script>document.documentElement.classList.add('staging-shell-pending');setTimeout(()=>document.documentElement.classList.remove('staging-shell-pending'),3000)</script>\n"
     '  <link rel="stylesheet" href="/machine_chrome.css?v=3">\n'
     '  <link rel="stylesheet" href="/staging-shell.css?v=1">\n'
+    '  <link rel="stylesheet" href="/staging-shell-v2.css">\n'
     '  <link rel="stylesheet" href="/staging-pages.css?v=1">\n'
     '  <script src="/staging-shell.js?v=3" defer></script>\n'
     "</head>",
