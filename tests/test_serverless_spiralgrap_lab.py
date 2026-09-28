@@ -41,6 +41,8 @@ def test_spiralgraph_can_use_saved_color_palette_swatches_for_preview_and_output
     assert 'layer.get("swatch_hex") or COLORS' in backend
     assert ".preview-swatches" in styles
     assert ".layer-heading-swatches" in styles
+    assert ".layer-controls{grid-template-columns:minmax(0,1fr);width:100%}" in styles
+    assert ".layer-heading-swatches .preview-swatches>div{flex-wrap:wrap;width:100%;overflow:visible}" in styles
 
 
 class SpiralGraphHardwarePreviewTests(unittest.TestCase):
