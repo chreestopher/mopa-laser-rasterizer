@@ -1,0 +1,70 @@
+from pathlib import Path
+from xml.etree import ElementTree as ET
+
+import pytest
+
+from lib.spiralgrap import build_spiralgrap_exports, generate_spiralgrap, validate_spiralgrap_config
+
+
+def layer(**overrides):
+    value = {
+        "name": "Classic curve", "track": "circle", "gear_teeth": 40,
+        "pen_hole": 5, "side": "inside", "start_mark": 1,
+        "direction": "clockwise", "rotation_quarter_turns": 0,
+        "include_track": False, "output_mode": "line", "fill_thickness_mm": 1.2,
+    }
+    value.update(overrides)
+    return value
+
+
+def config(*layers):
+    return {
+        "project_name": "SpiralGrap Test", "diameter_mm": 120,
+        "workbed_width_mm": 180, "workbed_height_mm": 160,
+        "score_setting": {"type": "Cut", "settings": {"speed": 100}},
+        "fill_setting": {"type": "Scan", "settings": {"speed": 200}},
+        "layers": list(layers or (layer(),)),
+    }
+
+
+def test_curated_curve_closes_and_scales_to_requested_size():
+    clean, generated = generate_spiralgrap(config(layer(track="oval", gear_teeth=42)))
+    curve, _ = generated[0]
+    assert clean["layers"][0]["gear_teeth"] == 42
+    assert curve.coords[0] == curve.coords[-1]
+    bounds = curve.bounds
+    assert max(bounds[2] - bounds[0], bounds[3] - bounds[1]) == pytest.approx(112.8, abs=.2)
+
+
+def test_custom_track_requires_a_closed_svg_path():
+    open_svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0 L10 0 L10 10"/></svg>'
+    with pytest.raises(ValueError, match="closed shape"):
+        validate_spiralgrap_config(config(layer(track="custom", custom_svg={"name": "open.svg", "svg": open_svg})))
+    closed_svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0 L10 0 L8 10 L0 8 Z"/></svg>'
+    clean, generated = generate_spiralgrap(config(layer(track="custom", custom_svg={"name": "closed.svg", "svg": closed_svg})))
+    assert clean["layers"][0]["custom_svg"]["name"] == "closed.svg"
+    assert not generated[0][0].is_empty
+
+
+def test_exports_preserve_open_lines_and_closed_fill_ribbons(tmp_path):
+    result = build_spiralgrap_exports(tmp_path, config(
+        layer(name="Open line", output_mode="line"),
+        layer(name="Ribbon", track="rounded_square", output_mode="fill", fill_thickness_mm=2, include_track=True),
+    ))
+    lightburn_path = next(Path(path) for path in result["outputs"] if path.endswith(".lbrn2"))
+    svg_path = next(Path(path) for path in result["outputs"] if path.endswith(".svg"))
+    text = lightburn_path.read_text(encoding="utf-8")
+    assert 'type="Cut"' in text and 'type="Scan"' in text
+    assert "Open line" in text and "Ribbon" in text and "Ribbon track" in text
+    first_primitive = text.split("<PrimList>", 1)[1].split("</PrimList>", 1)[0]
+    assert "LineClosed" not in first_primitive
+    assert "<PrimList>LineClosed</PrimList>" in text
+    svg = ET.parse(svg_path).getroot()
+    paths = svg.findall("{http://www.w3.org/2000/svg}path")
+    assert any(item.get("fill") == "none" and not item.get("d", "").endswith(" Z") for item in paths)
+    assert any(item.get("fill") != "none" and item.get("d", "").endswith(" Z") for item in paths)
+
+
+def test_unoffered_raw_gear_sizes_are_rejected():
+    with pytest.raises(ValueError, match="rolling gear"):
+        validate_spiralgrap_config(config(layer(gear_teeth=37)))

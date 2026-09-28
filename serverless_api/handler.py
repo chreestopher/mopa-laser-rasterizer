@@ -4475,6 +4475,144 @@ def submit_mandala_job(event):
     return response(202, {"task_id": task_id, "status": "pending"})
 
 
+def validate_spiralgrap_request(data):
+    """Validate the bounded, physical-set-style SpiralGrap controls."""
+    if not isinstance(data, dict):
+        raise ValueError("SpiralGrap settings could not be read")
+    def number(key, minimum, maximum, default):
+        try:
+            value = float(data.get(key, default))
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"{key.replace('_', ' ').capitalize()} must be a number") from error
+        if not math.isfinite(value) or not minimum <= value <= maximum:
+            raise ValueError(f"{key.replace('_', ' ').capitalize()} must be between {minimum:g} and {maximum:g}")
+        return value
+    diameter = number("diameter_mm", 20, 1000, 150)
+    layers = data.get("layers")
+    if not isinstance(layers, list) or not 1 <= len(layers) <= 6:
+        raise ValueError("A SpiralGrap project needs 1 to 6 drawing layers")
+    permitted = {"name", "track", "custom_svg", "gear_teeth", "pen_hole", "side", "start_mark", "direction", "rotation_quarter_turns", "include_track", "output_mode", "fill_thickness_mm"}
+    clean_layers, total_svg = [], 0
+    for index, layer in enumerate(layers, start=1):
+        if not isinstance(layer, dict) or set(layer) - permitted:
+            raise ValueError(f"SpiralGrap drawing {index} contains unsupported settings")
+        track = str(layer.get("track") or "circle").lower()
+        if track not in {"circle", "oval", "rounded_square", "rounded_triangle", "custom"}:
+            raise ValueError(f"SpiralGrap drawing {index} has an unsupported track plate")
+        custom_svg = layer.get("custom_svg")
+        if track == "custom":
+            if not isinstance(custom_svg, dict) or set(custom_svg) - {"name", "svg"}:
+                raise ValueError(f"SpiralGrap drawing {index} needs a closed-path SVG track")
+            svg_text = custom_svg.get("svg")
+            if not isinstance(svg_text, str) or not svg_text.strip() or len(svg_text) > 65_536:
+                raise ValueError(f"SpiralGrap drawing {index}'s custom SVG must be no larger than 64 KB")
+            lowered = svg_text.lower()
+            if not re.search(r"<svg(?:\s|>)", lowered) or any(token in lowered for token in ("<!doctype", "<!entity", "<script", "<foreignobject", "<image", "<use", "javascript:", "data:", "url(", "href=", "xlink:href=")):
+                raise ValueError(f"SpiralGrap drawing {index}'s custom SVG contains unsupported content")
+            total_svg += len(svg_text)
+            custom_svg = {"name": str(custom_svg.get("name") or "custom-track.svg")[:120], "svg": svg_text}
+        else:
+            custom_svg = None
+        def choice(key, choices, default):
+            value = layer.get(key, default)
+            try:
+                value = int(value) if all(isinstance(item, int) for item in choices) else str(value).lower()
+            except (TypeError, ValueError) as error:
+                raise ValueError(f"SpiralGrap drawing {index} has an invalid {key.replace('_', ' ')}") from error
+            if value not in choices:
+                raise ValueError(f"SpiralGrap drawing {index} has an invalid {key.replace('_', ' ')}")
+            return value
+        try:
+            thickness = float(layer.get("fill_thickness_mm", 1.2))
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"SpiralGrap drawing {index} ribbon thickness must be a number") from error
+        if not math.isfinite(thickness) or not .1 <= thickness <= 25:
+            raise ValueError(f"SpiralGrap drawing {index} ribbon thickness must be between 0.1 and 25 mm")
+        include_track = layer.get("include_track", False)
+        if not isinstance(include_track, bool):
+            raise ValueError(f"SpiralGrap drawing {index} track outline choice must be on or off")
+        clean_layers.append({
+            "name": str(layer.get("name") or f"Drawing {index}").strip()[:80] or f"Drawing {index}",
+            "track": track, "custom_svg": custom_svg,
+            "gear_teeth": choice("gear_teeth", {24, 30, 32, 36, 40, 42, 45, 48, 56, 60}, 40),
+            "pen_hole": choice("pen_hole", set(range(1, 7)), 5),
+            "side": choice("side", {"inside", "outside"}, "inside"),
+            "start_mark": choice("start_mark", set(range(1, 9)), 1),
+            "direction": choice("direction", {"clockwise", "counterclockwise"}, "clockwise"),
+            "rotation_quarter_turns": choice("rotation_quarter_turns", set(range(4)), 0),
+            "include_track": include_track,
+            "output_mode": choice("output_mode", {"line", "fill"}, "line"),
+            "fill_thickness_mm": thickness,
+        })
+    if total_svg > 120_000:
+        raise ValueError("Custom SpiralGrap SVG tracks contain too much data")
+    return {
+        "project_name": str(data.get("project_name") or "SpiralGrap Project").strip()[:120] or "SpiralGrap Project",
+        "diameter_mm": diameter,
+        "workbed_width_mm": number("workbed_width_mm", diameter, 3000, diameter),
+        "workbed_height_mm": number("workbed_height_mm", diameter, 3000, diameter),
+        "processing_palette_id": str(data.get("processing_palette_id") or "")[:80],
+        "material": str(data.get("material") or "")[:160],
+        "score_entry_ref": str(data.get("score_entry_ref") or "")[:120],
+        "fill_entry_ref": str(data.get("fill_entry_ref") or "")[:120],
+        "layers": clean_layers,
+    }
+
+
+def submit_spiralgrap_job(event):
+    paused = service_paused_response()
+    if paused:
+        return paused
+    owner = user_id(event)
+    config = validate_spiralgrap_request(body_json(event))
+    library = owned_material(owner, config["processing_palette_id"])
+    if not library or material_library_intent(library.get("library_intent")) != "processing_palette":
+        raise ValueError("SpiralGrap jobs require a saved Processing Palette")
+    entries = [entry for entry in ((library.get("summary") or {}).get("entries") or []) if str(entry.get("material") or "") == config["material"]]
+    if not entries:
+        raise ValueError("Choose a material from the selected Processing Palette")
+    def setting(role, entry_ref, expected_type, required):
+        selected_ref = entry_ref or processing_role_assignment(owner, config["processing_palette_id"], config["material"], role)
+        if not selected_ref and role == "Score":
+            selected_ref = processing_role_assignment(owner, config["processing_palette_id"], config["material"], "Cut")
+        selected = next((entry for entry in entries if str(entry.get("entry_ref") or "") == selected_ref), None)
+        if selected is None and not entry_ref:
+            selected = next((entry for entry in entries if str(entry.get("description") or "").strip().casefold() == role.casefold()), None)
+        if selected is None and not entry_ref and role == "Score":
+            selected = next((entry for entry in entries if str(entry.get("description") or "").strip().casefold() == "cut"), None)
+        if selected is None and required:
+            raise ValueError(f"Choose a {role} setting for the selected material")
+        if selected is not None and str(selected.get("type") or "").casefold() != expected_type.casefold():
+            raise ValueError(f"The selected {role} setting must use LightBurn {'Line' if expected_type == 'Cut' else 'Fill'} mode")
+        if selected is None:
+            return "", {}
+        return str(selected.get("entry_ref") or ""), {"description": str(selected.get("description") or role)[:160], "material": config["material"], "type": str(selected.get("type") or expected_type), "settings": selected.get("settings") if isinstance(selected.get("settings"), dict) else {}}
+    needs_line = any(layer["output_mode"] == "line" or layer["include_track"] for layer in config["layers"])
+    needs_fill = any(layer["output_mode"] == "fill" for layer in config["layers"])
+    config["score_entry_ref"], config["score_setting"] = setting("Score", config["score_entry_ref"], "Cut", needs_line)
+    config["fill_entry_ref"], config["fill_setting"] = setting("Fill", config["fill_entry_ref"], "Scan", needs_fill)
+    config["processing_palette_name"] = str(library.get("name") or library.get("original_name") or "Processing Palette")[:160]
+    task_id, now = str(uuid.uuid4()), int(time.time())
+    payload = {"task_id": task_id, "job_type": "spiralgrap", "spiralgrap": config, "user_id": owner}
+    history_config = deepcopy(config)
+    for layer in history_config["layers"]:
+        if isinstance(layer.get("custom_svg"), dict):
+            layer["custom_svg"] = {"name": str(layer["custom_svg"].get("name") or "custom-track.svg")}
+    history = {"pk": f"USER#{owner}", "sk": f"JOB#{now:010d}#{task_id}", "task_id": task_id, "job_type": "spiralgrap", "source_name": config["project_name"], "material_name": config["material"], "image_preset": "spiralgrap", "abstract_filter": "none", "run_parameters": dynamo_value({"job_type": "spiralgrap", "spiralgrap": history_config}), "created_at": now, "updated_at": now, "status": "pending", "artifact_prefix": f"users/{owner}/jobs/{task_id}/", "input_keys": [], "expires_at": now + TTL_SECONDS}
+    owner_record = {"pk": f"JOB#{task_id}", "sk": "OWNER", "user_id": owner, "job_type": "spiralgrap", "source_name": config["project_name"], "material_name": config["material"], "image_preset": "spiralgrap", "abstract_filter": "none", "created_at": now, "updated_at": now, "history_sk": history["sk"], "status": "pending", "artifact_prefix": history["artifact_prefix"], "input_keys": [], "expires_at": now + TTL_SECONDS}
+    runtime_item = {**runtime_key(task_id), "task_id": task_id, "user_id": owner, "status": "pending", "payload": dynamo_value(payload), "log_count": 0, "created_at": now, "updated_at": now, "expires_at": now + TTL_SECONDS}
+    with table.batch_writer() as batch:
+        for item in (runtime_item, history, owner_record, admin_job_index_item(event, history)):
+            batch.put_item(Item=item)
+    try:
+        sqs.send_message(QueueUrl=QUEUE_URL, MessageBody=json.dumps({"task_id": task_id}, separators=(",", ":")))
+    except Exception:
+        with table.batch_writer() as batch:
+            batch.delete_item(Key=runtime_key(task_id)); batch.delete_item(Key={"pk": history["pk"], "sk": history["sk"]}); batch.delete_item(Key={"pk": owner_record["pk"], "sk": owner_record["sk"]}); batch.delete_item(Key={"pk": "ADMIN#JOBS", "sk": history["sk"]})
+        raise
+    return response(202, {"task_id": task_id, "status": "pending"})
+
+
 def create_holographic_upload(event):
     data = body_json(event)
     owner = user_id(event)
@@ -5534,6 +5672,8 @@ def handler(event, _context):
             return create_color_discovery_grid(event)
         if method == "POST" and path == "/mandala/jobs":
             return submit_mandala_job(event)
+        if method == "POST" and path == "/spiralgrap/jobs":
+            return submit_spiralgrap_job(event)
         color_parts = path.strip("/").split("/")
         if (method == "POST" and len(color_parts) == 3
                 and color_parts[:2] == ["color-discovery", "grids"]):
