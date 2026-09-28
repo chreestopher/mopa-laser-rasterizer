@@ -163,18 +163,27 @@ COMMUNITY_SET = ("classic", COMMUNITY_SET_HASH)
 DOCS_SEARCH = ("classic", DOCS_SEARCH_HASH)
 
 ALLOWED_SOURCE_INLINE_SCRIPTS = {
-    "source/admin.html": [SHELL_GUARD],
-    "source/color-lab.html": [SHELL_GUARD],
-    "source/history.html": [SHELL_GUARD],
-    "source/holographic.html": [SHELL_GUARD],
-    "source/holographic-redirect.html": [LEGACY_REDIRECT],
-    "source/index.html": [SHELL_GUARD, RASTERIZER_APPLICATION],
+    "source/admin.html": [],
+    "source/color-lab.html": [],
+    "source/history.html": [],
+    "source/holographic.html": [],
+    "source/holographic-redirect.html": [],
+    "source/index.html": [RASTERIZER_APPLICATION],
     "source/mandala.html": [],
-    "source/release-story.html": [SHELL_GUARD, RELEASE_STORY],
+    "source/release-story.html": [],
     "source/spiralgrap.html": [],
     "source/spiralgraph.html": [],
-    "source/vault.html": [SHELL_GUARD],
+    "source/vault.html": [],
 }
+
+
+def test_phase_one_external_scripts_preserve_the_reviewed_inline_behavior():
+    assert _digest((WEB / "holographic-redirect-v1.js").read_text(encoding="utf-8")) == (
+        LEGACY_REDIRECT_HASH
+    )
+    assert _digest((WEB / "release-story-v1.js").read_text(encoding="utf-8")) == (
+        RELEASE_STORY_HASH
+    )
 
 
 def test_checked_in_serverless_html_does_not_gain_inline_javascript():
@@ -195,18 +204,50 @@ def test_rendered_serverless_html_does_not_gain_inline_javascript(
         for name, source in rendered_serverless_pages.items()
         if (parser := _parse_html(source))
     }
-    expected = {name: [SHELL_GUARD] for name in rendered_serverless_pages}
-    expected["generated/community-set"] = [SHELL_GUARD, COMMUNITY_SET]
-    expected["generated/docs/index.html"] = [SHELL_GUARD, DOCS_SEARCH]
-    expected["generated/seo/index.html"] = [SHELL_GUARD, RASTERIZER_APPLICATION]
-    for zero_inline_page in (
-        "generated/seo/mandala.html",
-        "generated/seo/spiralgrap.html",
-        "generated/seo/spiralgraph.html",
-    ):
-        expected[zero_inline_page] = []
+    expected = {name: [] for name in rendered_serverless_pages}
+    expected["generated/community-set"] = [COMMUNITY_SET]
+    expected["generated/docs/index.html"] = [DOCS_SEARCH]
+    expected["generated/seo/index.html"] = [RASTERIZER_APPLICATION]
 
     assert observed == expected
+
+
+def test_shell_pages_use_static_pending_state_and_fail_open_stylesheet(
+    rendered_serverless_pages,
+):
+    pages = {**_checked_in_pages(), **rendered_serverless_pages}
+    shell_pages = {
+        name: source
+        for name, source in pages.items()
+        if any(
+            script_url.split("?", 1)[0] == "/staging-shell.js"
+            for _mode, script_url in _parse_html(source).script_sources
+        )
+    }
+
+    assert shell_pages
+    for name, source in shell_pages.items():
+        assert re.search(
+            r'<html\b[^>]*\bclass="[^"]*\bstaging-shell-pending\b[^"]*"',
+            source,
+        ), f"{name} must declare the pending state before scripts execute"
+        assert 'href="/staging-shell-v2.css"' in source
+
+    fail_open = (WEB / "staging-shell-v2.css").read_text(encoding="utf-8")
+    assert "@keyframes staging-shell-fail-open" in fail_open
+    assert "animation:staging-shell-fail-open 0s 3s forwards" in fail_open
+
+
+def test_fail_open_stylesheet_uploads_before_serverless_html():
+    deploy = DEPLOY.read_text(encoding="utf-8")
+    asset = 'aws s3 cp "$REPO_ROOT/serverless_web/staging-shell-v2.css"'
+    first_html = 'aws s3 cp "$BUILD_DIR/seo/index.html"'
+
+    assert asset in deploy
+    assert deploy.index(asset) < deploy.index(first_html)
+    assert "public,max-age=31536000,immutable" in deploy[
+        deploy.index(asset) : deploy.index(asset) + 300
+    ]
 
 
 def test_serverless_sources_and_rendered_routes_have_no_inline_handlers_or_urls(
@@ -302,6 +343,7 @@ def test_new_script_dependencies_must_upload_before_dependent_html(
         "source/history.html": '$REPO_ROOT/serverless_web/history.html',
         "source/admin.html": '$REPO_ROOT/serverless_web/admin.html',
         "source/vault.html": '$REPO_ROOT/serverless_web/vault.html',
+        "source/holographic-redirect.html": '$REPO_ROOT/serverless_web/holographic-redirect.html',
         "source/release-story.html": '$REPO_ROOT/serverless_web/release-story.html',
         "generated/depthmap.html": '$BUILD_DIR/depthmap.html',
         "generated/community-set": '$BUILD_DIR/community-set',
