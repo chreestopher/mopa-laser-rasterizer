@@ -1,4 +1,4 @@
-"""Curated rolling-gear artwork generation for SpiralGrap Lab."""
+"""Curated rolling-gear artwork generation for SpiralGraph Lab."""
 
 from __future__ import annotations
 
@@ -47,26 +47,26 @@ def _integer(value, name, allowed):
 
 def validate_spiralgrap_config(raw):
     if not isinstance(raw, dict):
-        raise ValueError("SpiralGrap settings could not be read")
-    name = str(raw.get("project_name") or "SpiralGrap Project").strip()[:120]
+        raise ValueError("SpiralGraph settings could not be read")
+    name = str(raw.get("project_name") or "SpiralGraph Project").strip()[:120]
     diameter = _number(raw.get("diameter_mm", 150), "Finished diameter", 20, 1000)
     width = _number(raw.get("workbed_width_mm", diameter), "Workbed width", diameter, 3000)
     height = _number(raw.get("workbed_height_mm", diameter), "Workbed height", diameter, 3000)
     layers = raw.get("layers")
     if not isinstance(layers, list) or not 1 <= len(layers) <= 6:
-        raise ValueError("A SpiralGrap project needs 1 to 6 drawing layers")
+        raise ValueError("A SpiralGraph project needs 1 to 6 drawing layers")
     clean_layers = []
     svg_characters = 0
     for index, source in enumerate(layers, start=1):
         if not isinstance(source, dict):
-            raise ValueError(f"SpiralGrap layer {index} could not be read")
+            raise ValueError(f"SpiralGraph layer {index} could not be read")
         track = str(source.get("track") or "circle").strip().lower()
         if track not in TRACKS:
-            raise ValueError(f"SpiralGrap layer {index} has an unsupported track plate")
+            raise ValueError(f"SpiralGraph layer {index} has an unsupported track plate")
         custom_svg = source.get("custom_svg")
         if track == "custom":
             if not isinstance(custom_svg, dict) or not isinstance(custom_svg.get("svg"), str):
-                raise ValueError(f"SpiralGrap layer {index} needs a closed-path SVG track")
+                raise ValueError(f"SpiralGraph layer {index} needs a closed-path SVG track")
             svg_characters += len(custom_svg["svg"])
             svg_to_unit_geometry(custom_svg, padding=.02)
             custom_svg = {"name": str(custom_svg.get("name") or "custom-track.svg")[:120], "svg": custom_svg["svg"]}
@@ -75,10 +75,10 @@ def validate_spiralgrap_config(raw):
         side = str(source.get("side") or "inside").strip().lower()
         direction = str(source.get("direction") or "clockwise").strip().lower()
         if side not in SIDES or direction not in DIRECTIONS:
-            raise ValueError(f"SpiralGrap layer {index} has an invalid rolling choice")
+            raise ValueError(f"SpiralGraph layer {index} has an invalid rolling choice")
         output_mode = str(source.get("output_mode") or "line").strip().lower()
         if output_mode not in OUTPUT_MODES:
-            raise ValueError(f"SpiralGrap layer {index} has an invalid output mode")
+            raise ValueError(f"SpiralGraph layer {index} has an invalid output mode")
         clean_layers.append({
             "name": str(source.get("name") or f"Drawing {index}").strip()[:80] or f"Drawing {index}",
             "track": track,
@@ -94,9 +94,9 @@ def validate_spiralgrap_config(raw):
             "fill_thickness_mm": _number(source.get("fill_thickness_mm", 1.2), "Fill thickness", .1, 25),
         })
     if svg_characters > 120_000:
-        raise ValueError("Custom SpiralGrap SVG tracks contain too much data")
+        raise ValueError("Custom SpiralGraph SVG tracks contain too much data")
     return {
-        "project_name": name or "SpiralGrap Project",
+        "project_name": name or "SpiralGraph Project",
         "diameter_mm": diameter,
         "workbed_width_mm": width,
         "workbed_height_mm": height,
@@ -270,7 +270,7 @@ def write_lightburn(path, config, generated):
             project.add_layer(_PortableLayer(config["score_setting"], lightburn_index, f"{index + 1:02d} {layer['name']} track", "Cut"))
             project.add(lightburn.Path(_coords(outline, center_x, center_y), closed=True).layer(lightburn_index))
             lightburn_index += 1
-    project.set_notes(f"SpiralGrap Lab\nProject: {config['project_name']}\nDiameter: {config['diameter_mm']:g} mm\nReview every path and laser setting before execution.", show_on_load=True)
+    project.set_notes(f"SpiralGraph Lab\nProject: {config['project_name']}\nDiameter: {config['diameter_mm']:g} mm\nReview every path and laser setting before execution.", show_on_load=True)
     project.write(path)
 
 
@@ -278,7 +278,7 @@ def build_spiralgrap_exports(output_directory, config):
     clean, generated = generate_spiralgrap(config)
     directory = Path(output_directory)
     directory.mkdir(parents=True, exist_ok=True)
-    stem = "".join(c.lower() if c.isalnum() else "-" for c in clean["project_name"]).strip("-") or "spiralgrap"
+    stem = "".join(c.lower() if c.isalnum() else "-" for c in clean["project_name"]).strip("-") or "spiralgraph"
     stem = "-".join(part for part in stem.split("-") if part)[:80]
     svg_path = directory / f"{stem}.svg"
     lightburn_path = directory / f"{stem}.lbrn2"

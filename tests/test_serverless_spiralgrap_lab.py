@@ -9,15 +9,15 @@ def read(path):
 
 
 def test_spiralgrap_page_uses_external_assets_and_classic_controls():
-    page = read("serverless_web/spiralgrap.html")
-    client = read("serverless_web/spiralgrap.js")
-    assert 'src="/spiralgrap.js?v=1"' in page
-    assert 'href="/spiralgrap.css?v=1"' in page
+    page = read("serverless_web/spiralgraph.html")
+    client = read("serverless_web/spiralgraph.js")
+    assert 'src="/spiralgraph.js?v=1"' in page
+    assert 'href="/spiralgraph.css?v=1"' in page
     assert "Track plate" in client and "Rolling gear" in client and "Pen hole" in client
     assert "Starting mark" in client and "Rolling position" in client
     assert "output_mode" in client and "fill_thickness_mm" in client
     assert "Line / Cut · open path" in client and "Filled ribbon · closed path" in client
-    assert 'api("/spiralgrap/jobs"' in client
+    assert 'api("/spiralgraph/jobs"' in client
 
 
 def test_spiralgrap_is_deployed_linked_documented_and_history_backed():
@@ -29,19 +29,21 @@ def test_spiralgrap_is_deployed_linked_documented_and_history_backed():
     worker = read("worker.py")
     template = read("ecs/serverless-staging-web.yaml")
     history = read("serverless_web/history.js")
-    for filename in ("spiralgrap.html", "spiralgrap.js", "spiralgrap.css"):
+    for filename in ("spiralgraph.html", "spiralgraph.js", "spiralgraph.css"):
         assert filename in deploy
-    assert '"/spiralgrap.html"' in shell and 'href="/spiralgrap.html"' in landing
-    assert '"spiralgrap-lab": _page(' in docs
-    assert 'path == "/spiralgrap/jobs"' in api
+    assert '"/spiralgraph.html"' in shell and 'href="/spiralgraph.html"' in landing
+    assert '"spiralgraph-lab": _page(' in docs
+    assert '"/spiralgraph/jobs", "/spiralgrap/jobs"' in api
+    assert "RouteKey: POST /spiralgraph/jobs" in template
     assert "RouteKey: POST /spiralgrap/jobs" in template
+    assert 'url=/spiralgraph.html' in read("serverless_web/spiralgrap.html")
     assert 'payload.get("job_type") == "spiralgrap"' in worker
     assert "run_spiralgrap_job" in worker
-    assert 'spiralgrap:"SpiralGrap Lab"' in history
+    assert 'spiralgrap:"SpiralGraph Lab"' in history
 
 
 def test_spiralgrap_validates_custom_svg_and_processing_modes_on_both_sides():
-    client = read("serverless_web/spiralgrap.js")
+    client = read("serverless_web/spiralgraph.js")
     api = read("serverless_api/handler.py")
     backend = read("lib/spiralgrap.py")
     for field in ("track", "gear_teeth", "pen_hole", "side", "start_mark", "direction", "output_mode", "fill_thickness_mm"):
