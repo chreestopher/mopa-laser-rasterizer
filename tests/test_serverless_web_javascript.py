@@ -153,50 +153,58 @@ LEGACY_REDIRECT_HASH = "784998b36758a08dfefab6f0fea37fbe5846fb551eae8eb74352f1ce
 RASTERIZER_APPLICATION_HASH = "619e744be7fa9f7fa8c009d0ad30f19fc46109405cc7a064cd99e199f7da3d87"
 RELEASE_STORY_HASH = "261e9c866cbd5628036f898e027a1051cac5dc3b1552fa7d825f525fb14ded5d"
 COMMUNITY_SET_HASH = "5626d1eaf3a88fe21799fd0c066f210417bfe99b66cef513f026da2550481839"
-DOCS_SEARCH_HASH = "bbadc1482a7d8698d5a8018500f0e0a9cfb2b80431a467120cf31bbf52026d8d"
+DOCS_SEARCH_HASH = "ecc28e0ed71b4db2503083131f94f84e6ea0e24605d528ab39e6ee484cefcc56"
 
-ALLOWED_SOURCE_INLINE_SCRIPT_HASHES = {
-    "source/admin.html": {SHELL_GUARD_HASH},
-    "source/color-lab.html": {SHELL_GUARD_HASH},
-    "source/history.html": {SHELL_GUARD_HASH},
-    "source/holographic.html": {SHELL_GUARD_HASH},
-    "source/holographic-redirect.html": {LEGACY_REDIRECT_HASH},
-    "source/index.html": {SHELL_GUARD_HASH, RASTERIZER_APPLICATION_HASH},
-    "source/release-story.html": {SHELL_GUARD_HASH, RELEASE_STORY_HASH},
-    "source/vault.html": {SHELL_GUARD_HASH},
+SHELL_GUARD = ("classic", SHELL_GUARD_HASH)
+LEGACY_REDIRECT = ("classic", LEGACY_REDIRECT_HASH)
+RASTERIZER_APPLICATION = ("classic", RASTERIZER_APPLICATION_HASH)
+RELEASE_STORY = ("classic", RELEASE_STORY_HASH)
+COMMUNITY_SET = ("classic", COMMUNITY_SET_HASH)
+DOCS_SEARCH = ("classic", DOCS_SEARCH_HASH)
+
+ALLOWED_SOURCE_INLINE_SCRIPTS = {
+    "source/admin.html": [SHELL_GUARD],
+    "source/color-lab.html": [SHELL_GUARD],
+    "source/history.html": [SHELL_GUARD],
+    "source/holographic.html": [SHELL_GUARD],
+    "source/holographic-redirect.html": [LEGACY_REDIRECT],
+    "source/index.html": [SHELL_GUARD, RASTERIZER_APPLICATION],
+    "source/mandala.html": [],
+    "source/release-story.html": [SHELL_GUARD, RELEASE_STORY],
+    "source/spiralgrap.html": [],
+    "source/spiralgraph.html": [],
+    "source/vault.html": [SHELL_GUARD],
 }
 
 
 def test_checked_in_serverless_html_does_not_gain_inline_javascript():
     observed = {
-        name: {_digest(script) for _mode, script in parser.inline_scripts}
+        name: [(mode, _digest(script)) for mode, script in parser.inline_scripts]
         for name, source in _checked_in_pages().items()
-        if (parser := _parse_html(source)).inline_scripts
+        if (parser := _parse_html(source))
     }
 
-    assert observed == ALLOWED_SOURCE_INLINE_SCRIPT_HASHES
+    assert observed == ALLOWED_SOURCE_INLINE_SCRIPTS
 
 
 def test_rendered_serverless_html_does_not_gain_inline_javascript(
     rendered_serverless_pages,
 ):
     observed = {
-        name: {_digest(script) for _mode, script in parser.inline_scripts}
+        name: [(mode, _digest(script)) for mode, script in parser.inline_scripts]
         for name, source in rendered_serverless_pages.items()
-        if (parser := _parse_html(source)).inline_scripts
+        if (parser := _parse_html(source))
     }
-    expected = {
-        name: (
-            {SHELL_GUARD_HASH, COMMUNITY_SET_HASH}
-            if name == "generated/community-set"
-            else {SHELL_GUARD_HASH, DOCS_SEARCH_HASH}
-            if name == "generated/docs/index.html"
-            else {SHELL_GUARD_HASH, RASTERIZER_APPLICATION_HASH}
-            if name == "generated/seo/index.html"
-            else {SHELL_GUARD_HASH}
-        )
-        for name in rendered_serverless_pages
-    }
+    expected = {name: [SHELL_GUARD] for name in rendered_serverless_pages}
+    expected["generated/community-set"] = [SHELL_GUARD, COMMUNITY_SET]
+    expected["generated/docs/index.html"] = [SHELL_GUARD, DOCS_SEARCH]
+    expected["generated/seo/index.html"] = [SHELL_GUARD, RASTERIZER_APPLICATION]
+    for zero_inline_page in (
+        "generated/seo/mandala.html",
+        "generated/seo/spiralgrap.html",
+        "generated/seo/spiralgraph.html",
+    ):
+        expected[zero_inline_page] = []
 
     assert observed == expected
 

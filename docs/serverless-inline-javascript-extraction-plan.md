@@ -4,7 +4,15 @@
 
 Move executable browser JavaScript used by the deployed serverless site into tracked `.js` files without changing URLs, authentication, storage, rendering, payloads, exports, or mobile behavior. This covers checked-in pages under `serverless_web/`, browser modules deployed from `static/`, and every HTML artifact produced by the builders called from `dev_setup/deploy_serverless_staging_web.sh`. Production wraps the same web deployment path.
 
-This is not permission to refactor while extracting. Preserve classic versus module execution, DOM-ready timing, script order, globals, and cache revisions. Non-executable `application/json` and `application/ld+json` blocks may remain inline when they contain data only; inventory them separately before CSP enforcement.
+This is not permission to refactor while extracting. Preserve classic versus module execution, DOM-ready timing, script order, globals, and cache revisions. Non-executable `application/json` and `application/ld+json` blocks may remain inline when they contain data only; inventory them separately before CSP enforcement. Serialize embedded JSON with an HTML-safe encoder that prevents a value such as `</script>` from terminating the element; never concatenate user-controlled text into a script-data block.
+
+## Active extraction checkpoint and promotion boundary
+
+- Rollback commit: `aa911ea2bad3e3d86c92be7839bcd5fb87730940` (`origin/staging` after PR #123).
+- Extraction branch: `feature/inline-js-phase-1`, created directly from that commit.
+- Until extraction acceptance is complete, keep this branch and subsequent staging changes limited to extraction, its tests, deployment ordering, and directly required documentation. Do not mix feature work into this sequence.
+- Staging is the only permitted deployment target during extraction validation. Do not create a production PR, merge to `main`, manually dispatch the production workflow, or deploy production until the owner explicitly requests the production PR after acceptance testing.
+- Production deployment is currently isolated by workflow configuration: staging deploys only from `staging`; production deploys only from `main` or an explicit production workflow dispatch; production PRs are required to originate from `staging`.
 
 ## Current staging inventory
 
@@ -108,7 +116,7 @@ Keep Depthmap sources under `static/` unless a separate move is justified. Its l
 1. In a dedicated change, move the large `index.html` block byte-for-byte into `serverless_web/rasterizer.js`. Load it as a classic end-of-body script. Do not format, rename, deduplicate, change event registration, or convert it to a module.
 2. Preserve current startup timing: markup exists, `load()` starts immediately, and the deferred shell may not yet have run.
 3. Prove byte equality after accounting only for the surrounding `<script>` tags/newline, run classic syntax checks, and compare stored characterization results and payloads.
-4. Upload `rasterizer.js` first, then HTML with a revised query. Keep the previous object/path through at least the rollback window.
+4. Publish the extracted client under an immutable, content-versioned name, upload it first, verify it, and only then update HTML to reference it. Keep the previous asset available through at least the rollback window. Query revisions may remain as diagnostics, but they are not the release boundary.
 
 ### Phase 3 - externalize generated-route behavior
 
@@ -146,7 +154,7 @@ At desktop and representative mobile viewports, assert no unexpected horizontal 
 
 ## Delivery and rollback
 
-Every phase is a separate commit and staging release. Deployment order is always: upload every new/revised JavaScript, CSS, and transitive module dependency; verify object existence/content type; upload dependent HTML last; then invalidate CloudFront. Query-string revisions improve cache revalidation but are not an atomic release mechanism.
+Every phase is a separate commit and staging release. Deployment order is always: publish every new/revised JavaScript, CSS, and transitive module dependency under immutable content-versioned names; verify object existence/content type; upload dependent HTML last; then invalidate CloudFront. Query-string revisions improve cache revalidation but are not an atomic release mechanism. Do not overwrite an asset in place when old cached HTML and new HTML require different behavior.
 
 Keep old asset names for at least one release when renaming because cached HTML may still request them. Record the source commit and deployed asset manifest. If a stage fails, stop promotion, revert the phase commit, and redeploy the last known-good repository revision using the same asset-first ordering; do not repair production by manually mixing object generations. Verify root plus affected routes, console/network, auth, one representative payload, and download links after rollback. If CSP later fails, roll back only the security-header change to the prior report-only policy and leave known-good external assets in place.
 
@@ -154,7 +162,9 @@ Keep old asset names for at least one release when renaming because cached HTML 
 
 For each phase, run the focused JavaScript policy/syntax suite, relevant feature tests, all builders/scans, import resolution, and `bash -n` in the supported Linux/CI path. Serve locally over HTTP; do not use `file://` for module validation. Run the characterization suite before/after each boundary, then repeat critical signed-out/signed-in and job/download flows on staging.
 
-Final acceptance requires: no executable inline script bodies, `on*` attributes, or `javascript:` URLs in any deployed output; data blocks documented and inert; scripts checked in their actual mode; every direct and imported asset uploaded before every consumer; baseline-equivalent desktop/mobile behavior; clean staging console/network; and a report-only CSP observation showing `script-src` can drop `'unsafe-inline'`. CSP enforcement remains a later decision.
+Each extraction PR must pass a minimum gate: the JavaScript policy/inventory suite, syntax and import-resolution checks for every touched entry, the focused route characterization tests, a shared shell/auth smoke suite, generated-artifact scans, and deployment-script syntax validation. The full browser matrix remains the staging promotion gate rather than making every small PR rerun unrelated workflows.
+
+Final acceptance requires: no executable inline script bodies, `on*` attributes, or `javascript:` URLs in any deployed output; data blocks documented, inert, and safely serialized for HTML; scripts checked in their actual mode; every direct and imported asset uploaded before every consumer; baseline-equivalent desktop/mobile behavior; clean staging console/network; and a report-only CSP observation showing `script-src` can drop `'unsafe-inline'`. CSP enforcement remains a later decision.
 
 ## Project skill
 
