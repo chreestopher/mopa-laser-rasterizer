@@ -10,7 +10,7 @@ def read(path):
 
 def test_mandala_lab_uses_external_assets_and_accessible_previews():
     page = read("serverless_web/mandala.html")
-    assert 'src="/mandala.js?v=6"' in page
+    assert 'src="/mandala.js?v=7"' in page
     assert 'href="/mandala.css?v=1"' in page
     assert "<script>" not in page
     assert 'id="layerPreviewSlider"' in page and 'type="range"' in page
@@ -68,6 +68,15 @@ def test_mandala_preview_uses_slider_and_updates_live_with_layer_settings():
     assert "function syncPreviewSelector()" in client
     assert "syncPreviewSelector();schedulePreview()" in client
     assert 'data-action="select"' not in client
+
+
+def test_each_mandala_layer_can_be_randomized_or_reset_to_defaults():
+    client = read("serverless_web/mandala.js")
+    assert 'data-action="randomize">Randomize' in client
+    assert 'data-action="reset">Reset to defaults' in client
+    assert "function randomizedLayer(layer,index)" in client
+    assert 'if(action==="randomize")' in client
+    assert 'if(action==="reset")' in client
 
 
 def test_mandala_support_labels_state_connectivity_truthfully():
