@@ -1,41 +1,14 @@
 <!doctype html>
-<html lang="en" class="staging-shell-pending">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>SpiralGrap Lab | MOPA Laser Rasterizer</title>
-  <meta name="description" content="Create laser-ready rolling-gear artwork with familiar virtual plates, gears, pen holes, and custom closed SVG tracks.">
-  <link rel="stylesheet" href="/machine_chrome.css?v=3">
-  <link rel="stylesheet" href="/staging-shell.css?v=1">
-  <link rel="stylesheet" href="/staging-pages.css?v=3">
-  <link rel="stylesheet" href="/spiralgrap.css?v=1">
-  <script src="/staging-shell.js?v=3" defer></script>
-  <script src="/spiralgrap.js?v=1" type="module"></script>
+  <meta name="robots" content="noindex">
+  <meta http-equiv="refresh" content="0;url=/spiralgraph.html">
+  <link rel="canonical" href="/spiralgraph.html">
+  <title>SpiralGraph Lab moved</title>
 </head>
 <body>
-  <main id="main-content" class="spiralgrap-shell">
-    <section id="registeredAccess" class="spiralgrap-panel" hidden><h2>Operator access required</h2><p>SpiralGrap projects use saved Processing Palettes and retained Job History, so this laboratory requires a signed-in account.</p><a id="loginLink" class="spiralgrap-button" href="/">Sign in</a></section>
-    <div id="registeredContent" hidden>
-      <section class="spiralgrap-panel"><p class="eyebrow">Experimental rolling-gear vector construction</p><h2>SpiralGrap Lab</h2><p>Choose familiar virtual track plates, numbered gears, pen holes, and start marks. Every available combination is deliberately bounded to produce a closed, recognizable rolling-gear pattern. A custom closed SVG can replace the outer track.</p></section>
-      <form id="spiralgrapForm">
-        <section class="spiralgrap-panel"><h2>Project and machine setup</h2><div class="control-grid">
-          <label>Project name<input id="projectName" maxlength="120" value="SpiralGrap Study"></label>
-          <label>Finished size (mm)<input id="diameter" type="number" min="20" max="1000" step="1" value="150"></label>
-          <label>Workbed width (mm)<input id="workbedWidth" type="number" min="20" max="3000" step="1" value="175"></label>
-          <label>Workbed height (mm)<input id="workbedHeight" type="number" min="20" max="3000" step="1" value="175"></label>
-          <label>Processing Palette<select id="processingPalette"></select></label>
-          <label>Material<select id="processingMaterial"></select></label>
-          <label>Line / Cut setting<select id="scoreSetting"></select></label>
-          <label>Fill setting<select id="fillSetting"></select></label>
-        </div><p id="paletteStatus" class="fine-print">Loading saved Processing Palettes…</p></section>
-        <section class="spiralgrap-panel"><div class="section-heading"><div><h2>Drawing layers</h2><p>Layer order is preserved in SVG and LightBurn output.</p></div><button id="addLayer" type="button" class="spiralgrap-button">Add drawing</button></div><div id="layerList" class="layer-list"></div></section>
-        <section class="spiralgrap-panel preview-workspace">
-          <div><div class="preview-heading"><div><h2>Single drawing</h2><p id="layerPreviewName">Drawing 1</p></div><output id="layerPreviewPosition">Drawing 1 of 1</output></div><label class="preview-layer-control">Preview drawing<input id="layerPreviewSlider" type="range" min="1" max="1" step="1" value="1"></label><canvas id="activePreview" width="720" height="720" aria-label="Selected SpiralGrap drawing preview"></canvas></div>
-          <div><h2>Combined project</h2><canvas id="stackPreview" width="720" height="720" aria-label="Combined SpiralGrap project preview"></canvas></div>
-        </section>
-        <section class="spiralgrap-panel"><p><strong>Final generation:</strong> the worker rebuilds every rolling path, verifies its bounds, and creates editable SVG, LightBurn, and manifest files. Always review geometry and laser settings before execution.</p><button id="generate" type="submit" class="spiralgrap-button primary">Generate project for review</button><p id="status" role="status" aria-live="polite">Configure the drawings and inspect both previews before generating.</p><div id="outputs" class="output-grid"></div></section>
-      </form>
-    </div>
-  </main>
+  <p>The laboratory has moved to <a href="/spiralgraph.html">SpiralGraph Lab</a>.</p>
 </body>
 </html>

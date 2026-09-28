@@ -303,7 +303,7 @@ def run_spiralgrap_job(payload, upload_folder):
     def progress(message):
         job_runtime.append_log(task_id, f"[{datetime.now().strftime('%H:%M:%S')}] {message}")
     job_runtime.set_status(task_id, "processing")
-    progress("Dedicated worker claimed the SpiralGrap Lab job.")
+    progress("Dedicated worker claimed the SpiralGraph Lab job.")
     job_directory = os.path.join(upload_folder, f"{task_id}_spiralgrap")
     os.makedirs(job_directory, exist_ok=True)
     config = payload.get("spiralgrap") or {}
@@ -319,7 +319,7 @@ def run_spiralgrap_job(payload, upload_folder):
         progress(f"[Durable output upload {position}/{len(result['outputs'])}] DONE")
     update_user_job(task_id, "completed", output_keys=output_keys)
     job_runtime.set_status(task_id, "completed")
-    progress(f"SpiralGrap complete: {len(output_keys)} downloads are ready for manual review.")
+    progress(f"SpiralGraph complete: {len(output_keys)} downloads are ready for manual review.")
 
 
 def run_holographic_artwork_job(payload, upload_folder):

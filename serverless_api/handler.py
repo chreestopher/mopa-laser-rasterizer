@@ -4476,9 +4476,9 @@ def submit_mandala_job(event):
 
 
 def validate_spiralgrap_request(data):
-    """Validate the bounded, physical-set-style SpiralGrap controls."""
+    """Validate the bounded, physical-set-style SpiralGraph controls."""
     if not isinstance(data, dict):
-        raise ValueError("SpiralGrap settings could not be read")
+        raise ValueError("SpiralGraph settings could not be read")
     def number(key, minimum, maximum, default):
         try:
             value = float(data.get(key, default))
@@ -4490,25 +4490,25 @@ def validate_spiralgrap_request(data):
     diameter = number("diameter_mm", 20, 1000, 150)
     layers = data.get("layers")
     if not isinstance(layers, list) or not 1 <= len(layers) <= 6:
-        raise ValueError("A SpiralGrap project needs 1 to 6 drawing layers")
+        raise ValueError("A SpiralGraph project needs 1 to 6 drawing layers")
     permitted = {"name", "track", "custom_svg", "gear_teeth", "pen_hole", "side", "start_mark", "direction", "rotation_quarter_turns", "include_track", "output_mode", "fill_thickness_mm"}
     clean_layers, total_svg = [], 0
     for index, layer in enumerate(layers, start=1):
         if not isinstance(layer, dict) or set(layer) - permitted:
-            raise ValueError(f"SpiralGrap drawing {index} contains unsupported settings")
+            raise ValueError(f"SpiralGraph drawing {index} contains unsupported settings")
         track = str(layer.get("track") or "circle").lower()
         if track not in {"circle", "oval", "rounded_square", "rounded_triangle", "custom"}:
-            raise ValueError(f"SpiralGrap drawing {index} has an unsupported track plate")
+            raise ValueError(f"SpiralGraph drawing {index} has an unsupported track plate")
         custom_svg = layer.get("custom_svg")
         if track == "custom":
             if not isinstance(custom_svg, dict) or set(custom_svg) - {"name", "svg"}:
-                raise ValueError(f"SpiralGrap drawing {index} needs a closed-path SVG track")
+                raise ValueError(f"SpiralGraph drawing {index} needs a closed-path SVG track")
             svg_text = custom_svg.get("svg")
             if not isinstance(svg_text, str) or not svg_text.strip() or len(svg_text) > 65_536:
-                raise ValueError(f"SpiralGrap drawing {index}'s custom SVG must be no larger than 64 KB")
+                raise ValueError(f"SpiralGraph drawing {index}'s custom SVG must be no larger than 64 KB")
             lowered = svg_text.lower()
             if not re.search(r"<svg(?:\s|>)", lowered) or any(token in lowered for token in ("<!doctype", "<!entity", "<script", "<foreignobject", "<image", "<use", "javascript:", "data:", "url(", "href=", "xlink:href=")):
-                raise ValueError(f"SpiralGrap drawing {index}'s custom SVG contains unsupported content")
+                raise ValueError(f"SpiralGraph drawing {index}'s custom SVG contains unsupported content")
             total_svg += len(svg_text)
             custom_svg = {"name": str(custom_svg.get("name") or "custom-track.svg")[:120], "svg": svg_text}
         else:
@@ -4518,19 +4518,19 @@ def validate_spiralgrap_request(data):
             try:
                 value = int(value) if all(isinstance(item, int) for item in choices) else str(value).lower()
             except (TypeError, ValueError) as error:
-                raise ValueError(f"SpiralGrap drawing {index} has an invalid {key.replace('_', ' ')}") from error
+                raise ValueError(f"SpiralGraph drawing {index} has an invalid {key.replace('_', ' ')}") from error
             if value not in choices:
-                raise ValueError(f"SpiralGrap drawing {index} has an invalid {key.replace('_', ' ')}")
+                raise ValueError(f"SpiralGraph drawing {index} has an invalid {key.replace('_', ' ')}")
             return value
         try:
             thickness = float(layer.get("fill_thickness_mm", 1.2))
         except (TypeError, ValueError) as error:
-            raise ValueError(f"SpiralGrap drawing {index} ribbon thickness must be a number") from error
+            raise ValueError(f"SpiralGraph drawing {index} ribbon thickness must be a number") from error
         if not math.isfinite(thickness) or not .1 <= thickness <= 25:
-            raise ValueError(f"SpiralGrap drawing {index} ribbon thickness must be between 0.1 and 25 mm")
+            raise ValueError(f"SpiralGraph drawing {index} ribbon thickness must be between 0.1 and 25 mm")
         include_track = layer.get("include_track", False)
         if not isinstance(include_track, bool):
-            raise ValueError(f"SpiralGrap drawing {index} track outline choice must be on or off")
+            raise ValueError(f"SpiralGraph drawing {index} track outline choice must be on or off")
         clean_layers.append({
             "name": str(layer.get("name") or f"Drawing {index}").strip()[:80] or f"Drawing {index}",
             "track": track, "custom_svg": custom_svg,
@@ -4545,9 +4545,9 @@ def validate_spiralgrap_request(data):
             "fill_thickness_mm": thickness,
         })
     if total_svg > 120_000:
-        raise ValueError("Custom SpiralGrap SVG tracks contain too much data")
+        raise ValueError("Custom SpiralGraph SVG tracks contain too much data")
     return {
-        "project_name": str(data.get("project_name") or "SpiralGrap Project").strip()[:120] or "SpiralGrap Project",
+        "project_name": str(data.get("project_name") or "SpiralGraph Project").strip()[:120] or "SpiralGraph Project",
         "diameter_mm": diameter,
         "workbed_width_mm": number("workbed_width_mm", diameter, 3000, diameter),
         "workbed_height_mm": number("workbed_height_mm", diameter, 3000, diameter),
@@ -4567,7 +4567,7 @@ def submit_spiralgrap_job(event):
     config = validate_spiralgrap_request(body_json(event))
     library = owned_material(owner, config["processing_palette_id"])
     if not library or material_library_intent(library.get("library_intent")) != "processing_palette":
-        raise ValueError("SpiralGrap jobs require a saved Processing Palette")
+        raise ValueError("SpiralGraph jobs require a saved Processing Palette")
     entries = [entry for entry in ((library.get("summary") or {}).get("entries") or []) if str(entry.get("material") or "") == config["material"]]
     if not entries:
         raise ValueError("Choose a material from the selected Processing Palette")
@@ -5672,7 +5672,7 @@ def handler(event, _context):
             return create_color_discovery_grid(event)
         if method == "POST" and path == "/mandala/jobs":
             return submit_mandala_job(event)
-        if method == "POST" and path == "/spiralgrap/jobs":
+        if method == "POST" and path in {"/spiralgraph/jobs", "/spiralgrap/jobs"}:
             return submit_spiralgrap_job(event)
         color_parts = path.strip("/").split("/")
         if (method == "POST" and len(color_parts) == 3

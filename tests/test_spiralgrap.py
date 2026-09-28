@@ -19,7 +19,7 @@ def layer(**overrides):
 
 def config(*layers):
     return {
-        "project_name": "SpiralGrap Test", "diameter_mm": 120,
+        "project_name": "SpiralGraph Test", "diameter_mm": 120,
         "workbed_width_mm": 180, "workbed_height_mm": 160,
         "score_setting": {"type": "Cut", "settings": {"speed": 100}},
         "fill_setting": {"type": "Scan", "settings": {"speed": 200}},
