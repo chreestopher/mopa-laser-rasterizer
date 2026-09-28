@@ -1327,6 +1327,23 @@ DOCS.update({
 
 
 DOCS.update({
+    "spiralgrap-lab": _page(
+        "SpiralGrap Lab",
+        "Create layered rolling-gear artwork with familiar virtual plates, numbered gears, pen holes, and custom closed SVG tracks.",
+        "SpiralGrap Lab translates the physical choices of a classic geared drawing set into bounded digital controls. The available combinations close cleanly and remain recognizable as rolling-gear designs, while shaped tracks and layered output extend the idea for laser work.",
+        [
+            ("Open the laboratory", [{"before": "Signed-in members can open ", "link_text": "SpiralGrap Lab", "path": "/spiralgrap.html", "after": ". Generated SVG, LightBurn, and manifest files are retained in Job History."}]),
+            ("Choose a virtual drawing set", ["Track Plate selects a circular, oval, rounded triangular, rounded square, or custom closed SVG boundary. Rolling Gear selects a numbered virtual gear, Pen Hole moves the drawing point from near the gear center toward its edge, and Starting Mark changes the phase of the design. Inside or Outside rolling and clockwise or counterclockwise travel produce coordinated variations without exposing arbitrary equations.", "Custom SVG uses the largest usable closed vector path in the uploaded file. Keep that path simple, smooth, and free of self-intersections. Embedded images, scripts, linked resources, and unsupported SVG elements are rejected."]),
+            ("Choose Line or Fill output", ["Line / Cut exports the rolling curve as a true open path and initializes its LightBurn layer from the selected Line setting. Filled Ribbon expands the rolling curve to the chosen physical thickness, exports closed vector boundaries, and initializes its layer from the selected Fill setting.", "Filled ribbons may intersect themselves. Those intersections are intentionally unified into a filled vector region, so inspect small openings and narrow features at the intended physical size before engraving."]),
+            ("Combine drawing layers", ["Add, duplicate, remove, and reorder up to six drawings. The single-drawing preview isolates the slider-selected layer, while the combined preview overlays the entire project in distinct colors. Including the track outline adds a lighter reference path to that drawing's layer."]),
+            ("Review before execution", ["Browser previews are responsive design aids. The worker rebuilds the authoritative rolling geometry and centers it on the described workbed. Open the generated LightBurn project, verify the workbed and origin, inspect every layer and path, confirm output modes and all machine settings, and run a safe material test before executing the full project."]),
+        ],
+        ["material-vault", "job-history", "lightburn-export"],
+    ),
+})
+
+
+DOCS.update({
     "fauxlogram-tutorial": _page(
         "MOPA Madness: The Wizzard of Awes' Full Tutorial on Fauxlographic Laser Engraving",
         "A calibration-first, step-by-step guide to making angular and iridescent laser artwork with Fauxlographic Etching Lab and Krasnow Grating geometry.",
@@ -1583,6 +1600,7 @@ DOC_GROUPS = [
     ("Fauxlographic Etching Lab", ["holographic-etching", "what-is-iridescence", "iridescent-laser-engraving", "iridescent-engraving-challenges", "holographic-lab-workflow", "holographic-calibration", "analyze-calibration-photo", "holographic-recipes", "holographic-artwork", "diffraction-gratings", "choose-cut-mode"]),
     ("Depthmap / Relief Engraving Lab", ["depthmap-generator", "depthmap-workflow", "depth-palettes", "depthmap-adjustments", "depthmap-manual-editing", "depthmap-export", "depthmap-limitations"]),
     ("Layered Mandala Lab", ["layered-mandala-lab"]),
+    ("SpiralGrap Lab", ["spiralgrap-lab"]),
     ("Jobs and support", ["membership-benefits", "job-history", "troubleshooting"]),
 ]
 DOC_ORDER = [slug for _group, slugs in DOC_GROUPS for slug in slugs]

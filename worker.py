@@ -222,6 +222,8 @@ def run_job(raw_payload, upload_folder):
     task_id = str(payload["task_id"])
     if payload.get("job_type") == "layered_mandala":
         return run_layered_mandala_job(payload, upload_folder)
+    if payload.get("job_type") == "spiralgrap":
+        return run_spiralgrap_job(payload, upload_folder)
     if payload.get("job_type") == "holographic_artwork":
         return run_holographic_artwork_job(payload, upload_folder)
     image_name = secure_artifact_name(payload.get("image_name"), "image")
@@ -291,6 +293,33 @@ def run_layered_mandala_job(payload, upload_folder):
     progress(
         f"Layered Mandala complete: {len(output_keys)} downloads are ready for manual LightBurn review."
     )
+
+
+def run_spiralgrap_job(payload, upload_folder):
+    """Generate deterministic rolling-gear exports as a retained account job."""
+    from lib.spiralgrap import build_spiralgrap_exports
+
+    task_id = str(payload["task_id"])
+    def progress(message):
+        job_runtime.append_log(task_id, f"[{datetime.now().strftime('%H:%M:%S')}] {message}")
+    job_runtime.set_status(task_id, "processing")
+    progress("Dedicated worker claimed the SpiralGrap Lab job.")
+    job_directory = os.path.join(upload_folder, f"{task_id}_spiralgrap")
+    os.makedirs(job_directory, exist_ok=True)
+    config = payload.get("spiralgrap") or {}
+    progress(f"Building {len(config.get('layers') or [])} rolling-gear drawing layers.")
+    result = build_spiralgrap_exports(job_directory, config)
+    progress(f"Validated {result['layer_count']} drawing layers and {result['point_count']} generated points.")
+    output_keys = []
+    for position, output_path in enumerate(result["outputs"], start=1):
+        progress(f"[Durable output upload {position}/{len(result['outputs'])}] START: {os.path.basename(output_path)}")
+        key = upload_task_artifact(task_id, output_path, category="outputs", user_id=payload.get("user_id"))
+        if key:
+            output_keys.append(key)
+        progress(f"[Durable output upload {position}/{len(result['outputs'])}] DONE")
+    update_user_job(task_id, "completed", output_keys=output_keys)
+    job_runtime.set_status(task_id, "completed")
+    progress(f"SpiralGrap complete: {len(output_keys)} downloads are ready for manual review.")
 
 
 def run_holographic_artwork_job(payload, upload_folder):

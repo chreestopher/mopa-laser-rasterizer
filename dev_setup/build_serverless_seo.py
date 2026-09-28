@@ -97,6 +97,10 @@ write_static_page(
     "mandala.html", "mandala.html",
     "Build cuttable multi-layer radial mandala projects from built-in and custom SVG motifs.",
 )
+write_static_page(
+    "spiralgrap.html", "spiralgrap.html",
+    "Create laser-ready rolling-gear artwork with virtual plates, gears, pen holes, and custom closed SVG tracks.",
+)
 
 public_paths = [
     "",
@@ -107,6 +111,7 @@ public_paths = [
     "depthmap.html",
     "color-lab.html",
     "mandala.html",
+    "spiralgrap.html",
     "community-set",
     "docs",
 ]
