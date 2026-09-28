@@ -1,4 +1,5 @@
 import hashlib
+import json
 import re
 import shutil
 import subprocess
@@ -23,8 +24,12 @@ class _ServerlessHtmlParser(HTMLParser):
         self._parts: list[str] = []
         self.inline_scripts: list[tuple[str, str]] = []
         self.script_sources: list[tuple[str, str]] = []
+        self.data_scripts: list[tuple[str, str, str]] = []
         self.inline_event_attributes: list[tuple[str, str]] = []
         self.javascript_urls: list[tuple[str, str]] = []
+        self._capturing_data_type: str | None = None
+        self._capturing_data_id = ""
+        self._data_parts: list[str] = []
 
     def handle_starttag(self, tag, attrs):
         attributes = dict(attrs)
@@ -38,6 +43,13 @@ class _ServerlessHtmlParser(HTMLParser):
             return
         script_type = attributes.get("type", "").lower()
         if script_type not in EXECUTABLE_SCRIPT_TYPES:
+            if "src" not in attributes and script_type in {
+                "application/json",
+                "application/ld+json",
+            }:
+                self._capturing_data_type = script_type
+                self._capturing_data_id = attributes.get("id", "")
+                self._data_parts = []
             return
         mode = "module" if script_type == "module" else "classic"
         if "src" in attributes:
@@ -49,11 +61,23 @@ class _ServerlessHtmlParser(HTMLParser):
     def handle_data(self, data):
         if self._capturing_mode:
             self._parts.append(data)
+        elif self._capturing_data_type:
+            self._data_parts.append(data)
 
     def handle_endtag(self, tag):
         if tag == "script" and self._capturing_mode:
             self.inline_scripts.append((self._capturing_mode, "".join(self._parts)))
             self._capturing_mode = None
+        elif tag == "script" and self._capturing_data_type:
+            self.data_scripts.append(
+                (
+                    self._capturing_data_type,
+                    self._capturing_data_id,
+                    "".join(self._data_parts),
+                )
+            )
+            self._capturing_data_type = None
+            self._capturing_data_id = ""
 
 
 def _parse_html(source: str) -> _ServerlessHtmlParser:
@@ -64,6 +88,13 @@ def _parse_html(source: str) -> _ServerlessHtmlParser:
 
 def _digest(script: str) -> str:
     return hashlib.sha256(script.strip().encode("utf-8")).hexdigest()
+
+
+def _script_path(source_url: str) -> Path:
+    relative = source_url.split("?", 1)[0].lstrip("/")
+    if relative.startswith("static/"):
+        return ROOT / relative
+    return WEB / relative
 
 
 def _run_builder(*arguments: Path | str) -> None:
@@ -152,15 +183,11 @@ SHELL_GUARD_HASH = "6afe671e06228bf00df1e5b2e9542d2c9bf31bffdb040eed534930592487
 LEGACY_REDIRECT_HASH = "784998b36758a08dfefab6f0fea37fbe5846fb551eae8eb74352f1cecce9bac6"
 RASTERIZER_APPLICATION_HASH = "619e744be7fa9f7fa8c009d0ad30f19fc46109405cc7a064cd99e199f7da3d87"
 RELEASE_STORY_HASH = "261e9c866cbd5628036f898e027a1051cac5dc3b1552fa7d825f525fb14ded5d"
-COMMUNITY_SET_HASH = "5626d1eaf3a88fe21799fd0c066f210417bfe99b66cef513f026da2550481839"
-DOCS_SEARCH_HASH = "ecc28e0ed71b4db2503083131f94f84e6ea0e24605d528ab39e6ee484cefcc56"
 
 SHELL_GUARD = ("classic", SHELL_GUARD_HASH)
 LEGACY_REDIRECT = ("classic", LEGACY_REDIRECT_HASH)
 RASTERIZER_APPLICATION = ("classic", RASTERIZER_APPLICATION_HASH)
 RELEASE_STORY = ("classic", RELEASE_STORY_HASH)
-COMMUNITY_SET = ("classic", COMMUNITY_SET_HASH)
-DOCS_SEARCH = ("classic", DOCS_SEARCH_HASH)
 
 ALLOWED_SOURCE_INLINE_SCRIPTS = {
     "source/admin.html": [],
@@ -216,11 +243,40 @@ def test_rendered_serverless_html_does_not_gain_inline_javascript(
         if (parser := _parse_html(source))
     }
     expected = {name: [] for name in rendered_serverless_pages}
-    expected["generated/community-set"] = [COMMUNITY_SET]
-    expected["generated/docs/index.html"] = [DOCS_SEARCH]
-    expected["generated/seo/index.html"] = []
 
     assert observed == expected
+
+
+def test_phase_three_generated_routes_use_external_clients_and_inert_data(
+    rendered_serverless_pages,
+):
+    community = rendered_serverless_pages["generated/community-set"]
+    docs = rendered_serverless_pages["generated/docs/index.html"]
+    docs_parser = _parse_html(docs)
+
+    assert 'data-api-mode="serverless"' in community
+    assert 'src="/static/community-set-v1.js"' in community
+    assert 'src="/static/docs-search-v1.js"' in docs
+    search_data = [
+        content
+        for script_type, script_id, content in docs_parser.data_scripts
+        if script_type == "application/json" and script_id == "docs_search_index"
+    ]
+    assert len(search_data) == 1
+    assert isinstance(json.loads(search_data[0]), list)
+    assert "</script" not in search_data[0].lower()
+
+    community_client = (ROOT / "static" / "community-set-v1.js").read_text(
+        encoding="utf-8"
+    )
+    docs_client = (ROOT / "static" / "docs-search-v1.js").read_text(
+        encoding="utf-8"
+    )
+    assert "form.dataset.apiMode !== 'serverless'" in community_client
+    assert "fetch(`/community-set/settings?${query}`,{credentials:'same-origin'})" in community_client
+    assert "fetch('/config.json',{cache:'no-store'})" in community_client
+    assert "JSON.parse(document.getElementById('docs_search_index').textContent)" in docs_client
+    assert "setActiveResult(activeIndex < 0 ? 0 : activeIndex + 1)" in docs_client
 
 
 def test_shell_pages_use_static_pending_state_and_fail_open_stylesheet(
@@ -300,17 +356,21 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
         for mode, script in parser.inline_scripts:
             inline_sources[(mode, _digest(script))] = script
         for mode, source_url in parser.script_sources:
-            relative = source_url.split("?", 1)[0].lstrip("/")
-            candidate = WEB / relative
+            candidate = _script_path(source_url)
             if candidate.is_file():
                 referenced_modes.setdefault(candidate, set()).add(mode)
 
-    javascript_files = set(WEB.rglob("*.js"))
+    javascript_files = set(WEB.rglob("*.js")) | {
+        ROOT / "static" / "community-set-v1.js",
+        ROOT / "static" / "docs-search-v1.js",
+    }
     assert set(referenced_modes) == javascript_files
     assert all(len(modes) == 1 for modes in referenced_modes.values())
     assert referenced_modes[WEB / "staging-shell.js"] == {"classic"}
     assert referenced_modes[WEB / "blank-palette.js"] == {"classic"}
     assert referenced_modes[WEB / "rasterizer-v1.js"] == {"classic"}
+    assert referenced_modes[ROOT / "static" / "community-set-v1.js"] == {"classic"}
+    assert referenced_modes[ROOT / "static" / "docs-search-v1.js"] == {"classic"}
     for filename in (
         "admin.js",
         "color-lab.js",
@@ -322,7 +382,7 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
         assert referenced_modes[WEB / filename] == {"module"}
 
     sources = [
-        (path.relative_to(WEB).as_posix(), next(iter(modes)), path.read_text(encoding="utf-8"))
+        (path.relative_to(ROOT).as_posix(), next(iter(modes)), path.read_text(encoding="utf-8"))
         for path, modes in sorted(referenced_modes.items())
     ]
     sources.extend(
@@ -387,9 +447,10 @@ def test_new_script_dependencies_must_upload_before_dependent_html(
         page_position = deploy.index(f'aws s3 cp "{page_source}"')
         for _mode, source_url in _parse_html(pages[page_name]).script_sources:
             filename = source_url.split("?", 1)[0].lstrip("/")
-            if not (WEB / filename).is_file():
+            candidate = _script_path(source_url)
+            if not candidate.is_file():
                 continue
-            asset_source = f"$REPO_ROOT/serverless_web/{filename}"
+            asset_source = f"$REPO_ROOT/{candidate.relative_to(ROOT).as_posix()}"
             marker = f'aws s3 cp "{asset_source}"'
             assert marker in deploy, f"{filename} is referenced but not uploaded"
             if deploy.index(marker) > page_position:

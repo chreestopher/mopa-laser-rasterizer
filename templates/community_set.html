@@ -22,7 +22,7 @@
     <aside class="privacy-note"><strong>Sharing is always opt-in</strong>Only settings that members explicitly choose to contribute appear in Comunity Set. If you do not opt in, Rasterizer keeps your Material Libraries and settings private and does not publish them to this collection.</aside>
     {% if member_access %}
     <p class="community-intro">Explore material settings permanently and anonymously contributed by laser operators. Filter by any one field or combine Laser Model / Source, Lens, Material, and Color to find settings used with a similar setup. Material accepts a partial name; the other filters match their normalized values exactly. These are experimental starting points-not universal recipes-so inspect every parameter and test safely on scrap material.</p>
-    <form id="community_search" class="community-search">
+    <form id="community_search" class="community-search" data-api-mode="{{ community_api_mode|default('same-origin') }}">
       <label>Laser Model / Source<input id="laser" name="laser" autocomplete="off" placeholder="Example: JPT M7 60 W"></label>
       <label>Lens<input id="lens" name="lens" autocomplete="off" placeholder="Example: 110 × 110 mm"></label>
       <label>Material<input id="material" name="material" autocomplete="off" placeholder="Partial name, e.g. stainless"></label>
@@ -40,55 +40,6 @@
     {% endif %}
     </section>
   </main>
-  {% if member_access %}<script>
-    const form = document.getElementById('community_search');
-    const status = document.getElementById('community_status');
-    const table = document.getElementById('community_table');
-    const preferredParameters = ['speed','minPower','maxPower','frequency','QPulseWidth','interval','angle','numPasses'];
-    const labelFor = value => String(value).replace(/([a-z0-9])([A-Z])/g,'$1 $2').replaceAll('_',' ');
-    const valueFor = value => value == null || value === '' ? '-' : typeof value === 'object' ? JSON.stringify(value) : String(value);
-    const render = rows => {
-      const parameterSet = new Set(rows.flatMap(row => Object.keys(row.settings || {})));
-      const discoveredParameters = [...preferredParameters.filter(key => parameterSet.delete(key)), ...[...parameterSet].sort((a,b) => a.localeCompare(b))];
-      const crossHatchIndex = discoveredParameters.findIndex(key => String(key).toLowerCase() === 'crosshatch');
-      const parametersThroughCrossHatch = crossHatchIndex >= 0 ? discoveredParameters.slice(0,crossHatchIndex + 1) : discoveredParameters;
-      const typeParameter = discoveredParameters.find(key => String(key).toLowerCase() === 'type');
-      const parameters = typeParameter && !parametersThroughCrossHatch.includes(typeParameter)
-        ? [...parametersThroughCrossHatch,typeParameter]
-        : parametersThroughCrossHatch;
-      const headers = ['Laser Model / Source','Lens','Material','Color','Operation',...parameters.map(labelFor)];
-      const thead = document.createElement('thead');
-      const headerRow = document.createElement('tr');
-      headers.forEach(label => { const th=document.createElement('th'); th.textContent=label; headerRow.append(th); });
-      thead.append(headerRow);
-      const tbody = document.createElement('tbody');
-      rows.forEach(row => {
-        const tr = document.createElement('tr');
-        [row.laser_source,row.lens,row.material].forEach(value => { const td=document.createElement('td'); td.textContent=valueFor(value); tr.append(td); });
-        const color = document.createElement('td'); color.className='color-cell';
-        const swatch = document.createElement('span'); swatch.className='color-swatch';
-        if (/^#[0-9a-f]{6}$/i.test(row.swatch || '')) swatch.style.backgroundColor=row.swatch;
-        const colorName=document.createElement('span'); colorName.textContent=valueFor(row.color); color.append(swatch,colorName); tr.append(color);
-        const operation=document.createElement('td'); operation.textContent=valueFor(row.operation); tr.append(operation);
-        parameters.forEach(key => { const td=document.createElement('td'); td.textContent=valueFor(row.settings?.[key]); tr.append(td); });
-        tbody.append(tr);
-      });
-      table.replaceChildren(thead,tbody);
-    };
-    form.addEventListener('submit', async event => {
-      event.preventDefault(); status.classList.remove('error');
-      const query = new URLSearchParams(new FormData(form));
-      if (![...query.values()].some(value => value.trim())) { status.textContent='Enter at least one filter.'; status.classList.add('error'); return; }
-      status.textContent='Reading the community settings index…';
-      try {
-        const response=await fetch(`/community-set/settings?${query}`,{credentials:'same-origin'});
-        const data=await response.json();
-        if (!response.ok) throw new Error(data.message || 'Could not load community settings.');
-        status.textContent=`${data.count} matching setting${data.count === 1 ? '' : 's'}.`;
-        if (data.settings.length) render(data.settings);
-        else table.innerHTML='<tbody><tr><td class="empty-cell">No contributed settings match this combination yet.</td></tr></tbody>';
-      } catch (error) { status.textContent=error.message; status.classList.add('error'); }
-    });
-  </script>{% endif %}
+  {% if member_access %}<script src="/static/community-set-v1.js"></script>{% endif %}
 </body>
 </html>

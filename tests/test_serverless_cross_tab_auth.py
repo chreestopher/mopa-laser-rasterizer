@@ -11,7 +11,7 @@ def read(name):
 
 def test_every_staging_workflow_reads_shared_member_tokens():
     clients = (
-        "index.html",
+        "rasterizer-v1.js",
         "vault.js",
         "history.js",
         "admin.js",
@@ -30,7 +30,7 @@ def test_every_staging_workflow_reads_shared_member_tokens():
 
 
 def test_guest_capabilities_remain_tab_scoped():
-    assert "sessionStorage.getItem('guest_access_token')" in read("index.html")
+    assert "sessionStorage.getItem('guest_access_token')" in read("rasterizer-v1.js")
     assert 'sessionStorage.getItem("color_lab_guest_access_token")' in read("color-lab.js")
     assert 'sessionStorage.getItem("holographic_guest_access_token")' in read("holographic.js")
 
@@ -48,7 +48,7 @@ def test_shell_migrates_existing_session_and_synchronizes_login_state():
 
 def test_login_keeps_pkce_verifier_and_redirect_on_the_same_origin():
     shell = read("staging-shell.js")
-    index = read("index.html")
+    index = read("rasterizer-v1.js")
 
     assert 'const redirectUri = new URL("/", location.origin).href' in shell
     assert 'sessionStorage.setItem("pkce_redirect_uri", redirectUri)' in shell
@@ -63,7 +63,7 @@ def test_login_keeps_pkce_verifier_and_redirect_on_the_same_origin():
 
 
 def test_failed_code_exchange_clears_one_use_callback_and_exposes_cognito_error():
-    index = read("index.html")
+    index = read("rasterizer-v1.js")
 
     assert "if(!verifier){discardCallback();throw new Error" in index
     assert "sessionStorage.removeItem('pkce_verifier')" in index
@@ -74,19 +74,19 @@ def test_failed_code_exchange_clears_one_use_callback_and_exposes_cognito_error(
 
 
 def test_community_set_build_uses_shared_tokens_and_refreshes_expired_sessions():
-    builder = (ROOT / "dev_setup" / "build_serverless_community.py").read_text(encoding="utf-8")
+    client = (ROOT / "static" / "community-set-v1.js").read_text(encoding="utf-8")
 
-    assert "localStorage.getItem('id_token')||sessionStorage.getItem('id_token')" in builder
-    assert "localStorage.getItem('refresh_token')||sessionStorage.getItem('refresh_token')" in builder
-    assert "if(response.status===401&&refreshToken)" in builder
-    assert "localStorage.setItem('id_token',token)" in builder
-    assert "Session expired. Sign in again." in builder
+    assert "localStorage.getItem('id_token')||sessionStorage.getItem('id_token')" in client
+    assert "localStorage.getItem('refresh_token')||sessionStorage.getItem('refresh_token')" in client
+    assert "if(response.status===401&&refreshToken)" in client
+    assert "localStorage.setItem('id_token',token)" in client
+    assert "Session expired. Sign in again." in client
 
 
 def test_changed_auth_assets_have_cache_busting_revisions():
     expected = {
         "index.html": ('/staging-shell.js?v=3',),
-        "vault.html": ('/staging-shell.js?v=3', '/vault.js?v=13'),
+        "vault.html": ('/staging-shell.js?v=3', '/vault.js?v=17'),
         "history.html": ('/staging-shell.js?v=3', '/history.js?v=10'),
         "admin.html": ('/staging-shell.js?v=3', '/admin.js?v=4'),
         "color-lab.html": ('/staging-shell.js?v=3', '/color-lab.js?v=8'),

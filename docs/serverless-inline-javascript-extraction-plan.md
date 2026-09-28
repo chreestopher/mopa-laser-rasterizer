@@ -9,8 +9,10 @@ This is not permission to refactor while extracting. Preserve classic versus mod
 ## Active extraction checkpoint and promotion boundary
 
 - Phase 1 was accepted and merged through PR #124. Its pre-extraction rollback commit remains `aa911ea2bad3e3d86c92be7839bcd5fb87730940`.
-- Phase 2 rollback commit: `8a44525a56a9fdd893452262b80612be54e161a2` (`origin/staging` after PR #124).
-- Active extraction branch: `feature/inline-js-phase-2`, created directly from the Phase 2 rollback commit.
+- Phase 2 was accepted and merged through PR #125. Its rollback commit remains `8a44525a56a9fdd893452262b80612be54e161a2`.
+- Phase 3 rollback commit: `6382362f2fde8e36df9a47a8a44f09c1d720c57b` (`origin/staging` after PR #125).
+- Active extraction branch: `feature/inline-js-phase-3`, created directly from the Phase 3 rollback commit.
+- Phase 3 implementation externalizes the generated Community Set and documentation-search clients into shared static sources, retains the documentation index as HTML-safe inert JSON, and removes Python source rewriting. All generated routes now have zero executable inline scripts. The focused JavaScript/auth/SEO checks and the 291-test full suite pass before staging deployment.
 - Until extraction acceptance is complete, keep this branch and subsequent staging changes limited to extraction, its tests, deployment ordering, and directly required documentation. Do not mix feature work into this sequence.
 - Staging is the only permitted deployment target during extraction validation. Do not create a production PR, merge to `main`, manually dispatch the production workflow, or deploy production until the owner explicitly requests the production PR after acceptance testing.
 - Production deployment is currently isolated by workflow configuration: staging deploys only from `staging`; production deploys only from `main` or an explicit production workflow dispatch; production PRs are required to originate from `staging`.
