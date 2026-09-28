@@ -8,15 +8,16 @@ This is not permission to refactor while extracting. Preserve classic versus mod
 
 ## Active extraction checkpoint and promotion boundary
 
-- Rollback commit: `aa911ea2bad3e3d86c92be7839bcd5fb87730940` (`origin/staging` after PR #123).
-- Extraction branch: `feature/inline-js-phase-1`, created directly from that commit.
+- Phase 1 was accepted and merged through PR #124. Its pre-extraction rollback commit remains `aa911ea2bad3e3d86c92be7839bcd5fb87730940`.
+- Phase 2 rollback commit: `8a44525a56a9fdd893452262b80612be54e161a2` (`origin/staging` after PR #124).
+- Active extraction branch: `feature/inline-js-phase-2`, created directly from the Phase 2 rollback commit.
 - Until extraction acceptance is complete, keep this branch and subsequent staging changes limited to extraction, its tests, deployment ordering, and directly required documentation. Do not mix feature work into this sequence.
 - Staging is the only permitted deployment target during extraction validation. Do not create a production PR, merge to `main`, manually dispatch the production workflow, or deploy production until the owner explicitly requests the production PR after acceptance testing.
 - Production deployment is currently isolated by workflow configuration: staging deploys only from `staging`; production deploys only from `main` or an explicit production workflow dispatch; production PRs are required to originate from `staging`.
 
-## Current staging inventory
+## Phase 1 starting inventory
 
-The inventory below is from `origin/staging` at `aa911ea`. There are 11 checked-in `serverless_web/*.html` files. Eight contain executable inline JavaScript: ten blocks total, with no inline `on*` attributes or `javascript:` URLs currently detected.
+The inventory below records `origin/staging` at `aa911ea`, before Phase 1 extraction. There were 11 checked-in `serverless_web/*.html` files. Eight contained executable inline JavaScript: ten blocks total, with no inline `on*` attributes or `javascript:` URLs detected.
 
 | Source | Inline executable code | Existing external code and mode | Ordering/coupling |
 | --- | --- | --- | --- |
@@ -42,7 +43,7 @@ The builders add or copy more inline debt into deployed artifacts:
 - `build_serverless_experimental.py` produces `experimental-laboratories` with the guard.
 - `build_serverless_docs.py` renders the docs index and every documentation route. All receive the guard; the index also contains generated search behavior and search-index data.
 
-Phase 0 is not green on this staging revision. `tests/test_serverless_web_javascript.py` builds the right route families, but its rendered-debt expectation is stale: it expects shell guards on newly copied Mandala/SpiralGraph/`spiralgrap` SEO pages that intentionally use the newer static-class/no-script pattern, and its docs-search fingerprint predates the current source. Reconcile this from reviewed source intent and retain ordered, multiplicity-aware debt records. Do not blindly replace hashes to make the test pass.
+Phase 0 was repaired and Phase 1 was accepted before Phase 2 began. `tests/test_serverless_web_javascript.py` now records ordered, multiplicity-aware executable-inline debt, scans generated route families, validates referenced JavaScript modes, and checks deployment ordering.
 
 The deploy currently uploads several consumers before dependencies, including Mandala HTML before `mandala.js`/CSS, SpiralGraph HTML before `spiralgraph.js`/CSS, Depthmap HTML before its full module graph, and older page HTML before page modules. This is a real partial-deploy hazard. `Cache-Control: no-cache`, query revisions, and the final CloudFront `/*` invalidation do not make sequential S3 writes atomic.
 
@@ -113,7 +114,7 @@ Keep Depthmap sources under `static/` unless a separate move is justified. Its l
 
 ### Phase 2 - mechanical Rasterizer extraction
 
-1. In a dedicated change, move the large `index.html` block byte-for-byte into `serverless_web/rasterizer.js`. Load it as a classic end-of-body script. Do not format, rename, deduplicate, change event registration, or convert it to a module.
+1. In a dedicated change, move the large `index.html` block byte-for-byte into the immutable Phase 2 asset `serverless_web/rasterizer-v1.js`. Load it as a classic end-of-body script. Do not format, rename, deduplicate, change event registration, or convert it to a module.
 2. Preserve current startup timing: markup exists, `load()` starts immediately, and the deferred shell may not yet have run.
 3. Prove byte equality after accounting only for the surrounding `<script>` tags/newline, run classic syntax checks, and compare stored characterization results and payloads.
 4. Publish the extracted client under an immutable, content-versioned name, upload it first, verify it, and only then update HTML to reference it. Keep the previous asset available through at least the rollback window. Query revisions may remain as diagnostics, but they are not the release boundary.
