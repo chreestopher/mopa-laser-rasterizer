@@ -168,7 +168,7 @@ ALLOWED_SOURCE_INLINE_SCRIPTS = {
     "source/history.html": [],
     "source/holographic.html": [],
     "source/holographic-redirect.html": [],
-    "source/index.html": [RASTERIZER_APPLICATION],
+    "source/index.html": [],
     "source/mandala.html": [],
     "source/release-story.html": [],
     "source/spiralgrap.html": [],
@@ -183,6 +183,17 @@ def test_phase_one_external_scripts_preserve_the_reviewed_inline_behavior():
     )
     assert _digest((WEB / "release-story-v1.js").read_text(encoding="utf-8")) == (
         RELEASE_STORY_HASH
+    )
+
+
+def test_phase_two_rasterizer_script_preserves_the_reviewed_inline_behavior():
+    script = (WEB / "rasterizer-v1.js").read_text(encoding="utf-8")
+
+    assert _digest(script) == RASTERIZER_APPLICATION_HASH
+    assert script.rstrip().endswith(
+        "load().catch(error=>{const message=error.message||'Unknown error';"
+        "show(message==='Session expired. Sign in again.'||message.startsWith('Cognito sign-in')||"
+        "message.startsWith('Sign-in attempt')?message:`Configuration error: ${message}`)});"
     )
 
 
@@ -207,7 +218,7 @@ def test_rendered_serverless_html_does_not_gain_inline_javascript(
     expected = {name: [] for name in rendered_serverless_pages}
     expected["generated/community-set"] = [COMMUNITY_SET]
     expected["generated/docs/index.html"] = [DOCS_SEARCH]
-    expected["generated/seo/index.html"] = [RASTERIZER_APPLICATION]
+    expected["generated/seo/index.html"] = []
 
     assert observed == expected
 
@@ -299,6 +310,7 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
     assert all(len(modes) == 1 for modes in referenced_modes.values())
     assert referenced_modes[WEB / "staging-shell.js"] == {"classic"}
     assert referenced_modes[WEB / "blank-palette.js"] == {"classic"}
+    assert referenced_modes[WEB / "rasterizer-v1.js"] == {"classic"}
     for filename in (
         "admin.js",
         "color-lab.js",

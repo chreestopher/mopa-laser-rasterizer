@@ -155,6 +155,8 @@ python3 -c 'import json,os; print(json.dumps({
   > "$BUILD_DIR/config.json"
 aws s3 cp "$REPO_ROOT/serverless_web/staging-shell-v2.css" "s3://$STATIC_BUCKET/web/staging-shell-v2.css" \
   --region "$REGION" --content-type text/css --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/rasterizer-v1.js" "s3://$STATIC_BUCKET/web/rasterizer-v1.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$BUILD_DIR/seo/index.html" "s3://$STATIC_BUCKET/web/index.html" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
 aws s3 cp "$BUILD_DIR/seo/fauxlographic.html" "s3://$STATIC_BUCKET/web/fauxlographic.html" \
