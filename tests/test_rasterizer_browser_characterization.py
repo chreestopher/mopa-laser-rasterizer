@@ -273,7 +273,7 @@ HARNESS = r"""
     document.body.append(result);
   };
 
-  const deadline = Date.now() + 7500;
+  let deadline = 0;
   const status = document.querySelector('#status');
   if (status) new MutationObserver(() => statusHistory.push(status.textContent)).observe(status, {childList: true, characterData: true, subtree: true});
   const artworkFile = () => new File([Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL8WQAAAABJRU5ErkJggg=='), character => character.charCodeAt(0))], 'characterization.png', {type: 'image/png'});
@@ -336,7 +336,10 @@ HARNESS = r"""
     if (ready || Date.now() >= deadline) finish();
     else setTimeout(waitForApplication, 25);
   };
-  addEventListener('DOMContentLoaded', waitForApplication, {once: true});
+  addEventListener('DOMContentLoaded', () => {
+    deadline = Date.now() + 7500;
+    waitForApplication();
+  }, {once: true});
 })();
 """
 
@@ -389,7 +392,7 @@ class RasterizerBrowserCharacterizationTests(unittest.TestCase):
                     "--no-sandbox",
                     "--disable-dev-shm-usage",
                     f"--user-data-dir={profile}",
-                    "--virtual-time-budget=9000",
+                    "--virtual-time-budget=15000",
                     "--dump-dom",
                     url,
                 ],
