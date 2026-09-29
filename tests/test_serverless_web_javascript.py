@@ -224,12 +224,16 @@ def test_phase_four_rasterizer_uses_the_reviewed_job_and_output_boundaries():
     panel_tiling = (WEB / "rasterizer" / "panel-tiling-v1.js").read_text(
         encoding="utf-8"
     )
+    palette_resources = (WEB / "rasterizer" / "palette-resources-v1.js").read_text(
+        encoding="utf-8"
+    )
 
     assert "import {renderRasterOutputs} from './rasterizer/output-rendering-v1.js';" in script
     assert "} from './rasterizer/jobs-v1.js';" in script
     assert "} from './rasterizer/submission-v1.js';" in script
     assert "} from './rasterizer/artwork-preview-v1.js';" in script
     assert "} from './rasterizer/panel-tiling-v1.js';" in script
+    assert "} from './rasterizer/palette-resources-v1.js';" in script
     assert "function renderRasterOutputs(" not in script
     assert "function uploadPhase(" not in script
     assert "function upload(" not in script
@@ -242,6 +246,11 @@ def test_phase_four_rasterizer_uses_the_reviewed_job_and_output_boundaries():
     assert "async function generateQuantizedPreview(" not in script
     assert "function panelTilingParameters(" not in script
     assert "async function renderPanelLayoutPreview(" not in script
+    assert "function renderRasterPalette(" not in script
+    assert "function syncMaterialChoicePresentation(" not in script
+    assert "function savePalettePreferences(" not in script
+    assert "async function loadAccountResources(" not in script
+    assert "async function loadGuestResources(" not in script
     assert "export function renderRasterOutputs(" in output_rendering
     assert "export function createRasterJobPoller(" in jobs
     assert "export function uploadPhase(" in jobs
@@ -261,6 +270,12 @@ def test_phase_four_rasterizer_uses_the_reviewed_job_and_output_boundaries():
     assert "export function panelTilingParameters(" in panel_tiling
     assert "export function panelTilingDerivedDimensions(" in panel_tiling
     assert "export function restorePanelTiling(" in panel_tiling
+    assert "export function configurePaletteResources(" in palette_resources
+    assert "export function renderRasterPalette(" in palette_resources
+    assert "export function syncMaterialChoicePresentation(" in palette_resources
+    assert "export function selectedAsset(" in palette_resources
+    assert "export async function loadAccountResources(" in palette_resources
+    assert "export async function loadGuestResources(" in palette_resources
     assert script.rstrip().endswith(
         "load().catch(error=>{const message=error.message||'Unknown error';"
         "show(message==='Session expired. Sign in again.'||message.startsWith('Cognito sign-in')||"
@@ -376,6 +391,9 @@ def test_rasterizer_module_graph_uploads_dependencies_before_entry_and_html():
     panel_dependency = (
         'aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/panel-tiling-v1.js"'
     )
+    palette_dependency = (
+        'aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/palette-resources-v1.js"'
+    )
     entry = 'aws s3 cp "$REPO_ROOT/serverless_web/rasterizer-v4.js"'
     html = 'aws s3 cp "$BUILD_DIR/seo/index.html"'
 
@@ -384,7 +402,8 @@ def test_rasterizer_module_graph_uploads_dependencies_before_entry_and_html():
     assert deploy.index(jobs_dependency) < deploy.index(submission_dependency) < deploy.index(entry)
     assert deploy.index(preview_dependency) < deploy.index(entry) < deploy.index(html)
     assert deploy.index(panel_dependency) < deploy.index(entry) < deploy.index(html)
-    for asset in (output_dependency, jobs_dependency, submission_dependency, preview_dependency, panel_dependency, entry):
+    assert deploy.index(palette_dependency) < deploy.index(entry) < deploy.index(html)
+    for asset in (output_dependency, jobs_dependency, submission_dependency, preview_dependency, panel_dependency, palette_dependency, entry):
         assert "public,max-age=31536000,immutable" in deploy[
             deploy.index(asset) : deploy.index(asset) + 400
         ]
@@ -467,6 +486,7 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
     assert referenced_modes[WEB / "rasterizer" / "submission-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "artwork-preview-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "panel-tiling-v1.js"] == {"module"}
+    assert referenced_modes[WEB / "rasterizer" / "palette-resources-v1.js"] == {"module"}
     assert referenced_modes[ROOT / "static" / "community-set-v1.js"] == {"classic"}
     assert referenced_modes[ROOT / "static" / "docs-search-v1.js"] == {"classic"}
     for filename in (

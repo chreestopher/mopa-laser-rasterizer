@@ -13,12 +13,14 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
     def test_serverless_rasterizer_supports_explicit_svg_only_jobs(self):
         page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
         script = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
+        palette = (ROOT / "serverless_web" / "rasterizer" / "palette-resources-v1.js").read_text(encoding="utf-8")
         submission = (ROOT / "serverless_web" / "rasterizer" / "submission-v1.js").read_text(encoding="utf-8")
         handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
         worker = (ROOT / "worker.py").read_text(encoding="utf-8")
 
         self.assertIn('<option value="svg">SVG-Only (no laser settings)</option>', page)
-        self.assertIn("function svgOnlySelected(){return selectedAsset().kind==='svg'}", script)
+        self.assertIn("export function svgOnlySelected()", palette)
+        self.assertIn("return selectedAsset().kind === 'svg';", palette)
         self.assertIn("material_key: grant.material?.key || ''", submission)
         self.assertIn("svg_only: svgOnly", submission)
         self.assertIn('result["material"] = (None if svg_only else', handler)
@@ -472,6 +474,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
     def test_rasterizer_holographic_palette_replaces_image_controls_with_lab_settings(self):
         page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
         script = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
+        palette = (ROOT / "serverless_web" / "rasterizer" / "palette-resources-v1.js").read_text(encoding="utf-8")
         submission = (ROOT / "serverless_web" / "rasterizer" / "submission-v1.js").read_text(encoding="utf-8")
         handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
         worker = (ROOT / "worker.py").read_text(encoding="utf-8")
@@ -480,7 +483,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertIn('id="holographicRasterSettings"', page)
         self.assertIn('id="rasterHoloCutMode"', page)
         self.assertIn('id="rasterHoloBlack"', page)
-        self.assertIn("holographicSettings.classList.toggle('hidden',!selectedRecipe)", script)
+        self.assertIn("holographicSettings.classList.toggle('hidden', !selectedRecipe)", palette)
         self.assertIn("cutMode: recipe ? element('#rasterHoloCutMode').value : 'setting'", submission)
         self.assertIn("preserveBlackOutlines: recipe && element('#rasterHoloBlack').checked", submission)
         self.assertIn('embedded_black_name = "Rasterizer Preserved Black"', handler)
@@ -560,6 +563,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         page = (ROOT / "serverless_web" / "holographic.html").read_text(encoding="utf-8")
         script = (ROOT / "serverless_web" / "holographic.js").read_text(encoding="utf-8")
         rasterizer = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
+        palette = (ROOT / "serverless_web" / "rasterizer" / "palette-resources-v1.js").read_text(encoding="utf-8")
 
         self.assertIn('id="runRecipeInRasterizer"', page)
         self.assertIn('Run Rasterizer with This Fauxlographic Palette', page)
@@ -568,9 +572,9 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertNotIn('$("#artworkForm").onsubmit', script)
         self.assertIn('sessionStorage.setItem("last_holographic_recipe_id",saved.recipe_id)', script)
         self.assertIn('`/?recipe=${encodeURIComponent(recipeId)}`', script)
-        self.assertIn("const requestedRecipe=new URLSearchParams(location.search).get('recipe')", rasterizer)
-        self.assertIn("choice.value=requestedValue", rasterizer)
-        self.assertIn("recipeRasterEntries().forEach(item=>selectedPaletteHexes.add(item.selection_key))", rasterizer)
+        self.assertIn("const requestedRecipe = new URLSearchParams(location.search).get('recipe')", palette)
+        self.assertIn("choice.value = requestedValue", palette)
+        self.assertIn("recipeRasterEntries().forEach(item => selectedPaletteHexes.add(item.selection_key))", palette)
 
     def test_job_history_rows_have_live_status_tones(self):
         page = (ROOT / "serverless_web" / "history.html").read_text(encoding="utf-8")
@@ -646,6 +650,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
     def test_rasterizer_material_name_immediately_follows_upload_control(self):
         page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
         script = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
+        palette = (ROOT / "serverless_web" / "rasterizer" / "palette-resources-v1.js").read_text(encoding="utf-8")
         upload_position = page.index('id="materialUpload"')
         material_position = page.index('id="materialNameField"')
         swatches_position = page.index("Raster palette swatches")
@@ -654,7 +659,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertLess(material_position, swatches_position)
         self.assertNotIn("colorMatchingSection", page[upload_position:material_position])
         self.assertIn('<select id="materialName" required>', page)
-        self.assertIn("function setMaterialOptions(names,preferred='',placeholder='Choose a material')", script)
+        self.assertIn("export function setMaterialOptions(names, preferred = '', placeholder = 'Choose a material')", palette)
         self.assertIn("new DOMParser().parseFromString(await file.text(),'application/xml')", script)
         self.assertIn("setMaterialOptions(materials)", script)
 
@@ -681,6 +686,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
     def test_rasterizer_ui_selects_holographic_recipes_by_index(self):
         page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
         script = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
+        palette = (ROOT / "serverless_web" / "rasterizer" / "palette-resources-v1.js").read_text(encoding="utf-8")
         submission = (ROOT / "serverless_web" / "rasterizer" / "submission-v1.js").read_text(encoding="utf-8")
         staging_css = (ROOT / "serverless_web" / "staging-pages.css").read_text(encoding="utf-8")
         self.assertIn("body.light-machine.staging-prototype button.color-square", page)
@@ -700,17 +706,18 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertIn("background:var(--depth-swatch-color)!important", staging_css)
         depth_js = (ROOT / "static" / "depthmap_generator.js").read_text(encoding="utf-8")
         self.assertIn('--depth-swatch-color", swatch.hex', depth_js)
-        self.assertIn("selection_key:String(index)", script)
+        self.assertIn("selection_key: String(index)", palette)
         self.assertIn("selected_holographic_recipe_indexes: selectedRecipeIndexes", submission)
-        self.assertIn("imageStyleSection').classList.toggle('hidden',Boolean(selectedRecipe)", script)
+        self.assertIn("element('#imageStyleSection').classList.toggle('hidden', Boolean(selectedRecipe))", palette)
         self.assertNotIn("function nearestOfficialSwatch", script)
 
     def test_saved_palette_unassigned_swatches_cannot_leak_into_jobs(self):
         script = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
+        palette = (ROOT / "serverless_web" / "rasterizer" / "palette-resources-v1.js").read_text(encoding="utf-8")
         handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
-        self.assertIn("function explicitLibraryAssignments()", script)
-        self.assertIn("Unassigned in the selected Swatch Palette", script)
-        self.assertIn("explicitAssignments===null||Object.prototype.hasOwnProperty.call", script)
+        self.assertIn("export function explicitLibraryAssignments()", palette)
+        self.assertIn("Unassigned in the selected Swatch Palette", palette)
+        self.assertIn("explicitAssignments === null || Object.prototype.hasOwnProperty.call", palette)
         self.assertIn('runtime_item["saved_material_library_id"] = saved_library_id', handler)
         self.assertIn("The selected Swatch Palette no longer assigns", handler)
 

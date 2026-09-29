@@ -49,6 +49,7 @@ HARNESS = r"""
   let uploadGrantPayload = null;
   let holographicGrantPayload = null;
   let holographicPayload = null;
+  let preferencePayload = null;
   let submissionCount = 0;
   let pollIndex = 0;
   if (scenario === 'preview' || scenario === 'panel-tiling') window.createImageBitmap = async () => {
@@ -71,7 +72,7 @@ HARNESS = r"""
   window.stagingShellSetAuthenticated = authenticated => { window.__shellAuthenticated = authenticated; };
   window.stagingShellBeginLogin = () => {};
 
-  if (['resume', 'polling', 'failed', 'authenticated-submit', 'holographic-submit', 'submission-error', 'preview', 'panel-tiling'].includes(scenario)) localStorage.setItem('id_token', '__JWT__');
+  if (['resume', 'polling', 'failed', 'authenticated-submit', 'holographic-submit', 'submission-error', 'preview', 'panel-tiling', 'palette-resources'].includes(scenario)) localStorage.setItem('id_token', '__JWT__');
   else {
     localStorage.removeItem('id_token');
     sessionStorage.removeItem('id_token');
@@ -103,10 +104,18 @@ HARNESS = r"""
     if (url.pathname === '/api/guest/config') return jsonResponse({palette});
     if (url.pathname === '/api/account/resources') return jsonResponse({
       palette,
-      material_libraries: [{library_id: 'library-1', name: 'Characterization Library', library_intent: 'color_palette'}],
+      material_libraries: [{library_id: 'library-1', name: 'Characterization Library', material_name: 'Walnut', library_intent: 'color_palette', summary: {material_names: ['Walnut', 'Maple']}}],
       holographic_recipes: [{recipe_id: 'recipe-1', name: 'Characterization Fauxlographic Palette', metadata: {schema_version: 2, self_contained: true, swatch_preview: [{name: 'Copper', hex: '#B87333', angle_degrees: 30, interval_mm: 0.06}]}}],
-      preferences: {}
+      preferences: scenario === 'palette-resources' ? {
+        selected_color_hexes: ['#FFFFFF'],
+        material_library_color_assignments: {'library-1': {'#000000': 'Char', '#FFFFFF': 'Bright'}},
+        last_rasterizer_form: {values: {material_choice: 'library:library-1', material_name: 'Maple'}}
+      } : {}
     });
+    if (url.pathname === '/api/account/preferences' && options.method === 'PATCH') {
+      preferencePayload = JSON.parse(options.body);
+      return jsonResponse({preferences: preferencePayload});
+    }
     if (url.pathname === '/api/jobs/characterization-task') return jsonResponse({
       status: 'completed',
       logs: ['characterization complete'],
@@ -288,6 +297,20 @@ HARNESS = r"""
       assert(document.querySelector('#panelLayoutPreview').width > 0 && document.querySelector('#panelLayoutPreview').height > 0, 'panel layout preview was not drawn');
       assert(document.querySelector('#panelLayoutPreviewStatus').textContent.startsWith('Fit preserves the whole image'), `panel preview status changed (${document.querySelector('#panelLayoutPreviewStatus').textContent})`);
       assert(document.querySelector('#status').textContent.startsWith('COMPLETED'), 'panel submission did not complete');
+    } else if (scenario === 'palette-resources') {
+      const cards = [...document.querySelectorAll('#rasterPalette .color-card')];
+      const black = document.querySelector('#rasterPalette .color-card[data-hex="#000000"]');
+      const gray = document.querySelector('#rasterPalette .color-card[data-hex="#808080"]');
+      const white = document.querySelector('#rasterPalette .color-card[data-hex="#FFFFFF"]');
+      assert(document.querySelector('#materialChoice').value === 'library:library-1', 'saved material library was not restored');
+      assert(document.querySelector('#materialName').value === 'Maple', 'saved library material was not restored');
+      assert(document.querySelector('#selectedMaterialName').textContent === 'Walnut', 'selected library material summary changed');
+      assert(cards.length === palette.length, `material library rendered ${cards.length} swatches instead of ${palette.length}`);
+      assert(black?.querySelector('.color-name')?.textContent === 'Char', 'explicit Black assignment was not rendered');
+      assert(white?.querySelector('.color-name')?.textContent === 'Bright', 'explicit White assignment was not rendered');
+      assert(gray?.querySelector('button')?.disabled === true, 'unassigned library swatch became available');
+      assert(preferencePayload?.selected_color_hexes?.join('|') === '#FFFFFF|#000000', `changed swatch selection was not saved (${JSON.stringify(preferencePayload)})`);
+      assert(preferencePayload?.material_library_color_assignments?.['library-1']?.['#000000'] === 'Char', 'explicit library assignments changed while saving');
     } else if (scenario === 'submission-error') {
       assert(submissionCount === 1, `failed submission ran ${submissionCount} times`);
       assert(document.querySelector('#status').textContent === 'ERROR: Submission characterization failure', 'submission error was not shown');
@@ -400,12 +423,23 @@ HARNESS = r"""
     window.__submissionStarted = true;
     form.requestSubmit();
   };
+  const startPaletteResourcesCharacterization = () => {
+    if (window.__paletteResourcesStarted || document.querySelector('#materialChoice').value !== 'library:library-1') return;
+    const black = document.querySelector('#rasterPalette .color-card[data-hex="#000000"] button');
+    if (!black) return;
+    const blackCard = black.closest('.color-card');
+    const whiteCard = document.querySelector('#rasterPalette .color-card[data-hex="#FFFFFF"]');
+    assert(blackCard?.classList.contains('off') && !whiteCard?.classList.contains('off'), 'saved enabled swatches were not restored');
+    window.__paletteResourcesStarted = true;
+    black.click();
+  };
   const waitForApplication = () => {
     if (scenario === 'guest-submit') startGuestSubmission();
     if (scenario === 'authenticated-submit' || scenario === 'submission-error') startAuthenticatedSubmission();
     if (scenario === 'holographic-submit') startHolographicSubmission();
     if (scenario === 'preview') startPreviewCharacterization();
     if (scenario === 'panel-tiling') startPanelTilingCharacterization();
+    if (scenario === 'palette-resources') startPaletteResourcesCharacterization();
     if (scenario === 'submission-error' && !window.__submissionStarted) return;
     if (deadline === 0) deadline = Date.now() + (scenario === 'polling' ? 20000 : 7500);
     submissionReadinessObserver?.disconnect();
@@ -423,6 +457,8 @@ HARNESS = r"""
           ? document.querySelector('#cropStatus').textContent.startsWith('Original artwork')
         : scenario === 'panel-tiling'
           ? submittedPayload !== null && document.querySelectorAll('#outputs a').length === 1 && document.querySelector('#panelLayoutPreview').width > 0
+        : scenario === 'palette-resources'
+          ? preferencePayload !== null
         : scenario === 'polling'
           ? pollIndex === 6 && document.querySelectorAll('#outputs a').length === 1
           : scenario === 'failed'
@@ -556,6 +592,9 @@ class RasterizerBrowserCharacterizationTests(unittest.TestCase):
 
     def test_authenticated_panel_tiling_preview_and_submission(self):
         self._run_scenario("panel-tiling")
+
+    def test_authenticated_palette_resources_restore_and_save(self):
+        self._run_scenario("palette-resources")
 
     def test_authenticated_job_polling_sequence_and_completion(self):
         self._run_scenario("polling", "&task=polling-task")
