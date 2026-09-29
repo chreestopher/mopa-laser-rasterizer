@@ -9,7 +9,8 @@ def test_rasterizer_exposes_matching_presets_custom_controls_and_browser_preview
     entry = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
     preview = (ROOT / "serverless_web" / "rasterizer" / "artwork-preview-v1.js").read_text(encoding="utf-8")
     palette = (ROOT / "serverless_web" / "rasterizer" / "palette-resources-v1.js").read_text(encoding="utf-8")
-    page = "\n".join((html, entry, preview, palette))
+    matching = (ROOT / "serverless_web" / "rasterizer" / "image-style-matching-v1.js").read_text(encoding="utf-8")
+    page = "\n".join((html, entry, preview, palette, matching))
 
     for value in ("balanced", "hue", "shades", "closest", "custom"):
         assert f'<option value="{value}">' in page
@@ -44,7 +45,8 @@ def test_quantized_preview_uses_only_currently_enabled_swatches():
     entry = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
     preview = (ROOT / "serverless_web" / "rasterizer" / "artwork-preview-v1.js").read_text(encoding="utf-8")
     palette = (ROOT / "serverless_web" / "rasterizer" / "palette-resources-v1.js").read_text(encoding="utf-8")
-    page = "\n".join((html, entry, preview, palette))
+    matching = (ROOT / "serverless_web" / "rasterizer" / "image-style-matching-v1.js").read_text(encoding="utf-8")
+    page = "\n".join((html, entry, preview, palette, matching))
 
     assert "export function paletteEntrySelectionKey(entry)" in page
     assert "selectedPaletteHexes.has(key)" in page

@@ -44,7 +44,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
 
     def test_raster_preset_controls_align_values_above_full_width_sliders(self):
         page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
-        script = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
+        script = (ROOT / "serverless_web" / "rasterizer" / "image-style-matching-v1.js").read_text(encoding="utf-8")
 
         self.assertIn(".filter-control{display:grid;grid-template-columns:minmax(0,1fr)", page)
         self.assertIn(".filter-control label{display:grid;grid-template-columns:minmax(0,1fr) 88px", page)
