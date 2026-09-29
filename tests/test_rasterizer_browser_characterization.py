@@ -72,7 +72,7 @@ HARNESS = r"""
   window.stagingShellSetAuthenticated = authenticated => { window.__shellAuthenticated = authenticated; };
   window.stagingShellBeginLogin = () => {};
 
-  if (['resume', 'polling', 'failed', 'authenticated-submit', 'holographic-submit', 'submission-error', 'preview', 'panel-tiling', 'palette-resources', 'shape-assets'].includes(scenario)) localStorage.setItem('id_token', '__JWT__');
+  if (['resume', 'polling', 'failed', 'authenticated-submit', 'holographic-submit', 'submission-error', 'preview', 'panel-tiling', 'palette-resources', 'shape-assets', 'geometry-routing'].includes(scenario)) localStorage.setItem('id_token', '__JWT__');
   else {
     localStorage.removeItem('id_token');
     sessionStorage.removeItem('id_token');
@@ -324,6 +324,18 @@ HARNESS = r"""
       assert(parameters.custom_glyph_mask === undefined, 'replaced raster glyph remained in the payload');
       assert(document.querySelector('#routedGlyphControls .custom-shape-status')?.textContent === 'Custom SVG ready: characterization-shape.svg.', `custom SVG status changed (${document.querySelector('#routedGlyphControls .custom-shape-status')?.textContent})`);
       assert(document.querySelector('#routedGlyphControls .custom-shape-preview')?.width === 96 && document.querySelector('#routedGlyphControls .custom-shape-preview')?.height === 96, 'custom shape preview dimensions changed');
+    } else if (scenario === 'geometry-routing') {
+      const rawParameters = submittedPayload?.geometry_style_parameters || {};
+      const parameters = typeof rawParameters === 'string' ? JSON.parse(rawParameters) : rawParameters;
+      assert(window.__geometryBulkApplied === true, 'bulk geometry routing did not update both selected swatches');
+      assert(window.__geometryCompatibilityApplied === true, 'Invert Fill did not disable and clear Black Only');
+      assert(submittedPayload?.geometry_style === 'by_swatch', `routed geometry style changed (${submittedPayload?.geometry_style})`);
+      assert(JSON.stringify(parameters.assignments) === JSON.stringify({'#000000': 'vectors', '#808080': 'glyphs', '#FFFFFF': 'halftone_newsprint'}), `routed swatch assignments changed (${JSON.stringify(parameters.assignments)})`);
+      assert(parameters.glyphs?.glyph_shape === 'diamond' && parameters.glyphs?.cell_size_mm === 0.75, `routed Glyph controls changed (${JSON.stringify(parameters.glyphs)})`);
+      assert(parameters.glyphs?.invert_fill === 1 && parameters.glyphs?.black_only === 0, `routed Glyph compatibility values changed (${JSON.stringify(parameters.glyphs)})`);
+      assert(parameters.halftone_newsprint?.dot_size_source === 'source_brightness' && parameters.halftone_newsprint?.square_dots === 1, `routed Halftone controls changed (${JSON.stringify(parameters.halftone_newsprint)})`);
+      assert(parameters.halftone_newsprint?.cell_size_mm === 0.55 && parameters.krasnow_grating === undefined, `routed geometry payload included unexpected settings (${JSON.stringify(parameters)})`);
+      assert(document.querySelector('#routedGlyphSettings').hidden === false && document.querySelector('#routedHalftoneSettings').hidden === false && document.querySelector('#routedKrasnowSettings').hidden === true, 'routed settings visibility changed');
     } else if (scenario === 'submission-error') {
       assert(submissionCount === 1, `failed submission ran ${submissionCount} times`);
       assert(document.querySelector('#status').textContent === 'ERROR: Submission characterization failure', 'submission error was not shown');
@@ -504,6 +516,57 @@ HARNESS = r"""
     window.__submissionStarted = true;
     form.requestSubmit();
   };
+  const startGeometryRoutingCharacterization = () => {
+    const form = document.querySelector('#job');
+    if (window.__submissionStarted || typeof form?.onsubmit !== 'function' || document.querySelectorAll('#rasterPalette .color-card').length !== palette.length) return;
+    if (!window.__geometryConfigured) {
+      window.__geometryConfigured = true;
+      const choice = document.querySelector('#materialChoice');
+      choice.value = 'svg';
+      choice.dispatchEvent(new Event('change', {bubbles: true}));
+      attachArtwork('#artwork');
+      return;
+    }
+    if (!window.__geometryStyleSelected) {
+      window.__geometryStyleSelected = true;
+      document.querySelector('#geometryStyle').value = 'by_swatch';
+      document.querySelector('#geometryStyle').dispatchEvent(new Event('change', {bubbles: true}));
+      return;
+    }
+    const routes = [...document.querySelectorAll('#geometryRoutingGrid .geometry-route-card')];
+    if (routes.length !== palette.length) return;
+    const gray = routes.find(card => card.querySelector('[data-route-style]')?.dataset.hex === '#808080');
+    const white = routes.find(card => card.querySelector('[data-route-style]')?.dataset.hex === '#FFFFFF');
+    if (!window.__geometryBulkApplied) {
+      gray.querySelector('[data-route-selected]').checked = true;
+      white.querySelector('[data-route-selected]').checked = true;
+      document.querySelector('[data-route-bulk="glyphs"]').click();
+      window.__geometryBulkApplied = gray.querySelector('[data-route-style]').value === 'glyphs' && white.querySelector('[data-route-style]').value === 'glyphs';
+      white.querySelector('[data-route-style]').value = 'halftone_newsprint';
+      white.querySelector('[data-route-style]').dispatchEvent(new Event('change', {bubbles: true}));
+      return;
+    }
+    const glyphBox = document.querySelector('#routedGlyphControls');
+    const halftoneBox = document.querySelector('#routedHalftoneControls');
+    if (!glyphBox.childElementCount || !halftoneBox.childElementCount) return;
+    const invertFill = glyphBox.querySelector('[data-geometry-parameter="invert_fill"]');
+    const blackOnly = glyphBox.querySelector('[data-geometry-parameter="black_only"]');
+    blackOnly.checked = true;
+    invertFill.checked = true;
+    invertFill.dispatchEvent(new Event('change', {bubbles: true}));
+    window.__geometryCompatibilityApplied = !blackOnly.checked && blackOnly.disabled && blackOnly.closest('label').classList.contains('disabled');
+    const glyphSize = glyphBox.querySelector('[data-geometry-parameter="cell_size_mm"]');
+    glyphSize.value = '0.75';
+    glyphSize.dispatchEvent(new Event('input', {bubbles: true}));
+    const squareDots = halftoneBox.querySelector('[data-geometry-parameter="square_dots"]');
+    squareDots.checked = true;
+    squareDots.dispatchEvent(new Event('change', {bubbles: true}));
+    const dotSize = halftoneBox.querySelector('[data-geometry-parameter="cell_size_mm"]');
+    dotSize.value = '0.55';
+    dotSize.dispatchEvent(new Event('input', {bubbles: true}));
+    window.__submissionStarted = true;
+    form.requestSubmit();
+  };
   const waitForApplication = () => {
     if (scenario === 'guest-submit') startGuestSubmission();
     if (scenario === 'authenticated-submit' || scenario === 'submission-error') startAuthenticatedSubmission();
@@ -512,6 +575,7 @@ HARNESS = r"""
     if (scenario === 'panel-tiling') startPanelTilingCharacterization();
     if (scenario === 'palette-resources') startPaletteResourcesCharacterization();
     if (scenario === 'shape-assets') startShapeAssetsCharacterization();
+    if (scenario === 'geometry-routing') startGeometryRoutingCharacterization();
     if (scenario === 'submission-error' && !window.__submissionStarted) return;
     if (deadline === 0) deadline = Date.now() + (scenario === 'polling' ? 20000 : 7500);
     submissionReadinessObserver?.disconnect();
@@ -532,6 +596,8 @@ HARNESS = r"""
         : scenario === 'palette-resources'
           ? preferencePayload !== null
         : scenario === 'shape-assets'
+          ? submittedPayload !== null && document.querySelectorAll('#outputs a').length === 1
+        : scenario === 'geometry-routing'
           ? submittedPayload !== null && document.querySelectorAll('#outputs a').length === 1
         : scenario === 'polling'
           ? pollIndex === 6 && document.querySelectorAll('#outputs a').length === 1
@@ -672,6 +738,9 @@ class RasterizerBrowserCharacterizationTests(unittest.TestCase):
 
     def test_authenticated_custom_shape_normalization_preview_and_payload(self):
         self._run_scenario("shape-assets")
+
+    def test_authenticated_geometry_routing_controls_and_payload(self):
+        self._run_scenario("geometry-routing")
 
     def test_authenticated_job_polling_sequence_and_completion(self):
         self._run_scenario("polling", "&task=polling-task")

@@ -40,6 +40,7 @@ def _rasterizer_frontend_source():
             "rasterizer-v4.js",
             "rasterizer/submission-v1.js",
             "rasterizer/shape-assets-v1.js",
+            "rasterizer/geometry-controls-v1.js",
         )
     )
 
@@ -830,7 +831,7 @@ def test_staging_ui_exposes_fauxlogram_flow_painter():
     page = _rasterizer_frontend_source()
     assert 'id="openFlowPainter"' in page
     assert 'id="flowCanvas"' in page
-    assert "values.fauxlogram_flow=structuredClone(fauxlogramFlow)" in page
+    assert "values.fauxlogram_flow=structuredClone(flow)" in page
     assert "Add painted region" in page
     assert "Add image-mask region" in page
     assert "function resizeFlowCanvas()" in page
