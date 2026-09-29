@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 
 
@@ -274,6 +275,7 @@ HARNESS = r"""
   };
 
   let deadline = 0;
+  let submissionReadinessObserver = null;
   const status = document.querySelector('#status');
   if (status) new MutationObserver(() => statusHistory.push(status.textContent)).observe(status, {childList: true, characterData: true, subtree: true});
   const artworkFile = () => new File([Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL8WQAAAABJRU5ErkJggg=='), character => character.charCodeAt(0))], 'characterization.png', {type: 'image/png'});
@@ -294,13 +296,14 @@ HARNESS = r"""
     document.querySelector('#job').requestSubmit();
   };
   const startAuthenticatedSubmission = () => {
-    if (window.__submissionStarted || document.querySelectorAll('#rasterPalette .color-card').length !== palette.length) return;
+    const form = document.querySelector('#job');
+    if (window.__submissionStarted || typeof form?.onsubmit !== 'function' || document.querySelectorAll('#rasterPalette .color-card').length !== palette.length) return;
     window.__submissionStarted = true;
     const choice = document.querySelector('#materialChoice');
     choice.value = 'svg';
     choice.dispatchEvent(new Event('change', {bubbles: true}));
     attachArtwork('#artwork');
-    document.querySelector('#job').requestSubmit();
+    form.requestSubmit();
   };
   const startHolographicSubmission = () => {
     if (window.__submissionStarted || document.querySelector('#holoRecipe option[value="recipe-1"]') === null) return;
@@ -318,6 +321,9 @@ HARNESS = r"""
     if (scenario === 'guest-submit') startGuestSubmission();
     if (scenario === 'authenticated-submit' || scenario === 'submission-error') startAuthenticatedSubmission();
     if (scenario === 'holographic-submit') startHolographicSubmission();
+    if (scenario === 'submission-error' && !window.__submissionStarted) return;
+    if (deadline === 0) deadline = Date.now() + 7500;
+    submissionReadinessObserver?.disconnect();
     const ready = scenario === 'guest'
       ? document.querySelectorAll('#rasterPalette .color-card').length === palette.length
       : scenario === 'guest-submit'
@@ -337,7 +343,12 @@ HARNESS = r"""
     else setTimeout(waitForApplication, 25);
   };
   addEventListener('DOMContentLoaded', () => {
-    deadline = Date.now() + 7500;
+    if (scenario === 'submission-error') {
+      submissionReadinessObserver = new MutationObserver(waitForApplication);
+      submissionReadinessObserver.observe(document.querySelector('#rasterPalette'), {childList: true, subtree: true});
+    } else {
+      deadline = Date.now() + 7500;
+    }
     waitForApplication();
   }, {once: true});
 })();
@@ -345,6 +356,11 @@ HARNESS = r"""
 
 
 class _QuietHandler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.startswith("/rasterizer/submission-v1.js"):
+            time.sleep(0.25)
+        super().do_GET()
+
     def log_message(self, *_args):
         pass
 
