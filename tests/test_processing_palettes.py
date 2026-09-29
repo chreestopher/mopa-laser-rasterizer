@@ -132,7 +132,7 @@ class ProcessingPaletteTests(unittest.TestCase):
         )
 
     def test_processing_palettes_are_scoped_to_depthmap_tools(self):
-        rasterizer = (ROOT / "serverless_web" / "rasterizer-v3.js").read_text(encoding="utf-8")
+        rasterizer = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
         color_lab = (ROOT / "serverless_web" / "color-lab.js").read_text(encoding="utf-8")
         depthmap = (ROOT / "static" / "depthmap_generator.js").read_text(encoding="utf-8")
         handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
