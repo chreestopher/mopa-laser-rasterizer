@@ -1,6 +1,8 @@
 import json
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("AWS_CONFIG_FILE", "/dev/null")
@@ -12,6 +14,48 @@ import worker
 
 
 class WorkerTaskIdTests(unittest.TestCase):
+    def test_fauxlographic_worker_imports_and_calls_existing_export_builder(self):
+        payload = {
+            "task_id": "faux-task-123",
+            "artwork_key": "inputs/artwork.png",
+            "recipe_key": "inputs/palette.json",
+            "material_key": "inputs/material.clb",
+            "artwork_name": "artwork.png",
+            "recipe_name": "palette.json",
+            "material_name": "material.clb",
+            "user_id": "user-123",
+            "max_dimension": 96,
+            "pixel_mm": 0.5,
+        }
+        runtime = MagicMock()
+
+        def create_download(_key, destination):
+            Path(destination).write_bytes(b"{}")
+
+        with tempfile.TemporaryDirectory() as upload_folder, patch.object(
+            worker, "job_runtime", runtime
+        ), patch.object(
+            worker, "download_task_artifact", side_effect=create_download
+        ), patch.object(
+            worker, "upload_task_artifact", side_effect=["outputs/test.svg", "outputs/test.lbrn2"]
+        ) as upload_task_artifact, patch.object(
+            worker, "update_user_job"
+        ) as update_user_job, patch(
+            "routes.holographic._build_holographic_exports",
+            return_value=("test.svg", "test.lbrn2", 100, 80, 42),
+        ) as build_exports:
+            worker.run_holographic_artwork_job(payload, upload_folder)
+
+        build_exports.assert_called_once()
+        self.assertEqual(2, upload_task_artifact.call_count)
+        update_user_job.assert_called_once_with(
+            "faux-task-123",
+            "completed",
+            output_keys=["outputs/test.svg", "outputs/test.lbrn2"],
+        )
+        runtime.set_status.assert_any_call("faux-task-123", "processing")
+        runtime.set_status.assert_any_call("faux-task-123", "completed")
+
     def test_job_failure_summary_preserves_validation_message(self):
         message = "No colors in the Material Library matched Rasterizer swatches."
         self.assertEqual(message, services.summarize_job_failure(f"ValueError: {message}", 1))
