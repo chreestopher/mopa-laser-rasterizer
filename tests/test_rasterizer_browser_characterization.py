@@ -246,8 +246,8 @@ class RasterizerBrowserCharacterizationTests(unittest.TestCase):
         index = index_path.read_text(encoding="utf-8")
         index = re.sub(r'\s*<script src="/staging-shell\.js\?v=3" defer></script>', '', index)
         index = index.replace(
-            '<script type="module" src="/rasterizer-v2.js"></script>',
-            '<script src="/characterization-harness.js"></script>\n<script type="module" src="/rasterizer-v2.js"></script>',
+            '<script type="module" src="/rasterizer-v3.js"></script>',
+            '<script src="/characterization-harness.js"></script>\n<script type="module" src="/rasterizer-v3.js"></script>',
         )
         index_path.write_text(index, encoding="utf-8")
         (cls.site / "characterization-harness.js").write_text(HARNESS.replace("__JWT__", _jwt()), encoding="utf-8")

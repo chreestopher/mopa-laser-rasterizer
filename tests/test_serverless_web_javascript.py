@@ -211,15 +211,27 @@ def test_phase_one_external_scripts_preserve_the_reviewed_inline_behavior():
     )
 
 
-def test_phase_four_rasterizer_uses_the_reviewed_output_rendering_boundary():
-    script = (WEB / "rasterizer-v2.js").read_text(encoding="utf-8")
+def test_phase_four_rasterizer_uses_the_reviewed_job_and_output_boundaries():
+    script = (WEB / "rasterizer-v3.js").read_text(encoding="utf-8")
     output_rendering = (WEB / "rasterizer" / "output-rendering-v1.js").read_text(
         encoding="utf-8"
     )
+    jobs = (WEB / "rasterizer" / "jobs-v1.js").read_text(encoding="utf-8")
 
     assert "import {renderRasterOutputs} from './rasterizer/output-rendering-v1.js';" in script
+    assert "} from './rasterizer/jobs-v1.js';" in script
     assert "function renderRasterOutputs(" not in script
+    assert "function uploadPhase(" not in script
+    assert "function upload(" not in script
+    assert "function submissionErrorMessage(" not in script
+    assert "function uploadBatch(" not in script
+    assert "async function poll(" not in script
     assert "export function renderRasterOutputs(" in output_rendering
+    assert "export function createRasterJobPoller(" in jobs
+    assert "export function uploadPhase(" in jobs
+    assert "export function upload(" in jobs
+    assert "export function submissionErrorMessage(" in jobs
+    assert "export async function uploadBatch(" in jobs
     assert script.rstrip().endswith(
         "load().catch(error=>{const message=error.message||'Unknown error';"
         "show(message==='Session expired. Sign in again.'||message.startsWith('Cognito sign-in')||"
@@ -322,14 +334,16 @@ def test_fail_open_stylesheet_uploads_before_serverless_html():
 
 def test_rasterizer_module_graph_uploads_dependencies_before_entry_and_html():
     deploy = DEPLOY.read_text(encoding="utf-8")
-    dependency = (
+    output_dependency = (
         'aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/output-rendering-v1.js"'
     )
-    entry = 'aws s3 cp "$REPO_ROOT/serverless_web/rasterizer-v2.js"'
+    jobs_dependency = 'aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/jobs-v1.js"'
+    entry = 'aws s3 cp "$REPO_ROOT/serverless_web/rasterizer-v3.js"'
     html = 'aws s3 cp "$BUILD_DIR/seo/index.html"'
 
-    assert deploy.index(dependency) < deploy.index(entry) < deploy.index(html)
-    for asset in (dependency, entry):
+    assert deploy.index(output_dependency) < deploy.index(entry) < deploy.index(html)
+    assert deploy.index(jobs_dependency) < deploy.index(entry) < deploy.index(html)
+    for asset in (output_dependency, jobs_dependency, entry):
         assert "public,max-age=31536000,immutable" in deploy[
             deploy.index(asset) : deploy.index(asset) + 400
         ]
@@ -406,8 +420,9 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
     assert all(len(modes) == 1 for modes in referenced_modes.values())
     assert referenced_modes[WEB / "staging-shell.js"] == {"classic"}
     assert referenced_modes[WEB / "blank-palette.js"] == {"classic"}
-    assert referenced_modes[WEB / "rasterizer-v2.js"] == {"module"}
+    assert referenced_modes[WEB / "rasterizer-v3.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "output-rendering-v1.js"] == {"module"}
+    assert referenced_modes[WEB / "rasterizer" / "jobs-v1.js"] == {"module"}
     assert referenced_modes[ROOT / "static" / "community-set-v1.js"] == {"classic"}
     assert referenced_modes[ROOT / "static" / "docs-search-v1.js"] == {"classic"}
     for filename in (
