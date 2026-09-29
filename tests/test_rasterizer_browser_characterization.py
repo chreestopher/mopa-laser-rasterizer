@@ -51,10 +51,10 @@ HARNESS = r"""
   let holographicPayload = null;
   let submissionCount = 0;
   let pollIndex = 0;
-  if (scenario === 'preview') window.createImageBitmap = async () => {
+  if (scenario === 'preview' || scenario === 'panel-tiling') window.createImageBitmap = async () => {
     const canvas = document.createElement('canvas');
-    canvas.width = 1;
-    canvas.height = 1;
+    canvas.width = scenario === 'panel-tiling' ? 4 : 1;
+    canvas.height = scenario === 'panel-tiling' ? 2 : 1;
     const context = canvas.getContext('2d');
     context.fillStyle = '#000000';
     context.fillRect(0, 0, 1, 1);
@@ -71,7 +71,7 @@ HARNESS = r"""
   window.stagingShellSetAuthenticated = authenticated => { window.__shellAuthenticated = authenticated; };
   window.stagingShellBeginLogin = () => {};
 
-  if (['resume', 'polling', 'failed', 'authenticated-submit', 'holographic-submit', 'submission-error', 'preview'].includes(scenario)) localStorage.setItem('id_token', '__JWT__');
+  if (['resume', 'polling', 'failed', 'authenticated-submit', 'holographic-submit', 'submission-error', 'preview', 'panel-tiling'].includes(scenario)) localStorage.setItem('id_token', '__JWT__');
   else {
     localStorage.removeItem('id_token');
     sessionStorage.removeItem('id_token');
@@ -120,6 +120,15 @@ HARNESS = r"""
       const states = [
         {status: 'pending', logs: ['queued']},
         {status: 'processing', logs: ['queued', 'worker started']},
+        {status: 'completed', logs: ['done'], outputs: [
+          {name: 'polling.svg', download_url: '/download/polling.svg', bytes: 512}
+        ]},
+        {status: 'completed', logs: ['queued', 'worker started', 'done'], outputs: [
+          {name: 'polling.svg', download_url: '/download/polling.svg', bytes: 512}
+        ]},
+        {status: 'completed', logs: ['queued', 'worker started', 'done'], outputs: [
+          {name: 'polling.svg', download_url: '/download/polling.svg', bytes: 512}
+        ]},
         {status: 'completed', logs: ['queued', 'worker started', 'done'], outputs: [
           {name: 'polling.svg', download_url: '/download/polling.svg', bytes: 512}
         ]}
@@ -263,6 +272,22 @@ HARNESS = r"""
       assert(document.querySelector('#quantPreviewOutput').hidden === true, 'changed preview settings did not hide the stale preview');
       assert(document.querySelector('#quantPreviewStatus').textContent === 'Preview settings changed. Generate it again to use the currently enabled swatches.', `stale preview status changed (${document.querySelector('#quantPreviewStatus').textContent})`);
       assert(document.querySelector('#generateQuantPreview').disabled === false, 'preview button remained disabled');
+    } else if (scenario === 'panel-tiling') {
+      const panel = submittedPayload?.panel_tiling;
+      assert(panel?.enabled === true, 'panel tiling was not enabled in the submission payload');
+      assert(panel?.tile_width_mm === 50 && panel?.tile_height_mm === 40, 'panel dimensions changed in the submission payload');
+      assert(panel?.columns === 3 && panel?.rows === 2, 'auto-matched panel rows or columns changed in the submission payload');
+      assert(panel?.gap_x_mm === 2 && panel?.gap_y_mm === 1, 'panel gaps changed in the submission payload');
+      assert(panel?.fit_mode === 'fit' && panel?.padding_mode === 'swatch', 'panel fit or padding mode changed');
+      assert(panel?.padding_swatch_hex === '#808080', 'panel padding swatch changed');
+      assert(panel?.border_mode === 'panel' && panel?.border_swatch_hex === '#000000' && panel?.border_width_mm === 1.5, `panel border settings changed (${JSON.stringify(panel)})`);
+      assert(document.querySelector('#panelTilingDetails').hidden === false, 'enabled panel controls remained hidden');
+      assert(document.querySelector('#width').disabled && document.querySelector('#height').disabled, 'derived processing dimensions remained editable');
+      assert(document.querySelector('#width').value === '1232' && document.querySelector('#height').value === '648', `derived processing dimensions changed: ${document.querySelector('#width').value} x ${document.querySelector('#height').value}`);
+      assert(document.querySelector('#tileAutoAspectStatus').textContent.startsWith('Matched 4 × 2 artwork with 3 columns × 2 rows'), `auto-match status changed (${document.querySelector('#tileAutoAspectStatus').textContent})`);
+      assert(document.querySelector('#panelLayoutPreview').width > 0 && document.querySelector('#panelLayoutPreview').height > 0, 'panel layout preview was not drawn');
+      assert(document.querySelector('#panelLayoutPreviewStatus').textContent.startsWith('Fit preserves the whole image'), `panel preview status changed (${document.querySelector('#panelLayoutPreviewStatus').textContent})`);
+      assert(document.querySelector('#status').textContent.startsWith('COMPLETED'), 'panel submission did not complete');
     } else if (scenario === 'submission-error') {
       assert(submissionCount === 1, `failed submission ran ${submissionCount} times`);
       assert(document.querySelector('#status').textContent === 'ERROR: Submission characterization failure', 'submission error was not shown');
@@ -270,10 +295,11 @@ HARNESS = r"""
       assert(document.querySelector('#activity').classList.contains('hidden'), 'activity indicator remained visible after submission failure');
       assert(document.querySelector('#submit').disabled === false, 'Rasterizer submit remained disabled after submission failure');
     } else if (scenario === 'polling') {
-      assert(pollIndex === 3, `polling job used ${pollIndex} requests instead of 3 (${fetchHistory.join(', ')})`);
+      assert(pollIndex === 6, `polling job used ${pollIndex} requests instead of 6 (${fetchHistory.join(', ')})`);
       assert(statusHistory.some(value => value.startsWith('PENDING')), 'pending polling state was not shown');
       assert(statusHistory.some(value => value.startsWith('PROCESSING')), 'processing polling state was not shown');
       assert(document.querySelector('#status').textContent.startsWith('COMPLETED'), 'polling job did not reach completed state');
+      assert(document.querySelector('#status').textContent.includes('queued\nworker started\ndone'), 'late terminal logs were not refreshed after completion');
       assert(document.querySelector('#activity').classList.contains('hidden'), 'activity indicator remained visible after completion');
       assert(document.querySelector('#submit').disabled === false && document.querySelector('#holoSubmit').disabled === false, 'submit controls remained disabled after completion');
     } else if (scenario === 'failed') {
@@ -349,13 +375,39 @@ HARNESS = r"""
     document.querySelector('#height').value = '0';
     attachArtwork('#artwork');
   };
+  const startPanelTilingCharacterization = () => {
+    const form = document.querySelector('#job');
+    if (window.__submissionStarted || typeof form?.onsubmit !== 'function' || document.querySelectorAll('#rasterPalette .color-card').length !== palette.length) return;
+    if (!window.__panelConfigured) {
+      window.__panelConfigured = true;
+      const choice = document.querySelector('#materialChoice');
+      choice.value = 'svg';
+      choice.dispatchEvent(new Event('change', {bubbles: true}));
+      document.querySelector('#pixel').value = '0.125';
+      attachArtwork('#artwork');
+      document.querySelector('#panelTilingEnabled').checked = true;
+      for (const [id, value] of Object.entries({tileWidth: '50', tileHeight: '40', tileColumns: '2', tileRows: '3', tileGapX: '2', tileGapY: '1', tileFitMode: 'fit', tilePaddingMode: 'swatch', tileBorderMode: 'panel', tileBorderWidth: '1.5'})) {
+        document.querySelector(`#${id}`).value = value;
+      }
+      document.querySelector('#panelTilingEnabled').dispatchEvent(new Event('change', {bubbles: true}));
+      document.querySelector('#tileAutoAspect').click();
+      return;
+    }
+    if (!document.querySelector('#tileAutoAspectStatus').textContent.startsWith('Matched')) return;
+    document.querySelector('#tilePaddingSwatch').value = '#808080';
+    document.querySelector('#tileBorderSwatch').value = '#000000';
+    document.querySelector('#panelTilingControls').dispatchEvent(new Event('change', {bubbles: true}));
+    window.__submissionStarted = true;
+    form.requestSubmit();
+  };
   const waitForApplication = () => {
     if (scenario === 'guest-submit') startGuestSubmission();
     if (scenario === 'authenticated-submit' || scenario === 'submission-error') startAuthenticatedSubmission();
     if (scenario === 'holographic-submit') startHolographicSubmission();
     if (scenario === 'preview') startPreviewCharacterization();
+    if (scenario === 'panel-tiling') startPanelTilingCharacterization();
     if (scenario === 'submission-error' && !window.__submissionStarted) return;
-    if (deadline === 0) deadline = Date.now() + 7500;
+    if (deadline === 0) deadline = Date.now() + (scenario === 'polling' ? 20000 : 7500);
     submissionReadinessObserver?.disconnect();
     const ready = scenario === 'guest'
       ? document.querySelectorAll('#rasterPalette .color-card').length === palette.length
@@ -369,8 +421,10 @@ HARNESS = r"""
           ? document.querySelector('#status').textContent.startsWith('ERROR:')
         : scenario === 'preview'
           ? document.querySelector('#cropStatus').textContent.startsWith('Original artwork')
+        : scenario === 'panel-tiling'
+          ? submittedPayload !== null && document.querySelectorAll('#outputs a').length === 1 && document.querySelector('#panelLayoutPreview').width > 0
         : scenario === 'polling'
-          ? pollIndex === 3 && document.querySelectorAll('#outputs a').length === 1
+          ? pollIndex === 6 && document.querySelectorAll('#outputs a').length === 1
           : scenario === 'failed'
             ? document.querySelector('#status').textContent.startsWith('FAILED')
             : document.querySelectorAll('#outputs a').length === 3;
@@ -400,7 +454,7 @@ HARNESS = r"""
       submissionReadinessObserver = new MutationObserver(waitForApplication);
       submissionReadinessObserver.observe(document.querySelector('#rasterPalette'), {childList: true, subtree: true});
     } else {
-      deadline = Date.now() + 7500;
+      deadline = Date.now() + (scenario === 'polling' ? 20000 : 7500);
     }
     waitForApplication();
   }, {once: true});
@@ -461,7 +515,7 @@ class RasterizerBrowserCharacterizationTests(unittest.TestCase):
                     "--no-sandbox",
                     "--disable-dev-shm-usage",
                     f"--user-data-dir={profile}",
-                    "--virtual-time-budget=15000",
+                    "--virtual-time-budget=25000",
                     "--dump-dom",
                     url,
                 ],
@@ -499,6 +553,9 @@ class RasterizerBrowserCharacterizationTests(unittest.TestCase):
 
     def test_authenticated_crop_initialization_quantized_preview_and_stale_state(self):
         self._run_scenario("preview")
+
+    def test_authenticated_panel_tiling_preview_and_submission(self):
+        self._run_scenario("panel-tiling")
 
     def test_authenticated_job_polling_sequence_and_completion(self):
         self._run_scenario("polling", "&task=polling-task")

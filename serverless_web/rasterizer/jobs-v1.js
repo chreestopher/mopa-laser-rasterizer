@@ -92,29 +92,58 @@ export function createRasterJobPoller({
   renderOutputs,
   setPollTimer = () => {},
   schedule = (callback, delay) => setTimeout(callback, delay),
+  terminalLogRefreshDelays = [1500, 3000, 6000],
   documentRoot = document,
 }) {
   const element = selector => documentRoot.querySelector(selector);
+  const fetchJob = task => isGuest()
+    ? guestApi(`/guest/jobs/${task}`)
+    : api(`/jobs/${task}`);
+  const terminalStatus = (job, task, failureReason = '') => {
+    const logs = (job.logs || []).join('\n');
+    if (job.status === 'failed') {
+      const reason = failureReason || userFacingStyleError(job.error || job.logs?.at(-1) || 'Worker failed');
+      return `FAILED · ${task}\n\n${logs}\n\nFailure reason: ${reason}`;
+    }
+    return `${job.status.toUpperCase()} · ${task}\n\n${logs}`;
+  };
+  const refreshTerminalLogs = (task, terminalState, failureReason, refreshIndex = 0) => {
+    if (refreshIndex >= terminalLogRefreshDelays.length) return;
+    setPollTimer(schedule(async () => {
+      if (getCurrentTask() !== task) return;
+      try {
+        const refreshed = await fetchJob(task);
+        if (getCurrentTask() !== task || refreshed.status !== terminalState) return;
+        show(terminalStatus(refreshed, task, failureReason));
+      } catch (_error) {
+        // The job has already reached a terminal state. A delayed log read must
+        // not replace its usable result with a transient refresh error.
+      }
+      if (getCurrentTask() === task) {
+        refreshTerminalLogs(task, terminalState, failureReason, refreshIndex + 1);
+      }
+    }, terminalLogRefreshDelays[refreshIndex]));
+  };
 
   async function poll() {
     const currentTask = getCurrentTask();
     try {
-      const job = await (isGuest()
-        ? guestApi(`/guest/jobs/${currentTask}`)
-        : api(`/jobs/${currentTask}`));
+      const job = await fetchJob(currentTask);
       show(`${job.status.toUpperCase()} · ${currentTask}\n\n${(job.logs || []).join('\n')}`);
       if (job.status === 'completed') {
         element('#activity').classList.add('hidden');
         element('#submit').disabled = false;
         element('#holoSubmit').disabled = false;
         element('#outputs').innerHTML = renderOutputs(job.outputs);
+        refreshTerminalLogs(currentTask, 'completed', '');
         return;
       }
       if (job.status === 'failed') {
         const reason = userFacingStyleError(job.error || job.logs?.at(-1) || 'Worker failed');
-        show(`FAILED · ${currentTask}\n\n${(job.logs || []).join('\n')}\n\nFailure reason: ${reason}`);
+        show(terminalStatus(job, currentTask, reason));
         element('#activity').classList.add('hidden');
         element('#submit').disabled = false;
+        refreshTerminalLogs(currentTask, 'failed', reason);
         return;
       }
       setPollTimer(schedule(poll, 3000));
