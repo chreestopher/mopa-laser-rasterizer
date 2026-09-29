@@ -1,5 +1,4 @@
 import base64
-import contextlib
 import html
 import http.server
 import json
@@ -7,11 +6,9 @@ import os
 from pathlib import Path
 import re
 import shutil
-import socket
 import subprocess
 import tempfile
 import threading
-import time
 import unittest
 
 
@@ -145,8 +142,8 @@ class RasterizerBrowserCharacterizationTests(unittest.TestCase):
         index = index_path.read_text(encoding="utf-8")
         index = re.sub(r'\s*<script src="/staging-shell\.js\?v=3" defer></script>', '', index)
         index = index.replace(
-            '<script src="/rasterizer-v1.js"></script>',
-            '<script src="/characterization-harness.js"></script>\n<script src="/rasterizer-v1.js"></script>',
+            '<script type="module" src="/rasterizer-v2.js"></script>',
+            '<script src="/characterization-harness.js"></script>\n<script type="module" src="/rasterizer-v2.js"></script>',
         )
         index_path.write_text(index, encoding="utf-8")
         (cls.site / "characterization-harness.js").write_text(HARNESS.replace("__JWT__", _jwt()), encoding="utf-8")

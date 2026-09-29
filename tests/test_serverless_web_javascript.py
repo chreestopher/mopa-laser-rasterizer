@@ -178,15 +178,13 @@ def _checked_in_pages() -> dict[str, str]:
 
 
 # Transitional debt inventory. Never add or replace hashes to land behavior;
-# extraction work removes entries. The Rasterizer hash tracks current staging.
+# extraction work removes entries.
 SHELL_GUARD_HASH = "6afe671e06228bf00df1e5b2e9542d2c9bf31bffdb040eed534930592487f3cf"
 LEGACY_REDIRECT_HASH = "784998b36758a08dfefab6f0fea37fbe5846fb551eae8eb74352f1cecce9bac6"
-RASTERIZER_APPLICATION_HASH = "619e744be7fa9f7fa8c009d0ad30f19fc46109405cc7a064cd99e199f7da3d87"
 RELEASE_STORY_HASH = "261e9c866cbd5628036f898e027a1051cac5dc3b1552fa7d825f525fb14ded5d"
 
 SHELL_GUARD = ("classic", SHELL_GUARD_HASH)
 LEGACY_REDIRECT = ("classic", LEGACY_REDIRECT_HASH)
-RASTERIZER_APPLICATION = ("classic", RASTERIZER_APPLICATION_HASH)
 RELEASE_STORY = ("classic", RELEASE_STORY_HASH)
 
 ALLOWED_SOURCE_INLINE_SCRIPTS = {
@@ -213,10 +211,15 @@ def test_phase_one_external_scripts_preserve_the_reviewed_inline_behavior():
     )
 
 
-def test_phase_two_rasterizer_script_preserves_the_reviewed_inline_behavior():
-    script = (WEB / "rasterizer-v1.js").read_text(encoding="utf-8")
+def test_phase_four_rasterizer_uses_the_reviewed_output_rendering_boundary():
+    script = (WEB / "rasterizer-v2.js").read_text(encoding="utf-8")
+    output_rendering = (WEB / "rasterizer" / "output-rendering-v1.js").read_text(
+        encoding="utf-8"
+    )
 
-    assert _digest(script) == RASTERIZER_APPLICATION_HASH
+    assert "import {renderRasterOutputs} from './rasterizer/output-rendering-v1.js';" in script
+    assert "function renderRasterOutputs(" not in script
+    assert "export function renderRasterOutputs(" in output_rendering
     assert script.rstrip().endswith(
         "load().catch(error=>{const message=error.message||'Unknown error';"
         "show(message==='Session expired. Sign in again.'||message.startsWith('Cognito sign-in')||"
@@ -317,6 +320,21 @@ def test_fail_open_stylesheet_uploads_before_serverless_html():
     ]
 
 
+def test_rasterizer_module_graph_uploads_dependencies_before_entry_and_html():
+    deploy = DEPLOY.read_text(encoding="utf-8")
+    dependency = (
+        'aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/output-rendering-v1.js"'
+    )
+    entry = 'aws s3 cp "$REPO_ROOT/serverless_web/rasterizer-v2.js"'
+    html = 'aws s3 cp "$BUILD_DIR/seo/index.html"'
+
+    assert deploy.index(dependency) < deploy.index(entry) < deploy.index(html)
+    for asset in (dependency, entry):
+        assert "public,max-age=31536000,immutable" in deploy[
+            deploy.index(asset) : deploy.index(asset) + 400
+        ]
+
+
 def test_serverless_sources_and_rendered_routes_have_no_inline_handlers_or_urls(
     rendered_serverless_pages,
 ):
@@ -360,6 +378,26 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
             if candidate.is_file():
                 referenced_modes.setdefault(candidate, set()).add(mode)
 
+    pending_modules = [
+        path for path, modes in referenced_modes.items() if modes == {"module"}
+    ]
+    visited_modules = set()
+    import_pattern = re.compile(
+        r"^\s*import\s+(?:[^'\"]+?\s+from\s+)?['\"]([^'\"]+)['\"]",
+        re.MULTILINE,
+    )
+    while pending_modules:
+        module = pending_modules.pop()
+        if module in visited_modules:
+            continue
+        visited_modules.add(module)
+        for source_url in import_pattern.findall(module.read_text(encoding="utf-8")):
+            if not source_url.startswith("."):
+                continue
+            dependency = (module.parent / source_url.split("?", 1)[0]).resolve()
+            referenced_modes.setdefault(dependency, set()).add("module")
+            pending_modules.append(dependency)
+
     javascript_files = set(WEB.rglob("*.js")) | {
         ROOT / "static" / "community-set-v1.js",
         ROOT / "static" / "docs-search-v1.js",
@@ -368,7 +406,8 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
     assert all(len(modes) == 1 for modes in referenced_modes.values())
     assert referenced_modes[WEB / "staging-shell.js"] == {"classic"}
     assert referenced_modes[WEB / "blank-palette.js"] == {"classic"}
-    assert referenced_modes[WEB / "rasterizer-v1.js"] == {"classic"}
+    assert referenced_modes[WEB / "rasterizer-v2.js"] == {"module"}
+    assert referenced_modes[WEB / "rasterizer" / "output-rendering-v1.js"] == {"module"}
     assert referenced_modes[ROOT / "static" / "community-set-v1.js"] == {"classic"}
     assert referenced_modes[ROOT / "static" / "docs-search-v1.js"] == {"classic"}
     for filename in (

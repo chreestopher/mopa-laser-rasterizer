@@ -11,7 +11,7 @@ def read(name):
 
 def test_every_staging_workflow_reads_shared_member_tokens():
     clients = (
-        "rasterizer-v1.js",
+        "rasterizer-v2.js",
         "vault.js",
         "history.js",
         "admin.js",
@@ -30,7 +30,7 @@ def test_every_staging_workflow_reads_shared_member_tokens():
 
 
 def test_guest_capabilities_remain_tab_scoped():
-    assert "sessionStorage.getItem('guest_access_token')" in read("rasterizer-v1.js")
+    assert "sessionStorage.getItem('guest_access_token')" in read("rasterizer-v2.js")
     assert 'sessionStorage.getItem("color_lab_guest_access_token")' in read("color-lab.js")
     assert 'sessionStorage.getItem("holographic_guest_access_token")' in read("holographic.js")
 
@@ -48,7 +48,7 @@ def test_shell_migrates_existing_session_and_synchronizes_login_state():
 
 def test_login_keeps_pkce_verifier_and_redirect_on_the_same_origin():
     shell = read("staging-shell.js")
-    index = read("rasterizer-v1.js")
+    index = read("rasterizer-v2.js")
 
     assert 'const redirectUri = new URL("/", location.origin).href' in shell
     assert 'sessionStorage.setItem("pkce_redirect_uri", redirectUri)' in shell
@@ -63,7 +63,7 @@ def test_login_keeps_pkce_verifier_and_redirect_on_the_same_origin():
 
 
 def test_failed_code_exchange_clears_one_use_callback_and_exposes_cognito_error():
-    index = read("rasterizer-v1.js")
+    index = read("rasterizer-v2.js")
 
     assert "if(!verifier){discardCallback();throw new Error" in index
     assert "sessionStorage.removeItem('pkce_verifier')" in index
