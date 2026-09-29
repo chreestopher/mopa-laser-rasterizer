@@ -157,7 +157,9 @@ aws s3 cp "$REPO_ROOT/serverless_web/staging-shell-v2.css" "s3://$STATIC_BUCKET/
   --region "$REGION" --content-type text/css --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/output-rendering-v1.js" "s3://$STATIC_BUCKET/web/rasterizer/output-rendering-v1.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
-aws s3 cp "$REPO_ROOT/serverless_web/rasterizer-v2.js" "s3://$STATIC_BUCKET/web/rasterizer-v2.js" \
+aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/jobs-v1.js" "s3://$STATIC_BUCKET/web/rasterizer/jobs-v1.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/rasterizer-v3.js" "s3://$STATIC_BUCKET/web/rasterizer-v3.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/static/community-set-v1.js" "s3://$STATIC_BUCKET/web/static/community-set-v1.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors

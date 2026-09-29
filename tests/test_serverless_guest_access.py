@@ -11,7 +11,8 @@ class ServerlessGuestAccessTests(unittest.TestCase):
     def setUpClass(cls):
         cls.handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
         cls.page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
-        cls.script = (ROOT / "serverless_web" / "rasterizer-v2.js").read_text(encoding="utf-8")
+        cls.script = (ROOT / "serverless_web" / "rasterizer-v3.js").read_text(encoding="utf-8")
+        cls.jobs = (ROOT / "serverless_web" / "rasterizer" / "jobs-v1.js").read_text(encoding="utf-8")
         cls.stack = (ROOT / "ecs" / "serverless-staging-web.yaml").read_text(encoding="utf-8")
         cls.foundation = (ROOT / "ecs" / "serverless-staging-foundation.yaml").read_text(encoding="utf-8")
         cls.worker = (ROOT / "worker.py").read_text(encoding="utf-8")
@@ -73,10 +74,10 @@ class ServerlessGuestAccessTests(unittest.TestCase):
 
     def test_direct_uploads_report_depthmap_style_progress(self):
         self.assertIn('id="uploadProgress" class="upload-progress"', self.page)
-        self.assertIn("new XMLHttpRequest()", self.script)
-        self.assertIn("request.upload.onprogress", self.script)
-        self.assertIn("async function uploadBatch(entries)", self.script)
-        self.assertIn("Uploads complete · preparing job submission", self.script)
+        self.assertIn("new XMLHttpRequest()", self.jobs)
+        self.assertIn("request.upload.onprogress", self.jobs)
+        self.assertIn("async function uploadBatch(entries", self.jobs)
+        self.assertIn("Uploads complete · preparing job submission", self.jobs)
 
     def test_guest_jobs_do_not_create_user_history(self):
         self.assertIn("if not guest:\n            batch.put_item(Item=history)", self.handler)

@@ -1,4 +1,11 @@
 import {renderRasterOutputs} from './rasterizer/output-rendering-v1.js';
+import {
+  createRasterJobPoller,
+  submissionErrorMessage,
+  upload,
+  uploadBatch,
+  uploadPhase,
+} from './rasterizer/jobs-v1.js';
 
 let config, token=localStorage.getItem('id_token')||sessionStorage.getItem('id_token'), refreshToken=localStorage.getItem('refresh_token')||sessionStorage.getItem('refresh_token'), currentTask, pollTimer, accountResources, preferenceTimer, guestMode=!token, guestAccessToken=sessionStorage.getItem('guest_access_token'), uploadedHolographicProfile=null, cropBitmap=null, cropSelection=null, cropDragStart=null, cropDragMode='', cropDragReference=null, cropResizeAnchor=null, croppedArtworkFile=null, appliedCropShape='', transparencyCropOutline=null, flowBitmap=null, flowTool='paint', flowDrawing=null, flowActiveRegion=0, customGlyphMask=null, customGlyphSvg=null, customCellSvg=null, panelPreviewGeneration=0;
 const FLOW_COLORS=['#65d46e','#58b7ff','#ffb347','#e66fff','#ff637d','#50dbc8','#d8d85a','#b69cff'];
@@ -344,10 +351,17 @@ function userFacingStyleError(message){const raw=String(message||''),value=raw.r
 function jobAccessErrorMessage(message){if(message==='Task not found'&& !guestMode)return "This job isn't available to this session. It may have expired or been deleted, or it may belong to another account. Check that you're signed into the right account; otherwise, start a new job.";if(message==='Guest task not found or access expired'&&guestMode)return "This guest job isn't available. Guest access lasts 24 hours, and the job may also have been deleted. If it's recent, try the original browser tab; otherwise, start a new job.";return message}
 async function api(path,options={},retryAuth=true){const r=await fetch(config.api_url+path,{...options,headers:{...authHeaders(),...(options.headers||{})}});const data=await r.json();if(r.status===401&&retryAuth&&await refreshSession())return api(path,options,false);if(r.status===401){clearAuth();throw new Error('Session expired. Sign in again.')}if(!r.ok)throw new Error(userFacingStyleError(data.message||`HTTP ${r.status}`));return data}
 async function guestApi(path,options={}){const headers={'content-type':'application/json',...(options.headers||{})};if(guestAccessToken)headers['x-guest-capability']=guestAccessToken;const r=await fetch(config.api_url+path,{...options,headers});const data=await r.json();if(!r.ok)throw new Error(userFacingStyleError(data.message||`HTTP ${r.status}`));return data}
-function uploadPhase(message,value=null){const panel=document.querySelector('#uploadProgressPanel'),progress=document.querySelector('#uploadProgress'),status=document.querySelector('#uploadProgressStatus');panel.hidden=false;status.textContent=message;if(value===null)progress.removeAttribute('value');else progress.value=Math.max(0,Math.min(100,value))}
-function upload(file,target,onProgress){return new Promise((resolve,reject)=>{const fd=new FormData();Object.entries(target.fields).forEach(([k,v])=>fd.append(k,v));fd.append('file',file);const request=new XMLHttpRequest();request.open('POST',target.url);request.upload.onprogress=event=>{const total=Math.max(Number(file.size)||Number(event.total)||0,1),loaded=event.lengthComputable&&event.total?event.loaded/event.total*total:Math.min(event.loaded,total);onProgress?.(loaded,total)};request.onerror=()=>reject(new Error('The upload was interrupted.'));request.onabort=()=>reject(new Error('The upload was canceled.'));request.onload=()=>request.status>=200&&request.status<300?resolve():reject(new Error(request.status===403?'This upload session is no longer valid.':`We couldn't upload the file (HTTP ${request.status}). Check its size and format.`));request.send(fd)})}
-function submissionErrorMessage(error,button){const message=String(error?.message||error),label=button.textContent.trim();if(/upload capability|upload session is no longer valid/i.test(message))return `This upload session is no longer valid. Click "${label}" again to retry.`;if(message==="We couldn't verify the uploaded file.")return `${message} Click "${label}" again to upload it again.`;if(message==='The uploaded file is empty.')return `${message} Choose a non-empty file, then click "${label}" again.`;if(/^The uploaded file exceeds the [\d.]+ MB limit\.$/.test(message))return `${message} Choose a smaller file, then click "${label}" again.`;if(message==='The upload was interrupted.')return `The upload was interrupted. Check your connection, then click "${label}" again to retry.`;if(message.startsWith("We couldn't upload the file (HTTP "))return `${message} Click "${label}" again to retry.`;return message}
-async function uploadBatch(entries){const state=entries.map(({file})=>({loaded:0,total:Math.max(Number(file.size)||0,1)})),total=state.reduce((sum,item)=>sum+item.total,0);const update=()=>{const loaded=state.reduce((sum,item)=>sum+item.loaded,0),percentage=Math.round(loaded/total*100);uploadPhase(`Uploading securely to private storage · ${percentage}%`,percentage)};update();await Promise.all(entries.map(({file,target},index)=>upload(file,target,loaded=>{state[index].loaded=Math.min(loaded,state[index].total);update()}).then(()=>{state[index].loaded=state[index].total;update()})));uploadPhase('Uploads complete · preparing job submission',100)}
+const poll=createRasterJobPoller({
+  getCurrentTask:()=>currentTask,
+  isGuest:()=>guestMode,
+  guestApi,
+  api,
+  show,
+  userFacingStyleError,
+  jobAccessErrorMessage,
+  renderOutputs:renderRasterOutputs,
+  setPollTimer:timer=>{pollTimer=timer},
+});
 document.querySelector('#colorMatchingMode').onchange=updateColorMatchingPresentation;
 for(const name of ['Hue','Saturation','Lightness']){const range=document.querySelector(`#matching${name}`),number=document.querySelector(`#matching${name}Number`);range.oninput=()=>{number.value=range.value;markQuantPreviewStale()};number.oninput=()=>{setMatchingControl(name,number.value);markQuantPreviewStale()}}
 document.querySelector('#generateQuantPreview').onclick=generateQuantizedPreview;
@@ -430,14 +444,4 @@ holographicForm.onsubmit=async event=>{
     currentTask=grant.task_id;history.replaceState({},'',`${location.pathname}?task=${encodeURIComponent(currentTask)}`);poll();
   }catch(error){const message=submissionErrorMessage(error,submit);uploadPhase(`Upload or submission failed · ${message}`,0);show(`ERROR: ${message}`);document.querySelector('#activity').classList.add('hidden');submit.disabled=false}
 };
-async function poll(){
-  try{const job=await (guestMode?guestApi(`/guest/jobs/${currentTask}`):api(`/jobs/${currentTask}`));show(`${job.status.toUpperCase()} · ${currentTask}\n\n${(job.logs||[]).join('\n')}`);
-    if(job.status==='completed'){document.querySelector('#activity').classList.add('hidden');document.querySelector('#submit').disabled=false;document.querySelector('#holoSubmit').disabled=false;document.querySelector('#outputs').innerHTML=renderRasterOutputs(job.outputs);return}
-    if(job.status==='failed'){
-      const reason=userFacingStyleError(job.error||job.logs?.at(-1)||'Worker failed');
-      show(`FAILED · ${currentTask}\n\n${(job.logs||[]).join('\n')}\n\nFailure reason: ${reason}`);
-      document.querySelector('#activity').classList.add('hidden');document.querySelector('#submit').disabled=false;return;
-    }pollTimer=setTimeout(poll,3000);
-  }catch(error){show(`ERROR: ${jobAccessErrorMessage(error.message)}`);document.querySelector('#activity').classList.add('hidden');document.querySelector('#submit').disabled=false;document.querySelector('#holoSubmit').disabled=false}
-}
 load().catch(error=>{const message=error.message||'Unknown error';show(message==='Session expired. Sign in again.'||message.startsWith('Cognito sign-in')||message.startsWith('Sign-in attempt')?message:`Configuration error: ${message}`)});
