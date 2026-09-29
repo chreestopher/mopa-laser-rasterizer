@@ -277,12 +277,13 @@ def test_legacy_workbed_values_are_treated_as_dimensions():
 
 def test_panel_tiling_settings_are_disclosed_only_when_enabled():
     page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+    panel_script = (ROOT / "serverless_web" / "rasterizer" / "panel-tiling-v1.js").read_text(encoding="utf-8")
 
     assert 'id="panelTilingEnabled" type="checkbox" aria-controls="panelTilingDetails" aria-expanded="false"' in page
     assert 'id="panelTilingDetails" class="layout-details" hidden' in page
     assert ".layout-details[hidden]{display:none}" in page
-    assert "details.hidden=!toggle.checked" in page
-    assert "toggle.setAttribute('aria-expanded',String(toggle.checked))" in page
+    assert "details.hidden=!toggle.checked" in panel_script
+    assert "toggle.setAttribute('aria-expanded',String(toggle.checked))" in panel_script
     assert 'id="tileWidth" type="number" min="1" max="3000"' in page
     assert 'id="tileHeight" type="number" min="1" max="3000"' in page
     assert 'id="tileGapX" type="number" min="0" max="1000"' in page
@@ -296,8 +297,8 @@ def test_panel_tiling_settings_are_disclosed_only_when_enabled():
     assert 'id="tileBorderSwatchField" hidden' in page
     assert 'id="tileBorderWidthField" hidden' in page
     assert 'id="panelLayoutPreview"' in page
-    assert "fit_mode:fitMode" in page
-    assert "renderPanelLayoutPreview()" in page
+    assert "fit_mode:fitMode" in panel_script
+    assert "renderPanelLayoutPreview()" in panel_script
     details_markup = page.split('id="panelTilingDetails"', 1)[1].split("</div></div></section>", 1)[0]
     for control_id in (
         "tileFitMode",
@@ -329,16 +330,17 @@ def test_panel_tiling_settings_are_disclosed_only_when_enabled():
 
 def test_panel_tiling_controls_oversized_dimension_fields_and_aspect_matching():
     page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+    panel_script = (ROOT / "serverless_web" / "rasterizer" / "panel-tiling-v1.js").read_text(encoding="utf-8")
 
-    assert "width.max=height.max=panelEnabled?'32000':'1600'" in page
-    assert "width.disabled=height.disabled=panelEnabled" in page
-    assert "width.value=dimensions.width" in page
-    assert "height.value=dimensions.height" in page
-    assert "async function autoMatchPanelAspect()" in page
-    assert "const orientations=[{width:current.tile_width_mm,height:current.tile_height_mm,rotated:false}]" in page
-    assert "orientation.rotated?0.25:0" in page
-    assert "document.querySelector('#tileFitMode').value='fit'" in page
-    assert "document.querySelector('#tileAutoAspect').onclick=autoMatchPanelAspect" in page
+    assert "width.max=height.max=panelEnabled?'32000':'1600'" in panel_script
+    assert "width.disabled=height.disabled=panelEnabled" in panel_script
+    assert "width.value=dimensions.width" in panel_script
+    assert "height.value=dimensions.height" in panel_script
+    assert "async function autoMatchPanelAspect()" in panel_script
+    assert "const orientations=[{width:current.tile_width_mm,height:current.tile_height_mm,rotated:false}]" in panel_script
+    assert "orientation.rotated?0.25:0" in panel_script
+    assert "element('#tileFitMode').value='fit'" in panel_script
+    assert "element('#tileAutoAspect').onclick=autoMatchPanelAspect" in panel_script
     assert "panel-preview-key image" in page
     assert "panel-preview-key space" in page
     assert "panel-preview-key panel" in page
@@ -346,14 +348,16 @@ def test_panel_tiling_controls_oversized_dimension_fields_and_aspect_matching():
 
 
 def test_panel_tiling_preferences_restore_layout_but_start_disabled():
-    page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+    script = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
+    panel_script = (ROOT / "serverless_web" / "rasterizer" / "panel-tiling-v1.js").read_text(encoding="utf-8")
+    submission_script = (ROOT / "serverless_web" / "rasterizer" / "submission-v1.js").read_text(encoding="utf-8")
 
-    assert "function panelTilingPreferenceValues()" in page
-    assert "delete settings.enabled" in page
-    assert "panel_tiling:panelTilingPreferenceValues()" in page
-    assert page.count("panel_tiling:panelTilingParameters()") == 1
-    assert "toggle.checked=false" in page
-    assert "toggle.checked=Boolean(settings.enabled)" not in page
+    assert "export function panelTilingPreferenceValues()" in panel_script
+    assert "delete settings.enabled" in panel_script
+    assert "panel_tiling:panelTilingPreferenceValues()" in script
+    assert submission_script.count("panelTiling: panelTilingParameters()") == 1
+    assert "toggle.checked=false" in panel_script
+    assert "toggle.checked=Boolean(settings.enabled)" not in panel_script
 
 
 def test_panel_dimensions_resize_the_complete_source_before_clipping():
