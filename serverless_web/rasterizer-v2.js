@@ -1,3 +1,5 @@
+import {renderRasterOutputs} from './rasterizer/output-rendering-v1.js';
+
 let config, token=localStorage.getItem('id_token')||sessionStorage.getItem('id_token'), refreshToken=localStorage.getItem('refresh_token')||sessionStorage.getItem('refresh_token'), currentTask, pollTimer, accountResources, preferenceTimer, guestMode=!token, guestAccessToken=sessionStorage.getItem('guest_access_token'), uploadedHolographicProfile=null, cropBitmap=null, cropSelection=null, cropDragStart=null, cropDragMode='', cropDragReference=null, cropResizeAnchor=null, croppedArtworkFile=null, appliedCropShape='', transparencyCropOutline=null, flowBitmap=null, flowTool='paint', flowDrawing=null, flowActiveRegion=0, customGlyphMask=null, customGlyphSvg=null, customCellSvg=null, panelPreviewGeneration=0;
 const FLOW_COLORS=['#65d46e','#58b7ff','#ffb347','#e66fff','#ff637d','#50dbc8','#d8d85a','#b69cff'];
 const newFlowRegion=(index,regionType='painted')=>({name:`${regionType==='image_mask'?'Image mask':'Painted region'} ${index+1}`,region_type:regionType,scope:'combined_region',guide_type:'linear',orientation:'parallel',start:[.25,.5],end:[.75,.5],gradient_start:165,gradient_end:90,curve:1,fixed_angle:0,angle_offset:0,reverse:false,mask:null,mask_name:'',mask_mode:'grayscale',mask_threshold:.01,mask_invert:false,mask_offset:[0,0]});
@@ -438,7 +440,4 @@ async function poll(){
     }pollTimer=setTimeout(poll,3000);
   }catch(error){show(`ERROR: ${jobAccessErrorMessage(error.message)}`);document.querySelector('#activity').classList.add('hidden');document.querySelector('#submit').disabled=false;document.querySelector('#holoSubmit').disabled=false}
 }
-function rasterOutputRank(output){const name=outputBasename(output).toLowerCase();return name.endsWith('.svg')?0:name.endsWith('.lbrn2')?1:2}
-function outputBasename(output){return String(output?.name||'download').replaceAll('\\','/').split('/').pop()||'download'}
-function renderRasterOutputs(outputs){const ordered=[...(outputs||[])].sort((left,right)=>rasterOutputRank(left)-rasterOutputRank(right)||outputBasename(left).localeCompare(outputBasename(right)));return `<div class="output-downloads">${ordered.map(output=>{const label=`Download ${outputBasename(output)}`;return `<p class="output-download-item"><a class="staging-action-button output-download-button" href="${esc(output.download_url)}" title="${esc(label)}">${esc(label)}</a><span class="output-download-size">${(Number(output.bytes||0)/1048576).toFixed(1)} MB</span></p>`}).join('')}</div>`}
 load().catch(error=>{const message=error.message||'Unknown error';show(message==='Session expired. Sign in again.'||message.startsWith('Cognito sign-in')||message.startsWith('Sign-in attempt')?message:`Configuration error: ${message}`)});

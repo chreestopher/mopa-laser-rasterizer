@@ -11,7 +11,7 @@ class ServerlessGuestAccessTests(unittest.TestCase):
     def setUpClass(cls):
         cls.handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
         cls.page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
-        cls.script = (ROOT / "serverless_web" / "rasterizer-v1.js").read_text(encoding="utf-8")
+        cls.script = (ROOT / "serverless_web" / "rasterizer-v2.js").read_text(encoding="utf-8")
         cls.stack = (ROOT / "ecs" / "serverless-staging-web.yaml").read_text(encoding="utf-8")
         cls.foundation = (ROOT / "ecs" / "serverless-staging-foundation.yaml").read_text(encoding="utf-8")
         cls.worker = (ROOT / "worker.py").read_text(encoding="utf-8")
