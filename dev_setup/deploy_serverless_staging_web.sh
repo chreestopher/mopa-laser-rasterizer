@@ -161,6 +161,8 @@ aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/jobs-v1.js" "s3://$STATIC_BUCKET
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/submission-v1.js" "s3://$STATIC_BUCKET/web/rasterizer/submission-v1.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/artwork-preview-v1.js" "s3://$STATIC_BUCKET/web/rasterizer/artwork-preview-v1.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/rasterizer-v4.js" "s3://$STATIC_BUCKET/web/rasterizer-v4.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/static/community-set-v1.js" "s3://$STATIC_BUCKET/web/static/community-set-v1.js" \
