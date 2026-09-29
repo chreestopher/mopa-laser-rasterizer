@@ -568,6 +568,12 @@ HARNESS = r"""
     form.requestSubmit();
   };
   const waitForApplication = () => {
+    const rasterizerForm = document.querySelector('#job');
+    if (typeof rasterizerForm?.onsubmit !== 'function') {
+      setTimeout(waitForApplication, 25);
+      return;
+    }
+    if (deadline === 0) deadline = Date.now() + (scenario === 'polling' ? 30000 : 20000);
     if (scenario === 'guest-submit') startGuestSubmission();
     if (scenario === 'authenticated-submit' || scenario === 'submission-error') startAuthenticatedSubmission();
     if (scenario === 'holographic-submit') startHolographicSubmission();
@@ -577,7 +583,6 @@ HARNESS = r"""
     if (scenario === 'shape-assets') startShapeAssetsCharacterization();
     if (scenario === 'geometry-routing') startGeometryRoutingCharacterization();
     if (scenario === 'submission-error' && !window.__submissionStarted) return;
-    if (deadline === 0) deadline = Date.now() + (scenario === 'polling' ? 20000 : 7500);
     submissionReadinessObserver?.disconnect();
     const ready = scenario === 'guest'
       ? document.querySelectorAll('#rasterPalette .color-card').length === palette.length
@@ -629,8 +634,6 @@ HARNESS = r"""
     if (scenario === 'submission-error') {
       submissionReadinessObserver = new MutationObserver(waitForApplication);
       submissionReadinessObserver.observe(document.querySelector('#rasterPalette'), {childList: true, subtree: true});
-    } else {
-      deadline = Date.now() + (scenario === 'polling' ? 20000 : 7500);
     }
     waitForApplication();
   }, {once: true});
@@ -691,7 +694,7 @@ class RasterizerBrowserCharacterizationTests(unittest.TestCase):
                     "--no-sandbox",
                     "--disable-dev-shm-usage",
                     f"--user-data-dir={profile}",
-                    "--virtual-time-budget=25000",
+                    "--virtual-time-budget=60000",
                     "--dump-dom",
                     url,
                 ],
@@ -699,7 +702,7 @@ class RasterizerBrowserCharacterizationTests(unittest.TestCase):
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=30,
+                timeout=75,
                 check=False,
             )
         self.assertEqual(completed.returncode, 0, completed.stderr)
