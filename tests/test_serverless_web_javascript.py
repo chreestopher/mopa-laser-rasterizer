@@ -230,6 +230,9 @@ def test_phase_four_rasterizer_uses_the_reviewed_job_and_output_boundaries():
     shape_assets = (WEB / "rasterizer" / "shape-assets-v1.js").read_text(
         encoding="utf-8"
     )
+    geometry_controls = (WEB / "rasterizer" / "geometry-controls-v1.js").read_text(
+        encoding="utf-8"
+    )
 
     assert "import {renderRasterOutputs} from './rasterizer/output-rendering-v1.js';" in script
     assert "} from './rasterizer/jobs-v1.js';" in script
@@ -238,6 +241,7 @@ def test_phase_four_rasterizer_uses_the_reviewed_job_and_output_boundaries():
     assert "} from './rasterizer/panel-tiling-v1.js';" in script
     assert "} from './rasterizer/palette-resources-v1.js';" in script
     assert "} from './rasterizer/shape-assets-v1.js';" in script
+    assert "} from './rasterizer/geometry-controls-v1.js';" in script
     assert "function renderRasterOutputs(" not in script
     assert "function uploadPhase(" not in script
     assert "function upload(" not in script
@@ -262,6 +266,11 @@ def test_phase_four_rasterizer_uses_the_reviewed_job_and_output_boundaries():
     assert "function drawShapePreview(" not in script
     assert "async function normalizeShapeSvg(" not in script
     assert "async function drawSvgPreview(" not in script
+    assert "function geometryStyleCompatible(" not in script
+    assert "function geometryControlValues(" not in script
+    assert "function buildGeometryControls(" not in script
+    assert "function renderGeometryRouting(" not in script
+    assert "function applyGeometryValues(" not in script
     assert "export function renderRasterOutputs(" in output_rendering
     assert "export function createRasterJobPoller(" in jobs
     assert "export function uploadPhase(" in jobs
@@ -293,6 +302,12 @@ def test_phase_four_rasterizer_uses_the_reviewed_job_and_output_boundaries():
     assert "export function drawShapePreview(" in shape_assets
     assert "export async function normalizeShapeSvg(" in shape_assets
     assert "export async function drawSvgPreview(" in shape_assets
+    assert "export function configureGeometryControls(" in geometry_controls
+    assert "export function effectiveGeometryStyle(" in geometry_controls
+    assert "export function geometryStyleParameters(" in geometry_controls
+    assert "export function renderGeometryControls(" in geometry_controls
+    assert "export function restoreGeometryControls(" in geometry_controls
+    assert "export function syncGeometryStyleAvailability(" in geometry_controls
     assert script.rstrip().endswith(
         "load().catch(error=>{const message=error.message||'Unknown error';"
         "show(message==='Session expired. Sign in again.'||message.startsWith('Cognito sign-in')||"
@@ -414,6 +429,9 @@ def test_rasterizer_module_graph_uploads_dependencies_before_entry_and_html():
     shape_dependency = (
         'aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/shape-assets-v1.js"'
     )
+    geometry_dependency = (
+        'aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/geometry-controls-v1.js"'
+    )
     entry = 'aws s3 cp "$REPO_ROOT/serverless_web/rasterizer-v4.js"'
     html = 'aws s3 cp "$BUILD_DIR/seo/index.html"'
 
@@ -424,7 +442,8 @@ def test_rasterizer_module_graph_uploads_dependencies_before_entry_and_html():
     assert deploy.index(panel_dependency) < deploy.index(entry) < deploy.index(html)
     assert deploy.index(palette_dependency) < deploy.index(entry) < deploy.index(html)
     assert deploy.index(shape_dependency) < deploy.index(entry) < deploy.index(html)
-    for asset in (output_dependency, jobs_dependency, submission_dependency, preview_dependency, panel_dependency, palette_dependency, shape_dependency, entry):
+    assert deploy.index(shape_dependency) < deploy.index(geometry_dependency) < deploy.index(entry)
+    for asset in (output_dependency, jobs_dependency, submission_dependency, preview_dependency, panel_dependency, palette_dependency, shape_dependency, geometry_dependency, entry):
         assert "public,max-age=31536000,immutable" in deploy[
             deploy.index(asset) : deploy.index(asset) + 400
         ]
@@ -508,6 +527,8 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
     assert referenced_modes[WEB / "rasterizer" / "artwork-preview-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "panel-tiling-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "palette-resources-v1.js"] == {"module"}
+    assert referenced_modes[WEB / "rasterizer" / "shape-assets-v1.js"] == {"module"}
+    assert referenced_modes[WEB / "rasterizer" / "geometry-controls-v1.js"] == {"module"}
     assert referenced_modes[ROOT / "static" / "community-set-v1.js"] == {"classic"}
     assert referenced_modes[ROOT / "static" / "docs-search-v1.js"] == {"classic"}
     for filename in (
