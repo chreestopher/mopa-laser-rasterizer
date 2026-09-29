@@ -658,7 +658,7 @@ HARNESS = r"""
       setTimeout(waitForApplication, 25);
       return;
     }
-    if (deadline === 0) deadline = Date.now() + (scenario === 'flow-painter' ? 50000 : scenario === 'polling' ? 30000 : 20000);
+    if (deadline === 0) deadline = Date.now() + (scenario === 'flow-painter' || scenario === 'shape-assets' ? 50000 : scenario === 'polling' ? 30000 : 20000);
     if (scenario === 'guest-submit') startGuestSubmission();
     if (scenario === 'authenticated-submit' || scenario === 'submission-error') startAuthenticatedSubmission();
     if (scenario === 'holographic-submit') startHolographicSubmission();
