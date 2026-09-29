@@ -42,6 +42,10 @@ HARNESS = r"""
   const scenario = params.get('scenario');
   const failures = [];
   const runtimeErrors = [];
+  const statusHistory = [];
+  const fetchHistory = [];
+  let submittedPayload = null;
+  let pollIndex = 0;
   const jsonResponse = (value, status = 200) => new Response(JSON.stringify(value), {
     status,
     headers: {'content-type': 'application/json'}
@@ -52,7 +56,7 @@ HARNESS = r"""
   window.stagingShellSetAuthenticated = authenticated => { window.__shellAuthenticated = authenticated; };
   window.stagingShellBeginLogin = () => {};
 
-  if (scenario === 'resume') localStorage.setItem('id_token', '__JWT__');
+  if (scenario === 'resume' || scenario === 'polling' || scenario === 'failed') localStorage.setItem('id_token', '__JWT__');
   else {
     localStorage.removeItem('id_token');
     sessionStorage.removeItem('id_token');
@@ -65,8 +69,21 @@ HARNESS = r"""
     {name: 'Gray', hex: '#808080'},
     {name: 'White', hex: '#FFFFFF'}
   ];
-  window.fetch = async input => {
+  class CharacterizationUpload {
+    constructor() { this.upload = {}; this.status = 204; }
+    open(method, url) { this.method = method; this.url = url; }
+    send() {
+      queueMicrotask(() => {
+        this.upload.onprogress?.({lengthComputable: true, loaded: 3, total: 3});
+        this.onload?.();
+      });
+    }
+  }
+  window.XMLHttpRequest = CharacterizationUpload;
+
+  window.fetch = async (input, options = {}) => {
     const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+    fetchHistory.push(`${options.method || 'GET'} ${url.pathname}`);
     if (url.pathname.endsWith('/config.json')) return jsonResponse({api_url: '/api', client_id: 'test', cognito_domain: 'example.invalid'});
     if (url.pathname === '/api/guest/config') return jsonResponse({palette});
     if (url.pathname === '/api/account/resources') return jsonResponse({
@@ -84,6 +101,37 @@ HARNESS = r"""
         {name: 'result.svg', download_url: '/download/result.svg', bytes: 524288}
       ]
     });
+    if (url.pathname === '/api/jobs/polling-task') {
+      const states = [
+        {status: 'pending', logs: ['queued']},
+        {status: 'processing', logs: ['queued', 'worker started']},
+        {status: 'completed', logs: ['queued', 'worker started', 'done'], outputs: [
+          {name: 'polling.svg', download_url: '/download/polling.svg', bytes: 512}
+        ]}
+      ];
+      return jsonResponse(states[Math.min(pollIndex++, states.length - 1)]);
+    }
+    if (url.pathname === '/api/jobs/failed-task') return jsonResponse({
+      status: 'failed',
+      logs: ['worker started', 'Invalid geometry style parameters: bad test value']
+    });
+    if (url.pathname === '/api/guest/uploads' && options.method === 'POST') return jsonResponse({
+      task_id: 'guest-submit-task',
+      guest_access_token: 'guest-capability',
+      upload_token: 'upload-capability',
+      artwork: {url: '/upload/artwork', key: 'guest/artwork.png', fields: {}},
+      material: null,
+      thumbnail: null
+    });
+    if (url.pathname === '/api/guest/jobs/guest-submit-task/submit' && options.method === 'POST') {
+      submittedPayload = JSON.parse(options.body);
+      return jsonResponse({accepted: true});
+    }
+    if (url.pathname === '/api/guest/jobs/guest-submit-task') return jsonResponse({
+      status: 'completed', logs: ['guest complete'], outputs: [
+        {name: 'guest-result.svg', download_url: '/download/guest-result.svg', bytes: 1024}
+      ]
+    });
     throw new Error(`Unexpected characterization fetch: ${url.pathname}`);
   };
 
@@ -96,6 +144,40 @@ HARNESS = r"""
       assert(document.querySelectorAll('#materialChoice option').length === 3, 'guest output choices were not populated');
       assert(document.querySelectorAll('#rasterPalette .color-card').length === palette.length, 'guest palette was not rendered');
       assert(window.__shellAuthenticated === false, 'shell did not receive guest authentication state');
+    } else if (scenario === 'guest-submit') {
+      const expectedKeys = [
+        'upload_token', 'artwork_key', 'thumbnail_key', 'material_key', 'holographic_palette_key',
+        'pixel_square_mm', 'new_width', 'new_height', 'crop_shape', 'white_is', 'material', 'colors',
+        'selected_color_hexes', 'selected_holographic_recipe_indexes', 'image_preset', 'abstract_filter',
+        'abstract_filter_parameters', 'color_matching_mode', 'color_matching_hue_weight',
+        'color_matching_saturation_weight', 'color_matching_lightness_weight',
+        'geometry_style', 'geometry_style_parameters', 'panel_tiling', 'color_name_overrides', 'cut_mode',
+        'preserve_black_outlines', 'svg_only'
+      ];
+      assert(submittedPayload !== null, 'guest submission payload was not sent');
+      assert(Object.keys(submittedPayload || {}).join('|') === expectedKeys.join('|'), `guest submission payload keys or ordering changed: ${Object.keys(submittedPayload || {}).join('|')}`);
+      assert(submittedPayload?.upload_token === 'upload-capability', 'guest upload capability was not forwarded');
+      assert(submittedPayload?.artwork_key === 'guest/artwork.png', 'guest artwork key was not forwarded');
+      assert(submittedPayload?.pixel_square_mm === '0.125' && submittedPayload?.new_width === '400' && submittedPayload?.new_height === '0', 'numeric form fields stopped being submitted as strings');
+      assert(submittedPayload?.svg_only === true && submittedPayload?.material === '', 'SVG-only submission flags changed');
+      assert(Array.isArray(submittedPayload?.selected_color_hexes) && submittedPayload.selected_color_hexes.length === palette.length, 'selected guest swatches changed');
+      assert(typeof submittedPayload?.panel_tiling === 'object' && submittedPayload.panel_tiling !== null, 'panel tiling payload stopped being an object');
+      assert(fetchHistory.includes('POST /api/guest/uploads'), 'guest upload permission was not requested');
+      assert(fetchHistory.includes('POST /api/guest/jobs/guest-submit-task/submit'), 'guest job was not submitted');
+      assert(document.querySelector('#status').textContent.startsWith('COMPLETED'), 'submitted guest job did not complete');
+      assert(document.querySelectorAll('#outputs a').length === 1, 'submitted guest output was not rendered');
+    } else if (scenario === 'polling') {
+      assert(pollIndex === 3, `polling job used ${pollIndex} requests instead of 3 (${fetchHistory.join(', ')})`);
+      assert(statusHistory.some(value => value.startsWith('PENDING')), 'pending polling state was not shown');
+      assert(statusHistory.some(value => value.startsWith('PROCESSING')), 'processing polling state was not shown');
+      assert(document.querySelector('#status').textContent.startsWith('COMPLETED'), 'polling job did not reach completed state');
+      assert(document.querySelector('#activity').classList.contains('hidden'), 'activity indicator remained visible after completion');
+      assert(document.querySelector('#submit').disabled === false && document.querySelector('#holoSubmit').disabled === false, 'submit controls remained disabled after completion');
+    } else if (scenario === 'failed') {
+      assert(document.querySelector('#status').textContent.startsWith('FAILED'), 'failed job did not show failed status');
+      assert(document.querySelector('#status').textContent.includes("We couldn't read these style settings."), 'failed job reason was not converted to the reviewed user-facing message');
+      assert(document.querySelector('#activity').classList.contains('hidden'), 'activity indicator remained visible after failure');
+      assert(document.querySelector('#submit').disabled === false, 'Rasterizer submit remained disabled after failure');
     } else {
       const links = [...document.querySelectorAll('#outputs a')];
       assert(document.querySelector('#status').textContent.startsWith('COMPLETED · characterization-task'), 'resumed job did not reach completed state');
@@ -111,11 +193,33 @@ HARNESS = r"""
     document.body.append(result);
   };
 
-  const deadline = Date.now() + 4000;
+  const deadline = Date.now() + 7500;
+  const status = document.querySelector('#status');
+  if (status) new MutationObserver(() => statusHistory.push(status.textContent)).observe(status, {childList: true, characterData: true, subtree: true});
+  const startGuestSubmission = () => {
+    if (window.__submissionStarted || document.querySelectorAll('#rasterPalette .color-card').length !== palette.length) return;
+    window.__submissionStarted = true;
+    const choice = document.querySelector('#materialChoice');
+    choice.value = 'svg';
+    choice.dispatchEvent(new Event('change', {bubbles: true}));
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([new Uint8Array([1, 2, 3])], 'characterization.png', {type: 'image/png'}));
+    const artwork = document.querySelector('#artwork');
+    artwork.files = transfer.files;
+    artwork.dispatchEvent(new Event('change', {bubbles: true}));
+    document.querySelector('#job').requestSubmit();
+  };
   const waitForApplication = () => {
+    if (scenario === 'guest-submit') startGuestSubmission();
     const ready = scenario === 'guest'
       ? document.querySelectorAll('#rasterPalette .color-card').length === palette.length
-      : document.querySelectorAll('#outputs a').length === 3;
+      : scenario === 'guest-submit'
+        ? submittedPayload !== null && document.querySelectorAll('#outputs a').length === 1
+        : scenario === 'polling'
+          ? pollIndex === 3 && document.querySelectorAll('#outputs a').length === 1
+          : scenario === 'failed'
+            ? document.querySelector('#status').textContent.startsWith('FAILED')
+            : document.querySelectorAll('#outputs a').length === 3;
     if (ready || Date.now() >= deadline) finish();
     else setTimeout(waitForApplication, 25);
   };
@@ -172,7 +276,7 @@ class RasterizerBrowserCharacterizationTests(unittest.TestCase):
                     "--no-sandbox",
                     "--disable-dev-shm-usage",
                     f"--user-data-dir={profile}",
-                    "--virtual-time-budget=5000",
+                    "--virtual-time-budget=9000",
                     "--dump-dom",
                     url,
                 ],
@@ -195,6 +299,15 @@ class RasterizerBrowserCharacterizationTests(unittest.TestCase):
 
     def test_authenticated_job_resume_and_completed_outputs(self):
         self._run_scenario("resume", "&task=characterization-task")
+
+    def test_guest_svg_only_submission_payload_and_completion(self):
+        self._run_scenario("guest-submit")
+
+    def test_authenticated_job_polling_sequence_and_completion(self):
+        self._run_scenario("polling", "&task=polling-task")
+
+    def test_authenticated_failed_job_restores_submission_controls(self):
+        self._run_scenario("failed", "&task=failed-task")
 
 
 if __name__ == "__main__":
