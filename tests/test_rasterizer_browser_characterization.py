@@ -52,6 +52,7 @@ HARNESS = r"""
   let preferencePayload = null;
   let submissionCount = 0;
   let pollIndex = 0;
+  let accountResourceRequests = 0;
   if (scenario === 'preview' || scenario === 'image-style-matching' || scenario === 'panel-tiling' || scenario === 'shape-assets' || scenario === 'flow-painter') window.createImageBitmap = async () => {
     const canvas = document.createElement('canvas');
     canvas.width = scenario === 'panel-tiling' || scenario === 'shape-assets' || scenario === 'flow-painter' ? 4 : 1;
@@ -72,8 +73,13 @@ HARNESS = r"""
   window.stagingShellSetAuthenticated = authenticated => { window.__shellAuthenticated = authenticated; };
   window.stagingShellBeginLogin = () => {};
 
-  if (['resume', 'polling', 'failed', 'authenticated-submit', 'holographic-submit', 'submission-error', 'preview', 'image-style-matching', 'panel-tiling', 'palette-resources', 'shape-assets', 'geometry-routing', 'flow-painter'].includes(scenario)) localStorage.setItem('id_token', '__JWT__');
-  else {
+  if (scenario === 'auth-refresh') {
+    localStorage.setItem('id_token', 'expired-token');
+    localStorage.setItem('refresh_token', 'refresh-capability');
+  } else if (['auth-retry', 'resume', 'polling', 'failed', 'authenticated-submit', 'holographic-submit', 'submission-error', 'preview', 'image-style-matching', 'panel-tiling', 'palette-resources', 'shape-assets', 'geometry-routing', 'flow-painter'].includes(scenario)) {
+    localStorage.setItem('id_token', '__JWT__');
+    if (scenario === 'auth-retry') localStorage.setItem('refresh_token', 'refresh-capability');
+  } else {
     localStorage.removeItem('id_token');
     sessionStorage.removeItem('id_token');
     localStorage.removeItem('refresh_token');
@@ -101,8 +107,12 @@ HARNESS = r"""
     const url = new URL(typeof input === 'string' ? input : input.url, location.href);
     fetchHistory.push(`${options.method || 'GET'} ${url.pathname}`);
     if (url.pathname.endsWith('/config.json')) return jsonResponse({api_url: '/api', client_id: 'test', cognito_domain: 'example.invalid'});
+    if (url.pathname === '/oauth2/token') return jsonResponse({id_token: '__JWT__'});
     if (url.pathname === '/api/guest/config') return jsonResponse({palette});
-    if (url.pathname === '/api/account/resources') return jsonResponse({
+    if (url.pathname === '/api/account/resources') {
+      accountResourceRequests += 1;
+      if (scenario === 'auth-retry' && accountResourceRequests === 1) return jsonResponse({message: 'Expired characterization token'}, 401);
+      return jsonResponse({
       palette,
       material_libraries: [{library_id: 'library-1', name: 'Characterization Library', material_name: 'Walnut', library_intent: 'color_palette', summary: {material_names: ['Walnut', 'Maple']}}],
       holographic_recipes: [{recipe_id: 'recipe-1', name: 'Characterization Fauxlographic Palette', metadata: {schema_version: 2, self_contained: true, swatch_preview: [{name: 'Copper', hex: '#B87333', angle_degrees: 30, interval_mm: 0.06}]}}],
@@ -122,7 +132,8 @@ HARNESS = r"""
           color_matching_lightness_weight: 5
         }}
       } : {}
-    });
+      });
+    }
     if (url.pathname === '/api/account/preferences' && options.method === 'PATCH') {
       preferencePayload = JSON.parse(options.body);
       return jsonResponse({preferences: preferencePayload});
@@ -233,6 +244,18 @@ HARNESS = r"""
       assert(document.querySelectorAll('#materialChoice option').length === 3, 'guest output choices were not populated');
       assert(document.querySelectorAll('#rasterPalette .color-card').length === palette.length, 'guest palette was not rendered');
       assert(window.__shellAuthenticated === false, 'shell did not receive guest authentication state');
+    } else if (scenario === 'auth-refresh') {
+      assert(fetchHistory.includes('POST /oauth2/token'), `expiring session did not request a refreshed token (${fetchHistory.join(', ')})`);
+      assert(localStorage.getItem('id_token') === '__JWT__', 'refreshed identity token was not persisted');
+      assert(localStorage.getItem('refresh_token') === 'refresh-capability', 'refresh capability changed during token refresh');
+      assert(window.__shellAuthenticated === true, 'shell did not receive refreshed authenticated state');
+      assert(document.querySelector('#status').textContent.startsWith('Authenticated.'), 'refreshed session did not initialize authenticated status');
+    } else if (scenario === 'auth-retry') {
+      assert(accountResourceRequests === 2, `authenticated API request was not retried exactly once (${accountResourceRequests})`);
+      assert(fetchHistory.includes('POST /oauth2/token'), `401 response did not request a refreshed token (${fetchHistory.join(', ')})`);
+      assert(localStorage.getItem('id_token') === '__JWT__', '401 retry did not persist the refreshed identity token');
+      assert(window.__shellAuthenticated === true, 'successful 401 retry changed authenticated shell state');
+      assert(document.querySelectorAll('#rasterPalette .color-card').length === palette.length, 'successful 401 retry did not finish loading account resources');
     } else if (scenario === 'guest-submit') {
       const expectedKeys = [
         'upload_token', 'artwork_key', 'thumbnail_key', 'material_key', 'holographic_palette_key',
@@ -703,7 +726,7 @@ HARNESS = r"""
     if (scenario === 'flow-painter') startFlowPainterCharacterization();
     if (scenario === 'submission-error' && !window.__submissionStarted) return;
     submissionReadinessObserver?.disconnect();
-    const ready = scenario === 'guest'
+    const ready = scenario === 'guest' || scenario === 'auth-refresh' || scenario === 'auth-retry'
       ? document.querySelectorAll('#rasterPalette .color-card').length === palette.length
       : scenario === 'guest-submit'
         ? submittedPayload !== null && document.querySelectorAll('#outputs a').length === 1
@@ -848,6 +871,12 @@ class RasterizerBrowserCharacterizationTests(unittest.TestCase):
 
     def test_guest_startup_and_palette_controls(self):
         self._run_scenario("guest")
+
+    def test_expiring_authenticated_session_refreshes_before_loading_resources(self):
+        self._run_scenario("auth-refresh")
+
+    def test_authenticated_api_retries_once_after_refreshing_a_401(self):
+        self._run_scenario("auth-retry")
 
     def test_authenticated_job_resume_and_completed_outputs(self):
         self._run_scenario("resume", "&task=characterization-task")
