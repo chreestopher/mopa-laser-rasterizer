@@ -218,10 +218,14 @@ def test_phase_four_rasterizer_uses_the_reviewed_job_and_output_boundaries():
     )
     jobs = (WEB / "rasterizer" / "jobs-v1.js").read_text(encoding="utf-8")
     submission = (WEB / "rasterizer" / "submission-v1.js").read_text(encoding="utf-8")
+    artwork_preview = (WEB / "rasterizer" / "artwork-preview-v1.js").read_text(
+        encoding="utf-8"
+    )
 
     assert "import {renderRasterOutputs} from './rasterizer/output-rendering-v1.js';" in script
     assert "} from './rasterizer/jobs-v1.js';" in script
     assert "} from './rasterizer/submission-v1.js';" in script
+    assert "} from './rasterizer/artwork-preview-v1.js';" in script
     assert "function renderRasterOutputs(" not in script
     assert "function uploadPhase(" not in script
     assert "function upload(" not in script
@@ -230,6 +234,8 @@ def test_phase_four_rasterizer_uses_the_reviewed_job_and_output_boundaries():
     assert "async function poll(" not in script
     assert "form.onsubmit=async" not in script
     assert "holographicForm.onsubmit=async" not in script
+    assert "function drawCropPreview(" not in script
+    assert "async function generateQuantizedPreview(" not in script
     assert "export function renderRasterOutputs(" in output_rendering
     assert "export function createRasterJobPoller(" in jobs
     assert "export function uploadPhase(" in jobs
@@ -242,6 +248,9 @@ def test_phase_four_rasterizer_uses_the_reviewed_job_and_output_boundaries():
     assert "export function buildHolographicSubmissionPayload(" in submission
     assert "export function createRasterSubmissionHandler(" in submission
     assert "export function createHolographicSubmissionHandler(" in submission
+    assert "export function configureArtworkPreview(" in artwork_preview
+    assert "export async function applyArtworkCrop(" in artwork_preview
+    assert "export async function generateQuantizedPreview(" in artwork_preview
     assert script.rstrip().endswith(
         "load().catch(error=>{const message=error.message||'Unknown error';"
         "show(message==='Session expired. Sign in again.'||message.startsWith('Cognito sign-in')||"
@@ -351,13 +360,17 @@ def test_rasterizer_module_graph_uploads_dependencies_before_entry_and_html():
     submission_dependency = (
         'aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/submission-v1.js"'
     )
+    preview_dependency = (
+        'aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/artwork-preview-v1.js"'
+    )
     entry = 'aws s3 cp "$REPO_ROOT/serverless_web/rasterizer-v4.js"'
     html = 'aws s3 cp "$BUILD_DIR/seo/index.html"'
 
     assert deploy.index(output_dependency) < deploy.index(entry) < deploy.index(html)
     assert deploy.index(jobs_dependency) < deploy.index(entry) < deploy.index(html)
     assert deploy.index(jobs_dependency) < deploy.index(submission_dependency) < deploy.index(entry)
-    for asset in (output_dependency, jobs_dependency, submission_dependency, entry):
+    assert deploy.index(preview_dependency) < deploy.index(entry) < deploy.index(html)
+    for asset in (output_dependency, jobs_dependency, submission_dependency, preview_dependency, entry):
         assert "public,max-age=31536000,immutable" in deploy[
             deploy.index(asset) : deploy.index(asset) + 400
         ]
@@ -438,6 +451,7 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
     assert referenced_modes[WEB / "rasterizer" / "output-rendering-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "jobs-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "submission-v1.js"] == {"module"}
+    assert referenced_modes[WEB / "rasterizer" / "artwork-preview-v1.js"] == {"module"}
     assert referenced_modes[ROOT / "static" / "community-set-v1.js"] == {"classic"}
     assert referenced_modes[ROOT / "static" / "docs-search-v1.js"] == {"classic"}
     for filename in (

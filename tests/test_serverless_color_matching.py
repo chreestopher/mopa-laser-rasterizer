@@ -5,7 +5,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_rasterizer_exposes_matching_presets_custom_controls_and_browser_preview():
-    page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+    html = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+    entry = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
+    preview = (ROOT / "serverless_web" / "rasterizer" / "artwork-preview-v1.js").read_text(encoding="utf-8")
+    page = "\n".join((html, entry, preview))
 
     for value in ("balanced", "hue", "shades", "closest", "custom"):
         assert f'<option value="{value}">' in page
@@ -36,7 +39,10 @@ def test_rasterizer_exposes_matching_presets_custom_controls_and_browser_preview
 
 
 def test_quantized_preview_uses_only_currently_enabled_swatches():
-    page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+    html = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+    entry = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
+    preview = (ROOT / "serverless_web" / "rasterizer" / "artwork-preview-v1.js").read_text(encoding="utf-8")
+    page = "\n".join((html, entry, preview))
 
     assert "function paletteEntrySelectionKey(entry)" in page
     assert "selectedPaletteHexes.has(key)" in page
@@ -47,12 +53,15 @@ def test_quantized_preview_uses_only_currently_enabled_swatches():
 
 
 def test_matching_settings_are_submitted_validated_and_forwarded_to_worker():
-    page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+    entry = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
+    submission = (ROOT / "serverless_web" / "rasterizer" / "submission-v1.js").read_text(encoding="utf-8")
+    page = "\n".join((entry, submission))
     handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
     cli = (ROOT / "lib" / "Material_Library.py").read_text(encoding="utf-8")
     processing = (ROOT / "lib" / "vector_processing.py").read_text(encoding="utf-8")
 
-    assert "abstract_filter_parameters:JSON.stringify(filterParameters()),...colorMatchingParameters()" in page
+    assert "abstract_filter_parameters: JSON.stringify(filterParameters)" in page
+    assert "colorMatchingParameters: colorMatchingParameters()" in page
     assert 'matching_mode not in {"balanced", "hue", "shades", "closest", "custom"}' in handler
     assert "color_matching=color_matching" in cli
     assert "def resolve_color_matching(" in processing

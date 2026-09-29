@@ -121,16 +121,24 @@ def test_oval_crop_clips_every_pipeline_layer_before_export(tmp_path):
 
 
 def test_staging_ui_uses_applied_crop_for_preview_upload_and_shape_metadata():
-    source = Path("serverless_web/index.html").read_text(encoding="utf-8")
+    html_source = Path("serverless_web/index.html").read_text(encoding="utf-8")
+    entry_source = Path("serverless_web/rasterizer-v4.js").read_text(encoding="utf-8")
+    preview_source = Path("serverless_web/rasterizer/artwork-preview-v1.js").read_text(
+        encoding="utf-8"
+    )
+    submission_source = Path("serverless_web/rasterizer/submission-v1.js").read_text(
+        encoding="utf-8"
+    )
+    source = "\n".join((html_source, entry_source, preview_source, submission_source))
 
     assert 'id="cropShape"' in source
     assert 'id="applyCrop" type="button" disabled>Crop preview</button>' in source
     assert 'id="cropTransparency" type="button" disabled>Crop transparency</button>' in source
     assert all(f'<option value="{shape}">' in source for shape in ("rectangle", "square", "oval", "circle"))
     assert "function effectiveArtworkFile()" in source
-    assert "const art=effectiveArtworkFile()" in source
+    assert "const artwork = effectiveArtworkFile()" in source
     assert "file=effectiveArtworkFile()" in source
-    assert "crop_shape:appliedCropShape" in source
+    assert "cropShape: getAppliedCropShape()" in source
     assert "data[offset+3]===0" in source
     assert ".quant-preview-canvas.transparency-grid" in source
     assert "appliedCropShape==='transparency'||document.querySelector('#whiteIs').value==='unengraved'" in source
