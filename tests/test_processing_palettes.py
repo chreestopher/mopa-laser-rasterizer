@@ -132,11 +132,13 @@ class ProcessingPaletteTests(unittest.TestCase):
         )
 
     def test_processing_palettes_are_scoped_to_depthmap_tools(self):
-        rasterizer = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
+        rasterizer_resources = (
+            ROOT / "serverless_web" / "rasterizer" / "palette-resources-v1.js"
+        ).read_text(encoding="utf-8")
         color_lab = (ROOT / "serverless_web" / "color-lab.js").read_text(encoding="utf-8")
         depthmap = (ROOT / "static" / "depthmap_generator.js").read_text(encoding="utf-8")
         handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
-        self.assertIn("item.library_intent!=='processing_palette'", rasterizer)
+        self.assertIn("item.library_intent !== 'processing_palette'", rasterizer_resources)
         self.assertIn('item.library_intent!=="processing_palette"', color_lab)
         self.assertIn('library.library_intent === "processing_palette"', depthmap)
         self.assertIn('id="depth_relief_material"', (ROOT / "templates" / "depthmap_generator.html").read_text(encoding="utf-8"))
