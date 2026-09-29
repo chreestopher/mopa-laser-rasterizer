@@ -1,11 +1,11 @@
 import {renderRasterOutputs} from './rasterizer/output-rendering-v1.js';
 import {
   createRasterJobPoller,
-  submissionErrorMessage,
-  upload,
-  uploadBatch,
-  uploadPhase,
 } from './rasterizer/jobs-v1.js';
+import {
+  createHolographicSubmissionHandler,
+  createRasterSubmissionHandler,
+} from './rasterizer/submission-v1.js';
 
 let config, token=localStorage.getItem('id_token')||sessionStorage.getItem('id_token'), refreshToken=localStorage.getItem('refresh_token')||sessionStorage.getItem('refresh_token'), currentTask, pollTimer, accountResources, preferenceTimer, guestMode=!token, guestAccessToken=sessionStorage.getItem('guest_access_token'), uploadedHolographicProfile=null, cropBitmap=null, cropSelection=null, cropDragStart=null, cropDragMode='', cropDragReference=null, cropResizeAnchor=null, croppedArtworkFile=null, appliedCropShape='', transparencyCropOutline=null, flowBitmap=null, flowTool='paint', flowDrawing=null, flowActiveRegion=0, customGlyphMask=null, customGlyphSvg=null, customCellSvg=null, panelPreviewGeneration=0;
 const FLOW_COLORS=['#65d46e','#58b7ff','#ffb347','#e66fff','#ff637d','#50dbc8','#d8d85a','#b69cff'];
@@ -412,36 +412,17 @@ document.querySelector('#rasterPalette').onfocusout=event=>{
 document.querySelector('#selectAllSwatches').onclick=()=>{visibleRasterPalette().forEach(item=>selectedPaletteHexes.add(String(item.selection_key??item.hex).toUpperCase()));renderRasterPalette();if(!selectedRasterRecipe())savePalettePreferences()};
 document.querySelector('#clearSwatches').onclick=()=>{selectedPaletteHexes.clear();renderRasterPalette();if(!selectedRasterRecipe())savePalettePreferences()};
 document.querySelector('#resetSwatches').onclick=()=>{paletteNameOverrides.clear();loadPaletteAssignments();selectedPaletteHexes.clear();visibleRasterPalette().forEach(item=>selectedPaletteHexes.add(String(item.hex).toUpperCase()));renderRasterPalette();if(explicitLibraryAssignments()===null)savePalettePreferences()};
-form.onsubmit=async event=>{
-  event.preventDefault();document.querySelector('#submit').disabled=true;document.querySelector('#activity').classList.remove('hidden');document.querySelector('#outputs').innerHTML='';uploadPhase('Preparing secure upload permissions');
-  try{
-    if(cropSelection&&cropSelection.width>=2&&cropSelection.height>=2&&!(await applyArtworkCrop()))throw new Error('The selected artwork crop could not be applied');const art=effectiveArtworkFile(),mat=document.querySelector('#materialFile').files[0];if(!art)throw new Error('Choose an artwork image');if(!selectedPaletteHexes.size)throw new Error('Select at least one raster palette swatch');const thumbnail=guestMode?null:await createJobThumbnail(art);show('Requesting short-lived upload permissions…');
-    const selectedAssetChoice=selectedAsset(),svgOnly=selectedAssetChoice.kind==='svg',holographicUpload=selectedAssetChoice.kind==='holographic-upload',materialLibraryId=selectedAssetChoice.kind==='library'?selectedAssetChoice.id:'',savedRecipeId=selectedAssetChoice.kind==='recipe'?selectedAssetChoice.id:'';
-    if(holographicUpload&&!uploadedHolographicProfile)throw new Error('Choose a valid Fauxlographic Swatch Palette file');
-    if(guestMode&&!svgOnly&&!mat)throw new Error('Guest jobs require a freshly uploaded Material Library, a Fauxlographic Swatch Palette, or SVG-Only');
-    const createPath=guestMode?'/guest/uploads':'/uploads',request=guestMode?guestApi:api;
-    const grant=await request(createPath,{method:'POST',body:JSON.stringify({artwork_name:art.name,artwork_content_type:art.type||'application/octet-stream',thumbnail_content_type:thumbnail?.type||'',material_name:svgOnly||holographicUpload?'':mat?.name||'materials.clb',material_content_type:mat?.type||'application/octet-stream',holographic_palette_name:holographicUpload?mat.name:'',holographic_palette_content_type:holographicUpload?(mat.type||'application/json'):'',upload_holographic_palette:holographicUpload,saved_material_library_id:materialLibraryId,saved_holographic_recipe_id:savedRecipeId,svg_only:svgOnly})});
-    if(guestMode){guestAccessToken=grant.guest_access_token;sessionStorage.setItem('guest_access_token',guestAccessToken)}
-    show(svgOnly?'Uploading artwork directly to private S3…':holographicUpload?'Uploading artwork and Fauxlographic Swatch Palette directly to private S3…':grant.material?.saved?'Uploading artwork directly to private S3…':'Uploading artwork and Material Library directly to private S3…');const uploads=[{file:art,target:grant.artwork}];if(holographicUpload)uploads.push({file:mat,target:grant.holographic_palette});else if(grant.material&&!grant.material.saved)uploads.push({file:mat,target:grant.material});await uploadBatch(uploads);let thumbnailUploaded=false;if(thumbnail&&grant.thumbnail)try{await upload(thumbnail,grant.thumbnail);thumbnailUploaded=true}catch(error){console.warn('Optional Job History thumbnail upload failed:',error)}
-    show('Uploads verified. Submitting task ID to SQS…');
-    const overrides=currentColorNames(),recipe=selectedRasterRecipe(),explicitAssignments=explicitLibraryAssignments();const selected=(accountResources.palette||[]).filter(item=>{const hex=item.hex.toUpperCase();return selectedPaletteHexes.has(hex)&&(explicitAssignments===null||Object.prototype.hasOwnProperty.call(explicitAssignments,hex))}).map(item=>({...item,name:overrides[item.hex.toUpperCase()]||item.name}));
-    const selectedRecipeIndexes=recipe?recipeRasterEntries().filter(item=>selectedPaletteHexes.has(item.selection_key)).map(item=>item.recipe_index):[];
-    const imagePreset=document.querySelector('#imagePreset').value;
-    const submitPath=guestMode?`/guest/jobs/${grant.task_id}/submit`:`/jobs/${grant.task_id}/submit`;
-    await request(submitPath,{method:'POST',body:JSON.stringify({upload_token:grant.upload_token,artwork_key:grant.artwork.key,thumbnail_key:thumbnailUploaded?grant.thumbnail.key:'',material_key:grant.material?.key||'',holographic_palette_key:grant.holographic_palette?.key||'',pixel_square_mm:document.querySelector('#pixel').value,new_width:document.querySelector('#width').value,new_height:document.querySelector('#height').value,crop_shape:appliedCropShape,white_is:document.querySelector('#whiteIs').value,material:svgOnly?'':document.querySelector('#materialName').value,colors:selected.map(item=>item.name).join(','),selected_color_hexes:selected.map(item=>item.hex),selected_holographic_recipe_indexes:selectedRecipeIndexes,image_preset:imagePreset,abstract_filter:imagePreset.startsWith('abstract_')?imagePreset.slice(9):'none',abstract_filter_parameters:JSON.stringify(filterParameters()),...colorMatchingParameters(),geometry_style:effectiveGeometryStyle(),geometry_style_parameters:JSON.stringify(geometryStyleParameters()),panel_tiling:panelTilingParameters(),color_name_overrides:JSON.stringify(overrides),cut_mode:recipe?document.querySelector('#rasterHoloCutMode').value:'setting',preserve_black_outlines:recipe&&document.querySelector('#rasterHoloBlack').checked,svg_only:svgOnly})});uploadPhase('Upload complete · job submitted',100);
-    if(!guestMode)saveLastUsed('last_rasterizer_form',rasterizerFormValues()).catch(()=>{});
-    currentTask=grant.task_id;if(!guestMode)history.replaceState({},'',`${location.pathname}?task=${encodeURIComponent(currentTask)}`);poll();
-  }catch(error){const message=submissionErrorMessage(error,document.querySelector('#submit'));uploadPhase(`Upload or submission failed · ${message}`,0);show(`ERROR: ${message}`);document.querySelector('#activity').classList.add('hidden');document.querySelector('#submit').disabled=false}
-};
-holographicForm.onsubmit=async event=>{
-  event.preventDefault();const submit=document.querySelector('#holoSubmit');submit.disabled=true;document.querySelector('#activity').classList.remove('hidden');document.querySelector('#outputs').innerHTML='';uploadPhase('Preparing secure upload permissions');
-  try{
-    const artwork=document.querySelector('#holoArtwork').files[0],thumbnail=await createJobThumbnail(artwork);show('Requesting short-lived fauxlographic artwork upload permission…');
-    const grant=await api('/holographic/uploads',{method:'POST',body:JSON.stringify({artwork_name:artwork.name,artwork_content_type:artwork.type||'application/octet-stream',thumbnail_content_type:thumbnail?.type||'',saved_holographic_recipe_id:document.querySelector('#holoRecipe').value,saved_material_library_id:document.querySelector('#holoMaterial').value})});
-    show('Uploading artwork directly to private S3…');await uploadBatch([{file:artwork,target:grant.artwork}]);let thumbnailUploaded=false;if(thumbnail&&grant.thumbnail)try{await upload(thumbnail,grant.thumbnail);thumbnailUploaded=true}catch(error){console.warn('Optional Job History thumbnail upload failed:',error)}show('Uploads verified. Launching fauxlographic Fargate job…');
-    await api(`/holographic/jobs/${grant.task_id}/submit`,{method:'POST',body:JSON.stringify({upload_token:grant.upload_token,artwork_key:grant.artwork.key,thumbnail_key:thumbnailUploaded?grant.thumbnail.key:'',recipe_key:grant.recipe.key,material_key:grant.material.key,max_dimension:document.querySelector('#holoDimension').value,pixel_mm:document.querySelector('#holoPixel').value,cut_mode:document.querySelector('#holoCutMode').value,preserve_black_outlines:document.querySelector('#holoBlack').checked})});uploadPhase('Upload complete · job submitted',100);
-    saveLastUsed('last_holographic_artwork_form',holographicArtworkFormValues()).catch(()=>{});
-    currentTask=grant.task_id;history.replaceState({},'',`${location.pathname}?task=${encodeURIComponent(currentTask)}`);poll();
-  }catch(error){const message=submissionErrorMessage(error,submit);uploadPhase(`Upload or submission failed · ${message}`,0);show(`ERROR: ${message}`);document.querySelector('#activity').classList.add('hidden');submit.disabled=false}
-};
+form.onsubmit=createRasterSubmissionHandler({
+  isGuest:()=>guestMode,getCropSelection:()=>cropSelection,applyArtworkCrop,effectiveArtworkFile,
+  getSelectedPaletteHexes:()=>selectedPaletteHexes,selectedAsset,getUploadedHolographicProfile:()=>uploadedHolographicProfile,
+  guestApi,api,setGuestAccessToken:value=>{guestAccessToken=value;sessionStorage.setItem('guest_access_token',value)},
+  createJobThumbnail,show,currentColorNames,selectedRasterRecipe,explicitLibraryAssignments,
+  getAccountResources:()=>accountResources,recipeRasterEntries,filterParameters,colorMatchingParameters,
+  effectiveGeometryStyle,geometryStyleParameters,panelTilingParameters,getAppliedCropShape:()=>appliedCropShape,
+  saveLastUsed,rasterizerFormValues,setCurrentTask:value=>{currentTask=value},poll,
+});
+holographicForm.onsubmit=createHolographicSubmissionHandler({
+  api,createJobThumbnail,show,saveLastUsed,holographicArtworkFormValues,
+  setCurrentTask:value=>{currentTask=value},poll,
+});
 load().catch(error=>{const message=error.message||'Unknown error';show(message==='Session expired. Sign in again.'||message.startsWith('Cognito sign-in')||message.startsWith('Sign-in attempt')?message:`Configuration error: ${message}`)});

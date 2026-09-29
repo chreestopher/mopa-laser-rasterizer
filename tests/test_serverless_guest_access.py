@@ -11,8 +11,9 @@ class ServerlessGuestAccessTests(unittest.TestCase):
     def setUpClass(cls):
         cls.handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
         cls.page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
-        cls.script = (ROOT / "serverless_web" / "rasterizer-v3.js").read_text(encoding="utf-8")
+        cls.script = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
         cls.jobs = (ROOT / "serverless_web" / "rasterizer" / "jobs-v1.js").read_text(encoding="utf-8")
+        cls.submission = (ROOT / "serverless_web" / "rasterizer" / "submission-v1.js").read_text(encoding="utf-8")
         cls.stack = (ROOT / "ecs" / "serverless-staging-web.yaml").read_text(encoding="utf-8")
         cls.foundation = (ROOT / "ecs" / "serverless-staging-foundation.yaml").read_text(encoding="utf-8")
         cls.worker = (ROOT / "worker.py").read_text(encoding="utf-8")
@@ -45,7 +46,7 @@ class ServerlessGuestAccessTests(unittest.TestCase):
     def test_guest_jobs_cannot_use_saved_account_assets(self):
         self.assertIn("Guest jobs cannot use saved palettes or Material Libraries", self.handler)
         self.assertIn('"material": None if svg_only or uploaded_holographic_palette else presigned_post(', self.handler)
-        self.assertIn("Guest jobs require a freshly uploaded Material Library, a Fauxlographic Swatch Palette, or SVG-Only", self.script)
+        self.assertIn("Guest jobs require a freshly uploaded Material Library, a Fauxlographic Swatch Palette, or SVG-Only", self.submission)
 
     def test_guest_can_upload_a_transient_holographic_palette(self):
         self.assertIn("Upload a Fauxlographic Swatch Palette", self.script)
@@ -53,7 +54,7 @@ class ServerlessGuestAccessTests(unittest.TestCase):
         self.assertIn('id="holographicUploadInfo"', self.page)
         self.assertIn("store Fauxlographic Swatch Palettes in your Swatch Palette Vault", self.page)
         self.assertIn("uploadedHolographicProfile", self.script)
-        self.assertIn("holographic_palette_key:grant.holographic_palette?.key||''", self.script)
+        self.assertIn("holographic_palette_key: grant.holographic_palette?.key || ''", self.submission)
         self.assertIn('item["uploaded_holographic_palette"] = True', self.handler)
         self.assertIn('"holographic_palette": presigned_post(', self.handler)
         self.assertIn("uploaded_holographic_settings_root(profile, all_indexes", self.handler)
@@ -83,7 +84,7 @@ class ServerlessGuestAccessTests(unittest.TestCase):
         self.assertIn("if not guest:\n            batch.put_item(Item=history)", self.handler)
         self.assertIn('"user_id": None if guest else owner', self.handler)
         self.assertIn('artifact_prefix = f"jobs/{task_id}/" if guest', self.handler)
-        self.assertIn("if(!guestMode)history.replaceState", self.script)
+        self.assertIn("if (!guestMode) historyRoot.replaceState", self.submission)
         self.assertIn("Swatch edits and job results are not added to an account or Job History", self.page)
 
     def test_guest_jobs_are_rate_limited_and_short_lived(self):

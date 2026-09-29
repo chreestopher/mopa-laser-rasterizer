@@ -12,14 +12,15 @@ ROOT = Path(__file__).resolve().parents[1]
 class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
     def test_serverless_rasterizer_supports_explicit_svg_only_jobs(self):
         page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
-        script = (ROOT / "serverless_web" / "rasterizer-v3.js").read_text(encoding="utf-8")
+        script = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
+        submission = (ROOT / "serverless_web" / "rasterizer" / "submission-v1.js").read_text(encoding="utf-8")
         handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
         worker = (ROOT / "worker.py").read_text(encoding="utf-8")
 
         self.assertIn('<option value="svg">SVG-Only (no laser settings)</option>', page)
         self.assertIn("function svgOnlySelected(){return selectedAsset().kind==='svg'}", script)
-        self.assertIn("material_key:grant.material?.key||''", script)
-        self.assertIn("svg_only:svgOnly", script)
+        self.assertIn("material_key: grant.material?.key || ''", submission)
+        self.assertIn("svg_only: svgOnly", submission)
         self.assertIn('result["material"] = (None if svg_only else', handler)
         self.assertIn('data["svg_only"] = "true" if svg_only else "false"', handler)
         self.assertIn('key for key in (artwork_key, thumbnail_key, material_key, recipe_input_key) if key', handler)
@@ -41,7 +42,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
 
     def test_raster_preset_controls_align_values_above_full_width_sliders(self):
         page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
-        script = (ROOT / "serverless_web" / "rasterizer-v3.js").read_text(encoding="utf-8")
+        script = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
 
         self.assertIn(".filter-control{display:grid;grid-template-columns:minmax(0,1fr)", page)
         self.assertIn(".filter-control label{display:grid;grid-template-columns:minmax(0,1fr) 88px", page)
@@ -470,7 +471,8 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
 
     def test_rasterizer_holographic_palette_replaces_image_controls_with_lab_settings(self):
         page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
-        script = (ROOT / "serverless_web" / "rasterizer-v3.js").read_text(encoding="utf-8")
+        script = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
+        submission = (ROOT / "serverless_web" / "rasterizer" / "submission-v1.js").read_text(encoding="utf-8")
         handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
         worker = (ROOT / "worker.py").read_text(encoding="utf-8")
         holographic = (ROOT / "routes" / "holographic.py").read_text(encoding="utf-8")
@@ -479,8 +481,8 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertIn('id="rasterHoloCutMode"', page)
         self.assertIn('id="rasterHoloBlack"', page)
         self.assertIn("holographicSettings.classList.toggle('hidden',!selectedRecipe)", script)
-        self.assertIn("cut_mode:recipe?document.querySelector('#rasterHoloCutMode').value:'setting'", script)
-        self.assertIn("preserve_black_outlines:recipe&&document.querySelector('#rasterHoloBlack').checked", script)
+        self.assertIn("cutMode: recipe ? element('#rasterHoloCutMode').value : 'setting'", submission)
+        self.assertIn("preserveBlackOutlines: recipe && element('#rasterHoloBlack').checked", submission)
         self.assertIn('embedded_black_name = "Rasterizer Preserved Black"', handler)
         self.assertIn('"cut_mode": cut_mode', handler)
         self.assertIn('"preserve_black_outlines": preserve_black_outlines', handler)
@@ -501,7 +503,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
     def test_all_rasterizer_downloads_are_svg_first_and_uniform_filename_buttons(self):
         handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
         rasterizer_page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
-        rasterizer = (ROOT / "serverless_web" / "rasterizer-v3.js").read_text(encoding="utf-8")
+        rasterizer = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
         output_rendering = (
             ROOT / "serverless_web" / "rasterizer" / "output-rendering-v1.js"
         ).read_text(encoding="utf-8")
@@ -557,7 +559,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
     def test_holographic_lab_finishes_by_linking_saved_recipe_to_rasterizer(self):
         page = (ROOT / "serverless_web" / "holographic.html").read_text(encoding="utf-8")
         script = (ROOT / "serverless_web" / "holographic.js").read_text(encoding="utf-8")
-        rasterizer = (ROOT / "serverless_web" / "rasterizer-v3.js").read_text(encoding="utf-8")
+        rasterizer = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
 
         self.assertIn('id="runRecipeInRasterizer"', page)
         self.assertIn('Run Rasterizer with This Fauxlographic Palette', page)
@@ -643,7 +645,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
 
     def test_rasterizer_material_name_immediately_follows_upload_control(self):
         page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
-        script = (ROOT / "serverless_web" / "rasterizer-v3.js").read_text(encoding="utf-8")
+        script = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
         upload_position = page.index('id="materialUpload"')
         material_position = page.index('id="materialNameField"')
         swatches_position = page.index("Raster palette swatches")
@@ -678,7 +680,8 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
 
     def test_rasterizer_ui_selects_holographic_recipes_by_index(self):
         page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
-        script = (ROOT / "serverless_web" / "rasterizer-v3.js").read_text(encoding="utf-8")
+        script = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
+        submission = (ROOT / "serverless_web" / "rasterizer" / "submission-v1.js").read_text(encoding="utf-8")
         staging_css = (ROOT / "serverless_web" / "staging-pages.css").read_text(encoding="utf-8")
         self.assertIn("body.light-machine.staging-prototype button.color-square", page)
         self.assertIn("background:var(--swatch-color)!important", page)
@@ -698,12 +701,12 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         depth_js = (ROOT / "static" / "depthmap_generator.js").read_text(encoding="utf-8")
         self.assertIn('--depth-swatch-color", swatch.hex', depth_js)
         self.assertIn("selection_key:String(index)", script)
-        self.assertIn("selected_holographic_recipe_indexes:selectedRecipeIndexes", script)
+        self.assertIn("selected_holographic_recipe_indexes: selectedRecipeIndexes", submission)
         self.assertIn("imageStyleSection').classList.toggle('hidden',Boolean(selectedRecipe)", script)
         self.assertNotIn("function nearestOfficialSwatch", script)
 
     def test_saved_palette_unassigned_swatches_cannot_leak_into_jobs(self):
-        script = (ROOT / "serverless_web" / "rasterizer-v3.js").read_text(encoding="utf-8")
+        script = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
         handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
         self.assertIn("function explicitLibraryAssignments()", script)
         self.assertIn("Unassigned in the selected Swatch Palette", script)
