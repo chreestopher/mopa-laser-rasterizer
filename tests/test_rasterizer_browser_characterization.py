@@ -52,10 +52,10 @@ HARNESS = r"""
   let preferencePayload = null;
   let submissionCount = 0;
   let pollIndex = 0;
-  if (scenario === 'preview' || scenario === 'panel-tiling') window.createImageBitmap = async () => {
+  if (scenario === 'preview' || scenario === 'panel-tiling' || scenario === 'shape-assets') window.createImageBitmap = async () => {
     const canvas = document.createElement('canvas');
-    canvas.width = scenario === 'panel-tiling' ? 4 : 1;
-    canvas.height = scenario === 'panel-tiling' ? 2 : 1;
+    canvas.width = scenario === 'panel-tiling' || scenario === 'shape-assets' ? 4 : 1;
+    canvas.height = scenario === 'panel-tiling' || scenario === 'shape-assets' ? 2 : 1;
     const context = canvas.getContext('2d');
     context.fillStyle = '#000000';
     context.fillRect(0, 0, 1, 1);
@@ -72,7 +72,7 @@ HARNESS = r"""
   window.stagingShellSetAuthenticated = authenticated => { window.__shellAuthenticated = authenticated; };
   window.stagingShellBeginLogin = () => {};
 
-  if (['resume', 'polling', 'failed', 'authenticated-submit', 'holographic-submit', 'submission-error', 'preview', 'panel-tiling', 'palette-resources'].includes(scenario)) localStorage.setItem('id_token', '__JWT__');
+  if (['resume', 'polling', 'failed', 'authenticated-submit', 'holographic-submit', 'submission-error', 'preview', 'panel-tiling', 'palette-resources', 'shape-assets'].includes(scenario)) localStorage.setItem('id_token', '__JWT__');
   else {
     localStorage.removeItem('id_token');
     sessionStorage.removeItem('id_token');
@@ -311,6 +311,19 @@ HARNESS = r"""
       assert(gray?.querySelector('button')?.disabled === true, 'unassigned library swatch became available');
       assert(preferencePayload?.selected_color_hexes?.join('|') === '#FFFFFF|#000000', `changed swatch selection was not saved (${JSON.stringify(preferencePayload)})`);
       assert(preferencePayload?.material_library_color_assignments?.['library-1']?.['#000000'] === 'Char', 'explicit library assignments changed while saving');
+    } else if (scenario === 'shape-assets') {
+      const rawParameters = submittedPayload?.geometry_style_parameters || {};
+      const parameters = typeof rawParameters === 'string' ? JSON.parse(rawParameters) : rawParameters;
+      assert(window.__shapeRasterReady === true, 'custom raster glyph did not normalize and render before SVG replacement');
+      assert(window.__shapeUnsafeRejected === true, 'custom SVG sanitization did not reject executable content before accepting the safe SVG');
+      assert(submittedPayload?.geometry_style === 'glyphs', `custom shape submission geometry changed (${submittedPayload?.geometry_style})`);
+      assert(parameters.glyph_shape === 'custom', `custom glyph selection changed (${JSON.stringify(parameters)})`);
+      assert(parameters.custom_glyph_svg?.name === 'characterization-shape.svg', `custom SVG name changed (${JSON.stringify(parameters)})`);
+      assert(parameters.custom_glyph_svg?.svg?.includes('<path'), `custom SVG path was not preserved (${JSON.stringify(parameters)})`);
+      assert(!parameters.custom_glyph_svg?.svg?.includes('<script'), 'custom SVG sanitization retained executable content');
+      assert(parameters.custom_glyph_mask === undefined, 'replaced raster glyph remained in the payload');
+      assert(document.querySelector('#routedGlyphControls .custom-shape-status')?.textContent === 'Custom SVG ready: characterization-shape.svg.', `custom SVG status changed (${document.querySelector('#routedGlyphControls .custom-shape-status')?.textContent})`);
+      assert(document.querySelector('#routedGlyphControls .custom-shape-preview')?.width === 96 && document.querySelector('#routedGlyphControls .custom-shape-preview')?.height === 96, 'custom shape preview dimensions changed');
     } else if (scenario === 'submission-error') {
       assert(submissionCount === 1, `failed submission ran ${submissionCount} times`);
       assert(document.querySelector('#status').textContent === 'ERROR: Submission characterization failure', 'submission error was not shown');
@@ -356,6 +369,13 @@ HARNESS = r"""
     const artwork = document.querySelector(selector);
     artwork.files = transfer.files;
     artwork.dispatchEvent(new Event('change', {bubbles: true}));
+  };
+  const attachFile = (selector, file) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    const input = document.querySelector(selector);
+    input.files = transfer.files;
+    input.dispatchEvent(new Event('change', {bubbles: true}));
   };
   const startGuestSubmission = () => {
     if (window.__submissionStarted || document.querySelectorAll('#rasterPalette .color-card').length !== palette.length) return;
@@ -433,6 +453,57 @@ HARNESS = r"""
     window.__paletteResourcesStarted = true;
     black.click();
   };
+  const startShapeAssetsCharacterization = () => {
+    const form = document.querySelector('#job');
+    if (window.__submissionStarted || typeof form?.onsubmit !== 'function' || document.querySelectorAll('#rasterPalette .color-card').length !== palette.length) return;
+    if (!window.__shapeConfigured) {
+      window.__shapeConfigured = true;
+      const choice = document.querySelector('#materialChoice');
+      choice.value = 'svg';
+      choice.dispatchEvent(new Event('change', {bubbles: true}));
+      attachArtwork('#artwork');
+      return;
+    }
+    if (document.querySelector('#materialChoice').value !== 'svg') return;
+    if (!window.__shapeGeometrySelected) {
+      window.__shapeGeometrySelected = true;
+      document.querySelector('#geometryStyle').value = 'glyphs';
+      document.querySelector('#geometryStyle').dispatchEvent(new Event('change', {bubbles: true}));
+      return;
+    }
+    const glyphSelect = document.querySelector('#routedGlyphControls [data-geometry-parameter="glyph_shape"]');
+    const fileInput = document.querySelector('#routedGlyphControls [data-custom-glyph-file]');
+    if (!glyphSelect || !fileInput) return;
+    if (!window.__shapeRasterAttached) {
+      window.__shapeRasterAttached = true;
+      glyphSelect.value = 'custom';
+      glyphSelect.dispatchEvent(new Event('change', {bubbles: true}));
+      attachFile('#routedGlyphControls [data-custom-glyph-file]', artworkFile());
+      return;
+    }
+    const status = document.querySelector('#routedGlyphControls .custom-shape-status');
+    if (!window.__shapeUnsafeAttached) {
+      if (!status?.textContent.startsWith('Custom image ready')) return;
+      window.__shapeRasterReady = true;
+      window.__shapeUnsafeAttached = true;
+      attachFile('#routedGlyphControls [data-custom-glyph-file]', new File([
+        '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><path d="M0 0H10V10Z"/></svg>'
+      ], 'unsafe-shape.svg', {type: 'image/svg+xml'}));
+      return;
+    }
+    if (!window.__shapeSvgAttached) {
+      if (!status?.textContent.startsWith('SVG element <script> is not supported.')) return;
+      window.__shapeUnsafeRejected = true;
+      window.__shapeSvgAttached = true;
+      attachFile('#routedGlyphControls [data-custom-glyph-file]', new File([
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M50 5L95 95H5Z"/></svg>'
+      ], 'characterization-shape.svg', {type: 'image/svg+xml'}));
+      return;
+    }
+    if (!status?.textContent.startsWith('Custom SVG ready')) return;
+    window.__submissionStarted = true;
+    form.requestSubmit();
+  };
   const waitForApplication = () => {
     if (scenario === 'guest-submit') startGuestSubmission();
     if (scenario === 'authenticated-submit' || scenario === 'submission-error') startAuthenticatedSubmission();
@@ -440,6 +511,7 @@ HARNESS = r"""
     if (scenario === 'preview') startPreviewCharacterization();
     if (scenario === 'panel-tiling') startPanelTilingCharacterization();
     if (scenario === 'palette-resources') startPaletteResourcesCharacterization();
+    if (scenario === 'shape-assets') startShapeAssetsCharacterization();
     if (scenario === 'submission-error' && !window.__submissionStarted) return;
     if (deadline === 0) deadline = Date.now() + (scenario === 'polling' ? 20000 : 7500);
     submissionReadinessObserver?.disconnect();
@@ -459,6 +531,8 @@ HARNESS = r"""
           ? submittedPayload !== null && document.querySelectorAll('#outputs a').length === 1 && document.querySelector('#panelLayoutPreview').width > 0
         : scenario === 'palette-resources'
           ? preferencePayload !== null
+        : scenario === 'shape-assets'
+          ? submittedPayload !== null && document.querySelectorAll('#outputs a').length === 1
         : scenario === 'polling'
           ? pollIndex === 6 && document.querySelectorAll('#outputs a').length === 1
           : scenario === 'failed'
@@ -595,6 +669,9 @@ class RasterizerBrowserCharacterizationTests(unittest.TestCase):
 
     def test_authenticated_palette_resources_restore_and_save(self):
         self._run_scenario("palette-resources")
+
+    def test_authenticated_custom_shape_normalization_preview_and_payload(self):
+        self._run_scenario("shape-assets")
 
     def test_authenticated_job_polling_sequence_and_completion(self):
         self._run_scenario("polling", "&task=polling-task")

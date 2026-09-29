@@ -31,6 +31,18 @@ TARGET_COLORS = {
     "#000000": ["Black", 0, "Black"],
 }
 
+
+def _rasterizer_frontend_source():
+    return "\n".join(
+        (ROOT / "serverless_web" / path).read_text(encoding="utf-8")
+        for path in (
+            "index.html",
+            "rasterizer-v4.js",
+            "rasterizer/submission-v1.js",
+            "rasterizer/shape-assets-v1.js",
+        )
+    )
+
 CUSTOM_SVG = {
     "name": "diamond.svg",
     "svg": (
@@ -682,12 +694,12 @@ def test_krasnow_icon_glyphs_use_their_tighter_staggered_row_spacing():
 
 
 def test_staging_ui_exposes_an_independent_compatible_geometry_section():
-    page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+    page = _rasterizer_frontend_source()
     assert 'id="geometryStyleSection"' in page
     assert '<option value="vectors">Normal Vectors</option><option value="glyphs">Glyphs</option><option value="halftone_newsprint">Halftone Newsprint</option><option value="krasnow_grating">Krasnow Grating</option><option value="by_swatch">Choose by swatch</option>' in page
     assert "SPECIALIZED_GEOMETRY_PRESETS" in page
     assert "geometry_style:effectiveGeometryStyle()" in page
-    assert "geometry_style_parameters:JSON.stringify(geometryStyleParameters())" in page
+    assert "geometry_style_parameters: JSON.stringify(geometryStyleParameters)" in page
     assert "if(used.has('glyphs'))parameters.glyphs=" in page
     assert "if(used.has('halftone_newsprint'))parameters.halftone_newsprint=" in page
     assert "if(used.has('krasnow_grating'))parameters.krasnow_grating=krasnowGeometryValues()" in page
@@ -815,7 +827,7 @@ def test_fauxlogram_flow_does_not_affect_unpainted_cells():
 
 
 def test_staging_ui_exposes_fauxlogram_flow_painter():
-    page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+    page = _rasterizer_frontend_source()
     assert 'id="openFlowPainter"' in page
     assert 'id="flowCanvas"' in page
     assert "values.fauxlogram_flow=structuredClone(fauxlogramFlow)" in page
@@ -1051,7 +1063,7 @@ def test_image_mask_uncovered_cells_use_another_region_then_main_gradient():
 
 
 def test_flow_painter_exposes_image_masks_as_separate_regions():
-    page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+    page = _rasterizer_frontend_source()
     assert "Add image-mask region" in page
     assert "newFlowRegion(flowActiveRegion,'image_mask')" in page
     assert "region.region_type==='image_mask'" in page
@@ -1209,7 +1221,7 @@ def test_fauxlogram_flow_mask_offset_repositions_the_active_area():
 
 
 def test_staging_ui_exposes_custom_glyph_and_flow_mask_uploads():
-    page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+    page = _rasterizer_frontend_source()
     assert "['custom','Custom Uploaded Glyph']" in page
     assert "data-custom-glyph-file" in page
     assert "repeating-conic-gradient(#fff 0 25%,#000 0 50%)" in page
