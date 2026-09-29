@@ -325,7 +325,7 @@ def run_spiralgrap_job(payload, upload_folder):
 def run_holographic_artwork_job(payload, upload_folder):
     """Materialize a queued Fauxlographic Artwork export outside the web pod."""
     from werkzeug.datastructures import FileStorage
-    from routes.fauxlographic import _build_holographic_exports
+    from routes.holographic import _build_holographic_exports
 
     task_id = str(payload["task_id"])
     def progress(message):
