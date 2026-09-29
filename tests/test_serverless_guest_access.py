@@ -12,6 +12,7 @@ class ServerlessGuestAccessTests(unittest.TestCase):
         cls.handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
         cls.page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
         cls.script = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
+        cls.palette_resources = (ROOT / "serverless_web" / "rasterizer" / "palette-resources-v1.js").read_text(encoding="utf-8")
         cls.jobs = (ROOT / "serverless_web" / "rasterizer" / "jobs-v1.js").read_text(encoding="utf-8")
         cls.submission = (ROOT / "serverless_web" / "rasterizer" / "submission-v1.js").read_text(encoding="utf-8")
         cls.stack = (ROOT / "ecs" / "serverless-staging-web.yaml").read_text(encoding="utf-8")
@@ -49,8 +50,8 @@ class ServerlessGuestAccessTests(unittest.TestCase):
         self.assertIn("Guest jobs require a freshly uploaded Material Library, a Fauxlographic Swatch Palette, or SVG-Only", self.submission)
 
     def test_guest_can_upload_a_transient_holographic_palette(self):
-        self.assertIn("Upload a Fauxlographic Swatch Palette", self.script)
-        self.assertIn("new Option('Upload a Fauxlographic Swatch Palette','holographic-upload')", self.script)
+        self.assertIn("Upload a Fauxlographic Swatch Palette", self.palette_resources)
+        self.assertIn("new Option('Upload a Fauxlographic Swatch Palette', 'holographic-upload')", self.palette_resources)
         self.assertIn('id="holographicUploadInfo"', self.page)
         self.assertIn("store Fauxlographic Swatch Palettes in your Swatch Palette Vault", self.page)
         self.assertIn("uploadedHolographicProfile", self.script)
@@ -67,11 +68,11 @@ class ServerlessGuestAccessTests(unittest.TestCase):
         self.assertNotIn("v2 Fauxlographic", self.script)
 
     def test_guest_swatches_are_editable_but_preferences_are_not_saved(self):
-        self.assertIn("async function loadGuestResources()", self.script)
+        self.assertIn("export async function loadGuestResources()", self.palette_resources)
         self.assertRegex(self.page, r"contenteditable=(?:\"true\"|true)")
-        self.assertIn("if(guestMode)return;", self.script)
-        self.assertIn("selectedPaletteHexes", self.script)
-        self.assertIn("paletteNameOverrides", self.script)
+        self.assertIn("if (dependencies.isGuest()) return;", self.palette_resources)
+        self.assertIn("selectedPaletteHexes", self.palette_resources)
+        self.assertIn("paletteNameOverrides", self.palette_resources)
 
     def test_direct_uploads_report_depthmap_style_progress(self):
         self.assertIn('id="uploadProgress" class="upload-progress"', self.page)
