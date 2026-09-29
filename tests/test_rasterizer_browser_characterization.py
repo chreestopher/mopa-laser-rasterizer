@@ -52,10 +52,10 @@ HARNESS = r"""
   let preferencePayload = null;
   let submissionCount = 0;
   let pollIndex = 0;
-  if (scenario === 'preview' || scenario === 'panel-tiling' || scenario === 'shape-assets') window.createImageBitmap = async () => {
+  if (scenario === 'preview' || scenario === 'panel-tiling' || scenario === 'shape-assets' || scenario === 'flow-painter') window.createImageBitmap = async () => {
     const canvas = document.createElement('canvas');
-    canvas.width = scenario === 'panel-tiling' || scenario === 'shape-assets' ? 4 : 1;
-    canvas.height = scenario === 'panel-tiling' || scenario === 'shape-assets' ? 2 : 1;
+    canvas.width = scenario === 'panel-tiling' || scenario === 'shape-assets' || scenario === 'flow-painter' ? 4 : 1;
+    canvas.height = scenario === 'panel-tiling' || scenario === 'shape-assets' || scenario === 'flow-painter' ? 2 : 1;
     const context = canvas.getContext('2d');
     context.fillStyle = '#000000';
     context.fillRect(0, 0, 1, 1);
@@ -72,7 +72,7 @@ HARNESS = r"""
   window.stagingShellSetAuthenticated = authenticated => { window.__shellAuthenticated = authenticated; };
   window.stagingShellBeginLogin = () => {};
 
-  if (['resume', 'polling', 'failed', 'authenticated-submit', 'holographic-submit', 'submission-error', 'preview', 'panel-tiling', 'palette-resources', 'shape-assets', 'geometry-routing'].includes(scenario)) localStorage.setItem('id_token', '__JWT__');
+  if (['resume', 'polling', 'failed', 'authenticated-submit', 'holographic-submit', 'submission-error', 'preview', 'panel-tiling', 'palette-resources', 'shape-assets', 'geometry-routing', 'flow-painter'].includes(scenario)) localStorage.setItem('id_token', '__JWT__');
   else {
     localStorage.removeItem('id_token');
     sessionStorage.removeItem('id_token');
@@ -336,6 +336,27 @@ HARNESS = r"""
       assert(parameters.halftone_newsprint?.dot_size_source === 'source_brightness' && parameters.halftone_newsprint?.square_dots === 1, `routed Halftone controls changed (${JSON.stringify(parameters.halftone_newsprint)})`);
       assert(parameters.halftone_newsprint?.cell_size_mm === 0.55 && parameters.krasnow_grating === undefined, `routed geometry payload included unexpected settings (${JSON.stringify(parameters)})`);
       assert(document.querySelector('#routedGlyphSettings').hidden === false && document.querySelector('#routedHalftoneSettings').hidden === false && document.querySelector('#routedKrasnowSettings').hidden === true, 'routed settings visibility changed');
+    } else if (scenario === 'flow-painter') {
+      const rawParameters = submittedPayload?.geometry_style_parameters || {};
+      const parameters = typeof rawParameters === 'string' ? JSON.parse(rawParameters) : rawParameters;
+      const flow = parameters.fauxlogram_flow;
+      assert(window.__flowPainted === true, 'painted flow stroke was not created');
+      assert(window.__flowMaskReady === true, 'flow mask was not normalized before submission');
+      assert(window.__flowMaskMoved === true, 'flow mask move tool did not update its offset');
+      assert(submittedPayload?.geometry_style === 'krasnow_grating', `flow submission geometry changed (${submittedPayload?.geometry_style})`);
+      assert(flow?.enabled === true, `fauxlogram flow was not enabled (${JSON.stringify(flow)})`);
+      assert(flow?.regions?.length === 2 && flow?.strokes?.length === 1, `flow regions or strokes changed (${JSON.stringify(flow)})`);
+      assert(flow?.regions?.[0]?.scope === 'each_shape' && flow?.regions?.[0]?.guide_type === 'radial', `painted region scope or guide changed (${JSON.stringify(flow?.regions?.[0])})`);
+      assert(flow?.regions?.[0]?.orientation === 'perpendicular' && flow?.regions?.[0]?.gradient_start === 200 && flow?.regions?.[0]?.gradient_end === 40, `painted region gradient changed (${JSON.stringify(flow?.regions?.[0])})`);
+      assert(flow?.regions?.[0]?.curve === 1.5 && flow?.regions?.[0]?.fixed_angle === 15 && flow?.regions?.[0]?.angle_offset === -20 && flow?.regions?.[0]?.reverse === true, `painted region advanced controls changed (${JSON.stringify(flow?.regions?.[0])})`);
+      assert(flow?.strokes?.[0]?.erase === false && flow?.strokes?.[0]?.width === 0.2 && flow?.strokes?.[0]?.points?.length === 2, `painted stroke changed (${JSON.stringify(flow?.strokes?.[0])})`);
+      assert(flow?.regions?.[1]?.region_type === 'image_mask' && flow?.regions?.[1]?.mask_name === 'characterization.png', `image-mask region changed (${JSON.stringify(flow?.regions?.[1])})`);
+      assert(flow?.regions?.[1]?.mask_mode === 'silhouette' && flow?.regions?.[1]?.mask_threshold === 0.25 && flow?.regions?.[1]?.mask_invert === true, `image-mask controls changed (${JSON.stringify(flow?.regions?.[1])})`);
+      assert(flow?.regions?.[1]?.mask?.width === 96 && flow?.regions?.[1]?.mask?.height === 96 && typeof flow?.regions?.[1]?.mask?.data === 'string', `normalized flow mask changed (${JSON.stringify(flow?.regions?.[1]?.mask)})`);
+      assert(flow?.regions?.[1]?.mask_offset?.some(value => Math.abs(value) > 0.01), `flow mask offset was not retained (${JSON.stringify(flow?.regions?.[1]?.mask_offset)})`);
+      assert(document.querySelector('#flowCanvas').width > 0 && document.querySelector('#flowCanvas').height > 0, 'flow canvas was not initialized');
+      assert(document.querySelector('#flowPainter').open === false, 'flow dialog remained open after accepting the flow');
+      assert(document.querySelector('#flowPainterSummary').textContent.includes('2 flow regions') && document.querySelector('#flowPainterSummary').textContent.includes('1 painted shape') && document.querySelector('#flowPainterSummary').textContent.includes('1 image mask'), `flow summary changed (${document.querySelector('#flowPainterSummary').textContent})`);
     } else if (scenario === 'submission-error') {
       assert(submissionCount === 1, `failed submission ran ${submissionCount} times`);
       assert(document.querySelector('#status').textContent === 'ERROR: Submission characterization failure', 'submission error was not shown');
@@ -567,13 +588,77 @@ HARNESS = r"""
     window.__submissionStarted = true;
     form.requestSubmit();
   };
+  const startFlowPainterCharacterization = () => {
+    const form = document.querySelector('#job');
+    if (window.__submissionStarted || typeof form?.onsubmit !== 'function' || document.querySelectorAll('#rasterPalette .color-card').length !== palette.length) return;
+    if (!window.__flowConfigured) {
+      window.__flowConfigured = true;
+      const choice = document.querySelector('#materialChoice');
+      choice.value = 'svg';
+      choice.dispatchEvent(new Event('change', {bubbles: true}));
+      attachArtwork('#artwork');
+      return;
+    }
+    if (!window.__flowGeometrySelected) {
+      window.__flowGeometrySelected = true;
+      document.querySelector('#geometryStyle').value = 'krasnow_grating';
+      document.querySelector('#geometryStyle').dispatchEvent(new Event('change', {bubbles: true}));
+      return;
+    }
+    const dialog = document.querySelector('#flowPainter');
+    const canvas = document.querySelector('#flowCanvas');
+    if (!window.__flowOpened) {
+      if (document.querySelector('#routedKrasnowSettings').hidden) return;
+      window.__flowOpened = true;
+      document.querySelector('#openFlowPainter').click();
+      return;
+    }
+    if (!dialog.open || canvas.width === 0 || canvas.height === 0) return;
+    if (!window.__flowPainted) {
+      for (const [id, value] of Object.entries({flowScope: 'each_shape', flowGuideType: 'radial', flowOrientation: 'perpendicular', flowGradientStart: '200', flowGradientEnd: '40', flowCurve: '1.5', flowFixedAngle: '15', flowAngleOffset: '-20'})) document.querySelector(`#${id}`).value = value;
+      document.querySelector('#flowReverse').checked = true;
+      document.querySelector('#flowBrush').value = '20';
+      document.querySelector('#flowAngleOffset').dispatchEvent(new Event('input', {bubbles: true}));
+      const rect = canvas.getBoundingClientRect();
+      const first = {currentTarget: {setPointerCapture() {}}, pointerId: 1, clientX: rect.left + rect.width * 0.2, clientY: rect.top + rect.height * 0.3};
+      const second = {currentTarget: canvas, pointerId: 1, clientX: rect.left + rect.width * 0.7, clientY: rect.top + rect.height * 0.65};
+      canvas.onpointerdown(first);
+      canvas.onpointermove(second);
+      canvas.onpointerup(second);
+      window.__flowPainted = true;
+      document.querySelector('#flowAddMaskRegion').click();
+      attachFile('#flowMaskFile', artworkFile());
+      return;
+    }
+    if (!window.__flowMaskReady) {
+      if (!document.querySelector('#flowMaskStatus').textContent.includes('is attached to this region')) return;
+      window.__flowMaskReady = true;
+      document.querySelector('#flowMaskMode').value = 'silhouette';
+      document.querySelector('#flowMaskMode').dispatchEvent(new Event('change', {bubbles: true}));
+      document.querySelector('#flowMaskThreshold').value = '0.25';
+      document.querySelector('#flowMaskInvert').checked = true;
+      document.querySelector('#flowMaskInvert').dispatchEvent(new Event('input', {bubbles: true}));
+      document.querySelector('[data-flow-tool="move"]').click();
+      const rect = canvas.getBoundingClientRect();
+      const first = {currentTarget: {setPointerCapture() {}}, pointerId: 2, clientX: rect.left + rect.width * 0.3, clientY: rect.top + rect.height * 0.35};
+      const second = {currentTarget: canvas, pointerId: 2, clientX: rect.left + rect.width * 0.48, clientY: rect.top + rect.height * 0.58};
+      canvas.onpointerdown(first);
+      canvas.onpointermove(second);
+      canvas.onpointerup(second);
+      window.__flowMaskMoved = true;
+      document.querySelector('#flowDone').click();
+      window.__submissionStarted = true;
+      form.requestSubmit();
+      return;
+    }
+  };
   const waitForApplication = () => {
     const rasterizerForm = document.querySelector('#job');
     if (typeof rasterizerForm?.onsubmit !== 'function') {
       setTimeout(waitForApplication, 25);
       return;
     }
-    if (deadline === 0) deadline = Date.now() + (scenario === 'polling' ? 30000 : 20000);
+    if (deadline === 0) deadline = Date.now() + (scenario === 'flow-painter' ? 50000 : scenario === 'polling' ? 30000 : 20000);
     if (scenario === 'guest-submit') startGuestSubmission();
     if (scenario === 'authenticated-submit' || scenario === 'submission-error') startAuthenticatedSubmission();
     if (scenario === 'holographic-submit') startHolographicSubmission();
@@ -582,6 +667,7 @@ HARNESS = r"""
     if (scenario === 'palette-resources') startPaletteResourcesCharacterization();
     if (scenario === 'shape-assets') startShapeAssetsCharacterization();
     if (scenario === 'geometry-routing') startGeometryRoutingCharacterization();
+    if (scenario === 'flow-painter') startFlowPainterCharacterization();
     if (scenario === 'submission-error' && !window.__submissionStarted) return;
     submissionReadinessObserver?.disconnect();
     const ready = scenario === 'guest'
@@ -603,6 +689,8 @@ HARNESS = r"""
         : scenario === 'shape-assets'
           ? submittedPayload !== null && document.querySelectorAll('#outputs a').length === 1
         : scenario === 'geometry-routing'
+          ? submittedPayload !== null && document.querySelectorAll('#outputs a').length === 1
+        : scenario === 'flow-painter'
           ? submittedPayload !== null && document.querySelectorAll('#outputs a').length === 1
         : scenario === 'polling'
           ? pollIndex === 6 && document.querySelectorAll('#outputs a').length === 1
@@ -744,6 +832,9 @@ class RasterizerBrowserCharacterizationTests(unittest.TestCase):
 
     def test_authenticated_geometry_routing_controls_and_payload(self):
         self._run_scenario("geometry-routing")
+
+    def test_authenticated_fauxlogram_flow_painter_and_payload(self):
+        self._run_scenario("flow-painter")
 
     def test_authenticated_job_polling_sequence_and_completion(self):
         self._run_scenario("polling", "&task=polling-task")

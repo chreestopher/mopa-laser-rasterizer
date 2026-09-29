@@ -40,6 +40,7 @@ def _rasterizer_frontend_source():
             "rasterizer-v4.js",
             "rasterizer/submission-v1.js",
             "rasterizer/shape-assets-v1.js",
+            "rasterizer/flow-painter-v1.js",
             "rasterizer/geometry-controls-v1.js",
         )
     )

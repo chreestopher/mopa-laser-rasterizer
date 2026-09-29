@@ -230,6 +230,9 @@ def test_phase_four_rasterizer_uses_the_reviewed_job_and_output_boundaries():
     shape_assets = (WEB / "rasterizer" / "shape-assets-v1.js").read_text(
         encoding="utf-8"
     )
+    flow_painter = (WEB / "rasterizer" / "flow-painter-v1.js").read_text(
+        encoding="utf-8"
+    )
     geometry_controls = (WEB / "rasterizer" / "geometry-controls-v1.js").read_text(
         encoding="utf-8"
     )
@@ -240,7 +243,7 @@ def test_phase_four_rasterizer_uses_the_reviewed_job_and_output_boundaries():
     assert "} from './rasterizer/artwork-preview-v1.js';" in script
     assert "} from './rasterizer/panel-tiling-v1.js';" in script
     assert "} from './rasterizer/palette-resources-v1.js';" in script
-    assert "} from './rasterizer/shape-assets-v1.js';" in script
+    assert "} from './rasterizer/flow-painter-v1.js';" in script
     assert "} from './rasterizer/geometry-controls-v1.js';" in script
     assert "function renderRasterOutputs(" not in script
     assert "function uploadPhase(" not in script
@@ -271,6 +274,9 @@ def test_phase_four_rasterizer_uses_the_reviewed_job_and_output_boundaries():
     assert "function buildGeometryControls(" not in script
     assert "function renderGeometryRouting(" not in script
     assert "function applyGeometryValues(" not in script
+    assert "function flowHasContent(" not in script
+    assert "function drawFlowPainter(" not in script
+    assert "async function openFlowPainter(" not in script
     assert "export function renderRasterOutputs(" in output_rendering
     assert "export function createRasterJobPoller(" in jobs
     assert "export function uploadPhase(" in jobs
@@ -302,6 +308,12 @@ def test_phase_four_rasterizer_uses_the_reviewed_job_and_output_boundaries():
     assert "export function drawShapePreview(" in shape_assets
     assert "export async function normalizeShapeSvg(" in shape_assets
     assert "export async function drawSvgPreview(" in shape_assets
+    assert "export function configureFlowPainter(" in flow_painter
+    assert "export function getFauxlogramFlow(" in flow_painter
+    assert "export function restoreFauxlogramFlow(" in flow_painter
+    assert "export function resetFauxlogramFlow(" in flow_painter
+    assert "function drawFlowPainter(" in flow_painter
+    assert "async function openFlowPainter(" in flow_painter
     assert "export function configureGeometryControls(" in geometry_controls
     assert "export function effectiveGeometryStyle(" in geometry_controls
     assert "export function geometryStyleParameters(" in geometry_controls
@@ -429,6 +441,9 @@ def test_rasterizer_module_graph_uploads_dependencies_before_entry_and_html():
     shape_dependency = (
         'aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/shape-assets-v1.js"'
     )
+    flow_dependency = (
+        'aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/flow-painter-v1.js"'
+    )
     geometry_dependency = (
         'aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/geometry-controls-v1.js"'
     )
@@ -442,8 +457,9 @@ def test_rasterizer_module_graph_uploads_dependencies_before_entry_and_html():
     assert deploy.index(panel_dependency) < deploy.index(entry) < deploy.index(html)
     assert deploy.index(palette_dependency) < deploy.index(entry) < deploy.index(html)
     assert deploy.index(shape_dependency) < deploy.index(entry) < deploy.index(html)
+    assert deploy.index(shape_dependency) < deploy.index(flow_dependency) < deploy.index(entry)
     assert deploy.index(shape_dependency) < deploy.index(geometry_dependency) < deploy.index(entry)
-    for asset in (output_dependency, jobs_dependency, submission_dependency, preview_dependency, panel_dependency, palette_dependency, shape_dependency, geometry_dependency, entry):
+    for asset in (output_dependency, jobs_dependency, submission_dependency, preview_dependency, panel_dependency, palette_dependency, shape_dependency, flow_dependency, geometry_dependency, entry):
         assert "public,max-age=31536000,immutable" in deploy[
             deploy.index(asset) : deploy.index(asset) + 400
         ]
@@ -528,6 +544,7 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
     assert referenced_modes[WEB / "rasterizer" / "panel-tiling-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "palette-resources-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "shape-assets-v1.js"] == {"module"}
+    assert referenced_modes[WEB / "rasterizer" / "flow-painter-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "geometry-controls-v1.js"] == {"module"}
     assert referenced_modes[ROOT / "static" / "community-set-v1.js"] == {"classic"}
     assert referenced_modes[ROOT / "static" / "docs-search-v1.js"] == {"classic"}

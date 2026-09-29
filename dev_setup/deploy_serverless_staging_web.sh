@@ -169,6 +169,8 @@ aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/palette-resources-v1.js" "s3://$
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/shape-assets-v1.js" "s3://$STATIC_BUCKET/web/rasterizer/shape-assets-v1.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/flow-painter-v1.js" "s3://$STATIC_BUCKET/web/rasterizer/flow-painter-v1.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/geometry-controls-v1.js" "s3://$STATIC_BUCKET/web/rasterizer/geometry-controls-v1.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/rasterizer-v4.js" "s3://$STATIC_BUCKET/web/rasterizer-v4.js" \
