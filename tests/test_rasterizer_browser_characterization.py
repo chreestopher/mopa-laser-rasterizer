@@ -51,6 +51,16 @@ HARNESS = r"""
   let holographicPayload = null;
   let submissionCount = 0;
   let pollIndex = 0;
+  if (scenario === 'preview') window.createImageBitmap = async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#000000';
+    context.fillRect(0, 0, 1, 1);
+    canvas.close = () => {};
+    return canvas;
+  };
   const jsonResponse = (value, status = 200) => new Response(JSON.stringify(value), {
     status,
     headers: {'content-type': 'application/json'}
@@ -61,7 +71,7 @@ HARNESS = r"""
   window.stagingShellSetAuthenticated = authenticated => { window.__shellAuthenticated = authenticated; };
   window.stagingShellBeginLogin = () => {};
 
-  if (['resume', 'polling', 'failed', 'authenticated-submit', 'holographic-submit', 'submission-error'].includes(scenario)) localStorage.setItem('id_token', '__JWT__');
+  if (['resume', 'polling', 'failed', 'authenticated-submit', 'holographic-submit', 'submission-error', 'preview'].includes(scenario)) localStorage.setItem('id_token', '__JWT__');
   else {
     localStorage.removeItem('id_token');
     sessionStorage.removeItem('id_token');
@@ -241,6 +251,18 @@ HARNESS = r"""
       assert(submissionCount === 1, `fauxlographic form installed duplicate submission behavior (${submissionCount} requests)`);
       assert(location.search === '?task=holographic-submit-task', `fauxlographic task ID was not persisted in the URL: ${location.search}`);
       assert(document.querySelector('#status').textContent.startsWith('COMPLETED'), 'fauxlographic submitted job did not complete');
+    } else if (scenario === 'preview') {
+      const canvas = document.querySelector('#quantPreviewCanvas');
+      const usage = [...document.querySelectorAll('#quantPreviewCounts .quant-preview-usage small')]
+        .map(item => Number(item.textContent.split(' ')[0].replaceAll(',', '')));
+      assert(document.querySelector('#artworkCropPanel').hidden === false, `artwork crop panel did not initialize (${document.querySelector('#cropStatus').textContent})`);
+      assert(document.querySelector('#cropStatus').textContent.startsWith('Original artwork'), `artwork crop status did not report source dimensions (${document.querySelector('#cropStatus').textContent})`);
+      assert(canvas.width === 4 && canvas.height === 4, `quantized preview dimensions changed: ${canvas.width} x ${canvas.height}`);
+      assert(usage.length === palette.length, `quantized preview rendered ${usage.length} swatch counts instead of ${palette.length}`);
+      assert(usage.reduce((sum, count) => sum + count, 0) === 16, `quantized preview counted ${usage.reduce((sum, count) => sum + count, 0)} pixels instead of 16`);
+      assert(document.querySelector('#quantPreviewOutput').hidden === true, 'changed preview settings did not hide the stale preview');
+      assert(document.querySelector('#quantPreviewStatus').textContent === 'Preview settings changed. Generate it again to use the currently enabled swatches.', `stale preview status changed (${document.querySelector('#quantPreviewStatus').textContent})`);
+      assert(document.querySelector('#generateQuantPreview').disabled === false, 'preview button remained disabled');
     } else if (scenario === 'submission-error') {
       assert(submissionCount === 1, `failed submission ran ${submissionCount} times`);
       assert(document.querySelector('#status').textContent === 'ERROR: Submission characterization failure', 'submission error was not shown');
@@ -278,7 +300,7 @@ HARNESS = r"""
   let submissionReadinessObserver = null;
   const status = document.querySelector('#status');
   if (status) new MutationObserver(() => statusHistory.push(status.textContent)).observe(status, {childList: true, characterData: true, subtree: true});
-  const artworkFile = () => new File([Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL8WQAAAABJRU5ErkJggg=='), character => character.charCodeAt(0))], 'characterization.png', {type: 'image/png'});
+  const artworkFile = () => new File([Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zy3sAAAAASUVORK5CYII='), character => character.charCodeAt(0))], 'characterization.png', {type: 'image/png'});
   const attachArtwork = selector => {
     const transfer = new DataTransfer();
     transfer.items.add(artworkFile());
@@ -317,10 +339,21 @@ HARNESS = r"""
     attachArtwork('#holoArtwork');
     document.querySelector('#holographicJob').requestSubmit();
   };
+  const startPreviewCharacterization = () => {
+    if (window.__previewStarted || document.querySelectorAll('#rasterPalette .color-card').length !== palette.length) return;
+    window.__previewStarted = true;
+    const choice = document.querySelector('#materialChoice');
+    choice.value = 'svg';
+    choice.dispatchEvent(new Event('change', {bubbles: true}));
+    document.querySelector('#width').value = '4';
+    document.querySelector('#height').value = '0';
+    attachArtwork('#artwork');
+  };
   const waitForApplication = () => {
     if (scenario === 'guest-submit') startGuestSubmission();
     if (scenario === 'authenticated-submit' || scenario === 'submission-error') startAuthenticatedSubmission();
     if (scenario === 'holographic-submit') startHolographicSubmission();
+    if (scenario === 'preview') startPreviewCharacterization();
     if (scenario === 'submission-error' && !window.__submissionStarted) return;
     if (deadline === 0) deadline = Date.now() + 7500;
     submissionReadinessObserver?.disconnect();
@@ -334,11 +367,31 @@ HARNESS = r"""
           ? holographicPayload !== null && document.querySelectorAll('#outputs a').length === 1
         : scenario === 'submission-error'
           ? document.querySelector('#status').textContent.startsWith('ERROR:')
+        : scenario === 'preview'
+          ? document.querySelector('#cropStatus').textContent.startsWith('Original artwork')
         : scenario === 'polling'
           ? pollIndex === 3 && document.querySelectorAll('#outputs a').length === 1
           : scenario === 'failed'
             ? document.querySelector('#status').textContent.startsWith('FAILED')
             : document.querySelectorAll('#outputs a').length === 3;
+    if (scenario === 'preview' && ready && !window.__previewGenerated) {
+      window.__previewGenerated = true;
+      document.querySelector('#generateQuantPreview').click();
+      setTimeout(waitForApplication, 25);
+      return;
+    }
+    if (scenario === 'preview' && window.__previewGenerated && !window.__previewMadeStale) {
+      if (!document.querySelector('#quantPreviewStatus').textContent.startsWith('Preview ready')) {
+        if (Date.now() >= deadline) finish();
+        else setTimeout(waitForApplication, 25);
+        return;
+      }
+      window.__previewMadeStale = true;
+      document.querySelector('#width').value = '8';
+      document.querySelector('#width').dispatchEvent(new Event('input', {bubbles: true}));
+      setTimeout(waitForApplication, 25);
+      return;
+    }
     if (ready || Date.now() >= deadline) finish();
     else setTimeout(waitForApplication, 25);
   };
@@ -443,6 +496,9 @@ class RasterizerBrowserCharacterizationTests(unittest.TestCase):
 
     def test_authenticated_submission_error_restores_controls(self):
         self._run_scenario("submission-error")
+
+    def test_authenticated_crop_initialization_quantized_preview_and_stale_state(self):
+        self._run_scenario("preview")
 
     def test_authenticated_job_polling_sequence_and_completion(self):
         self._run_scenario("polling", "&task=polling-task")
