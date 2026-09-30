@@ -651,6 +651,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         page = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
         script = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
         palette = (ROOT / "serverless_web" / "rasterizer" / "palette-resources-v1.js").read_text(encoding="utf-8")
+        material_input = (ROOT / "serverless_web" / "rasterizer" / "material-input-v1.js").read_text(encoding="utf-8")
         upload_position = page.index('id="materialUpload"')
         material_position = page.index('id="materialNameField"')
         swatches_position = page.index("Raster palette swatches")
@@ -660,8 +661,9 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertNotIn("colorMatchingSection", page[upload_position:material_position])
         self.assertIn('<select id="materialName" required>', page)
         self.assertIn("export function setMaterialOptions(names, preferred = '', placeholder = 'Choose a material')", palette)
-        self.assertIn("new DOMParser().parseFromString(await file.text(),'application/xml')", script)
-        self.assertIn("setMaterialOptions(materials)", script)
+        self.assertIn("new DOMParser().parseFromString(await file.text(), 'application/xml')", material_input)
+        self.assertIn("options.setMaterialOptions(materials)", material_input)
+        self.assertIn("bindMaterialInputControls({", script)
 
     def test_cognito_managed_branding_is_reproducible(self):
         css = (ROOT / "ecs" / "cognito-staging-classic.css").read_text(encoding="utf-8")
