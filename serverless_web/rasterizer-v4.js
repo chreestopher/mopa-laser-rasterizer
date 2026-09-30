@@ -132,6 +132,7 @@ async function load(){
     loadGuestResources,
     onResumeTask:task=>{currentTask=task;document.querySelector('#submit').disabled=true;document.querySelector('#activity').classList.remove('hidden');poll()},
   });
+  form.dataset.ready='true';
 }
 const poll=createRasterJobPoller({
   getCurrentTask:()=>currentTask,

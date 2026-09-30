@@ -769,7 +769,7 @@ HARNESS = r"""
   };
   const waitForApplication = () => {
     const rasterizerForm = document.querySelector('#job');
-    if (typeof rasterizerForm?.onsubmit !== 'function') {
+    if (typeof rasterizerForm?.onsubmit !== 'function' || rasterizerForm.dataset.ready !== 'true') {
       setTimeout(waitForApplication, 25);
       return;
     }
