@@ -41,8 +41,22 @@ HARNESS = r"""
   // Headless --dump-dom does not consistently deliver animation frames when
   // the page is otherwise idle. Keep the application's coalescing semantics,
   // but drive them with the timer queue so characterization is deterministic.
-  window.requestAnimationFrame = callback => setTimeout(() => callback(performance.now()), 0);
-  window.cancelAnimationFrame = handle => clearTimeout(handle);
+  let requestedFrames = 0;
+  let cancelledFrames = 0;
+  window.requestAnimationFrame = callback => {
+    requestedFrames += 1;
+    return setTimeout(() => callback(performance.now()), 0);
+  };
+  window.cancelAnimationFrame = handle => {
+    cancelledFrames += 1;
+    clearTimeout(handle);
+  };
+  const canvasStrokes = [];
+  const originalCanvasStroke = CanvasRenderingContext2D.prototype.stroke;
+  CanvasRenderingContext2D.prototype.stroke = function(...args) {
+    canvasStrokes.push({canvas: this.canvas.id, color: this.strokeStyle, alpha: this.globalAlpha});
+    return originalCanvasStroke.apply(this, args);
+  };
   const scenario = new URLSearchParams(location.search).get('scenario');
   const failures = [];
   const runtimeErrors = [];
@@ -254,6 +268,31 @@ HARNESS = r"""
     check($('#gearHardware [data-hole="3"]').getAttribute('aria-checked') === 'true', 'keyboard-selected hardware hole was not selected');
   }
 
+  async function canvasPreviewChecks() {
+    await startupChecks();
+    canvasStrokes.length = 0;
+    const requestsBefore = requestedFrames;
+    const cancellationsBefore = cancelledFrames;
+    input($('#layerPreviewSlider'), 2);
+    input($('#layerPreviewSlider'), 3);
+    await settlePreviews();
+    check($('#layerPreviewPosition').textContent === 'Drawing 3 of 3', 'selected drawing position did not follow the preview slider');
+    check($('#layerPreviewName').textContent === 'Drawing 3', 'selected drawing name did not follow the preview slider');
+    check(requestedFrames - requestsBefore === 2, 'preview changes did not request one frame each');
+    check(cancelledFrames - cancellationsBefore === 2, 'preview frame requests were not coalesced by cancellation');
+    const activeStrokes = canvasStrokes.filter(item => item.canvas === 'activePreview');
+    const stackStrokes = canvasStrokes.filter(item => item.canvas === 'stackPreview');
+    check(activeStrokes.some(item => item.color === '#8bd450' && item.alpha === 1), 'selected preview did not use the active drawing swatch');
+    for (const color of ['#f45b69', '#ffb34d', '#8bd450']) {
+      check(stackStrokes.some(item => item.color === color && item.alpha === 0.68), `stacked preview did not include ${color}`);
+    }
+    change($('#colorPalette'), 'color-1');
+    $$('.layer-card')[2].querySelector('input[value="#0000FF"]').click();
+    await settlePreviews();
+    const latestActive = canvasStrokes.filter(item => item.canvas === 'activePreview').at(-1);
+    check(latestActive?.color === '#0000ff', 'selected preview did not redraw with the chosen Color Palette swatch');
+  }
+
   async function customTrackChecks() {
     await startupChecks();
     let card = $$('.layer-card')[0];
@@ -334,6 +373,7 @@ HARNESS = r"""
     else if (scenario === 'palette') await paletteChecks();
     else if (scenario === 'built-in-swatch-submit') await builtInSwatchSubmitChecks();
     else if (scenario === 'hardware') await hardwareChecks();
+    else if (scenario === 'canvas-preview') await canvasPreviewChecks();
     else if (scenario === 'custom-track') await customTrackChecks();
     else if (scenario === 'submit') await submitChecks();
     else if (scenario === 'resume') await resumeChecks();
@@ -379,9 +419,9 @@ class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
         page = page_path.read_text(encoding="utf-8")
         page = re.sub(r'\s*<script src="/staging-shell\.js\?v=3" defer></script>', '', page)
         page = page.replace(
-            '<script src="/spiralgraph.js?v=5" type="module"></script>',
+            '<script src="/spiralgraph.js?v=6" type="module"></script>',
             '<script src="/spiralgraph-characterization-harness.js"></script>\n'
-            '<script src="/spiralgraph.js?v=5" type="module"></script>',
+            '<script src="/spiralgraph.js?v=6" type="module"></script>',
         )
         page_path.write_text(page, encoding="utf-8")
         (cls.site / "spiralgraph-characterization-harness.js").write_text(
@@ -453,6 +493,9 @@ class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
 
     def test_hardware_pen_holes_support_pointer_and_keyboard_selection(self):
         self._run_scenario("hardware")
+
+    def test_selected_and_stacked_canvas_previews_preserve_colors_and_frame_coalescing(self):
+        self._run_scenario("canvas-preview")
 
     def test_custom_closed_svg_track_updates_hardware(self):
         self._run_scenario("custom-track")

@@ -12,7 +12,7 @@ def read(path):
 def test_spiralgrap_page_uses_external_assets_and_classic_controls():
     page = read("serverless_web/spiralgraph.html")
     client = read("serverless_web/spiralgraph.js")
-    assert 'src="/spiralgraph.js?v=5"' in page
+    assert 'src="/spiralgraph.js?v=6"' in page
     assert 'href="/spiralgraph.css?v=3"' in page
     assert "Track plate" in client and "Rolling gear" in client and "Pen hole" in client
     assert "Starting mark" in client and "Rolling position" in client
@@ -24,6 +24,7 @@ def test_spiralgrap_page_uses_external_assets_and_classic_controls():
 def test_spiralgraph_can_use_saved_color_palette_swatches_for_preview_and_output_layers():
     page = read("serverless_web/spiralgraph.html")
     client = read("serverless_web/spiralgraph.js")
+    canvas_preview = read("serverless_web/spiralgraph/canvas-preview-v1.js")
     styles = read("serverless_web/spiralgraph.css")
     api = read("serverless_api/handler.py")
     backend = read("lib/spiralgrap.py")
@@ -32,7 +33,7 @@ def test_spiralgraph_can_use_saved_color_palette_swatches_for_preview_and_output
     assert '<div class="layer-heading-swatches">${swatchPicker(layer,index)}</div>' in client
     assert "function paletteSwatches()" in client
     assert "function applySwatchMode(layer)" in client
-    assert "context.strokeStyle=previewColor(layer,index)" in client
+    assert "context.strokeStyle=previewColor(layer,index)" in canvas_preview
     assert "color_palette_id" in client and "color_palette_id" in api
     assert "community_material_swatch" in api
     assert 'layer.get("lightburn_index")' in backend
@@ -95,6 +96,26 @@ class SpiralGraphHardwarePreviewTests(unittest.TestCase):
         self.assertIn("Teeth are schematic", read("serverless_web/spiralgraph.html"))
 
 
+class SpiralGraphCanvasPreviewTests(unittest.TestCase):
+    def test_selected_and_stacked_canvas_preview_owns_frame_scheduling(self):
+        client = read("serverless_web/spiralgraph.js")
+        canvas_preview = read("serverless_web/spiralgraph/canvas-preview-v1.js")
+        self.assertIn('from "./spiralgraph/canvas-preview-v1.js"', client)
+        self.assertIn("createCanvasPreview({colors:COLORS", client)
+        self.assertIn("function schedulePreview(){canvasPreview.schedulePreview()}", client)
+        self.assertIn('from "./geometry-v1.js"', canvas_preview)
+        self.assertIn("function previewColor(layer,index)", canvas_preview)
+        self.assertIn("function drawLayer(canvas,layer,index,alpha=1,clear=false)", canvas_preview)
+        self.assertIn("cancelAnimationFrame(previewFrame)", canvas_preview)
+        self.assertIn("previewFrame=requestAnimationFrame", canvas_preview)
+        self.assertIn('drawLayer($("#activePreview")', canvas_preview)
+        self.assertIn('const canvas=$("#stackPreview")', canvas_preview)
+        self.assertIn("renderHardware()", canvas_preview)
+        self.assertNotIn("function previewColor", client)
+        self.assertNotIn("function drawLayer", client)
+        self.assertNotIn("requestAnimationFrame", client)
+
+
 def test_spiralgrap_is_deployed_linked_documented_and_history_backed():
     deploy = read("dev_setup/deploy_serverless_staging_web.sh")
     shell = read("serverless_web/staging-shell.js")
@@ -104,7 +125,7 @@ def test_spiralgrap_is_deployed_linked_documented_and_history_backed():
     worker = read("worker.py")
     template = read("ecs/serverless-staging-web.yaml")
     history = read("serverless_web/history.js")
-    for filename in ("spiralgraph.html", "spiralgraph.js", "spiralgraph.css", "spiralgraph/geometry-v1.js", "spiralgraph/hardware-preview-v1.js"):
+    for filename in ("spiralgraph.html", "spiralgraph.js", "spiralgraph.css", "spiralgraph/geometry-v1.js", "spiralgraph/hardware-preview-v1.js", "spiralgraph/canvas-preview-v1.js"):
         assert filename in deploy
     assert '"/spiralgraph.html"' in shell and 'href="/spiralgraph.html"' in landing
     assert '"spiralgraph-lab": _page(' in docs
