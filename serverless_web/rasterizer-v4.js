@@ -72,21 +72,23 @@ import {
   syncColorMatchingAvailability,
   updateColorMatchingPresentation,
 } from './rasterizer/image-style-matching-v1.js';
+import {createRasterizerSessionApi} from './rasterizer/session-api-v1.js';
 
-let config, token=localStorage.getItem('id_token')||sessionStorage.getItem('id_token'), refreshToken=localStorage.getItem('refresh_token')||sessionStorage.getItem('refresh_token'), currentTask, pollTimer, accountResources, guestMode=!token, guestAccessToken=sessionStorage.getItem('guest_access_token'), uploadedHolographicProfile=null;
-if(token)localStorage.setItem('id_token',token);if(refreshToken)localStorage.setItem('refresh_token',refreshToken);sessionStorage.removeItem('id_token');sessionStorage.removeItem('refresh_token');
+let currentTask, pollTimer, accountResources, uploadedHolographicProfile=null;
 configureFlowPainter({show});
 function hasOption(select,value){return [...select.options].some(option=>option.value===String(value??''))}
 function rasterizerFormValues(){return{material_choice:document.querySelector('#materialChoice').value,material_name:document.querySelector('#materialName').value,pixel_square_mm:document.querySelector('#pixel').value,new_width:document.querySelector('#width').value,new_height:document.querySelector('#height').value,white_is:document.querySelector('#whiteIs').value,image_preset:document.querySelector('#imagePreset').value,filter_parameters:filterParameters(),geometry_style:effectiveGeometryStyle(),geometry_style_parameters:geometryStyleParameters(),panel_tiling:panelTilingPreferenceValues(),...colorMatchingParameters(),cut_mode:document.querySelector('#rasterHoloCutMode').value,preserve_black_outlines:document.querySelector('#rasterHoloBlack').checked}}
 function restoreRasterizerForm(values,restoreMaterial=true){if(!values)return;if(restoreMaterial&&values.material_name!==undefined)document.querySelector('#materialName').value=values.material_name;for(const [id,key] of [['pixel','pixel_square_mm'],['width','new_width'],['height','new_height']])if(values[key]!==undefined)document.querySelector('#'+id).value=values[key];if(hasOption(document.querySelector('#whiteIs'),values.white_is))document.querySelector('#whiteIs').value=values.white_is;restoreImageStyle(values);restoreGeometryControls(values);restoreColorMatching(values);if(hasOption(document.querySelector('#rasterHoloCutMode'),values.cut_mode))document.querySelector('#rasterHoloCutMode').value=values.cut_mode;document.querySelector('#rasterHoloBlack').checked=Boolean(values.preserve_black_outlines)&&!document.querySelector('#rasterHoloBlack').disabled;restorePanelTiling(values)}
 function holographicArtworkFormValues(){return{recipe_id:document.querySelector('#holoRecipe').value,material_library_id:document.querySelector('#holoMaterial').value,max_dimension:document.querySelector('#holoDimension').value,pixel_mm:document.querySelector('#holoPixel').value,cut_mode:document.querySelector('#holoCutMode').value,preserve_black_outlines:document.querySelector('#holoBlack').checked}}
 function restoreHolographicArtworkForm(values){if(!values)return;for(const [id,key] of [['holoRecipe','recipe_id'],['holoMaterial','material_library_id'],['holoCutMode','cut_mode']]){const select=document.querySelector('#'+id);if(hasOption(select,values[key]))select.value=values[key]}for(const [id,key] of [['holoDimension','max_dimension'],['holoPixel','pixel_mm']])if(values[key]!==undefined)document.querySelector('#'+id).value=values[key];document.querySelector('#holoBlack').checked=Boolean(values.preserve_black_outlines)}
+const sessionApi=createRasterizerSessionApi({show,userFacingStyleError});
+const {api,guestApi}=sessionApi;
 configurePaletteResources({
   getAccountResources:()=>accountResources,
   setAccountResources:value=>{accountResources=value},
   getUploadedHolographicProfile:()=>uploadedHolographicProfile,
   setUploadedHolographicProfile:value=>{uploadedHolographicProfile=value},
-  isGuest:()=>guestMode,
+  isGuest:sessionApi.isGuest,
   api,
   guestApi,
   show,
@@ -102,17 +104,7 @@ configurePaletteResources({
 configureImageStyleMatching({selectedRasterRecipe,visibleRasterPalette,selectedPaletteHexes,paletteDisplayName,hasOption,syncGeometryStyleAvailability,markQuantPreviewStale});bindImageStyleControls();configureGeometryControls({selectedRasterRecipe,visibleRasterPalette,selectedPaletteHexes,paletteDisplayName,esc,hasOption,getFauxlogramFlow,restoreFauxlogramFlow,resetFauxlogramFlow});renderImageStyleControls();renderGeometryControls();syncGeometryStyleAvailability();configurePanelTiling({previewSwatches,hasOption,effectiveArtworkFile,loadPreviewBitmap,markQuantPreviewStale});
 const statusEl=document.querySelector('#status'), form=document.querySelector('#job'), holographicForm=document.querySelector('#holographicJob');
 function show(message){statusEl.textContent=message}
-function setAuthState(authenticated){guestMode=!authenticated;form.classList.remove('hidden');holographicForm.classList.toggle('hidden',!authenticated);document.querySelector('#guestNotice').classList.toggle('hidden',authenticated);window.stagingShellSetAuthenticated?.(authenticated)}
-function clearAuth(){token=null;refreshToken=null;localStorage.removeItem('id_token');localStorage.removeItem('refresh_token');setAuthState(false)}
-function tokenExpiresSoon(){try{const part=token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');const claims=JSON.parse(atob(part.padEnd(Math.ceil(part.length/4)*4,'=')));return Number(claims.exp||0)*1000<=Date.now()+30000}catch{return true}}
-async function refreshSession(){
-  if(!refreshToken)return false;
-  const body=new URLSearchParams({grant_type:'refresh_token',client_id:config.client_id,refresh_token:refreshToken});
-  const result=await fetch(`https://${config.cognito_domain}/oauth2/token`,{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body}).then(r=>r.json());
-  if(!result.id_token){clearAuth();return false}token=result.id_token;localStorage.setItem('id_token',token);return true;
-}
 function esc(value){return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]))}
-function authHeaders(){return {'authorization':`Bearer ${token}`,'content-type':'application/json'}}
 function swatchChip(entry,intent='color_palette'){
   const color=entry.display_hex||entry.hex||'#303842',rawAngle=Number(entry.angle??entry.settings?.angle??0),rawInterval=Number(entry.interval??entry.settings?.interval??.05),angle=(Number.isFinite(rawAngle)?rawAngle:0)+90,spacing=Math.max(3,Math.min(14,(Number.isFinite(rawInterval)&&rawInterval>0?rawInterval:.05)*120));
   const pattern=intent==='hatch_palette'?`;background-image:repeating-linear-gradient(${angle}deg,rgba(0,0,0,.88) 0 1px,rgba(255,255,255,.2) 1px 2px,transparent 2px ${spacing}px)`:'';
@@ -130,40 +122,21 @@ async function createJobThumbnail(file){
   }catch(error){console.warn('Job History thumbnail could not be generated:',error);return null}finally{bitmap?.close?.()}
 }
 async function load(){
-  config=await fetch('config.json',{cache:'no-store'}).then(r=>r.json());
-  const params=new URLSearchParams(location.search), code=params.get('code');
-  const requestedTask=params.get('task')||sessionStorage.getItem('pending_task');
-  if(code){
-    const verifier=sessionStorage.getItem('pkce_verifier');
-    const redirectUri=sessionStorage.getItem('pkce_redirect_uri')||new URL('/',location.origin).href;
-    const discardCallback=()=>{sessionStorage.removeItem('pkce_verifier');sessionStorage.removeItem('pkce_redirect_uri');history.replaceState({},'',location.pathname)};
-    if(!verifier){discardCallback();throw new Error('Sign-in attempt expired or opened in another tab. Please sign in again.');}
-    const body=new URLSearchParams({grant_type:'authorization_code',client_id:config.client_id,code,redirect_uri:redirectUri,code_verifier:verifier});
-    let result,response;
-    try{response=await fetch(`https://${config.cognito_domain}/oauth2/token`,{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body});result=await response.json()}
-    catch(error){discardCallback();throw new Error('Cognito sign-in could not reach the token service. Please sign in again.');}
-    if(!response.ok||!result.id_token){const reason=result.error_description||result.error||`HTTP ${response.status}`;discardCallback();throw new Error(`Cognito sign-in could not complete (${reason}). Please sign in again.`)}
-    sessionStorage.removeItem('pkce_verifier');sessionStorage.removeItem('pkce_redirect_uri');token=result.id_token;refreshToken=result.refresh_token||refreshToken;localStorage.setItem('id_token',token);if(refreshToken)localStorage.setItem('refresh_token',refreshToken);history.replaceState({},'',requestedTask?`${location.pathname}?task=${encodeURIComponent(requestedTask)}`:location.pathname);const postLoginPath=sessionStorage.getItem('post_login_path');if(postLoginPath&&postLoginPath!=='/'){sessionStorage.removeItem('post_login_path');location.replace(postLoginPath);return}
-  }
-  if(token&&tokenExpiresSoon()&&!await refreshSession())clearAuth();
-  setAuthState(!!token);
-  show(token?'Authenticated. Choose artwork and an output-settings option to run an isolated job.':'Guest access. Upload a Material Library or choose SVG-Only to run a temporary Rasterizer job.');
-  if(token)await loadAccountResources();else await loadGuestResources();
-  const resumedTask=new URLSearchParams(location.search).get('task')||requestedTask;
-  if(token&&resumedTask){sessionStorage.removeItem('pending_task');currentTask=resumedTask;history.replaceState({},'',`${location.pathname}?task=${encodeURIComponent(currentTask)}`);document.querySelector('#submit').disabled=true;document.querySelector('#activity').classList.remove('hidden');poll()}
+  await sessionApi.initialize({
+    loadAccountResources,
+    loadGuestResources,
+    onResumeTask:task=>{currentTask=task;document.querySelector('#submit').disabled=true;document.querySelector('#activity').classList.remove('hidden');poll()},
+  });
 }
 function userFacingStyleError(message){const raw=String(message||''),value=raw.replace(/^ValueError:\s*/,'');return /^(?:Image style|Geometry style|Abstract filter) settings are not valid JSON$|^Invalid (?:abstract filter|geometry style) parameters:/.test(value)?"We couldn't read these style settings. Reload Rasterizer, choose the style again, and resubmit. If it keeps happening, report the problem.":raw}
-function jobAccessErrorMessage(message){if(message==='Task not found'&& !guestMode)return "This job isn't available to this session. It may have expired or been deleted, or it may belong to another account. Check that you're signed into the right account; otherwise, start a new job.";if(message==='Guest task not found or access expired'&&guestMode)return "This guest job isn't available. Guest access lasts 24 hours, and the job may also have been deleted. If it's recent, try the original browser tab; otherwise, start a new job.";return message}
-async function api(path,options={},retryAuth=true){const r=await fetch(config.api_url+path,{...options,headers:{...authHeaders(),...(options.headers||{})}});const data=await r.json();if(r.status===401&&retryAuth&&await refreshSession())return api(path,options,false);if(r.status===401){clearAuth();throw new Error('Session expired. Sign in again.')}if(!r.ok)throw new Error(userFacingStyleError(data.message||`HTTP ${r.status}`));return data}
-async function guestApi(path,options={}){const headers={'content-type':'application/json',...(options.headers||{})};if(guestAccessToken)headers['x-guest-capability']=guestAccessToken;const r=await fetch(config.api_url+path,{...options,headers});const data=await r.json();if(!r.ok)throw new Error(userFacingStyleError(data.message||`HTTP ${r.status}`));return data}
 const poll=createRasterJobPoller({
   getCurrentTask:()=>currentTask,
-  isGuest:()=>guestMode,
+  isGuest:sessionApi.isGuest,
   guestApi,
   api,
   show,
   userFacingStyleError,
-  jobAccessErrorMessage,
+  jobAccessErrorMessage:sessionApi.jobAccessErrorMessage,
   renderOutputs:renderRasterOutputs,
   setPollTimer:timer=>{pollTimer=timer},
 });
@@ -205,9 +178,9 @@ document.querySelector('#materialFile').onchange=async event=>{
   }catch(error){event.target.value='';renderRasterPalette();show(`Could not load Fauxlographic Swatch Palette: ${error.message}`)}
 };
 form.onsubmit=createRasterSubmissionHandler({
-  isGuest:()=>guestMode,getCropSelection,applyArtworkCrop,effectiveArtworkFile,
+  isGuest:sessionApi.isGuest,getCropSelection,applyArtworkCrop,effectiveArtworkFile,
   getSelectedPaletteHexes:()=>selectedPaletteHexes,selectedAsset,getUploadedHolographicProfile:()=>uploadedHolographicProfile,
-  guestApi,api,setGuestAccessToken:value=>{guestAccessToken=value;sessionStorage.setItem('guest_access_token',value)},
+  guestApi,api,setGuestAccessToken:sessionApi.setGuestAccessToken,
   createJobThumbnail,show,currentColorNames,selectedRasterRecipe,explicitLibraryAssignments,
   getAccountResources:()=>accountResources,recipeRasterEntries,filterParameters,colorMatchingParameters,
   effectiveGeometryStyle,geometryStyleParameters,panelTilingParameters,getAppliedCropShape,

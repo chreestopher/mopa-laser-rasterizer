@@ -15,6 +15,7 @@ class ServerlessGuestAccessTests(unittest.TestCase):
         cls.palette_resources = (ROOT / "serverless_web" / "rasterizer" / "palette-resources-v1.js").read_text(encoding="utf-8")
         cls.jobs = (ROOT / "serverless_web" / "rasterizer" / "jobs-v1.js").read_text(encoding="utf-8")
         cls.submission = (ROOT / "serverless_web" / "rasterizer" / "submission-v1.js").read_text(encoding="utf-8")
+        cls.session_api = (ROOT / "serverless_web" / "rasterizer" / "session-api-v1.js").read_text(encoding="utf-8")
         cls.stack = (ROOT / "ecs" / "serverless-staging-web.yaml").read_text(encoding="utf-8")
         cls.foundation = (ROOT / "ecs" / "serverless-staging-foundation.yaml").read_text(encoding="utf-8")
         cls.worker = (ROOT / "worker.py").read_text(encoding="utf-8")
@@ -111,8 +112,9 @@ class ServerlessGuestAccessTests(unittest.TestCase):
         self.assertIn('guest_job=payload.get("guest_job") is True', self.worker)
 
     def test_account_and_holographic_features_remain_authenticated(self):
-        self.assertIn("holographicForm.classList.toggle('hidden',!authenticated)", self.script)
-        self.assertIn("if(token)await loadAccountResources();else await loadGuestResources()", self.script)
+        self.assertIn("element('#holographicJob').classList.toggle('hidden', !authenticated)", self.session_api)
+        self.assertIn("if (token) await loadAccountResources();", self.session_api)
+        self.assertIn("else await loadGuestResources();", self.session_api)
         self.assertIn("if not user_id(event):\n            return response(401", self.handler)
 
 
