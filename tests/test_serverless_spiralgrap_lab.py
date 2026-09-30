@@ -12,7 +12,7 @@ def read(path):
 def test_spiralgrap_page_uses_external_assets_and_classic_controls():
     page = read("serverless_web/spiralgraph.html")
     client = read("serverless_web/spiralgraph.js")
-    assert 'src="/spiralgraph.js?v=3"' in page
+    assert 'src="/spiralgraph.js?v=4"' in page
     assert 'href="/spiralgraph.css?v=3"' in page
     assert "Track plate" in client and "Rolling gear" in client and "Pen hole" in client
     assert "Starting mark" in client and "Rolling position" in client
@@ -49,21 +49,25 @@ class SpiralGraphHardwarePreviewTests(unittest.TestCase):
     def test_virtual_hardware_is_live_accessible_and_synchronized(self):
         page = read("serverless_web/spiralgraph.html")
         client = read("serverless_web/spiralgraph.js")
+        geometry = read("serverless_web/spiralgraph/geometry-v1.js")
         styles = read("serverless_web/spiralgraph.css")
         self.assertIn('id="hardwarePreview"', page)
         for label in ("Track plate", "Rolling gear and pencil holes", "Assembled position"):
             self.assertIn(label, page)
         self.assertIn('role="radiogroup"', page)
         self.assertIn('aria-live="polite"', page)
-        self.assertIn("PEN_HOLE_FACTORS=[0,.2,.36,.52,.68,.82,.94]", client)
-        self.assertIn("function rollingModel(layer)", client)
-        self.assertIn("function rollingState(model,distance)", client)
+        self.assertIn("PEN_HOLE_FACTORS=[0,.2,.36,.52,.68,.82,.94]", geometry)
+        self.assertIn("function rollingModel(layer)", geometry)
+        self.assertIn("function rollingState(model,distance)", geometry)
+        self.assertIn('from "./spiralgraph/geometry-v1.js"', client)
         self.assertIn("function selectPenHole(hole,announce=true)", client)
         for behavior in ('role:"radio"', '"aria-checked"', 'focusable:"true"', "ArrowRight", "ArrowLeft", 'event.key==="Home"', 'event.key==="End"'):
             self.assertIn(behavior, client)
         self.assertIn('[data-field="pen_hole"]', client)
         self.assertIn("createElementNS", client)
+        self.assertIn("DOMParser", geometry)
         self.assertNotIn("host.innerHTML", client)
+        self.assertNotIn("host.innerHTML", geometry)
         self.assertIn(".hardware-hole-target", styles)
         self.assertIn("touch-action:manipulation", styles)
         self.assertIn(".light-machine .hardware-grid svg", styles)
@@ -71,13 +75,14 @@ class SpiralGraphHardwarePreviewTests(unittest.TestCase):
 
     def test_curve_and_hardware_share_precomputed_geometry(self):
         client = read("serverless_web/spiralgraph.js")
-        curve = client.split("function curvePoints(layer)", 1)[1].split("function bounds", 1)[0]
+        geometry = read("serverless_web/spiralgraph/geometry-v1.js")
+        curve = geometry.split("function curvePoints(layer)", 1)[1].split("function bounds", 1)[0]
         self.assertIn("const model=rollingModel(layer)", curve)
         self.assertIn("rollingState(model", curve)
         self.assertNotIn("trackPoints(", curve)
         self.assertNotIn("cumulative(", curve)
-        self.assertIn("stableHardwareDistance", client)
-        self.assertIn("Number.isFinite", client)
+        self.assertIn("stableHardwareDistance", geometry)
+        self.assertIn("Number.isFinite", geometry)
         self.assertIn("Teeth are schematic", read("serverless_web/spiralgraph.html"))
 
 
@@ -90,7 +95,7 @@ def test_spiralgrap_is_deployed_linked_documented_and_history_backed():
     worker = read("worker.py")
     template = read("ecs/serverless-staging-web.yaml")
     history = read("serverless_web/history.js")
-    for filename in ("spiralgraph.html", "spiralgraph.js", "spiralgraph.css"):
+    for filename in ("spiralgraph.html", "spiralgraph.js", "spiralgraph.css", "spiralgraph/geometry-v1.js"):
         assert filename in deploy
     assert '"/spiralgraph.html"' in shell and 'href="/spiralgraph.html"' in landing
     assert '"spiralgraph-lab": _page(' in docs

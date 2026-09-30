@@ -361,9 +361,9 @@ class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
         page = page_path.read_text(encoding="utf-8")
         page = re.sub(r'\s*<script src="/staging-shell\.js\?v=3" defer></script>', '', page)
         page = page.replace(
-            '<script src="/spiralgraph.js?v=3" type="module"></script>',
+            '<script src="/spiralgraph.js?v=4" type="module"></script>',
             '<script src="/spiralgraph-characterization-harness.js"></script>\n'
-            '<script src="/spiralgraph.js?v=3" type="module"></script>',
+            '<script src="/spiralgraph.js?v=4" type="module"></script>',
         )
         page_path.write_text(page, encoding="utf-8")
         (cls.site / "spiralgraph-characterization-harness.js").write_text(

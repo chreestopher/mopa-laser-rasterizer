@@ -544,6 +544,21 @@ def test_rasterizer_module_graph_uploads_dependencies_before_entry_and_html():
         ]
 
 
+def test_spiralgraph_geometry_uploads_before_entry_and_html():
+    deploy = DEPLOY.read_text(encoding="utf-8")
+    dependency = (
+        'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/geometry-v1.js"'
+    )
+    entry = 'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph.js"'
+    html = 'aws s3 cp "$BUILD_DIR/seo/spiralgraph.html"'
+
+    assert dependency in deploy
+    assert deploy.index(dependency) < deploy.index(entry) < deploy.index(html)
+    assert "application/javascript" in deploy[
+        deploy.index(dependency) : deploy.index(dependency) + 300
+    ]
+
+
 def test_serverless_sources_and_rendered_routes_have_no_inline_handlers_or_urls(
     rendered_serverless_pages,
 ):
