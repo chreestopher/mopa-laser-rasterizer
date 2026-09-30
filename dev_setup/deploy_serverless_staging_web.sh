@@ -213,6 +213,8 @@ aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/geometry-v1.js" "s3://$STATIC_B
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/hardware-preview-v1.js" "s3://$STATIC_BUCKET/web/spiralgraph/hardware-preview-v1.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/canvas-preview-v1.js" "s3://$STATIC_BUCKET/web/spiralgraph/canvas-preview-v1.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph.js" "s3://$STATIC_BUCKET/web/spiralgraph.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph.css" "s3://$STATIC_BUCKET/web/spiralgraph.css" \

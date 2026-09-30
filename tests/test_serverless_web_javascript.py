@@ -552,14 +552,20 @@ def test_spiralgraph_modules_upload_before_entry_and_html():
     hardware_dependency = (
         'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/hardware-preview-v1.js"'
     )
+    canvas_dependency = (
+        'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/canvas-preview-v1.js"'
+    )
     entry = 'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph.js"'
     html = 'aws s3 cp "$BUILD_DIR/seo/spiralgraph.html"'
 
     assert geometry_dependency in deploy
     assert hardware_dependency in deploy
+    assert canvas_dependency in deploy
     assert deploy.index(geometry_dependency) < deploy.index(hardware_dependency)
+    assert deploy.index(geometry_dependency) < deploy.index(canvas_dependency)
     assert deploy.index(hardware_dependency) < deploy.index(entry) < deploy.index(html)
-    for dependency in (geometry_dependency, hardware_dependency):
+    assert deploy.index(canvas_dependency) < deploy.index(entry) < deploy.index(html)
+    for dependency in (geometry_dependency, hardware_dependency, canvas_dependency):
         command = deploy[deploy.index(dependency) : deploy.index(dependency) + 400]
         assert "application/javascript" in command
         assert "public,max-age=31536000,immutable" in command

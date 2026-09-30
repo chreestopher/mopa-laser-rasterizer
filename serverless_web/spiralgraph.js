@@ -1,7 +1,8 @@
-import {bounds,curvePoints,geometryPoints,trackPoints} from "./spiralgraph/geometry-v1.js";
+import {geometryPoints} from "./spiralgraph/geometry-v1.js";
 import {createHardwarePreview} from "./spiralgraph/hardware-preview-v1.js";
+import {createCanvasPreview} from "./spiralgraph/canvas-preview-v1.js";
 
-let config,resources={},pollTimer,previewFrame;
+let config,resources={},pollTimer,canvasPreview;
 let token=localStorage.getItem("id_token")||sessionStorage.getItem("id_token");
 let refreshToken=localStorage.getItem("refresh_token")||sessionStorage.getItem("refresh_token");
 let layers=[],activeLayer=0;
@@ -45,10 +46,9 @@ function layerCard(layer,index){return`<article class="layer-card" data-layer="$
 function syncSlider(){activeLayer=Math.max(0,Math.min(activeLayer,layers.length-1));$("#layerPreviewSlider").max=String(layers.length);$("#layerPreviewSlider").value=String(activeLayer+1);$("#layerPreviewPosition").textContent=`Drawing ${activeLayer+1} of ${layers.length}`;$("#layerPreviewName").textContent=layers[activeLayer]?.name||"Drawing"}
 function renderLayers(){$("#layerList").innerHTML=layers.map(layerCard).join("");syncSlider();updatePaletteStatus();schedulePreview()}
 
-function previewColor(layer,index){const value=String(layer?.swatch_hex||"").toUpperCase();return/^#[0-9A-F]{6}$/.test(value)?value:COLORS[index%COLORS.length]}
-function drawLayer(canvas,layer,index,alpha=1,clear=false){const context=canvas.getContext("2d");if(clear)context.clearRect(0,0,canvas.width,canvas.height);let curve,track;try{curve=curvePoints(layer);track=layer.include_track?trackPoints(layer):null}catch{return}const b=bounds(track?[...curve,...track]:curve),extent=Math.max(b[2]-b[0],b[3]-b[1])||1,scale=canvas.width*.84/extent,cx=(b[0]+b[2])/2,cy=(b[1]+b[3])/2;context.save();context.globalAlpha=alpha;context.translate(canvas.width/2-cx*scale,canvas.height/2-cy*scale);context.scale(scale,scale);context.beginPath();curve.forEach(([x,y],i)=>i?context.lineTo(x,y):context.moveTo(x,y));context.strokeStyle=previewColor(layer,index);context.lineJoin="round";context.lineCap="round";context.lineWidth=layer.output_mode==="fill"?Math.max(.002,Number(layer.fill_thickness_mm)/(Number($("#diameter").value)||150)*extent):.0025;context.stroke();if(track){context.beginPath();track.forEach(([x,y],i)=>i?context.lineTo(x,y):context.moveTo(x,y));context.closePath();context.globalAlpha=alpha*.4;context.lineWidth=.002;context.stroke()}context.restore()}
-function schedulePreview(){cancelAnimationFrame(previewFrame);previewFrame=requestAnimationFrame(()=>{hardwarePreview.render();drawLayer($("#activePreview"),layers[activeLayer],activeLayer,1,true);const canvas=$("#stackPreview"),context=canvas.getContext("2d");context.clearRect(0,0,canvas.width,canvas.height);layers.forEach((layer,index)=>drawLayer(canvas,layer,index,.68,false))})}
+function schedulePreview(){canvasPreview.schedulePreview()}
 const hardwarePreview=createHardwarePreview({getActiveLayer:()=>layers[activeLayer],getActiveLayerIndex:()=>activeLayer,schedulePreview});
+canvasPreview=createCanvasPreview({colors:COLORS,getLayers:()=>layers,getActiveLayerIndex:()=>activeLayer,getDiameter:()=>$("#diameter").value,renderHardware:()=>hardwarePreview.render()});
 
 async function normalizeSvg(file){if(!file||!(file.type==="image/svg+xml"||file.name.toLowerCase().endsWith(".svg")))throw new Error("Choose an SVG file.");if(file.size>65536)throw new Error("Custom SVG files must be no larger than 64 KB.");const text=await file.text(),doc=new DOMParser().parseFromString(text,"image/svg+xml"),root=doc.documentElement;if(root.nodeName.toLowerCase()==="parsererror"||root.localName!=="svg")throw new Error("The custom SVG could not be read.");const allowed=new Set(["svg","g","path","rect","circle","ellipse","polygon","polyline"]);for(const element of doc.querySelectorAll("*")){const name=element.localName?.toLowerCase();if(!allowed.has(name))throw new Error(`SVG element <${name||"unknown"}> is not supported.`);for(const attribute of [...element.attributes]){const key=attribute.name.toLowerCase(),value=attribute.value.toLowerCase();if(key.startsWith("on")||key.includes("href")||value.includes("url(")||value.includes("javascript:")||value.includes("data:"))throw new Error("Embedded or external SVG content is not supported.")}}const svg=new XMLSerializer().serializeToString(root);geometryPoints(svg);return{name:file.name.slice(0,120),svg}}
 function payloadLayer(source){const{_trackPoints,...layer}=source;return layer}
