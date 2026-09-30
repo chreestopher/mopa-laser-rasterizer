@@ -91,6 +91,19 @@ def test_optional_swatch_controls_svg_lightburn_color_and_per_swatch_setting(tmp
     assert '<PrimList>LineClosed</PrimList>' in lightburn_text
 
 
+def test_builtin_swatch_controls_svg_without_changing_processing_palette_settings(tmp_path):
+    result = build_spiralgrap_exports(tmp_path, config(
+        layer(name="Built-in cyan", swatch_hex="#43C7BB", output_mode="line"),
+    ))
+    svg_path = next(Path(path) for path in result["outputs"] if path.endswith(".svg"))
+    lightburn_path = next(Path(path) for path in result["outputs"] if path.endswith(".lbrn2"))
+    svg_text = svg_path.read_text(encoding="utf-8")
+    lightburn_text = lightburn_path.read_text(encoding="utf-8")
+    assert 'stroke="#43C7BB"' in svg_text
+    assert '<speed Value="100"' in lightburn_text
+    assert '<index Value="0"' in lightburn_text
+
+
 def test_unoffered_raw_gear_sizes_are_rejected():
     with pytest.raises(ValueError, match="rolling gear"):
         validate_spiralgrap_config(config(layer(gear_teeth=37)))

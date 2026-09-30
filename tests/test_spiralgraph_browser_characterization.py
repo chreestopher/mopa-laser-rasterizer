@@ -225,6 +225,20 @@ HARNESS = r"""
     check(!$('#generate').disabled, 'Generate became disabled with valid Color Palette swatches');
   }
 
+  async function builtInSwatchSubmitChecks() {
+    await startupChecks();
+    $$('.layer-card')[0].querySelector('input[value="#43C7BB"]').click();
+    $('#spiralgrapForm').dispatchEvent(new Event('submit', {bubbles: true, cancelable: true}));
+    const deadline = Date.now() + 7000;
+    while (!submittedPayload && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 20));
+    check(Boolean(submittedPayload), 'built-in swatch submission payload was not captured');
+    if (submittedPayload) {
+      check(submittedPayload.color_palette_id === '', 'built-in swatch submission unexpectedly selected a Color Palette');
+      check(submittedPayload.layers[0].swatch_hex === '#43C7BB', 'built-in drawing swatch was not submitted for SVG output');
+      check(submittedPayload.processing_palette_id === 'processing-1', 'fallback Processing Palette was not retained');
+    }
+  }
+
   async function hardwareChecks() {
     await startupChecks();
     const holeTwo = $('#gearHardware [data-hole="2"]');
@@ -318,6 +332,7 @@ HARNESS = r"""
     } else if (scenario === 'startup') await startupChecks();
     else if (scenario === 'editor') await editorChecks();
     else if (scenario === 'palette') await paletteChecks();
+    else if (scenario === 'built-in-swatch-submit') await builtInSwatchSubmitChecks();
     else if (scenario === 'hardware') await hardwareChecks();
     else if (scenario === 'custom-track') await customTrackChecks();
     else if (scenario === 'submit') await submitChecks();
@@ -364,9 +379,9 @@ class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
         page = page_path.read_text(encoding="utf-8")
         page = re.sub(r'\s*<script src="/staging-shell\.js\?v=3" defer></script>', '', page)
         page = page.replace(
-            '<script src="/spiralgraph.js?v=4" type="module"></script>',
+            '<script src="/spiralgraph.js?v=5" type="module"></script>',
             '<script src="/spiralgraph-characterization-harness.js"></script>\n'
-            '<script src="/spiralgraph.js?v=4" type="module"></script>',
+            '<script src="/spiralgraph.js?v=5" type="module"></script>',
         )
         page_path.write_text(page, encoding="utf-8")
         (cls.site / "spiralgraph-characterization-harness.js").write_text(
@@ -432,6 +447,9 @@ class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
 
     def test_color_palette_drives_swatches_and_line_fill_modes(self):
         self._run_scenario("palette")
+
+    def test_builtin_swatch_is_submitted_with_processing_palette_fallback(self):
+        self._run_scenario("built-in-swatch-submit")
 
     def test_hardware_pen_holes_support_pointer_and_keyboard_selection(self):
         self._run_scenario("hardware")
