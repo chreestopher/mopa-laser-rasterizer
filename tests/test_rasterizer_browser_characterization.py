@@ -858,6 +858,13 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
         pass
 
 
+class _CharacterizationServer(http.server.ThreadingHTTPServer):
+    # Chromium requests the growing ES-module graph in parallel.  The
+    # socketserver default backlog of five can intermittently drop one of
+    # those requests under CI load, leaving the page only partly initialized.
+    request_queue_size = 64
+
+
 class RasterizerBrowserCharacterizationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -878,7 +885,7 @@ class RasterizerBrowserCharacterizationTests(unittest.TestCase):
         (cls.site / "characterization-harness.js").write_text(HARNESS.replace("__JWT__", _jwt()), encoding="utf-8")
 
         handler = lambda *args, **kwargs: _QuietHandler(*args, directory=str(cls.site), **kwargs)
-        cls.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        cls.server = _CharacterizationServer(("127.0.0.1", 0), handler)
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
 
