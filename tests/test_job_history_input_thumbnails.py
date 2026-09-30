@@ -3,19 +3,23 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 HANDLER = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
-RASTERIZER = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+RASTERIZER = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
+UI_HELPERS = (ROOT / "serverless_web" / "rasterizer" / "ui-helpers-v1.js").read_text(encoding="utf-8")
+SUBMISSION = (ROOT / "serverless_web" / "rasterizer" / "submission-v1.js").read_text(encoding="utf-8")
 HISTORY_SCRIPT = (ROOT / "serverless_web" / "history.js").read_text(encoding="utf-8")
 HISTORY_PAGE = (ROOT / "serverless_web" / "history.html").read_text(encoding="utf-8")
 
 
 def test_browser_generates_and_uploads_a_bounded_job_thumbnail():
-    assert "async function createJobThumbnail(file)" in RASTERIZER
-    assert "const maximum=256" in RASTERIZER
-    assert "canvas.toBlob(resolve,'image/webp',.8)" in RASTERIZER
-    assert "thumbnail_content_type:thumbnail?.type||''" in RASTERIZER
-    assert "await upload(thumbnail,grant.thumbnail);thumbnailUploaded=true" in RASTERIZER
-    assert "Optional Job History thumbnail upload failed" in RASTERIZER
-    assert "thumbnail_key:thumbnailUploaded?grant.thumbnail.key:''" in RASTERIZER
+    assert "createJobThumbnail," in RASTERIZER
+    assert "export async function createJobThumbnail(file, loadPreviewBitmap)" in UI_HELPERS
+    assert "const maximum = 256" in UI_HELPERS
+    assert "canvas.toBlob(resolve, 'image/webp', .8)" in UI_HELPERS
+    assert "thumbnail_content_type: thumbnail?.type || ''" in SUBMISSION
+    assert "await upload(thumbnail, grant.thumbnail)" in SUBMISSION
+    assert "thumbnailUploaded = true" in SUBMISSION
+    assert "Optional Job History thumbnail upload failed" in SUBMISSION
+    assert "thumbnail_key: thumbnailUploaded ? grant.thumbnail.key : ''" in SUBMISSION
 
 
 def test_thumbnail_upload_is_job_scoped_size_limited_and_verified():

@@ -368,6 +368,14 @@ HARNESS = r"""
       assert(gray?.querySelector('button')?.disabled === true, 'unassigned library swatch became available');
       assert(preferencePayload?.selected_color_hexes?.join('|') === '#FFFFFF|#000000', `changed swatch selection was not saved (${JSON.stringify(preferencePayload)})`);
       assert(preferencePayload?.material_library_color_assignments?.['library-1']?.['#000000'] === 'Char', 'explicit library assignments changed while saving');
+    } else if (scenario === 'material-input') {
+      assert(window.__materialLibraryReady === true, 'uploaded CLB material names were not discovered');
+      assert(window.__materialProfileReady === true, 'uploaded Fauxlographic palette was not accepted');
+      assert(document.querySelector('#materialChoice').value === 'holographic-upload', 'Fauxlographic upload choice changed');
+      assert(document.querySelector('#materialFile').accept === '.json,application/json', 'Fauxlographic upload file types changed');
+      assert(document.querySelectorAll('#rasterPalette .color-card').length === 1, 'uploaded Fauxlographic swatches were not rendered');
+      assert(document.querySelector('#status').textContent.startsWith('Loaded 1 fauxlographic swatches from characterization-palette.json.'), `uploaded Fauxlographic status changed (${document.querySelector('#status').textContent})`);
+      assert(document.querySelector('#status').textContent.includes('Preserved Black was left unchecked'), 'unreadable preserved Black was not safely ignored');
     } else if (scenario === 'shape-assets') {
       const rawParameters = submittedPayload?.geometry_style_parameters || {};
       const parameters = typeof rawParameters === 'string' ? JSON.parse(rawParameters) : rawParameters;
@@ -550,6 +558,36 @@ HARNESS = r"""
     window.__paletteResourcesStarted = true;
     black.click();
   };
+  const startMaterialInputCharacterization = () => {
+    if (window.__materialProfileReady) return;
+    const choice = document.querySelector('#materialChoice');
+    if (!window.__materialInputStarted) {
+      if (!choice.querySelector('option[value="holographic-upload"]')) return;
+      window.__materialInputStarted = true;
+      choice.value = '';
+      choice.dispatchEvent(new Event('change', {bubbles: true}));
+      attachFile('#materialFile', new File([
+        '<LightBurnLibrary><Material name="Birch"><Entry name="Cut"/></Material><Material name="Walnut"><Entry name="Fill"/></Material></LightBurnLibrary>'
+      ], 'characterization.clb', {type: 'application/xml'}));
+      return;
+    }
+    if (!window.__materialLibraryReady) {
+      if (!document.querySelector('#status').textContent.startsWith('Loaded 2 materials from characterization.clb.')) return;
+      const names = [...document.querySelector('#materialName').options].map(option => option.value).filter(Boolean);
+      window.__materialLibraryReady = names.join('|') === 'Birch|Walnut' && document.querySelector('#materialName').value === 'Birch';
+      choice.value = 'holographic-upload';
+      choice.dispatchEvent(new Event('change', {bubbles: true}));
+      attachFile('#materialFile', new File([JSON.stringify({
+        kind: 'holographic_calibration_profile',
+        profile_name: 'Characterization Palette',
+        black_setting: {laser_settings: {type: '', settings: {}}},
+        recipes: [{name: 'Copper', observed_hex: '#A06030', angle_degrees: 25, interval_mm: .05, laser_settings: {type: 'Cut', settings: {speed: 100}}}]
+      })], 'characterization-palette.json', {type: 'application/json'}));
+      return;
+    }
+    if (!document.querySelector('#status').textContent.startsWith('Loaded 1 fauxlographic swatches from characterization-palette.json.')) return;
+    window.__materialProfileReady = true;
+  };
   const startShapeAssetsCharacterization = () => {
     const form = document.querySelector('#job');
     if (window.__submissionStarted || typeof form?.onsubmit !== 'function' || document.querySelectorAll('#rasterPalette .color-card').length !== palette.length) return;
@@ -730,6 +768,7 @@ HARNESS = r"""
     if (scenario === 'image-style-matching') startImageStyleMatchingCharacterization();
     if (scenario === 'panel-tiling') startPanelTilingCharacterization();
     if (scenario === 'palette-resources') startPaletteResourcesCharacterization();
+    if (scenario === 'material-input') startMaterialInputCharacterization();
     if (scenario === 'shape-assets') startShapeAssetsCharacterization();
     if (scenario === 'geometry-routing') startGeometryRoutingCharacterization();
     if (scenario === 'flow-painter') startFlowPainterCharacterization();
@@ -753,6 +792,8 @@ HARNESS = r"""
           ? submittedPayload !== null && document.querySelectorAll('#outputs a').length === 1 && document.querySelector('#panelLayoutPreview').width > 0
         : scenario === 'palette-resources'
           ? preferencePayload !== null
+        : scenario === 'material-input'
+          ? window.__materialProfileReady === true
         : scenario === 'shape-assets'
           ? submittedPayload !== null && document.querySelectorAll('#outputs a').length === 1
         : scenario === 'geometry-routing'
@@ -913,6 +954,9 @@ class RasterizerBrowserCharacterizationTests(unittest.TestCase):
 
     def test_authenticated_palette_resources_restore_and_save(self):
         self._run_scenario("palette-resources")
+
+    def test_guest_material_library_and_fauxlographic_palette_inputs(self):
+        self._run_scenario("material-input")
 
     def test_authenticated_custom_shape_normalization_preview_and_payload(self):
         self._run_scenario("shape-assets")
