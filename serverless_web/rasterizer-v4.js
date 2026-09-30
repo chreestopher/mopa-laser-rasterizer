@@ -73,14 +73,28 @@ import {
   updateColorMatchingPresentation,
 } from './rasterizer/image-style-matching-v1.js';
 import {createRasterizerSessionApi} from './rasterizer/session-api-v1.js';
+import {
+  configureFormState,
+  hasOption,
+  holographicArtworkFormValues,
+  rasterizerFormValues,
+  restoreHolographicArtworkForm,
+  restoreRasterizerForm,
+} from './rasterizer/form-state-v1.js';
 
 let currentTask, pollTimer, accountResources, uploadedHolographicProfile=null;
 configureFlowPainter({show});
-function hasOption(select,value){return [...select.options].some(option=>option.value===String(value??''))}
-function rasterizerFormValues(){return{material_choice:document.querySelector('#materialChoice').value,material_name:document.querySelector('#materialName').value,pixel_square_mm:document.querySelector('#pixel').value,new_width:document.querySelector('#width').value,new_height:document.querySelector('#height').value,white_is:document.querySelector('#whiteIs').value,image_preset:document.querySelector('#imagePreset').value,filter_parameters:filterParameters(),geometry_style:effectiveGeometryStyle(),geometry_style_parameters:geometryStyleParameters(),panel_tiling:panelTilingPreferenceValues(),...colorMatchingParameters(),cut_mode:document.querySelector('#rasterHoloCutMode').value,preserve_black_outlines:document.querySelector('#rasterHoloBlack').checked}}
-function restoreRasterizerForm(values,restoreMaterial=true){if(!values)return;if(restoreMaterial&&values.material_name!==undefined)document.querySelector('#materialName').value=values.material_name;for(const [id,key] of [['pixel','pixel_square_mm'],['width','new_width'],['height','new_height']])if(values[key]!==undefined)document.querySelector('#'+id).value=values[key];if(hasOption(document.querySelector('#whiteIs'),values.white_is))document.querySelector('#whiteIs').value=values.white_is;restoreImageStyle(values);restoreGeometryControls(values);restoreColorMatching(values);if(hasOption(document.querySelector('#rasterHoloCutMode'),values.cut_mode))document.querySelector('#rasterHoloCutMode').value=values.cut_mode;document.querySelector('#rasterHoloBlack').checked=Boolean(values.preserve_black_outlines)&&!document.querySelector('#rasterHoloBlack').disabled;restorePanelTiling(values)}
-function holographicArtworkFormValues(){return{recipe_id:document.querySelector('#holoRecipe').value,material_library_id:document.querySelector('#holoMaterial').value,max_dimension:document.querySelector('#holoDimension').value,pixel_mm:document.querySelector('#holoPixel').value,cut_mode:document.querySelector('#holoCutMode').value,preserve_black_outlines:document.querySelector('#holoBlack').checked}}
-function restoreHolographicArtworkForm(values){if(!values)return;for(const [id,key] of [['holoRecipe','recipe_id'],['holoMaterial','material_library_id'],['holoCutMode','cut_mode']]){const select=document.querySelector('#'+id);if(hasOption(select,values[key]))select.value=values[key]}for(const [id,key] of [['holoDimension','max_dimension'],['holoPixel','pixel_mm']])if(values[key]!==undefined)document.querySelector('#'+id).value=values[key];document.querySelector('#holoBlack').checked=Boolean(values.preserve_black_outlines)}
+configureFormState({
+  filterParameters,
+  effectiveGeometryStyle,
+  geometryStyleParameters,
+  panelTilingPreferenceValues,
+  colorMatchingParameters,
+  restoreImageStyle,
+  restoreGeometryControls,
+  restoreColorMatching,
+  restorePanelTiling,
+});
 const sessionApi=createRasterizerSessionApi({show,userFacingStyleError});
 const {api,guestApi}=sessionApi;
 configurePaletteResources({
