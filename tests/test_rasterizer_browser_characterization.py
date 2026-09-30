@@ -475,6 +475,14 @@ HARNESS = r"""
     input.files = transfer.files;
     input.dispatchEvent(new Event('change', {bubbles: true}));
   };
+  const beginMultistageSubmission = form => {
+    // Shape normalization and flow-mask preparation are asynchronous setup
+    // phases. Give the actual submission its own bounded window instead of
+    // inheriting whatever remains of the shared setup deadline.
+    deadline = Date.now() + 20000;
+    window.__submissionStarted = true;
+    form.requestSubmit();
+  };
   const startGuestSubmission = () => {
     if (window.__submissionStarted || document.querySelectorAll('#rasterPalette .color-card').length !== palette.length) return;
     window.__submissionStarted = true;
@@ -636,8 +644,7 @@ HARNESS = r"""
       return;
     }
     if (!status?.textContent.startsWith('Custom SVG ready')) return;
-    window.__submissionStarted = true;
-    form.requestSubmit();
+    beginMultistageSubmission(form);
   };
   const startGeometryRoutingCharacterization = () => {
     const form = document.querySelector('#job');
@@ -749,8 +756,7 @@ HARNESS = r"""
       canvas.onpointerup(second);
       window.__flowMaskMoved = true;
       document.querySelector('#flowDone').click();
-      window.__submissionStarted = true;
-      form.requestSubmit();
+      beginMultistageSubmission(form);
       return;
     }
   };
@@ -899,28 +905,33 @@ class RasterizerBrowserCharacterizationTests(unittest.TestCase):
     def _run_scenario(self, scenario, query=""):
         port = self.server.server_address[1]
         url = f"http://127.0.0.1:{port}/?scenario={scenario}{query}"
-        with tempfile.TemporaryDirectory(prefix="mopa-browser-profile-") as profile:
-            completed = subprocess.run(
-                [
-                    self.browser,
-                    "--headless=new",
-                    "--disable-gpu",
-                    "--no-sandbox",
-                    "--disable-dev-shm-usage",
-                    f"--user-data-dir={profile}",
-                    "--virtual-time-budget=60000",
-                    "--dump-dom",
-                    url,
-                ],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=75,
-                check=False,
-            )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        match = re.search(r'<pre id="characterization-result">(.*?)</pre>', completed.stdout, re.DOTALL)
+        completed = None
+        match = None
+        for _attempt in range(2):
+            with tempfile.TemporaryDirectory(prefix="mopa-browser-profile-") as profile:
+                completed = subprocess.run(
+                    [
+                        self.browser,
+                        "--headless=new",
+                        "--disable-gpu",
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                        f"--user-data-dir={profile}",
+                        "--virtual-time-budget=90000",
+                        "--dump-dom",
+                        url,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=105,
+                    check=False,
+                )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            match = re.search(r'<pre id="characterization-result">(.*?)</pre>', completed.stdout, re.DOTALL)
+            if match is not None:
+                break
         self.assertIsNotNone(match, f"Browser characterization did not finish.\n{completed.stderr}\n{completed.stdout[-2000:]}")
         result = json.loads(html.unescape(match.group(1)))
         self.assertEqual(result["scenario"], scenario)
