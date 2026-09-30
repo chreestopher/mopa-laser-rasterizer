@@ -52,7 +52,7 @@ HARNESS = r"""
   let preferencePayload = null;
   let submissionCount = 0;
   let pollIndex = 0;
-  if (scenario === 'preview' || scenario === 'panel-tiling' || scenario === 'shape-assets' || scenario === 'flow-painter') window.createImageBitmap = async () => {
+  if (scenario === 'preview' || scenario === 'image-style-matching' || scenario === 'panel-tiling' || scenario === 'shape-assets' || scenario === 'flow-painter') window.createImageBitmap = async () => {
     const canvas = document.createElement('canvas');
     canvas.width = scenario === 'panel-tiling' || scenario === 'shape-assets' || scenario === 'flow-painter' ? 4 : 1;
     canvas.height = scenario === 'panel-tiling' || scenario === 'shape-assets' || scenario === 'flow-painter' ? 2 : 1;
@@ -72,7 +72,7 @@ HARNESS = r"""
   window.stagingShellSetAuthenticated = authenticated => { window.__shellAuthenticated = authenticated; };
   window.stagingShellBeginLogin = () => {};
 
-  if (['resume', 'polling', 'failed', 'authenticated-submit', 'holographic-submit', 'submission-error', 'preview', 'panel-tiling', 'palette-resources', 'shape-assets', 'geometry-routing', 'flow-painter'].includes(scenario)) localStorage.setItem('id_token', '__JWT__');
+  if (['resume', 'polling', 'failed', 'authenticated-submit', 'holographic-submit', 'submission-error', 'preview', 'image-style-matching', 'panel-tiling', 'palette-resources', 'shape-assets', 'geometry-routing', 'flow-painter'].includes(scenario)) localStorage.setItem('id_token', '__JWT__');
   else {
     localStorage.removeItem('id_token');
     sessionStorage.removeItem('id_token');
@@ -110,6 +110,17 @@ HARNESS = r"""
         selected_color_hexes: ['#FFFFFF'],
         material_library_color_assignments: {'library-1': {'#000000': 'Char', '#FFFFFF': 'Bright'}},
         last_rasterizer_form: {values: {material_choice: 'library:library-1', material_name: 'Maple'}}
+      } : scenario === 'image-style-matching' ? {
+        selected_color_hexes: ['#000000', '#808080', '#FFFFFF'],
+        last_rasterizer_form: {values: {
+          material_choice: 'svg',
+          image_preset: 'abstract_optical_color_mix',
+          filter_parameters: {mixing_model: 'hsv', keep_available_colors_as_vectors: 0, square_dots: 1, dot_pitch_mm: 0.7, mix_cell_dots: 6},
+          color_matching_mode: 'custom',
+          color_matching_hue_weight: 7,
+          color_matching_saturation_weight: 2,
+          color_matching_lightness_weight: 5
+        }}
       } : {}
     });
     if (url.pathname === '/api/account/preferences' && options.method === 'PATCH') {
@@ -281,6 +292,20 @@ HARNESS = r"""
       assert(document.querySelector('#quantPreviewOutput').hidden === true, 'changed preview settings did not hide the stale preview');
       assert(document.querySelector('#quantPreviewStatus').textContent === 'Preview settings changed. Generate it again to use the currently enabled swatches.', `stale preview status changed (${document.querySelector('#quantPreviewStatus').textContent})`);
       assert(document.querySelector('#generateQuantPreview').disabled === false, 'preview button remained disabled');
+    } else if (scenario === 'image-style-matching') {
+      const controls = Object.fromEntries([...document.querySelectorAll('#filterControls [data-parameter]')].map(input => [input.dataset.parameter, input]));
+      const usage = [...document.querySelectorAll('#quantPreviewCounts .quant-preview-usage small')]
+        .map(item => Number(item.textContent.split(' ')[0].replaceAll(',', '')));
+      assert(document.querySelector('#imagePreset').value === 'abstract_optical_color_mix', `restored Image Style changed (${document.querySelector('#imagePreset').value})`);
+      assert(document.querySelector('#filterDescription').textContent.startsWith('Keeps ordinary continuous vector geometry'), 'Image Style description changed');
+      assert(controls.mixing_model?.value === 'hsv', `restored mixing model changed (${controls.mixing_model?.value})`);
+      assert(controls.keep_available_colors_as_vectors?.checked === false && controls.square_dots?.checked === true, 'restored Image Style toggles changed');
+      assert(controls.dot_pitch_mm?.value === '0.7' && controls.mix_cell_dots?.value === '6', 'restored Image Style numeric controls changed');
+      assert(document.querySelector('#colorMatchingMode').value === 'custom' && document.querySelector('#colorMatchingCustom').hidden === false, 'custom color matching was not restored');
+      assert(document.querySelector('#matchingHue').value === '7' && document.querySelector('#matchingSaturation').value === '2' && document.querySelector('#matchingLightness').value === '5', 'restored color matching weights changed');
+      assert(document.querySelector('#matchingHueNumber').value === '7' && document.querySelector('#matchingSaturationNumber').value === '2' && document.querySelector('#matchingLightnessNumber').value === '5', 'restored color matching number controls changed');
+      assert(document.querySelector('#quantPreviewCanvas').width === 4 && document.querySelector('#quantPreviewCanvas').height === 4, 'Image Style quantized preview dimensions changed');
+      assert(usage.reduce((sum, count) => sum + count, 0) === 16, `Image Style quantized preview counted ${usage.reduce((sum, count) => sum + count, 0)} pixels instead of 16`);
     } else if (scenario === 'panel-tiling') {
       const panel = submittedPayload?.panel_tiling;
       assert(panel?.enabled === true, 'panel tiling was not enabled in the submission payload');
@@ -447,6 +472,13 @@ HARNESS = r"""
     const choice = document.querySelector('#materialChoice');
     choice.value = 'svg';
     choice.dispatchEvent(new Event('change', {bubbles: true}));
+    document.querySelector('#width').value = '4';
+    document.querySelector('#height').value = '0';
+    attachArtwork('#artwork');
+  };
+  const startImageStyleMatchingCharacterization = () => {
+    if (window.__imageStyleStarted || document.querySelector('#imagePreset').value !== 'abstract_optical_color_mix') return;
+    window.__imageStyleStarted = true;
     document.querySelector('#width').value = '4';
     document.querySelector('#height').value = '0';
     attachArtwork('#artwork');
@@ -663,6 +695,7 @@ HARNESS = r"""
     if (scenario === 'authenticated-submit' || scenario === 'submission-error') startAuthenticatedSubmission();
     if (scenario === 'holographic-submit') startHolographicSubmission();
     if (scenario === 'preview') startPreviewCharacterization();
+    if (scenario === 'image-style-matching') startImageStyleMatchingCharacterization();
     if (scenario === 'panel-tiling') startPanelTilingCharacterization();
     if (scenario === 'palette-resources') startPaletteResourcesCharacterization();
     if (scenario === 'shape-assets') startShapeAssetsCharacterization();
@@ -681,6 +714,8 @@ HARNESS = r"""
         : scenario === 'submission-error'
           ? document.querySelector('#status').textContent.startsWith('ERROR:')
         : scenario === 'preview'
+          ? document.querySelector('#cropStatus').textContent.startsWith('Original artwork')
+        : scenario === 'image-style-matching'
           ? document.querySelector('#cropStatus').textContent.startsWith('Original artwork')
         : scenario === 'panel-tiling'
           ? submittedPayload !== null && document.querySelectorAll('#outputs a').length === 1 && document.querySelector('#panelLayoutPreview').width > 0
@@ -701,6 +736,17 @@ HARNESS = r"""
       window.__previewGenerated = true;
       document.querySelector('#generateQuantPreview').click();
       setTimeout(waitForApplication, 25);
+      return;
+    }
+    if (scenario === 'image-style-matching' && ready && !window.__imageStylePreviewGenerated) {
+      window.__imageStylePreviewGenerated = true;
+      document.querySelector('#generateQuantPreview').click();
+      setTimeout(waitForApplication, 25);
+      return;
+    }
+    if (scenario === 'image-style-matching' && window.__imageStylePreviewGenerated && !document.querySelector('#quantPreviewStatus').textContent.startsWith('Preview ready')) {
+      if (Date.now() >= deadline) finish();
+      else setTimeout(waitForApplication, 25);
       return;
     }
     if (scenario === 'preview' && window.__previewGenerated && !window.__previewMadeStale) {
@@ -820,6 +866,9 @@ class RasterizerBrowserCharacterizationTests(unittest.TestCase):
 
     def test_authenticated_crop_initialization_quantized_preview_and_stale_state(self):
         self._run_scenario("preview")
+
+    def test_authenticated_image_style_color_matching_restore_and_preview(self):
+        self._run_scenario("image-style-matching")
 
     def test_authenticated_panel_tiling_preview_and_submission(self):
         self._run_scenario("panel-tiling")

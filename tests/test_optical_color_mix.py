@@ -174,13 +174,14 @@ def test_worker_boundary_normalizes_vector_retention_checkbox(raw_value, expecte
 
 def test_staging_and_template_ui_expose_filter_controls():
     staging = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+    staging_logic = (ROOT / "serverless_web" / "rasterizer" / "image-style-matching-v1.js").read_text(encoding="utf-8")
     template = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
     api = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
 
-    for source in (staging, template):
+    for source in (staging + staging_logic, template):
         assert "abstract_optical_color_mix" in source
         for control_name in optical_color_mix.DEFAULTS:
             assert control_name in source
-    assert 'input.tagName===\'SELECT\'?input.value' in staging
+    assert 'input.tagName===\'SELECT\'?input.value' in staging_logic
     declaration = api.split("ABSTRACT_FILTERS = {", 1)[1].split("}", 1)[0]
     assert '"optical_color_mix"' in declaration
