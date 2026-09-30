@@ -12,25 +12,27 @@ def read(path):
 def test_spiralgrap_page_uses_external_assets_and_classic_controls():
     page = read("serverless_web/spiralgraph.html")
     client = read("serverless_web/spiralgraph.js")
-    assert 'src="/spiralgraph.js?v=6"' in page
+    drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v1.js")
+    assert 'src="/spiralgraph.js?v=7"' in page
     assert 'href="/spiralgraph.css?v=3"' in page
-    assert "Track plate" in client and "Rolling gear" in client and "Pen hole" in client
-    assert "Starting mark" in client and "Rolling position" in client
-    assert "output_mode" in client and "fill_thickness_mm" in client
-    assert "Line / Cut · open path" in client and "Filled ribbon · closed path" in client
+    assert "Track plate" in drawing_editor and "Rolling gear" in drawing_editor and "Pen hole" in drawing_editor
+    assert "Starting mark" in drawing_editor and "Rolling position" in drawing_editor
+    assert "output_mode" in drawing_editor and "fill_thickness_mm" in drawing_editor
+    assert "Line / Cut · open path" in drawing_editor and "Filled ribbon · closed path" in drawing_editor
     assert 'api("/spiralgraph/jobs"' in client
 
 
 def test_spiralgraph_can_use_saved_color_palette_swatches_for_preview_and_output_layers():
     page = read("serverless_web/spiralgraph.html")
     client = read("serverless_web/spiralgraph.js")
+    drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v1.js")
     canvas_preview = read("serverless_web/spiralgraph/canvas-preview-v1.js")
     styles = read("serverless_web/spiralgraph.css")
     api = read("serverless_api/handler.py")
     backend = read("lib/spiralgrap.py")
     assert 'id="colorPalette"' in page
-    assert 'data-field="swatch_hex" type="radio"' in client
-    assert '<div class="layer-heading-swatches">${swatchPicker(layer,index)}</div>' in client
+    assert 'data-field="swatch_hex" type="radio"' in drawing_editor
+    assert '<div class="layer-heading-swatches">${swatchPicker(layer,index)}</div>' in drawing_editor
     assert "function paletteSwatches()" in client
     assert "function applySwatchMode(layer)" in client
     assert "context.strokeStyle=previewColor(layer,index)" in canvas_preview
@@ -56,6 +58,7 @@ class SpiralGraphHardwarePreviewTests(unittest.TestCase):
         client = read("serverless_web/spiralgraph.js")
         geometry = read("serverless_web/spiralgraph/geometry-v1.js")
         hardware = read("serverless_web/spiralgraph/hardware-preview-v1.js")
+        drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v1.js")
         styles = read("serverless_web/spiralgraph.css")
         self.assertIn('id="hardwarePreview"', page)
         for label in ("Track plate", "Rolling gear and pencil holes", "Assembled position"):
@@ -65,7 +68,7 @@ class SpiralGraphHardwarePreviewTests(unittest.TestCase):
         self.assertIn("PEN_HOLE_FACTORS=[0,.2,.36,.52,.68,.82,.94]", geometry)
         self.assertIn("function rollingModel(layer)", geometry)
         self.assertIn("function rollingState(model,distance)", geometry)
-        self.assertIn('from "./spiralgraph/geometry-v1.js"', client)
+        self.assertIn('from "./geometry-v1.js"', drawing_editor)
         self.assertIn('from "./spiralgraph/hardware-preview-v1.js"', client)
         self.assertIn("createHardwarePreview({getActiveLayer:()=>layers[activeLayer],getActiveLayerIndex:()=>activeLayer,schedulePreview})", client)
         self.assertIn("function selectPenHole(hole,announce=true)", hardware)
@@ -125,7 +128,7 @@ def test_spiralgrap_is_deployed_linked_documented_and_history_backed():
     worker = read("worker.py")
     template = read("ecs/serverless-staging-web.yaml")
     history = read("serverless_web/history.js")
-    for filename in ("spiralgraph.html", "spiralgraph.js", "spiralgraph.css", "spiralgraph/geometry-v1.js", "spiralgraph/hardware-preview-v1.js", "spiralgraph/canvas-preview-v1.js"):
+    for filename in ("spiralgraph.html", "spiralgraph.js", "spiralgraph.css", "spiralgraph/geometry-v1.js", "spiralgraph/hardware-preview-v1.js", "spiralgraph/canvas-preview-v1.js", "spiralgraph/drawing-editor-v1.js"):
         assert filename in deploy
     assert '"/spiralgraph.html"' in shell and 'href="/spiralgraph.html"' in landing
     assert '"spiralgraph-lab": _page(' in docs
@@ -142,11 +145,12 @@ def test_spiralgrap_is_deployed_linked_documented_and_history_backed():
 
 def test_spiralgrap_validates_custom_svg_and_processing_modes_on_both_sides():
     client = read("serverless_web/spiralgraph.js")
+    drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v1.js")
     api = read("serverless_api/handler.py")
     backend = read("lib/spiralgrap.py")
     for field in ("track", "gear_teeth", "pen_hole", "side", "start_mark", "direction", "output_mode", "fill_thickness_mm", "swatch_hex"):
-        assert field in client and field in api and field in backend
-    assert "file.size>65536" in client
+        assert (field in client or field in drawing_editor) and field in api and field in backend
+    assert "file.size>65536" in drawing_editor
     assert 'expected_type, required' in api
     assert 'closed=False' in backend
     assert "_fill_rings" in backend
