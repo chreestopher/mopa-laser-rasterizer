@@ -544,19 +544,25 @@ def test_rasterizer_module_graph_uploads_dependencies_before_entry_and_html():
         ]
 
 
-def test_spiralgraph_geometry_uploads_before_entry_and_html():
+def test_spiralgraph_modules_upload_before_entry_and_html():
     deploy = DEPLOY.read_text(encoding="utf-8")
-    dependency = (
+    geometry_dependency = (
         'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/geometry-v1.js"'
+    )
+    hardware_dependency = (
+        'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/hardware-preview-v1.js"'
     )
     entry = 'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph.js"'
     html = 'aws s3 cp "$BUILD_DIR/seo/spiralgraph.html"'
 
-    assert dependency in deploy
-    assert deploy.index(dependency) < deploy.index(entry) < deploy.index(html)
-    assert "application/javascript" in deploy[
-        deploy.index(dependency) : deploy.index(dependency) + 300
-    ]
+    assert geometry_dependency in deploy
+    assert hardware_dependency in deploy
+    assert deploy.index(geometry_dependency) < deploy.index(hardware_dependency)
+    assert deploy.index(hardware_dependency) < deploy.index(entry) < deploy.index(html)
+    for dependency in (geometry_dependency, hardware_dependency):
+        command = deploy[deploy.index(dependency) : deploy.index(dependency) + 400]
+        assert "application/javascript" in command
+        assert "public,max-age=31536000,immutable" in command
 
 
 def test_serverless_sources_and_rendered_routes_have_no_inline_handlers_or_urls(
