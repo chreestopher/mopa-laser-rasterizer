@@ -50,6 +50,7 @@ class SpiralGraphHardwarePreviewTests(unittest.TestCase):
         page = read("serverless_web/spiralgraph.html")
         client = read("serverless_web/spiralgraph.js")
         geometry = read("serverless_web/spiralgraph/geometry-v1.js")
+        hardware = read("serverless_web/spiralgraph/hardware-preview-v1.js")
         styles = read("serverless_web/spiralgraph.css")
         self.assertIn('id="hardwarePreview"', page)
         for label in ("Track plate", "Rolling gear and pencil holes", "Assembled position"):
@@ -60,14 +61,18 @@ class SpiralGraphHardwarePreviewTests(unittest.TestCase):
         self.assertIn("function rollingModel(layer)", geometry)
         self.assertIn("function rollingState(model,distance)", geometry)
         self.assertIn('from "./spiralgraph/geometry-v1.js"', client)
-        self.assertIn("function selectPenHole(hole,announce=true)", client)
+        self.assertIn('from "./spiralgraph/hardware-preview-v1.js"', client)
+        self.assertIn("createHardwarePreview({getActiveLayer:()=>layers[activeLayer],getActiveLayerIndex:()=>activeLayer,schedulePreview})", client)
+        self.assertIn("function selectPenHole(hole,announce=true)", hardware)
         for behavior in ('role:"radio"', '"aria-checked"', 'focusable:"true"', "ArrowRight", "ArrowLeft", 'event.key==="Home"', 'event.key==="End"'):
-            self.assertIn(behavior, client)
-        self.assertIn('[data-field="pen_hole"]', client)
-        self.assertIn("createElementNS", client)
+            self.assertIn(behavior, hardware)
+        self.assertIn('[data-field="pen_hole"]', hardware)
+        self.assertIn("createElementNS", hardware)
         self.assertIn("DOMParser", geometry)
         self.assertNotIn("host.innerHTML", client)
         self.assertNotIn("host.innerHTML", geometry)
+        self.assertNotIn("function renderTrackHardware", client)
+        self.assertNotIn("function selectPenHole", client)
         self.assertIn(".hardware-hole-target", styles)
         self.assertIn("touch-action:manipulation", styles)
         self.assertIn(".light-machine .hardware-grid svg", styles)
@@ -95,7 +100,7 @@ def test_spiralgrap_is_deployed_linked_documented_and_history_backed():
     worker = read("worker.py")
     template = read("ecs/serverless-staging-web.yaml")
     history = read("serverless_web/history.js")
-    for filename in ("spiralgraph.html", "spiralgraph.js", "spiralgraph.css", "spiralgraph/geometry-v1.js"):
+    for filename in ("spiralgraph.html", "spiralgraph.js", "spiralgraph.css", "spiralgraph/geometry-v1.js", "spiralgraph/hardware-preview-v1.js"):
         assert filename in deploy
     assert '"/spiralgraph.html"' in shell and 'href="/spiralgraph.html"' in landing
     assert '"spiralgraph-lab": _page(' in docs
