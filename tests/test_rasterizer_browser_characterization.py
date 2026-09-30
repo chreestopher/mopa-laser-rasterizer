@@ -707,22 +707,36 @@ HARNESS = r"""
   const startFlowPainterCharacterization = () => {
     const form = document.querySelector('#job');
     if (window.__submissionStarted || typeof form?.onsubmit !== 'function' || document.querySelectorAll('#rasterPalette .color-card').length !== palette.length) return;
+    const materialChoice = document.querySelector('#materialChoice');
+    const geometryStyle = document.querySelector('#geometryStyle');
     if (window.__flowReadyToSubmit) {
+      const summary = document.querySelector('#flowPainterSummary').textContent;
+      if (materialChoice.value !== 'svg') return;
+      if (geometryStyle.value !== 'krasnow_grating') {
+        geometryStyle.value = 'krasnow_grating';
+        geometryStyle.dispatchEvent(new Event('change', {bubbles: true}));
+        return;
+      }
+      if (document.querySelector('#flowPainter').open || !summary.includes('2 flow regions') || !summary.includes('1 painted shape') || !summary.includes('1 image mask')) return;
       beginMultistageSubmission(form);
       return;
     }
     if (!window.__flowConfigured) {
       window.__flowConfigured = true;
-      const choice = document.querySelector('#materialChoice');
-      choice.value = 'svg';
-      choice.dispatchEvent(new Event('change', {bubbles: true}));
+      materialChoice.value = 'svg';
+      materialChoice.dispatchEvent(new Event('change', {bubbles: true}));
       attachArtwork('#artwork');
+      return;
+    }
+    if (materialChoice.value !== 'svg') return;
+    if (window.__flowGeometrySelected && geometryStyle.value !== 'krasnow_grating') {
+      window.__flowGeometrySelected = false;
       return;
     }
     if (!window.__flowGeometrySelected) {
       window.__flowGeometrySelected = true;
-      document.querySelector('#geometryStyle').value = 'krasnow_grating';
-      document.querySelector('#geometryStyle').dispatchEvent(new Event('change', {bubbles: true}));
+      geometryStyle.value = 'krasnow_grating';
+      geometryStyle.dispatchEvent(new Event('change', {bubbles: true}));
       return;
     }
     const dialog = document.querySelector('#flowPainter');
@@ -768,7 +782,6 @@ HARNESS = r"""
       window.__flowMaskMoved = true;
       document.querySelector('#flowDone').click();
       window.__flowReadyToSubmit = true;
-      beginMultistageSubmission(form);
       return;
     }
   };
