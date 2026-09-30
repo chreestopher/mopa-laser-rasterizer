@@ -77,6 +77,9 @@ PALETTE = [
 MAX_LIGHTBURN_LAYERS = len(PALETTE)
 PALETTE_HEX = {name.casefold(): color for name, color in PALETTE}
 PALETTE_NAMES = {color.upper(): name for name, color in PALETTE}
+SPIRALGRAPH_BUILTIN_COLORS = {
+    "#F45B69", "#FFB34D", "#8BD450", "#43C7BB", "#5596F6", "#B56CE2",
+}
 MATERIAL_LIBRARY_INTENTS = {"color_palette", "hatch_palette", "processing_palette"}
 PROCESSING_PALETTE_ROLES = {"Cut", "Score", "Photo", "Fill", "Shovel", "Cleaning", "3D-Slice"}
 LASER_SOURCE_TYPES = {"", "fiber", "co2", "diode"}
@@ -4532,7 +4535,7 @@ def validate_spiralgrap_request(data):
         if not isinstance(include_track, bool):
             raise ValueError(f"SpiralGraph drawing {index} track outline choice must be on or off")
         swatch_hex = str(layer.get("swatch_hex") or "").strip().upper()
-        if swatch_hex and swatch_hex not in PALETTE_NAMES:
+        if swatch_hex and swatch_hex not in PALETTE_NAMES and swatch_hex not in SPIRALGRAPH_BUILTIN_COLORS:
             raise ValueError(f"SpiralGraph drawing {index} has an unsupported layer swatch")
         clean_layers.append({
             "name": str(layer.get("name") or f"Drawing {index}").strip()[:80] or f"Drawing {index}",
@@ -4609,8 +4612,8 @@ def submit_spiralgrap_job(event):
         if not config["material"]:
             config["material"] = str(color_library.get("material_name") or "Color Palette")[:160]
     else:
-        for layer in config["layers"]:
-            layer.pop("swatch_hex", None)
+        if any(layer.get("swatch_hex") and layer["swatch_hex"] not in SPIRALGRAPH_BUILTIN_COLORS for layer in config["layers"]):
+            raise ValueError("Choose one of the built-in SpiralGraph colors or select a saved Color Palette")
         library = owned_material(owner, config["processing_palette_id"])
         if not library or material_library_intent(library.get("library_intent")) != "processing_palette":
             raise ValueError("SpiralGraph jobs require a saved Processing Palette or Color Palette")

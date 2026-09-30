@@ -12,7 +12,7 @@ def read(path):
 def test_spiralgrap_page_uses_external_assets_and_classic_controls():
     page = read("serverless_web/spiralgraph.html")
     client = read("serverless_web/spiralgraph.js")
-    assert 'src="/spiralgraph.js?v=4"' in page
+    assert 'src="/spiralgraph.js?v=5"' in page
     assert 'href="/spiralgraph.css?v=3"' in page
     assert "Track plate" in client and "Rolling gear" in client and "Pen hole" in client
     assert "Starting mark" in client and "Rolling position" in client
@@ -39,6 +39,10 @@ def test_spiralgraph_can_use_saved_color_palette_swatches_for_preview_and_output
     assert 'layer.get("laser_setting")' in backend
     assert "allow_reuse=bool(palette_setting)" in backend
     assert 'layer.get("swatch_hex") or COLORS' in backend
+    assert "function payloadLayer(source)" in client
+    assert "SPIRALGRAPH_BUILTIN_COLORS" in api
+    assert 'layer.pop("swatch_hex", None)' not in api
+    assert "Choose one of the built-in SpiralGraph colors" in api
     assert ".preview-swatches" in styles
     assert ".layer-heading-swatches" in styles
     assert ".layer-controls{grid-template-columns:minmax(0,1fr);width:100%}" in styles
