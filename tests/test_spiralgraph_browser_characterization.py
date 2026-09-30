@@ -210,6 +210,9 @@ HARNESS = r"""
 
   async function paletteChecks() {
     await startupChecks();
+    const builtInTarget = $$('.layer-card')[0].querySelector('input[value="#43C7BB"]');
+    builtInTarget.click();
+    check($$('.layer-card')[0].querySelector('input[value="#43C7BB"]').checked, 'built-in swatch selection did not survive the drawing rerender');
     change($('#colorPalette'), 'color-1');
     check($$('.processing-fallback').every(element => element.hidden), 'processing fallback controls stayed visible with a Color Palette');
     check($$('.layer-card').every(card => card.querySelector('[data-field="output_mode"]').disabled), 'Color Palette did not lock automatic output modes');
