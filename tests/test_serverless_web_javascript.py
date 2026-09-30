@@ -242,6 +242,9 @@ def test_phase_four_rasterizer_uses_the_reviewed_job_and_output_boundaries():
     session_api = (WEB / "rasterizer" / "session-api-v1.js").read_text(
         encoding="utf-8"
     )
+    form_state = (WEB / "rasterizer" / "form-state-v1.js").read_text(
+        encoding="utf-8"
+    )
 
     assert "import {renderRasterOutputs} from './rasterizer/output-rendering-v1.js';" in script
     assert "} from './rasterizer/jobs-v1.js';" in script
@@ -253,6 +256,7 @@ def test_phase_four_rasterizer_uses_the_reviewed_job_and_output_boundaries():
     assert "} from './rasterizer/geometry-controls-v1.js';" in script
     assert "} from './rasterizer/image-style-matching-v1.js';" in script
     assert "import {createRasterizerSessionApi} from './rasterizer/session-api-v1.js';" in script
+    assert "} from './rasterizer/form-state-v1.js';" in script
     assert "function renderRasterOutputs(" not in script
     assert "function uploadPhase(" not in script
     assert "function upload(" not in script
@@ -300,6 +304,10 @@ def test_phase_four_rasterizer_uses_the_reviewed_job_and_output_boundaries():
     assert "const PRESETS=" not in script
     assert "function renderImageStyleControls(" not in script
     assert "function quantizePreviewPixels(" not in script
+    assert "function rasterizerFormValues(" not in script
+    assert "function restoreRasterizerForm(" not in script
+    assert "function holographicArtworkFormValues(" not in script
+    assert "function restoreHolographicArtworkForm(" not in script
     assert "export function renderRasterOutputs(" in output_rendering
     assert "export function createRasterJobPoller(" in jobs
     assert "export function uploadPhase(" in jobs
@@ -348,6 +356,12 @@ def test_phase_four_rasterizer_uses_the_reviewed_job_and_output_boundaries():
     assert "export function renderGeometryControls(" in geometry_controls
     assert "export function restoreGeometryControls(" in geometry_controls
     assert "export function syncGeometryStyleAvailability(" in geometry_controls
+    assert "export function configureFormState(" in form_state
+    assert "export function hasOption(" in form_state
+    assert "export function rasterizerFormValues(" in form_state
+    assert "export function restoreRasterizerForm(" in form_state
+    assert "export function holographicArtworkFormValues(" in form_state
+    assert "export function restoreHolographicArtworkForm(" in form_state
     assert script.rstrip().endswith(
         "load().catch(error=>{const message=error.message||'Unknown error';"
         "show(message==='Session expired. Sign in again.'||message.startsWith('Cognito sign-in')||"
@@ -481,6 +495,9 @@ def test_rasterizer_module_graph_uploads_dependencies_before_entry_and_html():
     session_dependency = (
         'aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/session-api-v1.js"'
     )
+    form_state_dependency = (
+        'aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/form-state-v1.js"'
+    )
     entry = 'aws s3 cp "$REPO_ROOT/serverless_web/rasterizer-v4.js"'
     html = 'aws s3 cp "$BUILD_DIR/seo/index.html"'
 
@@ -495,7 +512,8 @@ def test_rasterizer_module_graph_uploads_dependencies_before_entry_and_html():
     assert deploy.index(shape_dependency) < deploy.index(geometry_dependency) < deploy.index(entry)
     assert deploy.index(image_style_dependency) < deploy.index(entry) < deploy.index(html)
     assert deploy.index(session_dependency) < deploy.index(entry) < deploy.index(html)
-    for asset in (output_dependency, jobs_dependency, submission_dependency, preview_dependency, panel_dependency, palette_dependency, shape_dependency, flow_dependency, geometry_dependency, image_style_dependency, session_dependency, entry):
+    assert deploy.index(form_state_dependency) < deploy.index(entry) < deploy.index(html)
+    for asset in (output_dependency, jobs_dependency, submission_dependency, preview_dependency, panel_dependency, palette_dependency, shape_dependency, flow_dependency, geometry_dependency, image_style_dependency, session_dependency, form_state_dependency, entry):
         assert "public,max-age=31536000,immutable" in deploy[
             deploy.index(asset) : deploy.index(asset) + 400
         ]
@@ -584,6 +602,7 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
     assert referenced_modes[WEB / "rasterizer" / "geometry-controls-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "image-style-matching-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "session-api-v1.js"] == {"module"}
+    assert referenced_modes[WEB / "rasterizer" / "form-state-v1.js"] == {"module"}
     assert referenced_modes[ROOT / "static" / "community-set-v1.js"] == {"classic"}
     assert referenced_modes[ROOT / "static" / "docs-search-v1.js"] == {"classic"}
     for filename in (

@@ -119,7 +119,11 @@ HARNESS = r"""
       preferences: scenario === 'palette-resources' ? {
         selected_color_hexes: ['#FFFFFF'],
         material_library_color_assignments: {'library-1': {'#000000': 'Char', '#FFFFFF': 'Bright'}},
-        last_rasterizer_form: {values: {material_choice: 'library:library-1', material_name: 'Maple'}}
+        last_rasterizer_form: {values: {
+          material_choice: 'library:library-1', material_name: 'Maple', pixel_square_mm: '0.09',
+          new_width: '321', new_height: '123', white_is: 'unengraved', cut_mode: 'line',
+          preserve_black_outlines: true
+        }}
       } : scenario === 'image-style-matching' ? {
         selected_color_hexes: ['#000000', '#808080', '#FFFFFF'],
         last_rasterizer_form: {values: {
@@ -352,6 +356,11 @@ HARNESS = r"""
       const white = document.querySelector('#rasterPalette .color-card[data-hex="#FFFFFF"]');
       assert(document.querySelector('#materialChoice').value === 'library:library-1', 'saved material library was not restored');
       assert(document.querySelector('#materialName').value === 'Maple', 'saved library material was not restored');
+      assert(document.querySelector('#pixel').value === '0.09', `saved pixel size was not restored (${document.querySelector('#pixel').value})`);
+      assert(document.querySelector('#width').value === '321' && document.querySelector('#height').value === '123', `saved processing dimensions were not restored (${document.querySelector('#width').value} x ${document.querySelector('#height').value})`);
+      assert(document.querySelector('#whiteIs').value === 'unengraved', `saved White treatment was not restored (${document.querySelector('#whiteIs').value})`);
+      assert(document.querySelector('#rasterHoloCutMode').value === 'line', `saved cut mode was not restored (${document.querySelector('#rasterHoloCutMode').value})`);
+      assert(document.querySelector('#rasterHoloBlack').checked === false, 'saved preserved-Black choice was not cleared while unavailable');
       assert(document.querySelector('#selectedMaterialName').textContent === 'Walnut', 'selected library material summary changed');
       assert(cards.length === palette.length, `material library rendered ${cards.length} swatches instead of ${palette.length}`);
       assert(black?.querySelector('.color-name')?.textContent === 'Char', 'explicit Black assignment was not rendered');

@@ -266,16 +266,22 @@ def test_last_used_rasterizer_settings_reject_unknown_filter_select_values():
 
 
 def test_every_member_workflow_restores_and_saves_latest_settings():
-    index = (ROOT / "serverless_web" / "index.html").read_text(encoding="utf-8")
+    rasterizer = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
+    form_state = (ROOT / "serverless_web" / "rasterizer" / "form-state-v1.js").read_text(encoding="utf-8")
+    submission = (ROOT / "serverless_web" / "rasterizer" / "submission-v1.js").read_text(encoding="utf-8")
+    palette_resources = (ROOT / "serverless_web" / "rasterizer" / "palette-resources-v1.js").read_text(encoding="utf-8")
     holographic = (ROOT / "serverless_web" / "holographic.js").read_text(encoding="utf-8")
     color_lab = (ROOT / "serverless_web" / "color-lab.js").read_text(encoding="utf-8")
     template = (ROOT / "ecs" / "serverless-staging-web.yaml").read_text(encoding="utf-8")
 
     assert "PATCH /account/preferences" in template
-    assert "restoreRasterizerForm(lastRasterizer" in index
-    assert "saveLastUsed('last_rasterizer_form'" in index
-    assert "restoreHolographicArtworkForm" in index
-    assert "saveLastUsed('last_holographic_artwork_form'" in index
+    assert "restoreRasterizerForm(lastRasterizer" in palette_resources
+    assert "saveLastUsed('last_rasterizer_form'" in submission
+    assert "restoreHolographicArtworkForm" in palette_resources
+    assert "saveLastUsed('last_holographic_artwork_form'" in submission
+    assert "export function rasterizerFormValues(" in form_state
+    assert "export function holographicArtworkFormValues(" in form_state
+    assert "} from './rasterizer/form-state-v1.js';" in rasterizer
     assert 'const values=lastUsedValues("last_holographic_lab_form");restoreHolographicLabForm(values)' in holographic
     assert 'saveLastUsed("last_holographic_lab_form"' in holographic
     assert "const values=lastUsedValues('last_color_lab_form');restoreColorLabForm(values)" in color_lab
