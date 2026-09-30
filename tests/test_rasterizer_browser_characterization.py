@@ -610,10 +610,15 @@ HARNESS = r"""
       return;
     }
     if (document.querySelector('#materialChoice').value !== 'svg') return;
+    const geometryStyle = document.querySelector('#geometryStyle');
+    if (window.__shapeGeometrySelected && geometryStyle?.value !== 'glyphs') {
+      window.__shapeGeometrySelected = false;
+      return;
+    }
     if (!window.__shapeGeometrySelected) {
       window.__shapeGeometrySelected = true;
-      document.querySelector('#geometryStyle').value = 'glyphs';
-      document.querySelector('#geometryStyle').dispatchEvent(new Event('change', {bubbles: true}));
+      geometryStyle.value = 'glyphs';
+      geometryStyle.dispatchEvent(new Event('change', {bubbles: true}));
       return;
     }
     const glyphSelect = document.querySelector('#routedGlyphControls [data-geometry-parameter="glyph_shape"]');
@@ -645,7 +650,7 @@ HARNESS = r"""
       ], 'characterization-shape.svg', {type: 'image/svg+xml'}));
       return;
     }
-    if (!status?.textContent.startsWith('Custom SVG ready')) return;
+    if (!status?.textContent.startsWith('Custom SVG ready') || geometryStyle.value !== 'glyphs' || glyphSelect.value !== 'custom') return;
     beginMultistageSubmission(form);
   };
   const startGeometryRoutingCharacterization = () => {
