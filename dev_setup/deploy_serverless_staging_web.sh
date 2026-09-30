@@ -209,12 +209,14 @@ aws s3 cp "$REPO_ROOT/serverless_web/mandala.js" "s3://$STATIC_BUCKET/web/mandal
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/mandala.css" "s3://$STATIC_BUCKET/web/mandala.css" \
   --region "$REGION" --content-type text/css --cache-control no-cache --only-show-errors
-aws s3 cp "$BUILD_DIR/seo/spiralgraph.html" "s3://$STATIC_BUCKET/web/spiralgraph.html" \
-  --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/geometry-v1.js" "s3://$STATIC_BUCKET/web/spiralgraph/geometry-v1.js" \
+  --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph.js" "s3://$STATIC_BUCKET/web/spiralgraph.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph.css" "s3://$STATIC_BUCKET/web/spiralgraph.css" \
   --region "$REGION" --content-type text/css --cache-control no-cache --only-show-errors
+aws s3 cp "$BUILD_DIR/seo/spiralgraph.html" "s3://$STATIC_BUCKET/web/spiralgraph.html" \
+  --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
 aws s3 cp "$BUILD_DIR/seo/spiralgrap.html" "s3://$STATIC_BUCKET/web/spiralgrap.html" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/staging-shell.css" "s3://$STATIC_BUCKET/web/staging-shell.css" \
