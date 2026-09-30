@@ -477,11 +477,13 @@ HARNESS = r"""
   };
   const beginMultistageSubmission = form => {
     // Shape normalization and flow-mask preparation are asynchronous setup
-    // phases. Give the actual submission its own bounded window instead of
-    // inheriting whatever remains of the shared setup deadline.
+    // phases. Do not mark submission started until the artwork preview and
+    // browser constraint validation agree that requestSubmit can dispatch.
+    if (!document.querySelector('#cropStatus').textContent.startsWith('Original artwork') || !form.checkValidity()) return false;
     deadline = Date.now() + 20000;
     window.__submissionStarted = true;
     form.requestSubmit();
+    return true;
   };
   const startGuestSubmission = () => {
     if (window.__submissionStarted || document.querySelectorAll('#rasterPalette .color-card').length !== palette.length) return;
@@ -700,6 +702,10 @@ HARNESS = r"""
   const startFlowPainterCharacterization = () => {
     const form = document.querySelector('#job');
     if (window.__submissionStarted || typeof form?.onsubmit !== 'function' || document.querySelectorAll('#rasterPalette .color-card').length !== palette.length) return;
+    if (window.__flowReadyToSubmit) {
+      beginMultistageSubmission(form);
+      return;
+    }
     if (!window.__flowConfigured) {
       window.__flowConfigured = true;
       const choice = document.querySelector('#materialChoice');
@@ -756,6 +762,7 @@ HARNESS = r"""
       canvas.onpointerup(second);
       window.__flowMaskMoved = true;
       document.querySelector('#flowDone').click();
+      window.__flowReadyToSubmit = true;
       beginMultistageSubmission(form);
       return;
     }
