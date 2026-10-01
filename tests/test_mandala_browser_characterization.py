@@ -62,8 +62,11 @@ HARNESS = r"""
   const failures = [];
   const runtimeErrors = [];
   const fetchHistory = [];
+  const accountAuthorization = [];
   const alerts = [];
   let submittedPayload = null;
+  let accountRequests = 0;
+  let jobRequests = 0;
   let started = false;
 
   const fail = message => failures.push(message);
@@ -151,6 +154,7 @@ HARNESS = r"""
   } else {
     localStorage.setItem('id_token', '__JWT__');
   }
+  if (scenario === 'auth-retry') localStorage.setItem('refresh_token', 'characterization-refresh');
 
   window.fetch = async (inputValue, options = {}) => {
     const url = new URL(typeof inputValue === 'string' ? inputValue : inputValue.url, location.href);
@@ -162,21 +166,31 @@ HARNESS = r"""
       cognito_domain: 'example.invalid',
       callback_url: `${location.origin}/callback`,
     });
-    if (url.pathname === '/api/account/resources') return jsonResponse(resources);
+    if (url.pathname === '/oauth2/token') return jsonResponse({id_token: 'characterization-refreshed-token'});
+    if (url.pathname === '/api/account/resources') {
+      accountRequests += 1;
+      accountAuthorization.push(options.headers?.authorization);
+      if (scenario === 'auth-retry' && accountRequests === 1) return jsonResponse({message: 'Expired'}, 401);
+      return jsonResponse(resources);
+    }
     if (url.pathname === '/api/mandala/jobs' && method === 'POST') {
       submittedPayload = JSON.parse(options.body);
       if (scenario === 'submission-error') return jsonResponse({message: 'Mandala characterization failure'}, 500);
       return jsonResponse({task_id: 'mandala-characterization-task'});
     }
-    if (url.pathname === '/api/jobs/mandala-characterization-task') return jsonResponse({
-      status: 'completed',
-      outputs: [
-        {name: 'nested/combined.lbrn2', download_url: '/download/combined.lbrn2'},
-        {name: 'layers/layer-01.svg', download_url: '/download/layer-01.svg'},
-        {name: 'assembly-preview.png', download_url: '/download/assembly-preview.png'},
-        {name: 'manifest.json', download_url: '/download/manifest.json'},
-      ],
-    });
+    if (url.pathname === '/api/jobs/mandala-characterization-task') {
+      jobRequests += 1;
+      if (scenario === 'polling-failure') return jsonResponse({status: 'failed', error: 'Worker characterization failure'});
+      return jsonResponse({
+        status: scenario === 'submit' && jobRequests === 1 ? 'pending' : 'completed',
+        outputs: [
+          {name: 'nested/combined.lbrn2', download_url: '/download/combined.lbrn2'},
+          {name: 'layers/layer-01.svg', download_url: '/download/layer-01.svg'},
+          {name: 'assembly-preview.png', download_url: '/download/assembly-preview.png'},
+          {name: 'manifest.json', download_url: '/download/manifest.json'},
+        ],
+      });
+    }
     if (url.pathname === '/api/jobs/mandala-resume-task') return jsonResponse({
       status: 'completed',
       outputs: [{name: 'resumed.lbrn2', download_url: '/download/resumed.lbrn2'}],
@@ -365,6 +379,8 @@ HARNESS = r"""
     check(location.search === '?task=mandala-characterization-task', 'resume URL was not installed after submit');
     check($$('#outputs a').length === 4, 'completed outputs were not rendered');
     check($$('#outputs a')[0].textContent.includes('combined.lbrn2'), 'nested output name was not normalized');
+    check($$('#outputs a').map(link => link.getAttribute('href')).join('|') === '/download/combined.lbrn2|/download/layer-01.svg|/download/assembly-preview.png|/download/manifest.json', 'download link order or URLs changed');
+    check(jobRequests === 2, `pending job was polled ${jobRequests} times instead of twice`);
     check(!$('#generate').disabled, 'Generate stayed disabled after completion');
   }
 
@@ -375,6 +391,25 @@ HARNESS = r"""
     check($('#status').textContent.includes('Mandala characterization failure'), 'submission error message changed');
     check(!$('#generate').disabled, 'Generate stayed disabled after submission error');
     check($$('#outputs a').length === 0, 'failed submission rendered output links');
+  }
+
+  async function pollingFailureChecks() {
+    await startupChecks();
+    $('#mandalaForm').dispatchEvent(new Event('submit', {bubbles: true, cancelable: true}));
+    await waitFor(() => $('#status').classList.contains('error'), 'polling failure was not shown');
+    check($('#status').textContent === 'ERROR · Worker characterization failure', 'polling failure text changed');
+    check(!$('#generate').disabled, 'Generate stayed disabled after polling failure');
+    check($$('#outputs a').length === 0, 'failed job rendered output links');
+  }
+
+  async function authRetryChecks() {
+    await startupChecks();
+    check(accountRequests === 2, `authenticated request was made ${accountRequests} times instead of retrying once`);
+    check(fetchHistory.filter(item => item === 'POST /oauth2/token').length === 1, 'session refresh request count changed');
+    check(accountAuthorization[0] === `Bearer __JWT__`, 'initial authenticated request did not use the original ID token');
+    check(accountAuthorization[1] === 'Bearer characterization-refreshed-token', 'retried request did not use the refreshed ID token');
+    check(localStorage.getItem('id_token') === 'characterization-refreshed-token', 'refreshed ID token was not retained');
+    check(sessionStorage.getItem('id_token') === null && sessionStorage.getItem('refresh_token') === null, 'session tokens were not cleared after transfer');
   }
 
   async function resumeChecks() {
@@ -407,6 +442,8 @@ HARNESS = r"""
     else if (scenario === 'custom-svg') await customSvgChecks();
     else if (scenario === 'submit') await submitChecks();
     else if (scenario === 'submission-error') await submissionErrorChecks();
+    else if (scenario === 'polling-failure') await pollingFailureChecks();
+    else if (scenario === 'auth-retry') await authRetryChecks();
     else if (scenario === 'resume') await resumeChecks();
     else if (scenario === 'mobile') await mobileChecks();
     else fail(`unknown scenario: ${scenario}`);
@@ -454,9 +491,9 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
         page = page_path.read_text(encoding="utf-8")
         page = re.sub(r'\s*<script src="/staging-shell\.js\?v=3" defer></script>', '', page)
         page = page.replace(
-            '<script src="/mandala.js?v=12" type="module"></script>',
+            '<script src="/mandala.js?v=13" type="module"></script>',
             '<script src="/mandala-characterization-harness.js"></script>\n'
-            '<script src="/mandala.js?v=12" type="module"></script>',
+            '<script src="/mandala.js?v=13" type="module"></script>',
         )
         page_path.write_text(page, encoding="utf-8")
         (cls.site / "mandala-characterization-harness.js").write_text(
@@ -537,6 +574,12 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
 
     def test_submission_error_restores_generate_control(self):
         self._run_scenario("submission-error")
+
+    def test_polling_failure_restores_generate_control(self):
+        self._run_scenario("polling-failure")
+
+    def test_authenticated_request_refreshes_and_retries_once(self):
+        self._run_scenario("auth-retry")
 
     def test_existing_task_resumes_and_renders_downloads(self):
         self._run_scenario("resume", "&task=mandala-resume-task")
