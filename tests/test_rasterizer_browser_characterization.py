@@ -499,7 +499,10 @@ HARNESS = r"""
     form.addEventListener('submit', markDispatched, {once: true});
     form.requestSubmit();
     if (!dispatched) form.removeEventListener('submit', markDispatched);
-    else deadline = Date.now() + 20000;
+    // Shape assets advance from observable DOM and submission state changes.
+    // Keep that scenario event-driven after dispatch too: a virtual-time
+    // deadline can outrun async image/SVG normalization under CI load.
+    else if (scenario !== 'shape-assets') deadline = Date.now() + 20000;
     return dispatched;
   };
   const startGuestSubmission = () => {
