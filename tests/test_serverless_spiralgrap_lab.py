@@ -13,7 +13,7 @@ def test_spiralgrap_page_uses_external_assets_and_classic_controls():
     page = read("serverless_web/spiralgraph.html")
     client = read("serverless_web/spiralgraph.js")
     drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v1.js")
-    assert 'src="/spiralgraph.js?v=7"' in page
+    assert 'src="/spiralgraph.js?v=9"' in page
     assert 'href="/spiralgraph.css?v=3"' in page
     assert "Track plate" in drawing_editor and "Rolling gear" in drawing_editor and "Pen hole" in drawing_editor
     assert "Starting mark" in drawing_editor and "Rolling position" in drawing_editor
@@ -25,6 +25,7 @@ def test_spiralgrap_page_uses_external_assets_and_classic_controls():
 def test_spiralgraph_can_use_saved_color_palette_swatches_for_preview_and_output_layers():
     page = read("serverless_web/spiralgraph.html")
     client = read("serverless_web/spiralgraph.js")
+    palette_routing = read("serverless_web/spiralgraph/palette-routing-v1.js")
     drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v1.js")
     canvas_preview = read("serverless_web/spiralgraph/canvas-preview-v1.js")
     styles = read("serverless_web/spiralgraph.css")
@@ -33,8 +34,9 @@ def test_spiralgraph_can_use_saved_color_palette_swatches_for_preview_and_output
     assert 'id="colorPalette"' in page
     assert 'data-field="swatch_hex" type="radio"' in drawing_editor
     assert '<div class="layer-heading-swatches">${swatchPicker(layer,index)}</div>' in drawing_editor
-    assert "function paletteSwatches()" in client
-    assert "function applySwatchMode(layer)" in client
+    assert 'from "./spiralgraph/palette-routing-v1.js"' in client
+    assert "function paletteSwatches()" in palette_routing
+    assert "function applySwatchMode(layer)" in palette_routing
     assert "context.strokeStyle=previewColor(layer,index)" in canvas_preview
     assert "color_palette_id" in client and "color_palette_id" in api
     assert "community_material_swatch" in api
@@ -131,7 +133,7 @@ def test_spiralgrap_is_deployed_linked_documented_and_history_backed():
     worker = read("worker.py")
     template = read("ecs/serverless-staging-web.yaml")
     history = read("serverless_web/history.js")
-    for filename in ("spiralgraph.html", "spiralgraph.js", "spiralgraph.css", "spiralgraph/geometry-v1.js", "spiralgraph/hardware-preview-v1.js", "spiralgraph/canvas-preview-v1.js", "spiralgraph/drawing-editor-v1.js"):
+    for filename in ("spiralgraph.html", "spiralgraph.js", "spiralgraph.css", "spiralgraph/geometry-v1.js", "spiralgraph/hardware-preview-v1.js", "spiralgraph/canvas-preview-v1.js", "spiralgraph/drawing-editor-v1.js", "spiralgraph/state-v1.js", "spiralgraph/palette-routing-v1.js"):
         assert filename in deploy
     assert '"/spiralgraph.html"' in shell and 'href="/spiralgraph.html"' in landing
     assert '"spiralgraph-lab": _page(' in docs
