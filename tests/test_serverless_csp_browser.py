@@ -7,7 +7,6 @@ import subprocess
 import tempfile
 import threading
 import unittest
-from urllib.parse import parse_qs, urlparse
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,17 +41,39 @@ def _report_only_policy():
 
 
 class _CspHandler(http.server.SimpleHTTPRequestHandler):
+    def do_POST(self):
+        content_length = int(self.headers.get("Content-Length", "0"))
+        body = self.rfile.read(content_length)
+        with self.server.result_lock:
+            if self.path == "/inline-executed":
+                self.server.inline_executed = True
+            elif self.path == "/csp-report":
+                try:
+                    self.server.csp_reports.append(json.loads(body))
+                except json.JSONDecodeError as exc:
+                    self.server.report_errors.append(str(exc))
+            else:
+                self.send_error(404)
+                return
+
+            complete = self.server.inline_executed and bool(self.server.csp_reports)
+
+        self.send_response(204)
+        self.end_headers()
+        if complete:
+            self.server.csp_result_ready.set()
+
     def do_GET(self):
-        parsed = urlparse(self.path)
-        if parsed.path == "/csp-result":
+        if self.path == "/probe-loaded":
             try:
-                payload = parse_qs(parsed.query)["payload"][0]
-                self.server.csp_result = json.loads(payload)
-            except (KeyError, IndexError, json.JSONDecodeError) as exc:
-                self.server.csp_result = {"error": str(exc)}
+                self.send_response(204)
+            finally:
+                self.end_headers()
+            self.server.probe_loaded.set()
+            return
+        if self.path == "/favicon.ico":
             self.send_response(204)
             self.end_headers()
-            self.server.csp_result_ready.set()
             return
         super().do_GET()
 
@@ -79,34 +100,21 @@ class ServerlessCspBrowserTests(unittest.TestCase):
         cls.site.mkdir()
         (cls.site / "index.html").write_text(
             """<!doctype html><html><body>
-<script src="/listener.js"></script>
-<script>window.__inlineProbeExecuted = true;</script>
+<img src="/probe-loaded" alt="">
+<script>fetch('/inline-executed', {method: 'POST'});</script>
 </body></html>""",
-            encoding="utf-8",
-        )
-        (cls.site / "listener.js").write_text(
-            """window.__cspViolations = [];
-addEventListener('securitypolicyviolation', event => {
-  const violation = {
-    blockedURI: event.blockedURI,
-    disposition: event.disposition,
-    effectiveDirective: event.effectiveDirective
-  };
-  window.__cspViolations.push(violation);
-  const result = {
-    inlineExecuted: window.__inlineProbeExecuted === true,
-    violations: window.__cspViolations
-  };
-  fetch('/csp-result?payload=' + encodeURIComponent(JSON.stringify(result)));
-});""",
             encoding="utf-8",
         )
         handler = lambda *args, **kwargs: _CspHandler(
             *args, directory=str(cls.site), **kwargs
         )
         cls.server = _CspServer(("127.0.0.1", 0), handler)
-        cls.server.csp_policy = _report_only_policy()
-        cls.server.csp_result = None
+        cls.server.csp_policy = f"{_report_only_policy()}; report-uri /csp-report"
+        cls.server.result_lock = threading.Lock()
+        cls.server.inline_executed = False
+        cls.server.csp_reports = []
+        cls.server.report_errors = []
+        cls.server.probe_loaded = threading.Event()
         cls.server.csp_result_ready = threading.Event()
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
@@ -120,7 +128,10 @@ addEventListener('securitypolicyviolation', event => {
 
     def test_inline_script_is_reported_but_not_blocked(self):
         port = self.server.server_address[1]
-        self.server.csp_result = None
+        self.server.inline_executed = False
+        self.server.csp_reports = []
+        self.server.report_errors = []
+        self.server.probe_loaded.clear()
         self.server.csp_result_ready.clear()
         with tempfile.TemporaryDirectory(prefix="mopa-csp-profile-") as profile:
             with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as browser_log:
@@ -139,7 +150,11 @@ addEventListener('securitypolicyviolation', event => {
                     text=True,
                 )
                 try:
-                    ready = self.server.csp_result_ready.wait(timeout=20)
+                    # Cold Chromium startup on hosted Linux runners can spend more than
+                    # 20 seconds initializing system services. This is only a failure
+                    # deadline: a successful probe returns immediately when both
+                    # browser-native network signals arrive.
+                    ready = self.server.csp_result_ready.wait(timeout=60)
                 finally:
                     browser.terminate()
                     try:
@@ -150,20 +165,26 @@ addEventListener('securitypolicyviolation', event => {
                 browser_log.seek(0)
                 log_output = browser_log.read()
 
-        self.assertTrue(ready, f"Chromium did not report a CSP event:\n{log_output[-2000:]}")
-        result = self.server.csp_result
-        self.assertNotIn("error", result)
-        self.assertTrue(result["inlineExecuted"])
+        diagnostics = (
+            f"probe_loaded={self.server.probe_loaded.is_set()}, "
+            f"inline_executed={self.server.inline_executed}, "
+            f"report_errors={self.server.report_errors}, "
+            f"reports={self.server.csp_reports}\n{log_output[-2000:]}"
+        )
+        self.assertTrue(ready, f"Chromium did not complete the CSP probe: {diagnostics}")
+        self.assertTrue(self.server.inline_executed, diagnostics)
+        self.assertEqual(self.server.report_errors, [], diagnostics)
+        reports = [item.get("csp-report", {}) for item in self.server.csp_reports]
         inline_violations = [
             item
-            for item in result["violations"]
-            if item["effectiveDirective"] in {"script-src", "script-src-elem"}
-            and item["blockedURI"] == "inline"
+            for item in reports
+            if item.get("effective-directive") in {"script-src", "script-src-elem"}
+            and item.get("blocked-uri") == "inline"
         ]
-        self.assertTrue(inline_violations, result)
+        self.assertTrue(inline_violations, diagnostics)
         self.assertTrue(
-            all(item["disposition"] == "report" for item in inline_violations),
-            result,
+            all(item.get("disposition") == "report" for item in inline_violations),
+            diagnostics,
         )
 
 
