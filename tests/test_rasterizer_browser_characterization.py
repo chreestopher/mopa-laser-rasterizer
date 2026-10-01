@@ -241,6 +241,7 @@ HARNESS = r"""
 
   const assert = (condition, message) => { if (!condition) failures.push(message); };
   const finish = () => {
+    submissionReadinessObserver?.disconnect();
     if (scenario === 'guest') {
       assert(document.querySelector('#job') && !document.querySelector('#job').classList.contains('hidden'), 'guest form did not become visible');
       assert(!document.querySelector('#guestNotice').classList.contains('hidden'), 'guest notice did not become visible');
@@ -458,6 +459,15 @@ HARNESS = r"""
 
   let deadline = 0;
   let submissionReadinessObserver = null;
+  let applicationCheckQueued = false;
+  const queueApplicationCheck = () => {
+    if (applicationCheckQueued) return;
+    applicationCheckQueued = true;
+    queueMicrotask(() => {
+      applicationCheckQueued = false;
+      waitForApplication();
+    });
+  };
   const status = document.querySelector('#status');
   if (status) new MutationObserver(() => statusHistory.push(status.textContent)).observe(status, {childList: true, characterData: true, subtree: true});
   const artworkFile = () => new File([Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zy3sAAAAASUVORK5CYII='), character => character.charCodeAt(0))], 'characterization.png', {type: 'image/png'});
@@ -607,58 +617,58 @@ HARNESS = r"""
   };
   const startShapeAssetsCharacterization = () => {
     const form = document.querySelector('#job');
-    if (window.__submissionStarted || typeof form?.onsubmit !== 'function' || document.querySelectorAll('#rasterPalette .color-card').length !== palette.length) return;
+    if (window.__submissionStarted || typeof form?.onsubmit !== 'function' || document.querySelectorAll('#rasterPalette .color-card').length !== palette.length) return false;
     if (!window.__shapeConfigured) {
       window.__shapeConfigured = true;
       const choice = document.querySelector('#materialChoice');
       choice.value = 'svg';
       choice.dispatchEvent(new Event('change', {bubbles: true}));
       attachArtwork('#artwork');
-      return;
+      return true;
     }
-    if (document.querySelector('#materialChoice').value !== 'svg') return;
+    if (document.querySelector('#materialChoice').value !== 'svg') return false;
     const geometryStyle = document.querySelector('#geometryStyle');
     if (window.__shapeGeometrySelected && geometryStyle?.value !== 'glyphs') {
       window.__shapeGeometrySelected = false;
-      return;
+      return true;
     }
     if (!window.__shapeGeometrySelected) {
       window.__shapeGeometrySelected = true;
       geometryStyle.value = 'glyphs';
       geometryStyle.dispatchEvent(new Event('change', {bubbles: true}));
-      return;
+      return true;
     }
     const glyphSelect = document.querySelector('#routedGlyphControls [data-geometry-parameter="glyph_shape"]');
     const fileInput = document.querySelector('#routedGlyphControls [data-custom-glyph-file]');
-    if (!glyphSelect || !fileInput) return;
+    if (!glyphSelect || !fileInput) return false;
     if (!window.__shapeRasterAttached) {
       window.__shapeRasterAttached = true;
       glyphSelect.value = 'custom';
       glyphSelect.dispatchEvent(new Event('change', {bubbles: true}));
       attachFile('#routedGlyphControls [data-custom-glyph-file]', artworkFile());
-      return;
+      return true;
     }
     const status = document.querySelector('#routedGlyphControls .custom-shape-status');
     if (!window.__shapeUnsafeAttached) {
-      if (!status?.textContent.startsWith('Custom image ready')) return;
+      if (!status?.textContent.startsWith('Custom image ready')) return false;
       window.__shapeRasterReady = true;
       window.__shapeUnsafeAttached = true;
       attachFile('#routedGlyphControls [data-custom-glyph-file]', new File([
         '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><path d="M0 0H10V10Z"/></svg>'
       ], 'unsafe-shape.svg', {type: 'image/svg+xml'}));
-      return;
+      return true;
     }
     if (!window.__shapeSvgAttached) {
-      if (!status?.textContent.startsWith('SVG element <script> is not supported.')) return;
+      if (!status?.textContent.startsWith('SVG element <script> is not supported.')) return false;
       window.__shapeUnsafeRejected = true;
       window.__shapeSvgAttached = true;
       attachFile('#routedGlyphControls [data-custom-glyph-file]', new File([
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M50 5L95 95H5Z"/></svg>'
       ], 'characterization-shape.svg', {type: 'image/svg+xml'}));
-      return;
+      return true;
     }
-    if (!status?.textContent.startsWith('Custom SVG ready') || geometryStyle.value !== 'glyphs' || glyphSelect.value !== 'custom') return;
-    beginMultistageSubmission(form);
+    if (!status?.textContent.startsWith('Custom SVG ready') || geometryStyle.value !== 'glyphs' || glyphSelect.value !== 'custom') return false;
+    return beginMultistageSubmission(form);
   };
   const startGeometryRoutingCharacterization = () => {
     const form = document.querySelector('#job');
@@ -798,7 +808,9 @@ HARNESS = r"""
       setTimeout(waitForApplication, 25);
       return;
     }
-    if (deadline === 0) deadline = Date.now() + (scenario === 'flow-painter' || scenario === 'shape-assets' ? 50000 : scenario === 'polling' ? 30000 : 20000);
+    if (deadline === 0) deadline = scenario === 'shape-assets'
+      ? Number.POSITIVE_INFINITY
+      : Date.now() + (scenario === 'flow-painter' ? 50000 : scenario === 'polling' ? 30000 : 20000);
     if (scenario === 'guest-submit') startGuestSubmission();
     if (scenario === 'authenticated-submit' || scenario === 'submission-error') startAuthenticatedSubmission();
     if (scenario === 'holographic-submit') startHolographicSubmission();
@@ -807,11 +819,11 @@ HARNESS = r"""
     if (scenario === 'panel-tiling') startPanelTilingCharacterization();
     if (scenario === 'palette-resources') startPaletteResourcesCharacterization();
     if (scenario === 'material-input') startMaterialInputCharacterization();
-    if (scenario === 'shape-assets') startShapeAssetsCharacterization();
+    const shapeAssetsAdvanced = scenario === 'shape-assets' && startShapeAssetsCharacterization();
     if (scenario === 'geometry-routing') startGeometryRoutingCharacterization();
     if (scenario === 'flow-painter') startFlowPainterCharacterization();
     if (scenario === 'submission-error' && !window.__submissionStarted) return;
-    submissionReadinessObserver?.disconnect();
+    if (scenario !== 'shape-assets') submissionReadinessObserver?.disconnect();
     const ready = scenario === 'guest' || scenario === 'auth-refresh' || scenario === 'auth-retry'
       ? document.querySelectorAll('#rasterPalette .color-card').length === palette.length
       : scenario === 'guest-submit'
@@ -873,12 +885,25 @@ HARNESS = r"""
       return;
     }
     if (ready || Date.now() >= deadline) finish();
+    else if (scenario === 'shape-assets') {
+      if (shapeAssetsAdvanced) queueApplicationCheck();
+    }
     else setTimeout(waitForApplication, 25);
   };
   addEventListener('DOMContentLoaded', () => {
     if (scenario === 'submission-error') {
       submissionReadinessObserver = new MutationObserver(waitForApplication);
       submissionReadinessObserver.observe(document.querySelector('#rasterPalette'), {childList: true, subtree: true});
+    }
+    if (scenario === 'shape-assets') {
+      submissionReadinessObserver = new MutationObserver(queueApplicationCheck);
+      submissionReadinessObserver.observe(document.body, {
+        attributes: true,
+        attributeFilter: ['data-ready', 'hidden', 'open'],
+        characterData: true,
+        childList: true,
+        subtree: true
+      });
     }
     waitForApplication();
   }, {once: true});
