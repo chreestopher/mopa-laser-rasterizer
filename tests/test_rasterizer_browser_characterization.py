@@ -477,13 +477,20 @@ HARNESS = r"""
   };
   const beginMultistageSubmission = form => {
     // Shape normalization and flow-mask preparation are asynchronous setup
-    // phases. Do not mark submission started until the artwork preview and
-    // browser constraint validation agree that requestSubmit can dispatch.
-    if (!document.querySelector('#cropStatus').textContent.startsWith('Original artwork') || !form.checkValidity()) return false;
-    deadline = Date.now() + 20000;
-    window.__submissionStarted = true;
+    // phases. Do not mark submission started until requestSubmit actually
+    // dispatches the submit event; browser constraint validation can still
+    // reject a request after the preceding readiness checks.
+    if (!document.querySelector('#artwork').files.length || !form.checkValidity()) return false;
+    let dispatched = false;
+    const markDispatched = () => {
+      dispatched = true;
+      window.__submissionStarted = true;
+    };
+    form.addEventListener('submit', markDispatched, {once: true});
     form.requestSubmit();
-    return true;
+    if (!dispatched) form.removeEventListener('submit', markDispatched);
+    else deadline = Date.now() + 20000;
+    return dispatched;
   };
   const startGuestSubmission = () => {
     if (window.__submissionStarted || document.querySelectorAll('#rasterPalette .color-card').length !== palette.length) return;
