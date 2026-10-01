@@ -142,6 +142,7 @@ const poll=createRasterJobPoller({
   show,
   userFacingStyleError,
   jobAccessErrorMessage:sessionApi.jobAccessErrorMessage,
+  recoverUnavailableGuestTask:sessionApi.recoverUnavailableGuestTask,
   renderOutputs:renderRasterOutputs,
   setPollTimer:timer=>{pollTimer=timer},
 });
