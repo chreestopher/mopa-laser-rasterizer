@@ -564,6 +564,9 @@ def test_spiralgraph_modules_upload_before_entry_and_html():
     palette_routing_dependency = (
         'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/palette-routing-v1.js"'
     )
+    job_lifecycle_dependency = (
+        'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/job-lifecycle-v1.js"'
+    )
     entry = 'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph.js"'
     html = 'aws s3 cp "$BUILD_DIR/seo/spiralgraph.html"'
 
@@ -573,15 +576,17 @@ def test_spiralgraph_modules_upload_before_entry_and_html():
     assert drawing_editor_dependency in deploy
     assert state_dependency in deploy
     assert palette_routing_dependency in deploy
+    assert job_lifecycle_dependency in deploy
     assert deploy.index(geometry_dependency) < deploy.index(hardware_dependency)
     assert deploy.index(geometry_dependency) < deploy.index(canvas_dependency)
     assert deploy.index(geometry_dependency) < deploy.index(drawing_editor_dependency)
     assert deploy.index(state_dependency) < deploy.index(entry) < deploy.index(html)
     assert deploy.index(palette_routing_dependency) < deploy.index(entry) < deploy.index(html)
+    assert deploy.index(job_lifecycle_dependency) < deploy.index(entry) < deploy.index(html)
     assert deploy.index(hardware_dependency) < deploy.index(entry) < deploy.index(html)
     assert deploy.index(canvas_dependency) < deploy.index(entry) < deploy.index(html)
     assert deploy.index(drawing_editor_dependency) < deploy.index(entry) < deploy.index(html)
-    for dependency in (geometry_dependency, hardware_dependency, canvas_dependency, drawing_editor_dependency, state_dependency, palette_routing_dependency):
+    for dependency in (geometry_dependency, hardware_dependency, canvas_dependency, drawing_editor_dependency, state_dependency, palette_routing_dependency, job_lifecycle_dependency):
         command = deploy[deploy.index(dependency) : deploy.index(dependency) + 400]
         assert "application/javascript" in command
         assert "public,max-age=31536000,immutable" in command
@@ -616,6 +621,25 @@ def test_spiralgraph_palette_routing_owns_palette_selection_and_validation():
     assert "function bindEvents(renderLayers)" in palette_routing
     assert "function paletteSwatches()" not in entry
     assert "function updatePaletteStatus()" not in entry
+
+
+def test_spiralgraph_job_lifecycle_owns_payload_auth_submission_polling_and_resume():
+    entry = (WEB / "spiralgraph.js").read_text(encoding="utf-8")
+    job_lifecycle = (
+        WEB / "spiralgraph" / "job-lifecycle-v1.js"
+    ).read_text(encoding="utf-8")
+
+    assert 'from "./spiralgraph/job-lifecycle-v1.js"' in entry
+    assert "export function createJobLifecycle(" in job_lifecycle
+    assert "function payloadLayer(source)" in job_lifecycle
+    assert "function tokenExpiresSoon()" in job_lifecycle
+    assert "async function refreshSession()" in job_lifecycle
+    assert "async function api(" in job_lifecycle
+    assert "async function poll(taskId)" in job_lifecycle
+    assert 'api("/spiralgraph/jobs"' in job_lifecycle
+    assert 'new URLSearchParams(location.search).get("task")' in job_lifecycle
+    assert "function payloadLayer(source)" not in entry
+    assert "async function poll(taskId)" not in entry
 
 
 def test_serverless_sources_and_rendered_routes_have_no_inline_handlers_or_urls(

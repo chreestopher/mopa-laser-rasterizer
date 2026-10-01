@@ -12,19 +12,21 @@ def read(path):
 def test_spiralgrap_page_uses_external_assets_and_classic_controls():
     page = read("serverless_web/spiralgraph.html")
     client = read("serverless_web/spiralgraph.js")
+    job_lifecycle = read("serverless_web/spiralgraph/job-lifecycle-v1.js")
     drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v1.js")
-    assert 'src="/spiralgraph.js?v=9"' in page
+    assert 'src="/spiralgraph.js?v=10"' in page
     assert 'href="/spiralgraph.css?v=3"' in page
     assert "Track plate" in drawing_editor and "Rolling gear" in drawing_editor and "Pen hole" in drawing_editor
     assert "Starting mark" in drawing_editor and "Rolling position" in drawing_editor
     assert "output_mode" in drawing_editor and "fill_thickness_mm" in drawing_editor
     assert "Line / Cut · open path" in drawing_editor and "Filled ribbon · closed path" in drawing_editor
-    assert 'api("/spiralgraph/jobs"' in client
+    assert 'api("/spiralgraph/jobs"' in job_lifecycle
 
 
 def test_spiralgraph_can_use_saved_color_palette_swatches_for_preview_and_output_layers():
     page = read("serverless_web/spiralgraph.html")
     client = read("serverless_web/spiralgraph.js")
+    job_lifecycle = read("serverless_web/spiralgraph/job-lifecycle-v1.js")
     palette_routing = read("serverless_web/spiralgraph/palette-routing-v1.js")
     drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v1.js")
     canvas_preview = read("serverless_web/spiralgraph/canvas-preview-v1.js")
@@ -38,13 +40,13 @@ def test_spiralgraph_can_use_saved_color_palette_swatches_for_preview_and_output
     assert "function paletteSwatches()" in palette_routing
     assert "function applySwatchMode(layer)" in palette_routing
     assert "context.strokeStyle=previewColor(layer,index)" in canvas_preview
-    assert "color_palette_id" in client and "color_palette_id" in api
+    assert "color_palette_id" in job_lifecycle and "color_palette_id" in api
     assert "community_material_swatch" in api
     assert 'layer.get("lightburn_index")' in backend
     assert 'layer.get("laser_setting")' in backend
     assert "allow_reuse=bool(palette_setting)" in backend
     assert 'layer.get("swatch_hex") or COLORS' in backend
-    assert "function payloadLayer(source)" in client
+    assert "function payloadLayer(source)" in job_lifecycle
     assert "SPIRALGRAPH_BUILTIN_COLORS" in api
     assert 'layer.pop("swatch_hex", None)' not in api
     assert "Choose one of the built-in SpiralGraph colors" in api
@@ -133,7 +135,7 @@ def test_spiralgrap_is_deployed_linked_documented_and_history_backed():
     worker = read("worker.py")
     template = read("ecs/serverless-staging-web.yaml")
     history = read("serverless_web/history.js")
-    for filename in ("spiralgraph.html", "spiralgraph.js", "spiralgraph.css", "spiralgraph/geometry-v1.js", "spiralgraph/hardware-preview-v1.js", "spiralgraph/canvas-preview-v1.js", "spiralgraph/drawing-editor-v1.js", "spiralgraph/state-v1.js", "spiralgraph/palette-routing-v1.js"):
+    for filename in ("spiralgraph.html", "spiralgraph.js", "spiralgraph.css", "spiralgraph/geometry-v1.js", "spiralgraph/hardware-preview-v1.js", "spiralgraph/canvas-preview-v1.js", "spiralgraph/drawing-editor-v1.js", "spiralgraph/state-v1.js", "spiralgraph/palette-routing-v1.js", "spiralgraph/job-lifecycle-v1.js"):
         assert filename in deploy
     assert '"/spiralgraph.html"' in shell and 'href="/spiralgraph.html"' in landing
     assert '"spiralgraph-lab": _page(' in docs

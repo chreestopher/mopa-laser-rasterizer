@@ -221,6 +221,8 @@ aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/state-v1.js" "s3://$STATIC_BUCK
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/palette-routing-v1.js" "s3://$STATIC_BUCKET/web/spiralgraph/palette-routing-v1.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/job-lifecycle-v1.js" "s3://$STATIC_BUCKET/web/spiralgraph/job-lifecycle-v1.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph.js" "s3://$STATIC_BUCKET/web/spiralgraph.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph.css" "s3://$STATIC_BUCKET/web/spiralgraph.css" \
