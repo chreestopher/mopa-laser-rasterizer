@@ -85,6 +85,11 @@ HARNESS = r"""
     localStorage.removeItem('refresh_token');
     sessionStorage.removeItem('refresh_token');
   }
+  if (scenario === 'guest-resume' || scenario === 'guest-expired-task') {
+    sessionStorage.setItem('guest_access_token', 'guest-resume-capability');
+  } else {
+    sessionStorage.removeItem('guest_access_token');
+  }
 
   const palette = [
     {name: 'Black', hex: '#000000'},
@@ -236,6 +241,20 @@ HARNESS = r"""
         {name: 'guest-result.svg', download_url: '/download/guest-result.svg', bytes: 1024}
       ]
     });
+    if (url.pathname === '/api/guest/jobs/guest-resume-task') {
+      const headers = new Headers(options.headers || {});
+      if (headers.get('x-guest-capability') !== 'guest-resume-capability') {
+        return jsonResponse({message: 'Guest task not found or access expired'}, 404);
+      }
+      return jsonResponse({
+        status: 'completed', logs: ['guest resume complete'], outputs: [
+          {name: 'guest-resume.svg', download_url: '/download/guest-resume.svg', bytes: 1024}
+        ]
+      });
+    }
+    if (url.pathname === '/api/guest/jobs/expired-guest-task') {
+      return jsonResponse({message: 'Guest task not found or access expired'}, 404);
+    }
     throw new Error(`Unexpected characterization fetch: ${url.pathname}`);
   };
 
@@ -249,6 +268,25 @@ HARNESS = r"""
       assert(document.querySelectorAll('#materialChoice option').length === 3, 'guest output choices were not populated');
       assert(document.querySelectorAll('#rasterPalette .color-card').length === palette.length, 'guest palette was not rendered');
       assert(window.__shellAuthenticated === false, 'shell did not receive guest authentication state');
+    } else if (scenario === 'guest-stale-task-no-capability') {
+      assert(!new URL(location.href).searchParams.has('task'), 'stale guest task remained in the URL without a capability');
+      assert(new URL(location.href).searchParams.get('keep') === 'yes', 'unrelated query parameters were removed with the stale task');
+      assert(!fetchHistory.some(value => value.includes('/api/guest/jobs/')), `guest job was requested without a capability (${fetchHistory.join(', ')})`);
+      assert(document.querySelector('#status').textContent.startsWith('Guest access.'), 'guest startup status changed while clearing stale task context');
+      assert(document.querySelector('#submit').disabled === false, 'Rasterizer submit was disabled after clearing stale task context');
+    } else if (scenario === 'guest-expired-task') {
+      assert(fetchHistory.filter(value => value === 'GET /api/guest/jobs/expired-guest-task').length === 1, `expired guest task was requested more than once (${fetchHistory.join(', ')})`);
+      assert(!new URL(location.href).searchParams.has('task'), 'expired guest task remained in the URL');
+      assert(new URL(location.href).searchParams.get('keep') === 'yes', 'unrelated query parameters were removed with the expired task');
+      assert(sessionStorage.getItem('guest_access_token') === 'guest-resume-capability', 'task recovery removed a capability that may belong to another guest job');
+      assert(document.querySelector('#status').textContent === 'This guest job is no longer available. Start a new temporary Rasterizer job below.', `expired guest recovery message changed (${document.querySelector('#status').textContent})`);
+      assert(document.querySelector('#activity').classList.contains('hidden'), 'activity indicator remained visible after expired guest recovery');
+      assert(document.querySelector('#submit').disabled === false && document.querySelector('#holoSubmit').disabled === false, 'submit controls remained disabled after expired guest recovery');
+    } else if (scenario === 'guest-resume') {
+      assert(fetchHistory.filter(value => value === 'GET /api/guest/jobs/guest-resume-task').length === 4, `valid guest resume did not complete terminal log refreshes (${fetchHistory.join(', ')})`);
+      assert(new URL(location.href).searchParams.get('task') === 'guest-resume-task', 'valid guest task was removed from the URL');
+      assert(document.querySelector('#status').textContent.startsWith('COMPLETED'), 'valid guest resume did not complete');
+      assert(document.querySelectorAll('#outputs a').length === 1, 'valid guest resume outputs were not rendered');
     } else if (scenario === 'auth-refresh') {
       assert(fetchHistory.includes('POST /oauth2/token'), `expiring session did not request a refreshed token (${fetchHistory.join(', ')})`);
       assert(localStorage.getItem('id_token') === '__JWT__', 'refreshed identity token was not persisted');
@@ -827,8 +865,12 @@ HARNESS = r"""
     if (scenario === 'flow-painter') startFlowPainterCharacterization();
     if (scenario === 'submission-error' && !window.__submissionStarted) return;
     if (scenario !== 'shape-assets') submissionReadinessObserver?.disconnect();
-    const ready = scenario === 'guest' || scenario === 'auth-refresh' || scenario === 'auth-retry'
+    const ready = scenario === 'guest' || scenario === 'guest-stale-task-no-capability' || scenario === 'auth-refresh' || scenario === 'auth-retry'
       ? document.querySelectorAll('#rasterPalette .color-card').length === palette.length
+      : scenario === 'guest-expired-task'
+        ? document.querySelector('#status').textContent.startsWith('This guest job is no longer available.')
+      : scenario === 'guest-resume'
+        ? fetchHistory.filter(value => value === 'GET /api/guest/jobs/guest-resume-task').length === 4 && document.querySelectorAll('#outputs a').length === 1
       : scenario === 'guest-submit'
         ? submittedPayload !== null && document.querySelectorAll('#outputs a').length === 1
         : scenario === 'authenticated-submit'
@@ -999,6 +1041,15 @@ class RasterizerBrowserCharacterizationTests(unittest.TestCase):
 
     def test_guest_startup_and_palette_controls(self):
         self._run_scenario("guest")
+
+    def test_guest_history_task_without_capability_returns_to_rasterizer(self):
+        self._run_scenario("guest-stale-task-no-capability", "&task=stale-guest-task&keep=yes")
+
+    def test_expired_guest_capability_returns_to_rasterizer(self):
+        self._run_scenario("guest-expired-task", "&task=expired-guest-task&keep=yes")
+
+    def test_valid_guest_capability_resumes_the_task(self):
+        self._run_scenario("guest-resume", "&task=guest-resume-task")
 
     def test_expiring_authenticated_session_refreshes_before_loading_resources(self):
         self._run_scenario("auth-refresh")

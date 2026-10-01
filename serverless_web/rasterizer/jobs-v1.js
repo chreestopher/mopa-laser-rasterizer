@@ -89,6 +89,7 @@ export function createRasterJobPoller({
   show,
   userFacingStyleError,
   jobAccessErrorMessage,
+  recoverUnavailableGuestTask = () => false,
   renderOutputs,
   setPollTimer = () => {},
   schedule = (callback, delay) => setTimeout(callback, delay),
@@ -148,7 +149,9 @@ export function createRasterJobPoller({
       }
       setPollTimer(schedule(poll, 3000));
     } catch (error) {
-      show(`ERROR: ${jobAccessErrorMessage(error.message)}`);
+      if (!recoverUnavailableGuestTask(error.message)) {
+        show(`ERROR: ${jobAccessErrorMessage(error.message)}`);
+      }
       element('#activity').classList.add('hidden');
       element('#submit').disabled = false;
       element('#holoSubmit').disabled = false;

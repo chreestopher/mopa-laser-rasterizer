@@ -23,6 +23,28 @@ export function createRasterizerSessionApi({
   const element = selector => documentRoot.querySelector(selector);
   const isGuest = () => guestMode;
 
+  function clearTaskContext() {
+    const params = new URLSearchParams(locationRoot.search);
+    params.delete('task');
+    sessionStore.removeItem('pending_task');
+    const search = params.toString();
+    historyRoot.replaceState(
+      {},
+      '',
+      `${locationRoot.pathname}${search ? `?${search}` : ''}${locationRoot.hash || ''}`,
+    );
+  }
+
+  function setTaskLocation(task) {
+    const params = new URLSearchParams(locationRoot.search);
+    params.set('task', task);
+    historyRoot.replaceState(
+      {},
+      '',
+      `${locationRoot.pathname}?${params.toString()}${locationRoot.hash || ''}`,
+    );
+  }
+
   function setAuthState(authenticated) {
     guestMode = !authenticated;
     element('#job').classList.remove('hidden');
@@ -115,6 +137,13 @@ export function createRasterizerSessionApi({
     return message;
   }
 
+  function recoverUnavailableGuestTask(message) {
+    if (!guestMode || message !== 'Guest task not found or access expired') return false;
+    clearTaskContext();
+    show("This guest job is no longer available. Start a new temporary Rasterizer job below.");
+    return true;
+  }
+
   async function initialize({loadAccountResources, loadGuestResources, onResumeTask}) {
     config = await fetchImpl('config.json', {cache: 'no-store'}).then(response => response.json());
     const params = new URLSearchParams(locationRoot.search);
@@ -179,10 +208,12 @@ export function createRasterizerSessionApi({
     if (token) await loadAccountResources();
     else await loadGuestResources();
     const resumedTask = new URLSearchParams(locationRoot.search).get('task') || requestedTask;
-    if (token && resumedTask) {
+    if (resumedTask && (token || guestAccessToken)) {
       sessionStore.removeItem('pending_task');
-      historyRoot.replaceState({}, '', `${locationRoot.pathname}?task=${encodeURIComponent(resumedTask)}`);
+      setTaskLocation(resumedTask);
       onResumeTask(resumedTask);
+    } else if (resumedTask && guestMode) {
+      clearTaskContext();
     }
   }
 
@@ -192,6 +223,7 @@ export function createRasterizerSessionApi({
     initialize,
     isGuest,
     jobAccessErrorMessage,
+    recoverUnavailableGuestTask,
     setGuestAccessToken,
   };
 }
