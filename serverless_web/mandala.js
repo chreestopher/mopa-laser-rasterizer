@@ -1,3 +1,5 @@
+import {duplicateLayer,newLayer,randomizedLayer,resetLayer} from "./mandala/state-v1.js";
+
 let config;
 let token=localStorage.getItem("id_token")||sessionStorage.getItem("id_token");
 let refreshToken=localStorage.getItem("refresh_token")||sessionStorage.getItem("refresh_token");
@@ -9,32 +11,6 @@ const COLORS=["#e44d61","#f39c49","#e4d354","#72c66a","#43b7a7","#4c9dde","#6c70
 const $=selector=>document.querySelector(selector);
 const esc=value=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
 
-function newLayer(index){return{name:`Layer ${index+1}`,motif:["petal","leaf","star","diamond"][index%4],ornament_style:["lotus","billow","paisley","rose_lace"][index%4],motif_composition:["hybrid","whole_repeat","kaleidoscope"][index%3],custom_svg:null,construction:"cutout",support_mode:"automatic_bridges",rim_style:index===0?"petal":"open",repetitions:12,rings:3,inner_radius_ratio:.18,motif_scale:.72,motif_radial_position:0,motif_tangential_position:0,fragment_scale:1.7,radial_stretch:1,tangent_stretch:1,twist_degrees:index%2?-28:28,rotation_degrees:index*8,alternate_rotation:true,mirror_alternating:false,flow_amount:.92,petal_fullness:1.15,tip_sharpness:1.4,curl_degrees:index%2?-28:28,band_overlap:.25,mirror_wedges:true,rim_width_mm:4,bridge_width_mm:1.5,support_sweep_degrees:index%2?-18:18,bridge_wave_amount:.65,bridge_wave_amplitude_mm:8,bridge_wave_position:.5,layer_openness:.1,opening_inner_ratio:.25,opening_rotation_degrees:0}}
-const choose=values=>values[Math.floor(Math.random()*values.length)];
-const randomBetween=(minimum,maximum,step=.01)=>Math.round((minimum+Math.random()*(maximum-minimum))/step)*step;
-function randomizedLayer(layer,index){
-  const randomized={...layer},diameter=Math.max(20,Number($("#diameter")?.value)||150);
-  if(layer.motif!=="custom")randomized.motif=choose(["petal","leaf","diamond","circle","triangle","star","heart"]);
-  Object.assign(randomized,{
-    ornament_style:choose(["lotus","billow","paisley","rose_lace","leaf_lace"]),
-    motif_composition:choose(["hybrid","whole_repeat","kaleidoscope","flow_character"]),
-    repetitions:choose([6,8,10,12,14,16,18,20]),rings:choose([2,3,4,5,6]),
-    inner_radius_ratio:randomBetween(.08,.38),motif_scale:randomBetween(.42,.92),
-    motif_radial_position:randomBetween(-.32,.32),motif_tangential_position:randomBetween(-.38,.38),
-    fragment_scale:randomBetween(1.2,2.4,.05),radial_stretch:randomBetween(.65,1.5,.05),
-    tangent_stretch:randomBetween(.65,1.5,.05),twist_degrees:randomBetween(-120,120,1),
-    rotation_degrees:randomBetween(-180,180,1),alternate_rotation:Math.random()>=.3,
-    mirror_alternating:Math.random()>=.55,flow_amount:randomBetween(.35,1),
-    petal_fullness:randomBetween(.55,1.65,.05),tip_sharpness:randomBetween(.55,2.7,.05),
-    curl_degrees:randomBetween(-80,80,1),band_overlap:randomBetween(.05,.55,.01),
-    mirror_wedges:Math.random()>=.35,support_sweep_degrees:randomBetween(-45,45,1),
-    bridge_wave_amount:randomBetween(0,.85),bridge_wave_amplitude_mm:randomBetween(Math.max(.5,diameter*.02),diameter*.14,.1),
-    bridge_wave_position:randomBetween(.18,.82),layer_openness:randomBetween(0,.65,.01),
-    opening_inner_ratio:randomBetween(.12,.7,.01),opening_rotation_degrees:randomBetween(-180,180,1),
-  });
-  randomized.name=layer.name||`Layer ${index+1}`;
-  return randomized;
-}
 function processingPalettes(){return(resources.material_libraries||[]).filter(item=>item.library_intent==="processing_palette")}
 function selectedPalette(){return processingPalettes().find(item=>item.library_id===$("#processingPalette").value)}
 function materialNames(library){return[...new Set([...(library?.summary?.logical_material_names||[]),...(library?.summary?.entries||[]).map(entry=>entry.material)].map(value=>String(value||"").trim()).filter(Boolean))]}
@@ -192,7 +168,7 @@ async function poll(taskId){clearTimeout(pollTimer);try{const job=await api(`/jo
 
 $("#processingPalette").addEventListener("change",populateMaterials);$("#processingMaterial").addEventListener("change",populateCutSettings);$("#cutSetting").addEventListener("change",updateCutStatus);$("#diameter").addEventListener("change",syncProjectDimensions);$("#diameter").addEventListener("input",schedulePreview);
 $("#addLayer").addEventListener("click",()=>{if(layers.length>=12)return;layers.push(newLayer(layers.length));activeLayer=layers.length-1;renderLayers()});
-$("#layerList").addEventListener("click",event=>{const card=event.target.closest("[data-layer]"),button=event.target.closest("[data-action]");if(!card||!button)return;const index=Number(card.dataset.layer),action=button.dataset.action;if(action==="randomize"){layers[index]=randomizedLayer(layers[index],index);activeLayer=index}if(action==="reset"){const name=layers[index].name;layers[index]=newLayer(index);layers[index].name=name;activeLayer=index}if(action==="duplicate"&&layers.length<12){const copy=JSON.parse(JSON.stringify(layers[index],(key,value)=>key.startsWith("_")?undefined:value));copy.name=`${copy.name} copy`;layers.splice(index+1,0,copy);activeLayer=index+1}if(action==="remove"&&layers.length>1){layers.splice(index,1);activeLayer=Math.min(activeLayer,layers.length-1)}if(action==="up"&&index>0){[layers[index-1],layers[index]]=[layers[index],layers[index-1]];activeLayer=index-1}if(action==="down"&&index<layers.length-1){[layers[index+1],layers[index]]=[layers[index],layers[index+1]];activeLayer=index+1}renderLayers()});
+$("#layerList").addEventListener("click",event=>{const card=event.target.closest("[data-layer]"),button=event.target.closest("[data-action]");if(!card||!button)return;const index=Number(card.dataset.layer),action=button.dataset.action;if(action==="randomize"){layers[index]=randomizedLayer(layers[index],index,$("#diameter")?.value);activeLayer=index}if(action==="reset"){layers[index]=resetLayer(layers[index],index);activeLayer=index}if(action==="duplicate"&&layers.length<12){layers.splice(index+1,0,duplicateLayer(layers[index]));activeLayer=index+1}if(action==="remove"&&layers.length>1){layers.splice(index,1);activeLayer=Math.min(activeLayer,layers.length-1)}if(action==="up"&&index>0){[layers[index-1],layers[index]]=[layers[index],layers[index-1]];activeLayer=index-1}if(action==="down"&&index<layers.length-1){[layers[index+1],layers[index]]=[layers[index],layers[index+1]];activeLayer=index+1}renderLayers()});
 $("#layerList").addEventListener("input",event=>{const card=event.target.closest("[data-layer]"),field=event.target.dataset.field;if(!card||!field||field==="custom_file")return;const layer=layers[Number(card.dataset.layer)],value=event.target.type==="checkbox"?event.target.checked:event.target.type==="number"?Number(event.target.value):event.target.value;layer[field]=value;if(field==="motif")renderLayers();else{if(field==="name")syncPreviewSelector();schedulePreview()}});
 $("#layerPreviewSlider").addEventListener("input",event=>{activeLayer=Math.max(0,Math.min(layers.length-1,Number(event.target.value)-1));syncPreviewSelector();schedulePreview()});
 $("#layerList").addEventListener("change",async event=>{if(event.target.dataset.field!=="custom_file")return;const card=event.target.closest("[data-layer]"),layer=layers[Number(card.dataset.layer)];try{layer.custom_svg=await normalizeSvg(event.target.files[0]);delete layer._image;delete layer._imagePromise;renderLayers()}catch(error){alert(error.message);event.target.value=""}});
