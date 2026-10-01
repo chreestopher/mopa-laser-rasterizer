@@ -1,7 +1,9 @@
 import http.server
 import json
+import os
 from pathlib import Path
 import re
+import signal
 import shutil
 import subprocess
 import tempfile
@@ -38,6 +40,35 @@ def _report_only_policy():
     if match is None:
         raise AssertionError("The staging template has no report-only CSP header")
     return match.group(1)
+
+
+def _stop_browser_process_tree(browser):
+    """Stop Chromium and its profile-owning children before temp cleanup."""
+    if os.name == "posix":
+        try:
+            os.killpg(browser.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            browser.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+        # The browser parent can exit before a renderer or profile helper. Kill
+        # anything still in the dedicated process group before removing its
+        # user-data directory.
+        try:
+            os.killpg(browser.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        browser.wait(timeout=5)
+        return
+
+    browser.terminate()
+    try:
+        browser.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        browser.kill()
+        browser.wait(timeout=5)
 
 
 class _CspHandler(http.server.SimpleHTTPRequestHandler):
@@ -148,6 +179,7 @@ class ServerlessCspBrowserTests(unittest.TestCase):
                     stdout=browser_log,
                     stderr=subprocess.STDOUT,
                     text=True,
+                    start_new_session=os.name == "posix",
                 )
                 try:
                     # Cold Chromium startup on hosted Linux runners can spend more than
@@ -156,12 +188,7 @@ class ServerlessCspBrowserTests(unittest.TestCase):
                     # browser-native network signals arrive.
                     ready = self.server.csp_result_ready.wait(timeout=60)
                 finally:
-                    browser.terminate()
-                    try:
-                        browser.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        browser.kill()
-                        browser.wait(timeout=5)
+                    _stop_browser_process_tree(browser)
                 browser_log.seek(0)
                 log_output = browser_log.read()
 
