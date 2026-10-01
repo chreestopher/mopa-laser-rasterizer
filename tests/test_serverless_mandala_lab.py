@@ -10,7 +10,7 @@ def read(path):
 
 def test_mandala_lab_uses_external_assets_and_accessible_previews():
     page = read("serverless_web/mandala.html")
-    assert 'src="/mandala.js?v=13"' in page
+    assert 'src="/mandala.js?v=14"' in page
     assert 'href="/mandala.css?v=1"' in page
     assert "<script>" not in page
     assert 'id="layerPreviewSlider"' in page and 'type="range"' in page
@@ -28,7 +28,7 @@ def test_mandala_lab_is_linked_and_deployed():
     assert '"/mandala.html"' in shell
     assert 'href="/mandala.html"' in landing
     assert '$BUILD_DIR/seo/mandala.html' in deploy
-    for filename in ("mandala.js", "mandala.css", "mandala/state-v1.js", "mandala/palette-routing-v1.js", "mandala/geometry-v1.js", "mandala/preview-v1.js", "mandala/asset-constraints-v1.js", "mandala/job-lifecycle-v1.js"):
+    for filename in ("mandala.js", "mandala.css", "mandala/state-v1.js", "mandala/palette-routing-v1.js", "mandala/geometry-v1.js", "mandala/preview-v1.js", "mandala/asset-constraints-v1.js", "mandala/job-lifecycle-v1.js", "mandala/layer-editor-v1.js"):
         assert f'serverless_web/{filename}' in deploy
 
 
@@ -56,13 +56,14 @@ def test_mandala_jobs_are_authenticated_history_backed_worker_jobs():
 
 def test_mandala_client_defaults_cut_role_and_limits_custom_svg():
     client = read("serverless_web/mandala.js")
+    layer_editor = read("serverless_web/mandala/layer-editor-v1.js")
     job_lifecycle = read("serverless_web/mandala/job-lifecycle-v1.js")
     palette_routing = read("serverless_web/mandala/palette-routing-v1.js")
     asset_constraints = read("serverless_web/mandala/asset-constraints-v1.js")
     assert 'defaultRoleEntry(library,material,"Cut")' in palette_routing
     assert 'file.size>65536' in asset_constraints
     assert 'from "./mandala/asset-constraints-v1.js"' in client
-    assert 'layers.length>=12' in client
+    assert 'layers.length>=12' in layer_editor
     assert 'api("/mandala/jobs"' in job_lifecycle
 
 
@@ -101,11 +102,12 @@ def test_mandala_asset_constraints_own_svg_safety_and_project_dimensions():
 
 def test_mandala_preview_uses_slider_and_updates_live_with_layer_settings():
     client = read("serverless_web/mandala.js")
+    layer_editor = read("serverless_web/mandala/layer-editor-v1.js")
     preview = read("serverless_web/mandala/preview-v1.js")
-    assert '$("#layerPreviewSlider").addEventListener("input"' in client
-    assert "function syncPreviewSelector()" in client
-    assert "syncPreviewSelector();schedulePreview()" in client
-    assert 'data-action="select"' not in client
+    assert '$("#layerPreviewSlider").addEventListener("input"' in layer_editor
+    assert "function syncPreviewSelector()" in layer_editor
+    assert "syncPreviewSelector();schedulePreview()" in layer_editor
+    assert 'data-action="select"' not in layer_editor
     assert 'from "./mandala/preview-v1.js"' in client
     assert "export function createMandalaPreview(" in preview
     for function in ("schedulePreview", "customImage", "drawLayer", "drawPreviews"):
@@ -136,31 +138,46 @@ def test_mandala_geometry_module_owns_motifs_flow_and_support_bridges():
 
 def test_each_mandala_layer_can_be_randomized_or_reset_to_defaults():
     client = read("serverless_web/mandala.js")
+    layer_editor = read("serverless_web/mandala/layer-editor-v1.js")
     state = read("serverless_web/mandala/state-v1.js")
-    assert 'data-action="randomize">Randomize' in client
-    assert 'data-action="reset">Reset to defaults' in client
-    assert 'from "./mandala/state-v1.js"' in client
+    assert 'data-action="randomize">Randomize' in layer_editor
+    assert 'data-action="reset">Reset to defaults' in layer_editor
+    assert 'from "./state-v1.js"' in layer_editor
     assert "export function newLayer(index)" in state
     assert "export function randomizedLayer(layer,index,diameterValue,random=Math.random)" in state
     assert "export function resetLayer(layer,index)" in state
     assert "export function duplicateLayer(layer)" in state
     assert "function newLayer(index)" not in client
     assert "function randomizedLayer(layer,index)" not in client
-    assert 'if(action==="randomize")' in client
-    assert 'if(action==="reset")' in client
+    assert 'if(action==="randomize")' in layer_editor
+    assert 'if(action==="reset")' in layer_editor
+
+
+def test_mandala_layer_editor_owns_controls_collection_and_preview_selection():
+    client = read("serverless_web/mandala.js")
+    layer_editor = read("serverless_web/mandala/layer-editor-v1.js")
+    assert 'from "./mandala/layer-editor-v1.js"' in client
+    assert "export function createMandalaLayerEditor(" in layer_editor
+    for function in ("numberControl", "layerCard", "syncPreviewSelector", "renderLayers", "resetLayers", "getLayers", "getActiveLayer", "bind"):
+        assert f"function {function}(" in layer_editor
+        assert f"function {function}(" not in client
+    for action in ("randomize", "reset", "duplicate", "remove", "up", "down"):
+        assert f'action==="{action}"' in layer_editor
+    assert 'event.target.type==="checkbox"?event.target.checked:event.target.type==="number"?Number(event.target.value):event.target.value' in layer_editor
+    assert '$("#diameter").addEventListener("input",schedulePreview)' in layer_editor
 
 
 def test_mandala_support_labels_state_connectivity_truthfully():
-    client = read("serverless_web/mandala.js")
+    layer_editor = read("serverless_web/mandala/layer-editor-v1.js")
     page = read("serverless_web/mandala.html")
-    assert "Rim and hub; motifs may remain loose" in client
-    assert "Automatic bridges — one piece" in client
-    assert "Fully connected — one piece" in client
+    assert "Rim and hub; motifs may remain loose" in layer_editor
+    assert "Automatic bridges — one piece" in layer_editor
+    assert "Fully connected — one piece" in layer_editor
     assert "Generate projects for review" in page
 
 
 def test_mandala_support_and_openwork_controls_are_wired_end_to_end():
-    client = read("serverless_web/mandala.js")
+    layer_editor = read("serverless_web/mandala/layer-editor-v1.js")
     api = read("serverless_api/handler.py")
     backend = read("lib/mandala.py")
     docs = read("routes/docs.py")
@@ -185,15 +202,15 @@ def test_mandala_support_and_openwork_controls_are_wired_end_to_end():
         "band_overlap",
         "mirror_wedges",
     ):
-        assert field in client
+        assert field in layer_editor
         assert field in api
         assert field in backend
-    assert "Support sweep angle" in client
-    assert "Layer openness" in client
-    assert "Petal crown" in client
-    assert "Billowing scallops" in client
-    assert "Mirrored flowing wedge pairs" in client
-    assert "Whole motifs + mirrored fragments" in client
-    assert "Kaleidoscope sliced fragments" in client
+    assert "Support sweep angle" in layer_editor
+    assert "Layer openness" in layer_editor
+    assert "Petal crown" in layer_editor
+    assert "Billowing scallops" in layer_editor
+    assert "Mirrored flowing wedge pairs" in layer_editor
+    assert "Whole motifs + mirrored fragments" in layer_editor
+    assert "Kaleidoscope sliced fragments" in layer_editor
     assert "Support Sweep Angle" in docs
     assert "Layer Openness" in docs
