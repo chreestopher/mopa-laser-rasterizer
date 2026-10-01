@@ -386,6 +386,21 @@ def test_phase_four_rasterizer_uses_the_reviewed_job_and_output_boundaries():
     )
 
 
+def test_route_by_swatch_exposes_bulk_selection_controls():
+    page = (WEB / "index.html").read_text(encoding="utf-8")
+    geometry_controls = (WEB / "rasterizer" / "geometry-controls-v1.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'data-route-selection="all">Select all</button>' in page
+    assert 'data-route-selection="none">Deselect all</button>' in page
+    assert "selectionButton.dataset.routeSelection==='all'" in geometry_controls
+    assert (
+        "grid.querySelectorAll('[data-route-selected]:not(:disabled)')"
+        in geometry_controls
+    )
+
+
 def test_checked_in_serverless_html_does_not_gain_inline_javascript():
     observed = {
         name: [(mode, _digest(script)) for mode, script in parser.inline_scripts]

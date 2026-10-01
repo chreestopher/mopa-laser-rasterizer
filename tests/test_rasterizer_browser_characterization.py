@@ -432,6 +432,7 @@ HARNESS = r"""
       const rawParameters = submittedPayload?.geometry_style_parameters || {};
       const parameters = typeof rawParameters === 'string' ? JSON.parse(rawParameters) : rawParameters;
       assert(window.__geometryBulkApplied === true, 'bulk geometry routing did not update both selected swatches');
+      assert(window.__geometrySelectionControlsApplied === true, 'route-by-swatch selection controls did not select and deselect all editable swatches');
       assert(window.__geometryCompatibilityApplied === true, 'Invert Fill did not disable and clear Black Only');
       assert(submittedPayload?.geometry_style === 'by_swatch', `routed geometry style changed (${submittedPayload?.geometry_style})`);
       assert(JSON.stringify(parameters.assignments) === JSON.stringify({'#000000': 'vectors', '#808080': 'glyphs', '#FFFFFF': 'halftone_newsprint'}), `routed swatch assignments changed (${JSON.stringify(parameters.assignments)})`);
@@ -733,8 +734,16 @@ HARNESS = r"""
     const gray = routes.find(card => card.querySelector('[data-route-style]')?.dataset.hex === '#808080');
     const white = routes.find(card => card.querySelector('[data-route-style]')?.dataset.hex === '#FFFFFF');
     if (!window.__geometryBulkApplied) {
-      gray.querySelector('[data-route-selected]').checked = true;
-      white.querySelector('[data-route-selected]').checked = true;
+      const black = routes.find(card => card.querySelector('[data-route-style]')?.dataset.hex === '#000000');
+      const selectAll = document.querySelector('[data-route-selection="all"]');
+      const deselectAll = document.querySelector('[data-route-selection="none"]');
+      selectAll.click();
+      const editableSelected = gray.querySelector('[data-route-selected]').checked && white.querySelector('[data-route-selected]').checked;
+      const fixedBlackUnaffected = black.querySelector('[data-route-selected]').disabled && !black.querySelector('[data-route-selected]').checked;
+      deselectAll.click();
+      const editableDeselected = !gray.querySelector('[data-route-selected]').checked && !white.querySelector('[data-route-selected]').checked;
+      selectAll.click();
+      window.__geometrySelectionControlsApplied = editableSelected && fixedBlackUnaffected && editableDeselected && selectAll.textContent === 'Select all' && deselectAll.textContent === 'Deselect all';
       document.querySelector('[data-route-bulk="glyphs"]').click();
       window.__geometryBulkApplied = gray.querySelector('[data-route-style]').value === 'glyphs' && white.querySelector('[data-route-style]').value === 'glyphs';
       white.querySelector('[data-route-style]').value = 'halftone_newsprint';

@@ -727,9 +727,12 @@ def test_staging_ui_exposes_an_independent_compatible_geometry_section():
     assert "drawShapePreview(preview,customGlyphMask,Boolean(invert.checked),Number(padding.value))" in page
     assert "drawSvgPreview(preview,customCellSvg,Number(padding.value))" in page
     assert 'id="geometryRoutingGrid"' in page
+    assert 'data-route-selection="all">Select all</button>' in page
+    assert 'data-route-selection="none">Deselect all</button>' in page
     assert 'data-route-bulk="glyphs"' in page
     assert 'data-route-bulk="halftone_newsprint"' in page
     assert 'data-route-bulk="krasnow_grating"' in page
+    assert "grid.querySelectorAll('[data-route-selected]:not(:disabled)')" in page
     assert "posterize_colors" not in page
     assert "This requires a Fauxlographic Cut Setting" in page
     for value, label in (
