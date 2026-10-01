@@ -10,7 +10,7 @@ def read(path):
 
 def test_mandala_lab_uses_external_assets_and_accessible_previews():
     page = read("serverless_web/mandala.html")
-    assert 'src="/mandala.js?v=11"' in page
+    assert 'src="/mandala.js?v=12"' in page
     assert 'href="/mandala.css?v=1"' in page
     assert "<script>" not in page
     assert 'id="layerPreviewSlider"' in page and 'type="range"' in page
@@ -28,7 +28,7 @@ def test_mandala_lab_is_linked_and_deployed():
     assert '"/mandala.html"' in shell
     assert 'href="/mandala.html"' in landing
     assert '$BUILD_DIR/seo/mandala.html' in deploy
-    for filename in ("mandala.js", "mandala.css", "mandala/state-v1.js", "mandala/palette-routing-v1.js", "mandala/geometry-v1.js", "mandala/preview-v1.js"):
+    for filename in ("mandala.js", "mandala.css", "mandala/state-v1.js", "mandala/palette-routing-v1.js", "mandala/geometry-v1.js", "mandala/preview-v1.js", "mandala/asset-constraints-v1.js"):
         assert f'serverless_web/{filename}' in deploy
 
 
@@ -57,10 +57,31 @@ def test_mandala_jobs_are_authenticated_history_backed_worker_jobs():
 def test_mandala_client_defaults_cut_role_and_limits_custom_svg():
     client = read("serverless_web/mandala.js")
     palette_routing = read("serverless_web/mandala/palette-routing-v1.js")
+    asset_constraints = read("serverless_web/mandala/asset-constraints-v1.js")
     assert 'defaultRoleEntry(library,material,"Cut")' in palette_routing
-    assert 'file.size>65536' in client
+    assert 'file.size>65536' in asset_constraints
+    assert 'from "./mandala/asset-constraints-v1.js"' in client
     assert 'layers.length>=12' in client
     assert 'api("/mandala/jobs"' in client
+
+
+def test_mandala_asset_constraints_own_svg_safety_and_project_dimensions():
+    client = read("serverless_web/mandala.js")
+    constraints = read("serverless_web/mandala/asset-constraints-v1.js")
+    assert "export async function normalizeSvg(" in constraints
+    assert "export function createMandalaAssetConstraints(" in constraints
+    for function in ("normalizeSvg", "syncProjectDimensions", "handleCustomFileChange", "bindEvents"):
+        assert f"function {function}(" in constraints
+        assert f"function {function}(" not in client
+    for message in (
+        "Choose an SVG file.",
+        "Custom SVG files must be no larger than 64 KB.",
+        "The custom SVG could not be read.",
+        "Embedded or external SVG content is not supported.",
+    ):
+        assert message in constraints
+    assert "diameter*.15" in constraints
+    assert "diameter*.08" in constraints
 
 
 def test_mandala_preview_uses_slider_and_updates_live_with_layer_settings():

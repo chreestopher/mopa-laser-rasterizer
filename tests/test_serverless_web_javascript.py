@@ -604,10 +604,13 @@ def test_mandala_modules_upload_before_entry_and_html():
     preview_dependency = (
         'aws s3 cp "$REPO_ROOT/serverless_web/mandala/preview-v1.js"'
     )
+    asset_constraints_dependency = (
+        'aws s3 cp "$REPO_ROOT/serverless_web/mandala/asset-constraints-v1.js"'
+    )
     entry = 'aws s3 cp "$REPO_ROOT/serverless_web/mandala.js"'
     html = 'aws s3 cp "$BUILD_DIR/seo/mandala.html"'
 
-    for dependency in (state_dependency, palette_dependency, geometry_dependency, preview_dependency):
+    for dependency in (state_dependency, palette_dependency, geometry_dependency, preview_dependency, asset_constraints_dependency):
         assert dependency in deploy
         assert deploy.index(dependency) < deploy.index(entry) < deploy.index(html)
         command = deploy[deploy.index(dependency) : deploy.index(dependency) + 400]
@@ -663,6 +666,21 @@ def test_mandala_preview_module_owns_canvas_rendering_and_imports_geometry():
     for function in ("schedulePreview", "customImage", "drawLayer", "drawPreviews"):
         assert f"function {function}(" in preview
         assert f"function {function}(" not in entry
+
+
+def test_mandala_asset_constraints_module_owns_svg_and_dimension_rules():
+    entry = (WEB / "mandala.js").read_text(encoding="utf-8")
+    constraints = (WEB / "mandala" / "asset-constraints-v1.js").read_text(encoding="utf-8")
+
+    assert 'from "./mandala/asset-constraints-v1.js"' in entry
+    assert "export async function normalizeSvg(" in constraints
+    assert "export function createMandalaAssetConstraints(" in constraints
+    assert "file.size>65536" in constraints
+    assert "new DOMParser()" in constraints
+    assert "new XMLSerializer()" in constraints
+    assert "diameter*.15" in constraints and "diameter*.08" in constraints
+    assert "function normalizeSvg(" not in entry
+    assert "function syncProjectDimensions(" not in entry
 
 
 def test_spiralgraph_state_owns_defaults_selection_and_dimension_constraints():
@@ -805,6 +823,7 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
     assert referenced_modes[WEB / "mandala" / "palette-routing-v1.js"] == {"module"}
     assert referenced_modes[WEB / "mandala" / "geometry-v1.js"] == {"module"}
     assert referenced_modes[WEB / "mandala" / "preview-v1.js"] == {"module"}
+    assert referenced_modes[WEB / "mandala" / "asset-constraints-v1.js"] == {"module"}
     assert referenced_modes[ROOT / "static" / "community-set-v1.js"] == {"classic"}
     assert referenced_modes[ROOT / "static" / "docs-search-v1.js"] == {"classic"}
     for filename in (
