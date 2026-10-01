@@ -10,7 +10,7 @@ def read(path):
 
 def test_mandala_lab_uses_external_assets_and_accessible_previews():
     page = read("serverless_web/mandala.html")
-    assert 'src="/mandala.js?v=7"' in page
+    assert 'src="/mandala.js?v=8"' in page
     assert 'href="/mandala.css?v=1"' in page
     assert "<script>" not in page
     assert 'id="layerPreviewSlider"' in page and 'type="range"' in page
@@ -28,7 +28,7 @@ def test_mandala_lab_is_linked_and_deployed():
     assert '"/mandala.html"' in shell
     assert 'href="/mandala.html"' in landing
     assert '$BUILD_DIR/seo/mandala.html' in deploy
-    for filename in ("mandala.js", "mandala.css"):
+    for filename in ("mandala.js", "mandala.css", "mandala/state-v1.js"):
         assert f'serverless_web/{filename}' in deploy
 
 
@@ -72,9 +72,16 @@ def test_mandala_preview_uses_slider_and_updates_live_with_layer_settings():
 
 def test_each_mandala_layer_can_be_randomized_or_reset_to_defaults():
     client = read("serverless_web/mandala.js")
+    state = read("serverless_web/mandala/state-v1.js")
     assert 'data-action="randomize">Randomize' in client
     assert 'data-action="reset">Reset to defaults' in client
-    assert "function randomizedLayer(layer,index)" in client
+    assert 'from "./mandala/state-v1.js"' in client
+    assert "export function newLayer(index)" in state
+    assert "export function randomizedLayer(layer,index,diameterValue,random=Math.random)" in state
+    assert "export function resetLayer(layer,index)" in state
+    assert "export function duplicateLayer(layer)" in state
+    assert "function newLayer(index)" not in client
+    assert "function randomizedLayer(layer,index)" not in client
     assert 'if(action==="randomize")' in client
     assert 'if(action==="reset")' in client
 
