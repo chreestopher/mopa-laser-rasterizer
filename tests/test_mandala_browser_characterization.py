@@ -124,10 +124,23 @@ HARNESS = r"""
           {entry_ref: 'fill-1', material: 'Maple', description: 'Fill', type: 'Scan'},
         ],
       },
+    }, {
+      library_id: 'processing-2',
+      name: 'Alternate Processing',
+      library_intent: 'processing_palette',
+      summary: {
+        logical_material_names: ['Clear acrylic', 'Engrave only'],
+        entries: [
+          {entry_ref: 'clear-fast', material: 'Clear acrylic', description: 'Fast Cut', type: 'Cut'},
+          {entry_ref: 'clear-fine', material: 'Clear acrylic', description: 'Fine Cut', type: 'Cut'},
+          {entry_ref: 'engrave-1', material: 'Engrave only', description: 'Fill', type: 'Scan'},
+        ],
+      },
     }],
     preferences: {
       processing_palette_role_assignments: {
         'processing-1': {materials: {Maple: {Cut: 'cut-1'}}},
+        'processing-2': {materials: {'Clear acrylic': {Cut: 'clear-fine'}}},
       },
     },
   };
@@ -220,6 +233,24 @@ HARNESS = r"""
     check($('#layerPreviewPosition').textContent === 'Layer 1 of 5', 'Earlier did not move the active layer');
     $$('.layer-card')[0].querySelector('[data-action="remove"]').click();
     check($$('.layer-card').length === 4, 'Remove did not remove the active layer');
+  }
+
+  async function paletteRoutingChecks() {
+    await startupChecks();
+    change($('#processingPalette'), 'processing-2');
+    check($('#processingMaterial').value === 'Clear acrylic', 'palette change did not select its first material');
+    check($('#cutSetting').value === 'clear-fine', 'assigned Cut role did not select the matching setting');
+    check(!$('#generate').disabled, 'Generate was disabled for the alternate valid Cut role');
+    check($('#paletteStatus').textContent === 'Using Clear acrylic · Fine Cut.', 'alternate Cut status did not reflect the preferred setting');
+    change($('#cutSetting'), 'clear-fast');
+    check($('#paletteStatus').textContent === 'Using Clear acrylic · Fast Cut.', 'Cut setting change did not update status');
+    change($('#processingMaterial'), 'Engrave only');
+    check($('#cutSetting').options.length === 0, 'non-Cut material retained a Cut setting');
+    check($('#generate').disabled, 'Generate remained enabled without a Cut setting');
+    check($('#paletteStatus').textContent.includes('no LightBurn Line setting'), 'missing Cut setting guidance changed');
+    change($('#processingPalette'), 'processing-1');
+    check($('#processingMaterial').value === 'Maple' && $('#cutSetting').value === 'cut-1', 'returning to the first palette did not restore its Cut route');
+    check(!$('#generate').disabled, 'Generate did not recover after returning to a valid palette');
   }
 
   async function randomizeResetChecks() {
@@ -342,6 +373,7 @@ HARNESS = r"""
       check($('#loginLink').href.includes('example.invalid/oauth2/authorize'), 'sign-in link was not configured');
       check(!fetchHistory.includes('GET /api/account/resources'), 'signed-out page requested account resources');
     } else if (scenario === 'startup') await startupChecks();
+    else if (scenario === 'palette-routing') await paletteRoutingChecks();
     else if (scenario === 'editor') await editorChecks();
     else if (scenario === 'randomize-reset') await randomizeResetChecks();
     else if (scenario === 'preview') await previewChecks();
@@ -395,9 +427,9 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
         page = page_path.read_text(encoding="utf-8")
         page = re.sub(r'\s*<script src="/staging-shell\.js\?v=3" defer></script>', '', page)
         page = page.replace(
-            '<script src="/mandala.js?v=8" type="module"></script>',
+            '<script src="/mandala.js?v=9" type="module"></script>',
             '<script src="/mandala-characterization-harness.js"></script>\n'
-            '<script src="/mandala.js?v=8" type="module"></script>',
+            '<script src="/mandala.js?v=9" type="module"></script>',
         )
         page_path.write_text(page, encoding="utf-8")
         (cls.site / "mandala-characterization-harness.js").write_text(
@@ -457,6 +489,9 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
 
     def test_authenticated_startup_palette_dimensions_and_previews(self):
         self._run_scenario("startup")
+
+    def test_palette_and_cut_setting_events_route_synchronously(self):
+        self._run_scenario("palette-routing")
 
     def test_layer_add_duplicate_edit_reorder_and_remove(self):
         self._run_scenario("editor")

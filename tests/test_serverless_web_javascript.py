@@ -592,17 +592,45 @@ def test_spiralgraph_modules_upload_before_entry_and_html():
         assert "public,max-age=31536000,immutable" in command
 
 
-def test_mandala_state_module_uploads_before_entry_and_html():
+def test_mandala_modules_upload_before_entry_and_html():
     deploy = DEPLOY.read_text(encoding="utf-8")
-    dependency = 'aws s3 cp "$REPO_ROOT/serverless_web/mandala/state-v1.js"'
+    state_dependency = 'aws s3 cp "$REPO_ROOT/serverless_web/mandala/state-v1.js"'
+    palette_dependency = (
+        'aws s3 cp "$REPO_ROOT/serverless_web/mandala/palette-routing-v1.js"'
+    )
     entry = 'aws s3 cp "$REPO_ROOT/serverless_web/mandala.js"'
     html = 'aws s3 cp "$BUILD_DIR/seo/mandala.html"'
 
-    assert dependency in deploy
-    assert deploy.index(dependency) < deploy.index(entry) < deploy.index(html)
-    command = deploy[deploy.index(dependency) : deploy.index(dependency) + 400]
-    assert "application/javascript" in command
-    assert "public,max-age=31536000,immutable" in command
+    for dependency in (state_dependency, palette_dependency):
+        assert dependency in deploy
+        assert deploy.index(dependency) < deploy.index(entry) < deploy.index(html)
+        command = deploy[deploy.index(dependency) : deploy.index(dependency) + 400]
+        assert "application/javascript" in command
+        assert "public,max-age=31536000,immutable" in command
+
+
+def test_mandala_palette_routing_owns_palette_selection_and_cut_validation():
+    entry = (WEB / "mandala.js").read_text(encoding="utf-8")
+    palette_routing = (
+        WEB / "mandala" / "palette-routing-v1.js"
+    ).read_text(encoding="utf-8")
+
+    assert 'from "./mandala/palette-routing-v1.js"' in entry
+    assert "export function createPaletteRouting(" in palette_routing
+    for function in (
+        "processingPalettes",
+        "selectedPalette",
+        "materialNames",
+        "materialEntries",
+        "defaultRoleEntry",
+        "populatePalette",
+        "populateMaterials",
+        "populateCutSettings",
+        "updateCutStatus",
+        "bindEvents",
+    ):
+        assert f"function {function}(" in palette_routing
+        assert f"function {function}(" not in entry
 
 
 def test_spiralgraph_state_owns_defaults_selection_and_dimension_constraints():
@@ -742,6 +770,7 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
     assert referenced_modes[WEB / "rasterizer" / "ui-helpers-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "material-input-v1.js"] == {"module"}
     assert referenced_modes[WEB / "mandala" / "state-v1.js"] == {"module"}
+    assert referenced_modes[WEB / "mandala" / "palette-routing-v1.js"] == {"module"}
     assert referenced_modes[ROOT / "static" / "community-set-v1.js"] == {"classic"}
     assert referenced_modes[ROOT / "static" / "docs-search-v1.js"] == {"classic"}
     for filename in (

@@ -10,7 +10,7 @@ def read(path):
 
 def test_mandala_lab_uses_external_assets_and_accessible_previews():
     page = read("serverless_web/mandala.html")
-    assert 'src="/mandala.js?v=8"' in page
+    assert 'src="/mandala.js?v=9"' in page
     assert 'href="/mandala.css?v=1"' in page
     assert "<script>" not in page
     assert 'id="layerPreviewSlider"' in page and 'type="range"' in page
@@ -28,7 +28,7 @@ def test_mandala_lab_is_linked_and_deployed():
     assert '"/mandala.html"' in shell
     assert 'href="/mandala.html"' in landing
     assert '$BUILD_DIR/seo/mandala.html' in deploy
-    for filename in ("mandala.js", "mandala.css", "mandala/state-v1.js"):
+    for filename in ("mandala.js", "mandala.css", "mandala/state-v1.js", "mandala/palette-routing-v1.js"):
         assert f'serverless_web/{filename}' in deploy
 
 
@@ -56,7 +56,8 @@ def test_mandala_jobs_are_authenticated_history_backed_worker_jobs():
 
 def test_mandala_client_defaults_cut_role_and_limits_custom_svg():
     client = read("serverless_web/mandala.js")
-    assert 'defaultRoleEntry(library,material,"Cut")' in client
+    palette_routing = read("serverless_web/mandala/palette-routing-v1.js")
+    assert 'defaultRoleEntry(library,material,"Cut")' in palette_routing
     assert 'file.size>65536' in client
     assert 'layers.length>=12' in client
     assert 'api("/mandala/jobs"' in client
