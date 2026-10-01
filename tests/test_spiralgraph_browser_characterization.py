@@ -181,6 +181,12 @@ HARNESS = r"""
     check($('#scoreSetting').value === 'line-1', 'Score role did not initialize the line setting');
     check($('#fillSetting').value === 'fill-1', 'Fill role did not initialize the fill setting');
     check(!$('#generate').disabled, 'Generate remained disabled with valid fallback settings');
+    input($('#diameter'), 210);
+    check($('#workbedWidth').min === '210' && $('#workbedHeight').min === '210', 'workbed minimums did not follow the finished size');
+    check($('#workbedWidth').value === '210' && $('#workbedHeight').value === '210', 'undersized workbed dimensions were not raised to the finished size');
+    input($('#diameter'), 150);
+    input($('#workbedWidth'), 175);
+    input($('#workbedHeight'), 175);
     check($$('#gearHardware [data-hole]').length === 6, 'hardware preview did not render six pen holes');
     check($('#trackHardware path'), 'track hardware path was not rendered');
     check($('#assembledHardware path'), 'assembled hardware path was not rendered');
@@ -406,6 +412,13 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
         pass
 
 
+class _CharacterizationServer(http.server.ThreadingHTTPServer):
+    # Chromium requests the growing ES-module graph in parallel. The default
+    # socket backlog can drop one of those requests under load and leave the
+    # page only partly initialized.
+    request_queue_size = 64
+
+
 class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -419,9 +432,9 @@ class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
         page = page_path.read_text(encoding="utf-8")
         page = re.sub(r'\s*<script src="/staging-shell\.js\?v=3" defer></script>', '', page)
         page = page.replace(
-            '<script src="/spiralgraph.js?v=7" type="module"></script>',
+            '<script src="/spiralgraph.js?v=8" type="module"></script>',
             '<script src="/spiralgraph-characterization-harness.js"></script>\n'
-            '<script src="/spiralgraph.js?v=7" type="module"></script>',
+            '<script src="/spiralgraph.js?v=8" type="module"></script>',
         )
         page_path.write_text(page, encoding="utf-8")
         (cls.site / "spiralgraph-characterization-harness.js").write_text(
@@ -429,7 +442,7 @@ class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
         )
 
         handler = lambda *args, **kwargs: _QuietHandler(*args, directory=str(cls.site), **kwargs)
-        cls.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        cls.server = _CharacterizationServer(("127.0.0.1", 0), handler)
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
 
