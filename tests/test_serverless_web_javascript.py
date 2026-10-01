@@ -401,6 +401,17 @@ def test_route_by_swatch_exposes_bulk_selection_controls():
     )
 
 
+def test_fauxlogram_controls_default_to_their_full_ranges():
+    geometry_controls = (WEB / "rasterizer" / "geometry-controls-v1.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "['gradient_top',0,0,255,1]" in geometry_controls
+    assert "['gradient_bottom',255,0,255,1]" in geometry_controls
+    assert "['angle_min',-180,-180,180,1]" in geometry_controls
+    assert "['angle_max',180,-180,180,1]" in geometry_controls
+
+
 def test_checked_in_serverless_html_does_not_gain_inline_javascript():
     observed = {
         name: [(mode, _digest(script)) for mode, script in parser.inline_scripts]

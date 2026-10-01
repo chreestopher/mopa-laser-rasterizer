@@ -33,6 +33,19 @@ def test_krasnow_uses_source_faithful_vector_defaults():
     }
 
 
+def test_krasnow_defaults_cover_the_full_gradient_and_angle_ranges():
+    krasnow = vector_processing.ABSTRACT_FILTER_MODULES["krasnow_grating"]
+
+    assert krasnow.DEFAULT_SETTINGS["gradient_top"] == 0
+    assert krasnow.DEFAULT_SETTINGS["gradient_bottom"] == 255
+    assert krasnow.DEFAULT_SETTINGS["angle_min"] == -180
+    assert krasnow.DEFAULT_SETTINGS["angle_max"] == 180
+    assert krasnow._fill_angle_controls({}, 1) == (0,)
+    assert krasnow._source_angle(0, 0, (0, 0, 1, 1), {}) == pytest.approx(
+        -180 + (127 / 255) * 360
+    )
+
+
 def test_krasnow_accepts_fauxlographic_and_classic_holographic_setting_names():
     class MaterialLibrary:
         def __init__(self, setting):

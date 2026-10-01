@@ -61,8 +61,8 @@ DEFAULTS = {
     "fauxlogram_gradient_scope": "entire_artwork",
     "fauxlogram_gradient_direction": "top_to_bottom",
     "speed_spread": 1,
-    "gradient_top": 165,
-    "gradient_bottom": 90,
+    "gradient_top": 0,
+    "gradient_bottom": 255,
     "gradient_curve": 1,
     "hue_rotation": .13,
     "saturation_cutoff": .2,
@@ -70,8 +70,8 @@ DEFAULTS = {
     "line_spacing_mm": .06,
     "hue_line_spacing_minimum_mm": .06,
     "hue_line_spacing_maximum_mm": .06,
-    "angle_min": -90,
-    "angle_max": 90,
+    "angle_min": -180,
+    "angle_max": 180,
 }
 
 CELL_SHAPES = (
@@ -164,8 +164,8 @@ def _automatic_fill_dimensions(layer_slots):
 
 def _fill_angle_controls(settings, angle_count):
     """Return center-sampled normal angles for the automatically sized bins."""
-    angle_min = number(settings.get("angle_min"), -90, -180, 180)
-    angle_max = number(settings.get("angle_max"), 90, -180, 180)
+    angle_min = number(settings.get("angle_min"), -180, -180, 180)
+    angle_max = number(settings.get("angle_max"), 180, -180, 180)
     if angle_count <= 1:
         return ((angle_min + angle_max) / 2,)
     span = angle_max - angle_min
@@ -469,8 +469,8 @@ def _gradient_position(x, y, bounds, settings):
 
 
 def _gradient_value_at(x, y, bounds, settings):
-    top = number(settings.get("gradient_top"), 165, 0, 255)
-    bottom = number(settings.get("gradient_bottom"), 90, 0, 255)
+    top = number(settings.get("gradient_top"), 0, 0, 255)
+    bottom = number(settings.get("gradient_bottom"), 255, 0, 255)
     curve = number(settings.get("gradient_curve"), 1, .2, 5)
     position = _gradient_position(x, y, bounds, settings)
     shaped = position ** curve
@@ -514,8 +514,8 @@ def _source_angle(x, y, bounds, settings):
     else:
         value = 127
 
-    angle_min = number(settings.get("angle_min"), -90, -180, 180)
-    angle_max = number(settings.get("angle_max"), 90, -180, 180)
+    angle_min = number(settings.get("angle_min"), -180, -180, 180)
+    angle_max = number(settings.get("angle_max"), 180, -180, 180)
     return angle_min + (value / 255) * (angle_max - angle_min)
 
 
@@ -765,8 +765,8 @@ def _painted_flow_controls(x, y, bounds, settings):
             if region.get("reverse"):
                 position = 1 - position
     curve = number(region.get("curve"), settings.get("gradient_curve", 1), .2, 5)
-    start = number(region.get("gradient_start"), settings.get("gradient_top", 165), 0, 255)
-    end = number(region.get("gradient_end"), settings.get("gradient_bottom", 90), 0, 255)
+    start = number(region.get("gradient_start"), settings.get("gradient_top", 0), 0, 255)
+    end = number(region.get("gradient_end"), settings.get("gradient_bottom", 255), 0, 255)
     control = start + (end - start) * (position ** curve)
     orientation = region.get("orientation", "parallel")
     if orientation == "perpendicular":

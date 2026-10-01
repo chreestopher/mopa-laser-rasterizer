@@ -448,7 +448,10 @@ HARNESS = r"""
       assert(window.__flowPainted === true, 'painted flow stroke was not created');
       assert(window.__flowMaskReady === true, 'flow mask was not normalized before submission');
       assert(window.__flowMaskMoved === true, 'flow mask move tool did not update its offset');
+      assert(window.__fauxlogramDefaultsReset === true, 'Fauxlogram controls did not reset to their full-range defaults');
       assert(submittedPayload?.geometry_style === 'krasnow_grating', `flow submission geometry changed (${submittedPayload?.geometry_style})`);
+      assert(parameters.gradient_top === 0 && parameters.gradient_bottom === 255, `Fauxlogram gradient defaults changed (${parameters.gradient_top}, ${parameters.gradient_bottom})`);
+      assert(parameters.angle_min === -180 && parameters.angle_max === 180, `Fauxlogram angle defaults changed (${parameters.angle_min}, ${parameters.angle_max})`);
       assert(flow?.enabled === true, `fauxlogram flow was not enabled (${JSON.stringify(flow)})`);
       assert(flow?.regions?.length === 2 && flow?.strokes?.length === 1, `flow regions or strokes changed (${JSON.stringify(flow)})`);
       assert(flow?.regions?.[0]?.scope === 'each_shape' && flow?.regions?.[0]?.guide_type === 'radial', `painted region scope or guide changed (${JSON.stringify(flow?.regions?.[0])})`);
@@ -810,6 +813,17 @@ HARNESS = r"""
     const canvas = document.querySelector('#flowCanvas');
     if (!window.__flowOpened) {
       if (document.querySelector('#routedKrasnowSettings').hidden) return;
+      if (!window.__fauxlogramDefaultsReset) {
+        const controls = document.querySelector('#routedKrasnowControls');
+        const parameters = Object.fromEntries(['gradient_top', 'gradient_bottom', 'angle_min', 'angle_max'].map(name => [name, controls.querySelector(`[data-geometry-parameter="${name}"]`)]));
+        const initialDefaults = parameters.gradient_top.value === '0' && parameters.gradient_bottom.value === '255' && parameters.angle_min.value === '-180' && parameters.angle_max.value === '180';
+        const angleRangesMatch = parameters.angle_min.min === '-180' && parameters.angle_min.max === '180' && parameters.angle_max.min === '-180' && parameters.angle_max.max === '180';
+        for (const input of Object.values(parameters)) input.value = '12';
+        document.querySelector('#resetGeometryStyle').click();
+        const resetControls = document.querySelector('#routedKrasnowControls');
+        window.__fauxlogramDefaultsReset = initialDefaults && angleRangesMatch && resetControls.querySelector('[data-geometry-parameter="gradient_top"]').value === '0' && resetControls.querySelector('[data-geometry-parameter="gradient_bottom"]').value === '255' && resetControls.querySelector('[data-geometry-parameter="angle_min"]').value === '-180' && resetControls.querySelector('[data-geometry-parameter="angle_max"]').value === '180';
+        return;
+      }
       window.__flowOpened = true;
       document.querySelector('#openFlowPainter').click();
       return;
