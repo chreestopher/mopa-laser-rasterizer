@@ -70,7 +70,10 @@ class SpiralGraphHardwarePreviewTests(unittest.TestCase):
         self.assertIn("function rollingState(model,distance)", geometry)
         self.assertIn('from "./geometry-v1.js"', drawing_editor)
         self.assertIn('from "./spiralgraph/hardware-preview-v1.js"', client)
-        self.assertIn("createHardwarePreview({getActiveLayer:()=>layers[activeLayer],getActiveLayerIndex:()=>activeLayer,schedulePreview})", client)
+        self.assertIn(
+            "createHardwarePreview({getActiveLayer:()=>getLayers()[getActiveLayerIndex()],getActiveLayerIndex,schedulePreview})",
+            client,
+        )
         self.assertIn("function selectPenHole(hole,announce=true)", hardware)
         for behavior in ('role:"radio"', '"aria-checked"', 'focusable:"true"', "ArrowRight", "ArrowLeft", 'event.key==="Home"', 'event.key==="End"'):
             self.assertIn(behavior, hardware)
