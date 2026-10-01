@@ -1,0 +1,17 @@
+export function createPaletteRouting({escapeHtml,getResources}){
+  const $=selector=>document.querySelector(selector);
+  const resources=()=>getResources()||{};
+
+  function processingPalettes(){return(resources().material_libraries||[]).filter(item=>item.library_intent==="processing_palette")}
+  function selectedPalette(){return processingPalettes().find(item=>item.library_id===$("#processingPalette").value)}
+  function materialNames(library){return[...new Set([...(library?.summary?.logical_material_names||[]),...(library?.summary?.entries||[]).map(entry=>entry.material)].map(value=>String(value||"").trim()).filter(Boolean))]}
+  function materialEntries(){const material=$("#processingMaterial").value;return(selectedPalette()?.summary?.entries||[]).filter(entry=>String(entry.material||"")===material)}
+  function defaultRoleEntry(library,material,role){const assignments=(resources().preferences?.processing_palette_role_assignments||{})[library?.library_id]||{},roles=assignments.materials&&typeof assignments.materials==="object"?(assignments.materials[material]||{}):assignments,value=String(roles[role]||"").trim(),entries=(library?.summary?.entries||[]).filter(entry=>String(entry.material||"")===material);return entries.find(entry=>String(entry.entry_ref||"")===value)||entries.find(entry=>String(entry.description||"").trim().toLowerCase()===value.toLowerCase())||entries.find(entry=>String(entry.description||"").trim().toLowerCase()===role.toLowerCase())}
+  function populatePalette(){const select=$("#processingPalette"),palettes=processingPalettes();select.innerHTML=palettes.map(item=>`<option value="${escapeHtml(item.library_id)}">${escapeHtml(item.name)}</option>`).join("");populateMaterials();$("#paletteStatus").textContent=palettes.length?"The material's assigned Cut role is selected automatically when available.":"Import or create a Processing Palette in the Swatch Palette Vault before generating.";$("#generate").disabled=!palettes.length}
+  function populateMaterials(){const library=selectedPalette(),select=$("#processingMaterial"),names=materialNames(library);select.innerHTML=names.map(name=>`<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");populateCutSettings()}
+  function updateCutStatus(){const library=selectedPalette(),material=$("#processingMaterial").value,entries=materialEntries().filter(entry=>String(entry.type||"").toLowerCase()==="cut"),select=$("#cutSetting");$("#generate").disabled=!library||!entries.length;$("#paletteStatus").textContent=!library?"Choose a Processing Palette.":!entries.length?"This material has no LightBurn Line setting. Add or select a Cut setting in the Vault.":`Using ${material} · ${select.selectedOptions[0]?.textContent||"Cut"}.`}
+  function populateCutSettings(){const library=selectedPalette(),material=$("#processingMaterial").value,entries=materialEntries().filter(entry=>String(entry.type||"").toLowerCase()==="cut"),preferred=defaultRoleEntry(library,material,"Cut"),select=$("#cutSetting");select.innerHTML=entries.map(entry=>`<option value="${escapeHtml(entry.entry_ref)}">${escapeHtml(entry.description)}</option>`).join("");if(preferred&&entries.some(entry=>entry.entry_ref===preferred.entry_ref))select.value=preferred.entry_ref;updateCutStatus()}
+  function bindEvents(){$("#processingPalette").addEventListener("change",populateMaterials);$("#processingMaterial").addEventListener("change",populateCutSettings);$("#cutSetting").addEventListener("change",updateCutStatus)}
+
+  return{populatePalette,bindEvents};
+}
