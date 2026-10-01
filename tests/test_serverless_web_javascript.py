@@ -598,10 +598,13 @@ def test_mandala_modules_upload_before_entry_and_html():
     palette_dependency = (
         'aws s3 cp "$REPO_ROOT/serverless_web/mandala/palette-routing-v1.js"'
     )
+    geometry_dependency = (
+        'aws s3 cp "$REPO_ROOT/serverless_web/mandala/geometry-v1.js"'
+    )
     entry = 'aws s3 cp "$REPO_ROOT/serverless_web/mandala.js"'
     html = 'aws s3 cp "$BUILD_DIR/seo/mandala.html"'
 
-    for dependency in (state_dependency, palette_dependency):
+    for dependency in (state_dependency, palette_dependency, geometry_dependency):
         assert dependency in deploy
         assert deploy.index(dependency) < deploy.index(entry) < deploy.index(html)
         command = deploy[deploy.index(dependency) : deploy.index(dependency) + 400]
@@ -631,6 +634,17 @@ def test_mandala_palette_routing_owns_palette_selection_and_cut_validation():
     ):
         assert f"function {function}(" in palette_routing
         assert f"function {function}(" not in entry
+
+
+def test_mandala_geometry_module_is_imported_by_entry():
+    entry = (WEB / "mandala.js").read_text(encoding="utf-8")
+    geometry = (WEB / "mandala" / "geometry-v1.js").read_text(encoding="utf-8")
+
+    assert 'from "./mandala/geometry-v1.js"' in entry
+    assert "export function builtInPath(" in geometry
+    assert "export function drawFlowingPattern(" in geometry
+    assert "export function drawComposedMotifs(" in geometry
+    assert "export function supportBridgePath(" in geometry
 
 
 def test_spiralgraph_state_owns_defaults_selection_and_dimension_constraints():
@@ -771,6 +785,7 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
     assert referenced_modes[WEB / "rasterizer" / "material-input-v1.js"] == {"module"}
     assert referenced_modes[WEB / "mandala" / "state-v1.js"] == {"module"}
     assert referenced_modes[WEB / "mandala" / "palette-routing-v1.js"] == {"module"}
+    assert referenced_modes[WEB / "mandala" / "geometry-v1.js"] == {"module"}
     assert referenced_modes[ROOT / "static" / "community-set-v1.js"] == {"classic"}
     assert referenced_modes[ROOT / "static" / "docs-search-v1.js"] == {"classic"}
     for filename in (
