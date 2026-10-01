@@ -427,9 +427,9 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
         page = page_path.read_text(encoding="utf-8")
         page = re.sub(r'\s*<script src="/staging-shell\.js\?v=3" defer></script>', '', page)
         page = page.replace(
-            '<script src="/mandala.js?v=10" type="module"></script>',
+            '<script src="/mandala.js?v=11" type="module"></script>',
             '<script src="/mandala-characterization-harness.js"></script>\n'
-            '<script src="/mandala.js?v=10" type="module"></script>',
+            '<script src="/mandala.js?v=11" type="module"></script>',
         )
         page_path.write_text(page, encoding="utf-8")
         (cls.site / "mandala-characterization-harness.js").write_text(

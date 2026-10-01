@@ -1,5 +1,5 @@
-import {builtInPath,drawComposedMotifs,drawFlowingPattern,drawMotif,supportBridgePath} from "./mandala/geometry-v1.js";
 import {createPaletteRouting} from "./mandala/palette-routing-v1.js";
+import {createMandalaPreview} from "./mandala/preview-v1.js";
 import {duplicateLayer,newLayer,randomizedLayer,resetLayer} from "./mandala/state-v1.js";
 
 let config;
@@ -9,11 +9,12 @@ let resources={};
 let layers=[];
 let activeLayer=0;
 let pollTimer;
-const COLORS=["#e44d61","#f39c49","#e4d354","#72c66a","#43b7a7","#4c9dde","#6c70d8","#9b63c7","#d05aa8","#bc7c58","#8b9a52","#5e8792"];
 const $=selector=>document.querySelector(selector);
 const esc=value=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
 const paletteRouting=createPaletteRouting({escapeHtml:esc,getResources:()=>resources});
 const {populatePalette}=paletteRouting;
+const preview=createMandalaPreview({query:$,getLayers:()=>layers,getActiveLayer:()=>activeLayer});
+const {schedulePreview}=preview;
 
 function layerCard(layer,index){return`<article class="layer-card" data-layer="${index}"><div class="layer-heading"><div><h3>Layer ${index+1}</h3><p>Front-to-back position ${index+1}</p></div><div class="layer-actions"><button type="button" class="mandala-button" data-action="randomize">Randomize</button><button type="button" class="mandala-button" data-action="reset">Reset to defaults</button><button type="button" class="mandala-button" data-action="duplicate">Duplicate</button><button type="button" class="mandala-button" data-action="up" ${index===0?"disabled":""}>Earlier</button><button type="button" class="mandala-button" data-action="down" ${index===layers.length-1?"disabled":""}>Later</button><button type="button" class="mandala-button" data-action="remove" ${layers.length===1?"disabled":""}>Remove</button></div></div><div class="layer-controls">
 <label>Layer name<input data-field="name" maxlength="80" value="${esc(layer.name)}"></label>
@@ -32,58 +33,6 @@ ${numberControl("repetitions","Radial repetitions",layer.repetitions,4,32,1)}${n
 function numberControl(field,label,value,min,max,step){return`<label>${label}<input data-field="${field}" type="number" value="${value}" min="${min}" max="${max}" step="${step}"></label>`}
 function syncPreviewSelector(){activeLayer=Math.max(0,Math.min(activeLayer,layers.length-1));const slider=$("#layerPreviewSlider"),layer=layers[activeLayer];slider.max=String(Math.max(1,layers.length));slider.value=String(activeLayer+1);$("#layerPreviewPosition").textContent=`Layer ${activeLayer+1} of ${layers.length}`;$("#layerPreviewName").textContent=layer?.name||`Layer ${activeLayer+1}`}
 function renderLayers(){$("#layerList").innerHTML=layers.map(layerCard).join("");syncPreviewSelector();schedulePreview()}
-
-let previewFrame;
-function schedulePreview(){cancelAnimationFrame(previewFrame);previewFrame=requestAnimationFrame(drawPreviews)}
-async function customImage(layer){if(!layer.custom_svg)return null;if(layer._image)return layer._image;if(layer._imagePromise)return layer._imagePromise;layer._imagePromise=new Promise((resolve,reject)=>{const image=new Image(),url=URL.createObjectURL(new Blob([layer.custom_svg.svg],{type:"image/svg+xml"}));image.onload=()=>{URL.revokeObjectURL(url);layer._image=image;resolve(image)};image.onerror=()=>{URL.revokeObjectURL(url);reject(new Error("Custom SVG preview failed"))};image.src=url}).catch(()=>null);return layer._imagePromise}
-function drawLayer(canvas,layer,index,alpha=1){
-  const context=canvas.getContext("2d"),size=canvas.width,center=size/2,radius=size*.43;
-  const scale=radius/(Number($("#diameter").value)||150)*2;
-  const inner=radius*Number(layer.inner_radius_ratio),rim=Math.max(2,Number(layer.rim_width_mm)*scale),outer=radius-rim*1.2;
-  const rings=Math.max(1,Number(layer.rings)),repetitions=Math.max(4,Number(layer.repetitions)),ringStep=(outer-inner)/rings;
-  const bridgeWidth=Math.min(Number(layer.bridge_width_mm)*scale,Math.max(.4*scale,ringStep*.24));
-  context.save();context.globalAlpha=alpha;context.translate(center,center);
-  context.beginPath();context.arc(0,0,radius,0,Math.PI*2);context.clip();
-  context.fillStyle=COLORS[index%COLORS.length];
-  if(layer.construction==="cutout"){context.beginPath();context.arc(0,0,radius,0,Math.PI*2);context.fill();context.globalCompositeOperation="destination-out"}
-  else context.globalCompositeOperation="source-over";
-  if((layer.motif_composition??"hybrid")!=="flow_character")drawComposedMotifs(context,layer,inner,outer,rings,repetitions);
-  else if(layer.motif!=="custom"&&Number(layer.flow_amount??.92)>0)drawFlowingPattern(context,layer,inner,outer,rings,repetitions);
-  else for(let ring=0;ring<rings;ring++){
-    const fraction=(ring+.5)/rings,ringRadius=inner+fraction*(outer-inner),motifSize=ringStep*Number(layer.motif_scale),phase=Number(layer.rotation_degrees)+fraction*Number(layer.twist_degrees)+(layer.alternate_rotation&&ring%2?180/repetitions:0);
-    for(let repeat=0;repeat<repetitions;repeat++){context.save();context.rotate((phase+repeat*360/repetitions)*Math.PI/180);context.translate(ringRadius,0);context.scale(Number(layer.radial_stretch),Number(layer.tangent_stretch)*(layer.mirror_alternating&&repeat%2?-1:1));drawMotif(context,layer,motifSize);context.restore()}
-  }
-  if(Number(layer.layer_openness??0)>0){
-    context.globalCompositeOperation="destination-out";
-    const openness=Number(layer.layer_openness),innerOpening=Math.max(Math.max(rim,inner*.42)*1.08,radius*Number(layer.opening_inner_ratio??.25)),outerOpening=radius-rim*1.15,sector=Math.PI*2/repetitions,half=sector*.41*openness,openingRotation=Number(layer.opening_rotation_degrees??0)*Math.PI/180;
-    for(let repeat=0;repeat<repetitions;repeat++){
-      const center=openingRotation+(repeat+.5)*sector;
-      context.beginPath();context.arc(0,0,outerOpening,center-half,center+half);context.arc(0,0,innerOpening,center+half,center-half,true);context.closePath();context.fill();
-    }
-  }
-  context.globalCompositeOperation="source-over";
-  const rimStyle=layer.rim_style??"closed",petalRadial=Math.max(rim*3,radius*.1),outerAnchor=rimStyle==="petal"?radius-petalRadial*.58:rimStyle==="open"?radius-bridgeWidth/2:radius-rim/2;
-  if(layer.support_mode!=="loose"){
-    context.strokeStyle=COLORS[index%COLORS.length];context.lineWidth=rim;
-    if(rimStyle==="closed"){context.beginPath();context.arc(0,0,radius-rim/2,0,Math.PI*2);context.stroke()}
-    if(rimStyle==="petal"){
-      const petal=builtInPath("petal"),tangentRoom=Math.PI*2*radius/repetitions,petalTangent=Math.min(petalRadial*.72,tangentRoom*.68);
-      for(let repeat=0;repeat<repetitions;repeat++){context.save();context.rotate((Number(layer.support_sweep_degrees??0)+repeat*360/repetitions)*Math.PI/180);context.translate(outerAnchor,0);context.scale(petalRadial,petalTangent);context.fill(petal);context.restore()}
-    }
-    context.beginPath();context.arc(0,0,Math.max(rim,inner*.42),0,Math.PI*2);context.fill();
-  }
-  if(["automatic_bridges","fully_connected"].includes(layer.support_mode)){
-    context.strokeStyle=COLORS[index%COLORS.length];context.lineWidth=Math.max(1,bridgeWidth*(layer.support_mode==="fully_connected"?1.35:1));
-    context.lineCap="round";context.lineJoin="round";
-    const hubRadius=Math.max(rim,inner*.42),waveAmplitude=Math.min(Number(layer.bridge_wave_amplitude_mm??6)*scale,ringStep*1.5);
-    for(let repeat=0;repeat<repetitions;repeat++){
-      context.stroke(supportBridgePath(hubRadius*.75,outerAnchor,repeat*360/repetitions,Number(layer.support_sweep_degrees??0),Number(layer.bridge_wave_amount??0),waveAmplitude,Number(layer.bridge_wave_position??.5)));
-    }
-  }
-  if(layer.support_mode==="fully_connected"){context.lineWidth=Math.max(1,bridgeWidth);context.beginPath();context.arc(0,0,(inner+outer)/2,0,Math.PI*2);context.stroke()}
-  context.restore();
-}
-async function drawPreviews(){for(const layer of layers)if(layer.motif==="custom"&&layer.custom_svg&&!layer._image)customImage(layer).then(schedulePreview);for(const id of ["activePreview","stackPreview"]){const canvas=$("#"+id),context=canvas.getContext("2d");context.clearRect(0,0,canvas.width,canvas.height)}drawLayer($("#activePreview"),layers[activeLayer],activeLayer,1);layers.forEach((layer,index)=>drawLayer($("#stackPreview"),layer,index,.38))}
 
 async function normalizeSvg(file){if(!file||!(file.type==="image/svg+xml"||file.name.toLowerCase().endsWith(".svg")))throw new Error("Choose an SVG file.");if(file.size>65536)throw new Error("Custom SVG files must be no larger than 64 KB.");const text=await file.text(),documentNode=new DOMParser().parseFromString(text,"image/svg+xml"),root=documentNode.documentElement;if(root.nodeName.toLowerCase()==="parsererror"||root.localName!=="svg")throw new Error("The custom SVG could not be read.");const allowed=new Set(["svg","g","path","rect","circle","ellipse","polygon","polyline"]);for(const element of documentNode.querySelectorAll("*")){const name=element.localName?.toLowerCase();if(!allowed.has(name))throw new Error(`SVG element <${name||"unknown"}> is not supported.`);for(const attribute of [...element.attributes]){const key=attribute.name.toLowerCase(),value=attribute.value.toLowerCase();if(key.startsWith("on")||key.includes("href")||value.includes("url(")||value.includes("javascript:")||value.includes("data:"))throw new Error("Embedded or external SVG content is not supported.")}}return{name:file.name.slice(0,120),svg:new XMLSerializer().serializeToString(root)}}
 
