@@ -215,6 +215,8 @@ aws s3 cp "$REPO_ROOT/serverless_web/mandala/asset-constraints-v1.js" "s3://$STA
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/mandala/job-lifecycle-v1.js" "s3://$STATIC_BUCKET/web/mandala/job-lifecycle-v1.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/mandala/layer-editor-v1.js" "s3://$STATIC_BUCKET/web/mandala/layer-editor-v1.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/mandala.js" "s3://$STATIC_BUCKET/web/mandala.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/mandala.css" "s3://$STATIC_BUCKET/web/mandala.css" \
