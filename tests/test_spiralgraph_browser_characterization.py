@@ -69,6 +69,24 @@ HARNESS = r"""
   const $ = selector => document.querySelector(selector);
   const $$ = selector => [...document.querySelectorAll(selector)];
   const visible = element => Boolean(element && !element.hidden && getComputedStyle(element).display !== 'none');
+  const typographyChecks = () => {
+    const heading = getComputedStyle($('.spiralgrap-panel h2'));
+    const label = getComputedStyle($('.spiralgrap-panel label'));
+    const copy = getComputedStyle($('.spiralgrap-panel p'));
+    const field = getComputedStyle($('#diameter'));
+    check(heading.color === 'rgb(228, 227, 207)', `dark heading color changed (${heading.color})`);
+    check(heading.fontFamily.includes('Impact'), `display heading font changed (${heading.fontFamily})`);
+    check(label.color === 'rgb(142, 228, 116)', `dark label color changed (${label.color})`);
+    check(label.fontFamily.includes('Courier New'), `label font changed (${label.fontFamily})`);
+    check(copy.color === 'rgb(191, 196, 182)', `dark explanatory copy color changed (${copy.color})`);
+    check(field.color === 'rgb(228, 227, 207)', `dark field text color changed (${field.color})`);
+    document.body.classList.add('light-machine');
+    check(getComputedStyle($('.spiralgrap-panel h2')).color === 'rgb(32, 34, 30)', 'light heading color changed');
+    check(getComputedStyle($('.spiralgrap-panel label')).color === 'rgb(40, 109, 36)', 'light label color changed');
+    check(getComputedStyle($('.spiralgrap-panel p')).color === 'rgb(52, 53, 48)', 'light explanatory copy color changed');
+    check(getComputedStyle($('#diameter')).color === 'rgb(32, 34, 30)', 'light field text color changed');
+    document.body.classList.remove('light-machine');
+  };
   const input = (element, value) => {
     if (element.type === 'checkbox') element.checked = Boolean(value);
     else element.value = String(value);
@@ -172,7 +190,9 @@ HARNESS = r"""
   };
 
   async function startupChecks() {
+    document.body.classList.add('staging-prototype', 'staging-spiralgrap');
     await settlePreviews();
+    typographyChecks();
     check(visible($('#registeredContent')), 'authenticated content was not shown');
     check(!visible($('#registeredAccess')), 'registered-access prompt remained visible');
     check($$('.layer-card').length === 3, 'three default drawings were not rendered');

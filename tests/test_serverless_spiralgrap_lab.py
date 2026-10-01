@@ -15,12 +15,20 @@ def test_spiralgrap_page_uses_external_assets_and_classic_controls():
     job_lifecycle = read("serverless_web/spiralgraph/job-lifecycle-v1.js")
     drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v1.js")
     assert 'src="/spiralgraph.js?v=10"' in page
-    assert 'href="/spiralgraph.css?v=3"' in page
+    assert 'href="/staging-pages.css?v=4"' in page
+    assert 'href="/spiralgraph.css?v=4"' in page
     assert "Track plate" in drawing_editor and "Rolling gear" in drawing_editor and "Pen hole" in drawing_editor
     assert "Starting mark" in drawing_editor and "Rolling position" in drawing_editor
     assert "output_mode" in drawing_editor and "fill_thickness_mm" in drawing_editor
     assert "Line / Cut · open path" in drawing_editor and "Filled ribbon · closed path" in drawing_editor
     assert 'api("/spiralgraph/jobs"' in job_lifecycle
+
+
+def test_spiralgraph_lab_uses_shared_typography_defaults():
+    styles = read("serverless_web/spiralgraph.css")
+    assert "--sg-ink:var(--staging-title-ink,#e4e3cf)" in styles
+    assert "--sg-green:var(--staging-label-ink,#8ee474)" in styles
+    assert "--sg-muted:var(--staging-muted-ink,#bfc4b6)" in styles
 
 
 def test_spiralgraph_can_use_saved_color_palette_swatches_for_preview_and_output_layers():

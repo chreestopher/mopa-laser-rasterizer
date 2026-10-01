@@ -324,6 +324,19 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertIn("Color Discovery Workflow", color_lab)
         self.assertIn("body.staging-experimental .lab-card h2{color:#e4e3cf!important", styles)
         self.assertIn("body.staging-experimental .staging-page-shell{width:100%;max-width:none}", styles)
+
+    def test_shared_page_typography_defaults_match_established_machine_styles(self):
+        styles = (ROOT / "serverless_web" / "staging-pages.css").read_text(encoding="utf-8")
+
+        self.assertIn("--staging-title-ink:#e4e3cf", styles)
+        self.assertIn("--staging-label-ink:#8ee474", styles)
+        self.assertIn("--staging-muted-ink:#bfc4b6", styles)
+        self.assertIn('h2{color:var(--staging-title-ink);font:500 clamp(1.35rem,3vw,2rem)/1.08 Impact', styles)
+        self.assertIn('label{color:var(--staging-label-ink);font:700 .78rem "Courier New",monospace', styles)
+        self.assertIn("input,body.staging-prototype select{color:var(--staging-body-ink)!important", styles)
+        self.assertIn("body.light-machine.staging-prototype{--staging-title-ink:#20221e;--staging-label-ink:#286d24", styles)
+        self.assertNotIn("legend,body.staging-prototype h2{color:#efb94f", styles)
+        self.assertNotIn("body.staging-prototype label{color:#efb94f", styles)
         self.assertIn("body.light-machine.staging-experimental .lab-card h2{color:#20221e!important", styles)
 
     def test_depthmap_lab_uses_cream_display_titles(self):

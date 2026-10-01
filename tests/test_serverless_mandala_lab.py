@@ -11,7 +11,8 @@ def read(path):
 def test_mandala_lab_uses_external_assets_and_accessible_previews():
     page = read("serverless_web/mandala.html")
     assert 'src="/mandala.js?v=14"' in page
-    assert 'href="/mandala.css?v=1"' in page
+    assert 'href="/staging-pages.css?v=4"' in page
+    assert 'href="/mandala.css?v=2"' in page
     assert "<script>" not in page
     assert 'id="layerPreviewSlider"' in page and 'type="range"' in page
     assert 'id="layerPreviewName"' in page and 'id="layerPreviewPosition"' in page
@@ -19,6 +20,13 @@ def test_mandala_lab_uses_external_assets_and_accessible_previews():
     assert 'id="stackPreview"' in page and 'aria-label="Stacked mandala assembly preview"' in page
     assert "Fully stacked assembly" in page
     assert "Generate projects for review" in page
+
+
+def test_mandala_lab_uses_shared_typography_defaults():
+    styles = read("serverless_web/mandala.css")
+    assert "--mandala-ink:var(--staging-title-ink,#e4e3cf)" in styles
+    assert "--mandala-green:var(--staging-label-ink,#8ee474)" in styles
+    assert "--mandala-muted:var(--staging-muted-ink,#bfc4b6)" in styles
 
 
 def test_mandala_lab_is_linked_and_deployed():

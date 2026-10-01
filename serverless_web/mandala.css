@@ -1,4 +1,4 @@
-:root{--mandala-panel:#131812e8;--mandala-line:#566251;--mandala-ink:#e4e3cf;--mandala-green:#8ee474;--mandala-muted:#bfc4b6}
+:root{--mandala-panel:#131812e8;--mandala-line:#566251;--mandala-ink:var(--staging-title-ink,#e4e3cf);--mandala-green:var(--staging-label-ink,#8ee474);--mandala-muted:var(--staging-muted-ink,#bfc4b6)}
 body.staging-mandala{max-width:none}
 .mandala-shell{width:min(1500px,calc(100% - 32px));margin:24px auto 60px}
 .mandala-panel{margin:18px 0;padding:clamp(18px,3vw,30px);border:1px solid var(--mandala-line);border-radius:12px;background:var(--mandala-panel);box-shadow:0 12px 26px #0003}
