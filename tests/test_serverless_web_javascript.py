@@ -558,6 +558,9 @@ def test_spiralgraph_modules_upload_before_entry_and_html():
     drawing_editor_dependency = (
         'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/drawing-editor-v1.js"'
     )
+    state_dependency = (
+        'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/state-v1.js"'
+    )
     entry = 'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph.js"'
     html = 'aws s3 cp "$BUILD_DIR/seo/spiralgraph.html"'
 
@@ -565,16 +568,32 @@ def test_spiralgraph_modules_upload_before_entry_and_html():
     assert hardware_dependency in deploy
     assert canvas_dependency in deploy
     assert drawing_editor_dependency in deploy
+    assert state_dependency in deploy
     assert deploy.index(geometry_dependency) < deploy.index(hardware_dependency)
     assert deploy.index(geometry_dependency) < deploy.index(canvas_dependency)
     assert deploy.index(geometry_dependency) < deploy.index(drawing_editor_dependency)
+    assert deploy.index(state_dependency) < deploy.index(entry) < deploy.index(html)
     assert deploy.index(hardware_dependency) < deploy.index(entry) < deploy.index(html)
     assert deploy.index(canvas_dependency) < deploy.index(entry) < deploy.index(html)
     assert deploy.index(drawing_editor_dependency) < deploy.index(entry) < deploy.index(html)
-    for dependency in (geometry_dependency, hardware_dependency, canvas_dependency, drawing_editor_dependency):
+    for dependency in (geometry_dependency, hardware_dependency, canvas_dependency, drawing_editor_dependency, state_dependency):
         command = deploy[deploy.index(dependency) : deploy.index(dependency) + 400]
         assert "application/javascript" in command
         assert "public,max-age=31536000,immutable" in command
+
+
+def test_spiralgraph_state_owns_defaults_selection_and_dimension_constraints():
+    entry = (WEB / "spiralgraph.js").read_text(encoding="utf-8")
+    state = (WEB / "spiralgraph" / "state-v1.js").read_text(encoding="utf-8")
+
+    assert 'from "./spiralgraph/state-v1.js"' in entry
+    assert "export const COLORS=" in state
+    assert "export const GEARS=" in state
+    assert "export function newLayer(" in state
+    assert "export function createDrawingState(" in state
+    assert "export function constrainWorkbedToDiameter(" in state
+    assert "let layers=[],activeLayer=0" not in entry
+    assert "function newLayer(" not in entry
 
 
 def test_serverless_sources_and_rendered_routes_have_no_inline_handlers_or_urls(
