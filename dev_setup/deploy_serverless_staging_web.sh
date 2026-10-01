@@ -209,6 +209,8 @@ aws s3 cp "$REPO_ROOT/serverless_web/mandala/palette-routing-v1.js" "s3://$STATI
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/mandala/geometry-v1.js" "s3://$STATIC_BUCKET/web/mandala/geometry-v1.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/mandala/preview-v1.js" "s3://$STATIC_BUCKET/web/mandala/preview-v1.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/mandala.js" "s3://$STATIC_BUCKET/web/mandala.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/mandala.css" "s3://$STATIC_BUCKET/web/mandala.css" \

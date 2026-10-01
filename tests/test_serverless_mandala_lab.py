@@ -10,7 +10,7 @@ def read(path):
 
 def test_mandala_lab_uses_external_assets_and_accessible_previews():
     page = read("serverless_web/mandala.html")
-    assert 'src="/mandala.js?v=10"' in page
+    assert 'src="/mandala.js?v=11"' in page
     assert 'href="/mandala.css?v=1"' in page
     assert "<script>" not in page
     assert 'id="layerPreviewSlider"' in page and 'type="range"' in page
@@ -28,7 +28,7 @@ def test_mandala_lab_is_linked_and_deployed():
     assert '"/mandala.html"' in shell
     assert 'href="/mandala.html"' in landing
     assert '$BUILD_DIR/seo/mandala.html' in deploy
-    for filename in ("mandala.js", "mandala.css", "mandala/state-v1.js", "mandala/palette-routing-v1.js", "mandala/geometry-v1.js"):
+    for filename in ("mandala.js", "mandala.css", "mandala/state-v1.js", "mandala/palette-routing-v1.js", "mandala/geometry-v1.js", "mandala/preview-v1.js"):
         assert f'serverless_web/{filename}' in deploy
 
 
@@ -65,16 +65,26 @@ def test_mandala_client_defaults_cut_role_and_limits_custom_svg():
 
 def test_mandala_preview_uses_slider_and_updates_live_with_layer_settings():
     client = read("serverless_web/mandala.js")
+    preview = read("serverless_web/mandala/preview-v1.js")
     assert '$("#layerPreviewSlider").addEventListener("input"' in client
     assert "function syncPreviewSelector()" in client
     assert "syncPreviewSelector();schedulePreview()" in client
     assert 'data-action="select"' not in client
+    assert 'from "./mandala/preview-v1.js"' in client
+    assert "export function createMandalaPreview(" in preview
+    for function in ("schedulePreview", "customImage", "drawLayer", "drawPreviews"):
+        assert f"function {function}(" in preview
+        assert f"function {function}(" not in client
+    assert 'for(const id of ["activePreview","stackPreview"])' in preview
+    assert 'drawLayer(query("#activePreview"),layers[activeLayer],activeLayer,1)' in preview
+    assert 'drawLayer(query("#stackPreview"),layer,index,.38)' in preview
 
 
 def test_mandala_geometry_module_owns_motifs_flow_and_support_bridges():
     client = read("serverless_web/mandala.js")
+    preview = read("serverless_web/mandala/preview-v1.js")
     geometry = read("serverless_web/mandala/geometry-v1.js")
-    assert 'from "./mandala/geometry-v1.js"' in client
+    assert 'from "./geometry-v1.js"' in preview
     for function in (
         "builtInPath",
         "drawMotif",
@@ -85,6 +95,7 @@ def test_mandala_geometry_module_owns_motifs_flow_and_support_bridges():
     ):
         assert f"export function {function}(" in geometry
         assert f"function {function}(" not in client
+        assert f"function {function}(" not in preview
 
 
 def test_each_mandala_layer_can_be_randomized_or_reset_to_defaults():
