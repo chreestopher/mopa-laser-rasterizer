@@ -206,7 +206,7 @@ Resources:
               Value: accelerometer=(), autoplay=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()
               Override: true
             - Header: Content-Security-Policy-Report-Only
-              Value: "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self' https://*.amazoncognito.com; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.amazonaws.com; connect-src 'self' https://*.execute-api.us-east-2.amazonaws.com https://*.amazonaws.com https://*.amazoncognito.com https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co; font-src 'self' data:; worker-src 'self' blob:; media-src 'self' blob:; manifest-src 'self'"
+              Value: "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self' https://*.amazoncognito.com; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.amazonaws.com; connect-src 'self' https://*.execute-api.us-east-2.amazonaws.com https://*.amazonaws.com https://*.amazoncognito.com https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co; font-src 'self' data:; worker-src 'self' blob:; media-src 'self' blob:; manifest-src 'self'"
               Override: true
 
   Distribution:

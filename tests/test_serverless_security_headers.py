@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 
@@ -30,3 +31,23 @@ def test_csp_starts_in_report_only_mode_and_covers_guest_dependencies():
     assert "https://huggingface.co" in template
     assert "https://*.huggingface.co" in template
     assert "https://*.hf.co" in template
+
+
+def test_report_only_script_policy_rejects_inline_javascript_without_enforcement():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    match = re.search(
+        r'Header: Content-Security-Policy-Report-Only\s+Value: "([^"]+)"',
+        template,
+    )
+
+    assert match is not None
+    directives = {
+        parts[0]: parts[1:]
+        for directive in match.group(1).split(";")
+        if (parts := directive.strip().split())
+    }
+
+    assert "'unsafe-inline'" not in directives["script-src"]
+    assert directives["script-src-attr"] == ["'none'"]
+    assert "'unsafe-inline'" in directives["style-src"]
+    assert "'wasm-unsafe-eval'" in directives["script-src"]
