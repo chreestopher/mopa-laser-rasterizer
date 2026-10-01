@@ -197,6 +197,15 @@ HARNESS = r"""
     check($('#layerPreviewName').textContent === 'Layer 1', 'selected-layer name was not initialized');
     check($('#activePreview').width === 620 && $('#stackPreview').width === 620, 'preview canvas dimensions changed');
 
+    let firstLayer = $$('.layer-card')[0];
+    input(firstLayer.querySelector('[data-field="rim_width_mm"]'), 30);
+    input(firstLayer.querySelector('[data-field="bridge_width_mm"]'), 20);
+    change($('#diameter'), 100);
+    firstLayer = $$('.layer-card')[0];
+    check(firstLayer.querySelector('[data-field="rim_width_mm"]').value === '15', 'rim width did not follow the diameter limit');
+    check(firstLayer.querySelector('[data-field="bridge_width_mm"]').value === '8', 'bridge width did not follow the diameter limit');
+    input(firstLayer.querySelector('[data-field="rim_width_mm"]'), 4);
+    input(firstLayer.querySelector('[data-field="bridge_width_mm"]'), 1.5);
     change($('#diameter'), 210);
     check($('#workbedWidth').min === '210' && $('#workbedHeight').min === '210', 'workbed minimums did not follow finished diameter');
     check($('#workbedWidth').value === '210' && $('#workbedHeight').value === '210', 'undersized workbed dimensions were not raised');
@@ -296,10 +305,28 @@ HARNESS = r"""
     let card = $$('.layer-card')[0];
     input(card.querySelector('[data-field="motif"]'), 'custom');
     card = $$('.layer-card')[0];
+
+    attachFile(card.querySelector('[data-field="custom_file"]'), new File(['not svg'], 'motif.txt', {type: 'text/plain'}));
+    await waitFor(() => alerts.length === 1, 'non-SVG custom file did not report a validation error');
+    check(alerts[0] === 'Choose an SVG file.', `non-SVG error changed (${alerts[0]})`);
+
+    attachFile(card.querySelector('[data-field="custom_file"]'), new File(['x'.repeat(65537)], 'large.svg', {type: 'image/svg+xml'}));
+    await waitFor(() => alerts.length === 2, 'oversized custom SVG did not report a validation error');
+    check(alerts[1] === 'Custom SVG files must be no larger than 64 KB.', `oversized SVG error changed (${alerts[1]})`);
+
+    attachFile(card.querySelector('[data-field="custom_file"]'), new File(['<not-svg/>'], 'invalid.svg', {type: 'image/svg+xml'}));
+    await waitFor(() => alerts.length === 3, 'invalid SVG root did not report a validation error');
+    check(alerts[2] === 'The custom SVG could not be read.', `invalid SVG error changed (${alerts[2]})`);
+
+    const embedded = '<svg xmlns="http://www.w3.org/2000/svg"><path fill="url(#paint)" d="M0 0H10V10Z"/></svg>';
+    attachFile(card.querySelector('[data-field="custom_file"]'), new File([embedded], 'embedded.svg', {type: 'image/svg+xml'}));
+    await waitFor(() => alerts.length === 4, 'embedded SVG content did not report a validation error');
+    check(alerts[3] === 'Embedded or external SVG content is not supported.', `embedded SVG error changed (${alerts[3]})`);
+
     const unsafe = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><path d="M0 0H10V10Z"/></svg>';
     attachFile(card.querySelector('[data-field="custom_file"]'), new File([unsafe], 'unsafe.svg', {type: 'image/svg+xml'}));
-    await waitFor(() => alerts.length === 1, 'unsafe custom SVG did not report a validation error');
-    check(alerts[0]?.includes('SVG element <script> is not supported.'), `unsafe SVG error changed (${alerts[0]})`);
+    await waitFor(() => alerts.length === 5, 'unsafe custom SVG did not report a validation error');
+    check(alerts[4]?.includes('SVG element <script> is not supported.'), `unsafe SVG error changed (${alerts[4]})`);
 
     card = $$('.layer-card')[0];
     const safe = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M50 5L95 95H5Z"/></svg>';
@@ -427,9 +454,9 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
         page = page_path.read_text(encoding="utf-8")
         page = re.sub(r'\s*<script src="/staging-shell\.js\?v=3" defer></script>', '', page)
         page = page.replace(
-            '<script src="/mandala.js?v=11" type="module"></script>',
+            '<script src="/mandala.js?v=12" type="module"></script>',
             '<script src="/mandala-characterization-harness.js"></script>\n'
-            '<script src="/mandala.js?v=11" type="module"></script>',
+            '<script src="/mandala.js?v=12" type="module"></script>',
         )
         page_path.write_text(page, encoding="utf-8")
         (cls.site / "mandala-characterization-harness.js").write_text(
