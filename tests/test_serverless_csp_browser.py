@@ -1,4 +1,3 @@
-import html
 import http.server
 import json
 from pathlib import Path
@@ -8,6 +7,7 @@ import subprocess
 import tempfile
 import threading
 import unittest
+from urllib.parse import parse_qs, urlparse
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +42,20 @@ def _report_only_policy():
 
 
 class _CspHandler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        if parsed.path == "/csp-result":
+            try:
+                payload = parse_qs(parsed.query)["payload"][0]
+                self.server.csp_result = json.loads(payload)
+            except (KeyError, IndexError, json.JSONDecodeError) as exc:
+                self.server.csp_result = {"error": str(exc)}
+            self.send_response(204)
+            self.end_headers()
+            self.server.csp_result_ready.set()
+            return
+        super().do_GET()
+
     def end_headers(self):
         self.send_header("Content-Security-Policy-Report-Only", self.server.csp_policy)
         super().end_headers()
@@ -65,33 +79,26 @@ class ServerlessCspBrowserTests(unittest.TestCase):
         cls.site.mkdir()
         (cls.site / "index.html").write_text(
             """<!doctype html><html><body>
-<pre id="csp-result">pending</pre>
 <script src="/listener.js"></script>
 <script>window.__inlineProbeExecuted = true;</script>
-<script src="/finish.js"></script>
 </body></html>""",
             encoding="utf-8",
         )
         (cls.site / "listener.js").write_text(
             """window.__cspViolations = [];
 addEventListener('securitypolicyviolation', event => {
-  window.__cspViolations.push({
+  const violation = {
     blockedURI: event.blockedURI,
     disposition: event.disposition,
     effectiveDirective: event.effectiveDirective
-  });
-  window.__writeCspResult?.();
-});""",
-            encoding="utf-8",
-        )
-        (cls.site / "finish.js").write_text(
-            """window.__writeCspResult = () => {
-  document.querySelector('#csp-result').textContent = JSON.stringify({
+  };
+  window.__cspViolations.push(violation);
+  const result = {
     inlineExecuted: window.__inlineProbeExecuted === true,
     violations: window.__cspViolations
-  });
-};
-window.__writeCspResult();""",
+  };
+  fetch('/csp-result?payload=' + encodeURIComponent(JSON.stringify(result)));
+});""",
             encoding="utf-8",
         )
         handler = lambda *args, **kwargs: _CspHandler(
@@ -99,6 +106,8 @@ window.__writeCspResult();""",
         )
         cls.server = _CspServer(("127.0.0.1", 0), handler)
         cls.server.csp_policy = _report_only_policy()
+        cls.server.csp_result = None
+        cls.server.csp_result_ready = threading.Event()
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
 
@@ -111,31 +120,39 @@ window.__writeCspResult();""",
 
     def test_inline_script_is_reported_but_not_blocked(self):
         port = self.server.server_address[1]
+        self.server.csp_result = None
+        self.server.csp_result_ready.clear()
         with tempfile.TemporaryDirectory(prefix="mopa-csp-profile-") as profile:
-            completed = subprocess.run(
-                [
-                    self.browser,
-                    "--headless=new",
-                    "--disable-gpu",
-                    "--no-sandbox",
-                    "--disable-dev-shm-usage",
-                    f"--user-data-dir={profile}",
-                    "--virtual-time-budget=5000",
-                    "--dump-dom",
-                    f"http://127.0.0.1:{port}/",
-                ],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=20,
-                check=False,
-            )
+            with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as browser_log:
+                browser = subprocess.Popen(
+                    [
+                        self.browser,
+                        "--headless=new",
+                        "--disable-gpu",
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                        f"--user-data-dir={profile}",
+                        f"http://127.0.0.1:{port}/",
+                    ],
+                    stdout=browser_log,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+                try:
+                    ready = self.server.csp_result_ready.wait(timeout=20)
+                finally:
+                    browser.terminate()
+                    try:
+                        browser.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        browser.kill()
+                        browser.wait(timeout=5)
+                browser_log.seek(0)
+                log_output = browser_log.read()
 
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        match = re.search(r'<pre id="csp-result">(.*?)</pre>', completed.stdout, re.DOTALL)
-        self.assertIsNotNone(match, completed.stdout[-2000:])
-        result = json.loads(html.unescape(match.group(1)))
+        self.assertTrue(ready, f"Chromium did not report a CSP event:\n{log_output[-2000:]}")
+        result = self.server.csp_result
+        self.assertNotIn("error", result)
         self.assertTrue(result["inlineExecuted"])
         inline_violations = [
             item
