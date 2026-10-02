@@ -158,8 +158,16 @@
       powerSwitch.classList.toggle("is-on", authenticated);
       account.querySelector("span:last-child").textContent = authenticated ? "Operator authorized" : "Operator access, sign in";
     };
+    const reconcileAuthIndicator = () => {
+      updateAuthIndicator(Boolean(localStorage.getItem("id_token")));
+    };
     window.stagingShellSetAuthenticated = updateAuthIndicator;
     updateAuthIndicator(signedIn);
+    addEventListener("pageshow", reconcileAuthIndicator);
+    addEventListener("focus", reconcileAuthIndicator);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) reconcileAuthIndicator();
+    });
     const beginLogin = async () => {
       try {
         const config = await fetch("/config.json", { cache: "no-store" }).then(response => response.json());
@@ -196,7 +204,12 @@
     const account = header.querySelector(".machine-power-toggle a");
     account.addEventListener("click", async event => {
       event.preventDefault();
-      if (!localStorage.getItem("id_token")) {
+      const authenticated = Boolean(localStorage.getItem("id_token"));
+      if (authenticated && !account.classList.contains("authorized")) {
+        updateAuthIndicator(true);
+        return;
+      }
+      if (!authenticated) {
         await beginLogin();
         return;
       }

@@ -1007,7 +1007,7 @@ class RasterizerBrowserCharacterizationTests(unittest.TestCase):
         shutil.copytree(WEB, cls.site)
         index_path = cls.site / "index.html"
         index = index_path.read_text(encoding="utf-8")
-        index = re.sub(r'\s*<script src="/staging-shell\.js\?v=3" defer></script>', '', index)
+        index = re.sub(r'\s*<script src="/staging-shell\.js\?v=4" defer></script>', '', index)
         index = index.replace(
             '<script type="module" src="/rasterizer-v4.js"></script>',
             '<script src="/characterization-harness.js"></script>\n<script type="module" src="/rasterizer-v4.js"></script>',

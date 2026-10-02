@@ -33,7 +33,7 @@ source = source.replace(
     '  <link rel="stylesheet" href="/staging-shell.css?v=1">\n'
     '  <link rel="stylesheet" href="/staging-shell-v2.css">\n'
     '  <link rel="stylesheet" href="/staging-pages.css?v=1">\n'
-    '  <script src="/staging-shell.js?v=3" defer></script>\n'
+    '  <script src="/staging-shell.js?v=4" defer></script>\n'
     "</head>",
     1,
 )

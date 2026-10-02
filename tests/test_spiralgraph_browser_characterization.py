@@ -450,7 +450,7 @@ class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
         shutil.copytree(WEB, cls.site)
         page_path = cls.site / "spiralgraph.html"
         page = page_path.read_text(encoding="utf-8")
-        page = re.sub(r'\s*<script src="/staging-shell\.js\?v=3" defer></script>', '', page)
+        page = re.sub(r'\s*<script src="/staging-shell\.js\?v=4" defer></script>', '', page)
         page = page.replace(
             '<script src="/spiralgraph.js?v=10" type="module"></script>',
             '<script src="/spiralgraph-characterization-harness.js"></script>\n'
