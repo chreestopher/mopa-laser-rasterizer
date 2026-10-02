@@ -17,7 +17,7 @@ from urllib.parse import unquote
 from xml.etree import ElementTree as ET
 
 import boto3
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Attr, Key
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
@@ -81,6 +81,14 @@ SPIRALGRAPH_BUILTIN_COLORS = {
     "#F45B69", "#FFB34D", "#8BD450", "#43C7BB", "#5596F6", "#B56CE2",
 }
 MATERIAL_LIBRARY_INTENTS = {"color_palette", "hatch_palette", "processing_palette"}
+ADMIN_DURABLE_OBJECT_TYPES = (
+    ("color_palette", "Color Palettes"),
+    ("hatch_palette", "Hatch Palettes"),
+    ("processing_palette", "Processing Palettes"),
+    ("depth_palette", "Depth Palettes"),
+    ("fauxlographic_palette", "Fauxlographic Palettes"),
+    ("fauxlographic_calibration", "Fauxlographic Calibration Sets"),
+)
 PROCESSING_PALETTE_ROLES = {"Cut", "Score", "Photo", "Fill", "Shovel", "Cleaning", "3D-Slice"}
 LASER_SOURCE_TYPES = {"", "fiber", "co2", "diode"}
 MOTION_SYSTEM_TYPES = {"", "galvo", "gantry"}
@@ -1300,6 +1308,7 @@ def admin_users(event):
         for user in result.get("Users", []):
             attributes = {entry["Name"]: entry["Value"] for entry in user.get("Attributes", [])}
             users.append({
+                "user_id": str(attributes.get("sub") or ""),
                 "email": str(attributes.get("email") or ""),
                 "status": str(user.get("UserStatus") or ""),
                 "enabled": bool(user.get("Enabled")),
@@ -1311,6 +1320,73 @@ def admin_users(event):
             break
     users.sort(key=lambda item: item["created_at"], reverse=True)
     return response(200, {"count": len(users), "users": users})
+
+
+def admin_object_counts(event):
+    """Count durable, user-owned logical resources in this deployment's table."""
+    denied = require_admin(event)
+    if denied:
+        return denied
+    counts = {object_type: 0 for object_type, _label in ADMIN_DURABLE_OBJECT_TYPES}
+    user_counts = {}
+    durable_sk = (
+        Attr("sk").begins_with("MATERIAL#")
+        | Attr("sk").begins_with("DEPTHPALETTE#")
+        | Attr("sk").begins_with("HOLORECIPE#")
+        | Attr("sk").begins_with("HOLOCALIBRATION#")
+    )
+    options = {
+        "ProjectionExpression": "pk, sk, library_intent",
+        "FilterExpression": Attr("pk").begins_with("USER#") & durable_sk,
+        "ConsistentRead": False,
+    }
+    while True:
+        result = table.scan(**options)
+        for item in result.get("Items", []):
+            sort_key = str(item.get("sk") or "")
+            object_type = ""
+            if sort_key.startswith("MATERIAL#"):
+                object_type = material_library_intent(item.get("library_intent"))
+            elif sort_key.startswith("DEPTHPALETTE#"):
+                object_type = "depth_palette"
+            elif sort_key.startswith("HOLORECIPE#"):
+                object_type = "fauxlographic_palette"
+            elif sort_key.startswith("HOLOCALIBRATION#"):
+                object_type = "fauxlographic_calibration"
+            if not object_type:
+                continue
+            counts[object_type] += 1
+            owner = str(item.get("pk") or "").removeprefix("USER#")
+            if owner:
+                owner_counts = user_counts.setdefault(
+                    owner, {kind: 0 for kind, _label in ADMIN_DURABLE_OBJECT_TYPES},
+                )
+                owner_counts[object_type] += 1
+        last_key = result.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        options["ExclusiveStartKey"] = last_key
+    objects = [
+        {"type": object_type, "label": label, "count": counts[object_type]}
+        for object_type, label in ADMIN_DURABLE_OBJECT_TYPES
+    ]
+    users = [
+        {
+            "user_id": owner,
+            "total": sum(owner_counts.values()),
+            "objects": [
+                {"type": object_type, "label": label, "count": owner_counts[object_type]}
+                for object_type, label in ADMIN_DURABLE_OBJECT_TYPES
+                if owner_counts[object_type]
+            ],
+        }
+        for owner, owner_counts in user_counts.items()
+    ]
+    users.sort(key=lambda user: (-user["total"], user["user_id"]))
+    return response(200, {
+        "total": sum(counts.values()), "objects": objects,
+        "user_count": len(users), "users": users,
+    })
 
 
 def cancel_admin_job(event, task_id):
@@ -5744,6 +5820,8 @@ def handler(event, _context):
             return admin_jobs(event)
         if method == "GET" and path == "/admin/users":
             return admin_users(event)
+        if method == "GET" and path == "/admin/object-counts":
+            return admin_object_counts(event)
         if path == "/admin/service-control" and method in {"GET", "POST"}:
             return admin_service_control(event)
         if method == "GET" and path == "/admin/state-transitions":

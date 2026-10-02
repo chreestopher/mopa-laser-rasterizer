@@ -21,7 +21,7 @@ class ServerlessAdminConsoleTests(unittest.TestCase):
         for route in (
             "GET /admin/jobs", "GET /admin/jobs/{task_id}",
             "DELETE /admin/jobs/{task_id}", "POST /admin/jobs/{task_id}/cancel",
-            "GET /admin/users", "GET /admin/state-transitions",
+            "GET /admin/users", "GET /admin/object-counts", "GET /admin/state-transitions",
         ):
             self.assertIn(f'RouteKey: "{route}"', self.infrastructure)
         self.assertGreaterEqual(self.infrastructure.count("AuthorizationType: JWT"), 5)
@@ -97,9 +97,9 @@ class ServerlessAdminConsoleTests(unittest.TestCase):
         self.assertIn("color:#20221e!important", self.styles)
 
     def test_operational_panels_stay_hidden_until_admin_authorization_succeeds(self):
-        self.assertEqual(self.page.count('class="admin-panel admin-protected'), 4)
-        self.assertEqual(self.page.count('aria-labelledby="admin-'), 4)
-        self.assertEqual(self.page.count('hidden>'), 4)
+        self.assertEqual(self.page.count('class="admin-panel admin-protected'), 5)
+        self.assertEqual(self.page.count('aria-labelledby="admin-'), 5)
+        self.assertEqual(self.page.count('hidden>'), 5)
         self.assertIn('document.querySelectorAll(".admin-protected")', self.client)
         self.assertIn("protectedPanels.forEach(panel=>panel.hidden=false)", self.client)
         self.assertIn('if(!token||(tokenExpiresSoon()&&!await refreshSession()))return', self.client)
@@ -126,6 +126,29 @@ class ServerlessAdminConsoleTests(unittest.TestCase):
         self.assertIn('{"Name": "ServiceMetric", "Value": "StateTransition"}', self.handler)
         self.assertIn("cloudwatch:GetMetricStatistics", self.infrastructure)
         self.assertIn("It does not poll, store snapshots, or create a custom metric", self.page)
+
+    def test_persistent_object_dashboard_counts_each_durable_logical_type(self):
+        function = self.handler[
+            self.handler.index("def admin_object_counts(event):"):
+            self.handler.index("def cancel_admin_job(event, task_id):")
+        ]
+        for prefix in ("MATERIAL#", "DEPTHPALETTE#", "HOLORECIPE#", "HOLOCALIBRATION#"):
+            self.assertIn(prefix, function)
+        for label in (
+            "Color Palettes", "Hatch Palettes", "Processing Palettes", "Depth Palettes",
+            "Fauxlographic Palettes", "Fauxlographic Calibration Sets",
+        ):
+            self.assertIn(label, self.handler)
+        self.assertIn('Attr("pk").begins_with("USER#")', function)
+        self.assertIn('api("/admin/object-counts")', self.client)
+        self.assertIn('id="adminObjectCounts"', self.page)
+        self.assertIn('id="adminObjectOwners"', self.page)
+        self.assertIn('"user_id": str(attributes.get("sub") or "")', self.handler)
+        self.assertIn('"user_count": len(users)', function)
+        self.assertIn('users.sort(key=lambda user: (-user["total"], user["user_id"]))', function)
+        self.assertIn("userEmailsById.get(user.user_id)", self.client)
+        self.assertIn("backing files and temporary job data are not included", self.page)
+        self.assertIn("dynamodb:Scan", self.infrastructure)
 
 
 if __name__ == "__main__":

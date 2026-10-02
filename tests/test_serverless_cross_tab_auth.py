@@ -105,7 +105,7 @@ def test_changed_auth_assets_have_cache_busting_revisions():
         "index.html": ('/staging-shell.js?v=4',),
         "vault.html": ('/staging-shell.js?v=4', '/vault.js?v=17'),
         "history.html": ('/staging-shell.js?v=4', '/history.js?v=10'),
-        "admin.html": ('/staging-shell.js?v=4', '/admin.js?v=4'),
+        "admin.html": ('/staging-shell.js?v=4', '/admin.js?v=5'),
         "color-lab.html": ('/staging-shell.js?v=4', '/color-lab.js?v=8'),
         "holographic.html": ('/staging-shell.js?v=4', '/holographic.js?v=6'),
     }
