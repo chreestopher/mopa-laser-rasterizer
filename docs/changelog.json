@@ -2,6 +2,50 @@
   "schema_version": 1,
   "releases": [
     {
+      "id": "v1-1-0",
+      "version": "v1.1.0",
+      "date": "2026-10-02",
+      "title": "Build Bigger, Shape Deeper, and Control More of the Engraving",
+      "summary": "A major workflow release adding panel-sized production, richer LightBurn exports, operation-based Processing Palettes, and new tools for layered and geometric artwork.",
+      "groups": [
+        {
+          "title": "Improvements to existing workflows",
+          "items": [
+            "Panel Tiling splits large Rasterizer designs across repeatable blanks and exports centered tile files, a manifest, and an assembly map.",
+            "Color Discovery can export native LightBurn Material Test presets with grids of up to 400 cells, avoiding the 30-cell limit of color-layer-based LightBurn projects.",
+            "Expanded geometry options add Halftone Newsprint, custom Glyph and Krasnow cells, tighter packing, seeded rotation, per-swatch routing, and source-image detail in Parallax SVG exports.",
+            "Job History thumbnails, steadier signed-in navigation, recoverable expired guest links, bulk swatch routing controls, and optional white engraving make everyday workflows easier to manage."
+          ]
+        },
+        {
+          "title": "Depthmaps and Processing Palettes",
+          "items": [
+            "Depthmaps can be exported as editable LightBurn projects using Grayscale output or Galvo 3D Sliced settings with configurable passes and cleanup.",
+            "Processing Palettes organize saved LightBurn settings by material and operation, including Cut, Score, Photo, Fill, Shovel, Cleaning, and 3D-Slice roles.",
+            "Layered Relief converts depthmaps into aligned physical layers with adjustable depth groups, per-layer and full-stack previews, registration features, score guides, and optional surface engraving."
+          ]
+        },
+        {
+          "title": "New experimental laboratories",
+          "items": [
+            "Layered Mandala Lab builds coordinated multi-sheet radial artwork with custom motifs, openwork, structural supports, and per-layer Randomize and Reset controls.",
+            "SpiralGraph Lab creates open-line or filled-ribbon drawings from interactive virtual tracks, gears, pencil holes, and custom SVG tracks, with optional per-drawing palette routing.",
+            "Generated LightBurn projects remain editable starting points: inspect every layer and setting, then test on suitable scrap before running valuable work."
+          ]
+        }
+      ],
+      "links": [
+        {
+          "label": "Browse the documentation",
+          "href": "/docs"
+        },
+        {
+          "label": "Read the release story",
+          "href": "/release-story"
+        }
+      ]
+    },
+    {
       "id": "v1-0-0",
       "version": "v1.0.0",
       "date": "2026-08-16",

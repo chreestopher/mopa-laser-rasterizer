@@ -152,7 +152,12 @@ class ServerlessChangelogTests(unittest.TestCase):
             html = output.read_text(encoding="utf-8")
             parser = ChangelogParser()
             parser.feed(html)
-            self.assertTrue(parser.release_ids)
+            self.assertEqual(parser.release_ids, ["v1-1-0", "v1-0-0"])
+            self.assertIn("Build Bigger, Shape Deeper, and Control More of the Engraving", html)
+            self.assertIn("Panel Tiling", html)
+            self.assertIn("Processing Palettes", html)
+            self.assertIn("Layered Mandala Lab", html)
+            self.assertIn("SpiralGraph Lab", html)
             internal = {link["href"] for link in parser.links if link.get("href", "").startswith("/")}
             self.assertEqual(internal, {"/docs", "/release-story"})
             self.assertIn('src="/staging-shell.js?v=4"', html)
