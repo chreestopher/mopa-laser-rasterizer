@@ -113,6 +113,7 @@ def rendered_serverless_pages():
     with tempfile.TemporaryDirectory(prefix=".serverless-build-", dir=ROOT) as directory:
         build = Path(directory)
         docs = build / "docs"
+        changelog = build / "changelog"
         seo = build / "seo"
         _run_builder(
             ROOT / "dev_setup" / "build_serverless_depthmap.py",
@@ -137,6 +138,11 @@ def rendered_serverless_pages():
             "https://staging.example.com/",
         )
         _run_builder(
+            ROOT / "dev_setup" / "build_serverless_changelog.py",
+            changelog,
+            "https://staging.example.com/",
+        )
+        _run_builder(
             ROOT / "dev_setup" / "build_serverless_seo.py",
             seo,
             "https://staging.example.com/",
@@ -148,6 +154,7 @@ def rendered_serverless_pages():
             "generated/experimental-laboratories": (
                 build / "experimental-laboratories"
             ).read_text(encoding="utf-8"),
+            "generated/changelog": changelog.read_text(encoding="utf-8"),
         }
         pages.update(
             {
