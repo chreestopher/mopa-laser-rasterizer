@@ -509,7 +509,7 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
         shutil.copytree(WEB, cls.site)
         page_path = cls.site / "mandala.html"
         page = page_path.read_text(encoding="utf-8")
-        page = re.sub(r'\s*<script src="/staging-shell\.js\?v=3" defer></script>', '', page)
+        page = re.sub(r'\s*<script src="/staging-shell\.js\?v=4" defer></script>', '', page)
         page = page.replace(
             '<script src="/mandala.js?v=14" type="module"></script>',
             '<script src="/mandala-characterization-harness.js"></script>\n'

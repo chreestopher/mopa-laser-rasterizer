@@ -10,8 +10,13 @@ def read(name):
 
 
 def test_every_staging_workflow_reads_shared_member_tokens():
+    rasterizer_session = read("rasterizer/session-api-v1.js")
+    assert "localStore.getItem('id_token')" in rasterizer_session
+    assert "localStore.getItem('refresh_token')" in rasterizer_session
+    assert "localStore.setItem('id_token'" in rasterizer_session
+    assert "sessionStore.setItem('id_token'" not in rasterizer_session
+
     clients = (
-        "rasterizer-v4.js",
         "vault.js",
         "history.js",
         "admin.js",
@@ -30,7 +35,7 @@ def test_every_staging_workflow_reads_shared_member_tokens():
 
 
 def test_guest_capabilities_remain_tab_scoped():
-    assert "sessionStorage.getItem('guest_access_token')" in read("rasterizer-v4.js")
+    assert "sessionStore.getItem('guest_access_token')" in read("rasterizer/session-api-v1.js")
     assert 'sessionStorage.getItem("color_lab_guest_access_token")' in read("color-lab.js")
     assert 'sessionStorage.getItem("holographic_guest_access_token")' in read("holographic.js")
 
@@ -46,31 +51,43 @@ def test_shell_migrates_existing_session_and_synchronizes_login_state():
     assert 'localStorage.removeItem("refresh_token")' in shell
 
 
+def test_shell_reconciles_restored_edge_pages_without_a_timing_delay():
+    shell = read("staging-shell.js")
+
+    assert 'const reconcileAuthIndicator = () =>' in shell
+    assert 'addEventListener("pageshow", reconcileAuthIndicator)' in shell
+    assert 'addEventListener("focus", reconcileAuthIndicator)' in shell
+    assert 'document.addEventListener("visibilitychange", () =>' in shell
+    assert 'if (!document.hidden) reconcileAuthIndicator()' in shell
+    assert 'authenticated && !account.classList.contains("authorized")' in shell
+    assert "setTimeout" not in shell[shell.index('const reconcileAuthIndicator = () =>'):shell.index('const beginLogin = async () =>')]
+
+
 def test_login_keeps_pkce_verifier_and_redirect_on_the_same_origin():
     shell = read("staging-shell.js")
-    index = read("rasterizer-v4.js")
+    session = read("rasterizer/session-api-v1.js")
 
     assert 'const redirectUri = new URL("/", location.origin).href' in shell
     assert 'sessionStorage.setItem("pkce_redirect_uri", redirectUri)' in shell
     assert 'redirect_uri: redirectUri' in shell
     assert 'const logoutUri = new URL("/", location.origin).href' in shell
     assert 'logout_uri: logoutUri' in shell
-    assert "sessionStorage.getItem('pkce_redirect_uri')||new URL('/',location.origin).href" in index
-    assert "redirect_uri:redirectUri" in index
-    assert "sessionStorage.removeItem('pkce_redirect_uri')" in index
+    assert "sessionStore.getItem('pkce_redirect_uri') || new URL('/', locationRoot.origin).href" in session
+    assert "redirect_uri: redirectUri" in session
+    assert "sessionStore.removeItem('pkce_redirect_uri')" in session
     assert "redirect_uri: config.callback_url" not in shell
-    assert "redirect_uri:config.callback_url" not in index
+    assert "redirect_uri: config.callback_url" not in session
 
 
 def test_failed_code_exchange_clears_one_use_callback_and_exposes_cognito_error():
-    index = read("rasterizer-v4.js")
+    session = read("rasterizer/session-api-v1.js")
 
-    assert "if(!verifier){discardCallback();throw new Error" in index
-    assert "sessionStorage.removeItem('pkce_verifier')" in index
-    assert "history.replaceState({},'',location.pathname)" in index
-    assert "result.error_description||result.error||`HTTP ${response.status}`" in index
-    assert "if(!response.ok||!result.id_token)" in index
-    assert "message.startsWith('Cognito sign-in')" in index
+    assert "if (!verifier)" in session
+    assert "sessionStore.removeItem('pkce_verifier')" in session
+    assert "historyRoot.replaceState({}, '', locationRoot.pathname)" in session
+    assert "result.error_description || result.error || `HTTP ${response.status}`" in session
+    assert "if (!response.ok || !result.id_token)" in session
+    assert "Cognito sign-in could not complete" in session
 
 
 def test_community_set_build_uses_shared_tokens_and_refreshes_expired_sessions():
@@ -85,12 +102,12 @@ def test_community_set_build_uses_shared_tokens_and_refreshes_expired_sessions()
 
 def test_changed_auth_assets_have_cache_busting_revisions():
     expected = {
-        "index.html": ('/staging-shell.js?v=3',),
-        "vault.html": ('/staging-shell.js?v=3', '/vault.js?v=17'),
-        "history.html": ('/staging-shell.js?v=3', '/history.js?v=10'),
-        "admin.html": ('/staging-shell.js?v=3', '/admin.js?v=4'),
-        "color-lab.html": ('/staging-shell.js?v=3', '/color-lab.js?v=8'),
-        "holographic.html": ('/staging-shell.js?v=3', '/holographic.js?v=6'),
+        "index.html": ('/staging-shell.js?v=4',),
+        "vault.html": ('/staging-shell.js?v=4', '/vault.js?v=17'),
+        "history.html": ('/staging-shell.js?v=4', '/history.js?v=10'),
+        "admin.html": ('/staging-shell.js?v=4', '/admin.js?v=4'),
+        "color-lab.html": ('/staging-shell.js?v=4', '/color-lab.js?v=8'),
+        "holographic.html": ('/staging-shell.js?v=4', '/holographic.js?v=6'),
     }
 
     for filename, revisions in expected.items():
@@ -99,5 +116,5 @@ def test_changed_auth_assets_have_cache_busting_revisions():
             assert revision in page
 
     depthmap_builder = (ROOT / "dev_setup" / "build_serverless_depthmap.py").read_text(encoding="utf-8")
-    assert '/staging-shell.js?v=3' in depthmap_builder
+    assert '/staging-shell.js?v=4' in depthmap_builder
     assert '/depthmap_bootstrap.js?v=5' in depthmap_builder
