@@ -95,7 +95,7 @@ Resources:
                   StringLike:
                     s3:prefix: [jobs/*, users/*/jobs/*]
               - Effect: Allow
-                Action: [dynamodb:BatchWriteItem, dynamodb:DeleteItem, dynamodb:GetItem, dynamodb:PutItem, dynamodb:Query, dynamodb:UpdateItem]
+                Action: [dynamodb:BatchWriteItem, dynamodb:DeleteItem, dynamodb:GetItem, dynamodb:PutItem, dynamodb:Query, dynamodb:Scan, dynamodb:UpdateItem]
                 Resource: !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${RuntimeTableName}
               - Effect: Allow
                 Action: sqs:SendMessage
@@ -498,6 +498,9 @@ Resources:
   AdminUsersRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties: {ApiId: !Ref HttpApi, RouteKey: "GET /admin/users", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  AdminObjectCountsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "GET /admin/object-counts", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
   AdminServiceControlGetRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties: {ApiId: !Ref HttpApi, RouteKey: "GET /admin/service-control", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
