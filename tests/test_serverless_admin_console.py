@@ -132,11 +132,12 @@ class ServerlessAdminConsoleTests(unittest.TestCase):
             self.handler.index("def admin_object_counts(event):"):
             self.handler.index("def cancel_admin_job(event, task_id):")
         ]
-        for prefix in ("MATERIAL#", "DEPTHPALETTE#", "HOLORECIPE#", "HOLOCALIBRATION#"):
+        for prefix in ("MATERIAL#", "DEPTHPALETTE#", "HOLORECIPE#", "HOLOCALIBRATION#", "COLORDISCOVERY#"):
             self.assertIn(prefix, function)
         for label in (
             "Color Palettes", "Hatch Palettes", "Processing Palettes", "Depth Palettes",
             "Fauxlographic Palettes", "Fauxlographic Calibration Sets",
+            "Color Discovery Grids",
         ):
             self.assertIn(label, self.handler)
         self.assertIn('Attr("pk").begins_with("USER#")', function)
