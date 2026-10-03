@@ -72,8 +72,6 @@ if [ -z "$STATIC_BUCKET" ] || [ "$STATIC_BUCKET" = "None" ]; then
   STATIC_BUCKET="$BUCKET"
 fi
 TABLE="$(output "$FOUNDATION_STACK" RuntimeTableName)"
-python3 "$SCRIPT_DIR/make_color_discovery_grids_durable.py" \
-  --table "$TABLE" --region "$REGION" --apply
 WORKER_LOG_GROUP="$(output "$WORKER_STACK" LogGroupName)"
 QUEUE_URL="$(output "$FOUNDATION_STACK" JobQueueUrl)"
 QUEUE_ARN="$(output "$FOUNDATION_STACK" JobQueueArn)"

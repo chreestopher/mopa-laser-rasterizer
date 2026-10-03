@@ -65,8 +65,13 @@ def test_production_migrates_legacy_color_grids_before_durable_ttl_guard():
     assert '"REMOVE expires_at"' in migration
 
 
-def test_staging_web_deploy_migrates_legacy_color_grids_before_serving_the_feature():
+def test_staging_migrates_legacy_color_grids_through_the_scoped_api_role():
     deploy = read("dev_setup/deploy_serverless_staging_web.sh")
+    handler = read("serverless_api/handler.py")
 
-    assert deploy.index("make_color_discovery_grids_durable.py") < deploy.index('cp "$REPO_ROOT/serverless_api/handler.py"')
-    assert '--table "$TABLE" --region "$REGION" --apply' in deploy
+    assert "make_color_discovery_grids_durable.py" not in deploy
+    listing = handler[handler.index("def list_color_discovery_grids("):handler.index("def delete_color_discovery_grid(")]
+    detail = handler[handler.index("def get_color_discovery_grid("):handler.index("def list_color_discovery_grids(")]
+    for migration_path in (listing, detail):
+        assert '"expires_at" in item:' in migration_path
+        assert 'UpdateExpression="REMOVE expires_at"' in migration_path
