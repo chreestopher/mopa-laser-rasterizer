@@ -2814,6 +2814,25 @@ def color_refinement_center(cell, parameter):
     return value
 
 
+def color_discovery_cell_snapshot(metadata, cell):
+    """Resolve legacy per-cell settings or a compact preset cell override."""
+    snapshot = cell.get("laser_settings") if isinstance(cell, dict) else None
+    if isinstance(snapshot, dict):
+        return snapshot
+    base = metadata.get("material_laser_settings") if isinstance(metadata, dict) else None
+    if not isinstance(base, dict):
+        raise ValueError("The selected Color Discovery cell has no saved LightBurn setting")
+    snapshot = deepcopy(base)
+    settings = snapshot.setdefault("settings", {})
+    overrides = cell.get("overrides") if isinstance(cell, dict) else None
+    for parameter, value in (overrides or {}).items():
+        definition = COLOR_DISCOVERY_PARAMETERS.get(str(parameter))
+        if definition:
+            settings[definition[0]] = value
+    validate_lightburn_setting_snapshot(snapshot)
+    return snapshot
+
+
 def color_refinement_step(metadata, parameter):
     if parameter == metadata.get("x_parameter"):
         values = metadata.get("x_values") or []
@@ -2846,9 +2865,9 @@ def color_lbmt_layout(data, width_mm, length_mm):
         width_mm, length_mm = float(width_mm), float(length_mm)
         if not all(math.isfinite(v) for v in (rows, columns, width_mm, length_mm)):
             raise ValueError()
-        if rows != int(rows) or columns != int(columns) or not (2 <= rows <= 100 and 2 <= columns <= 100):
+        if rows != int(rows) or columns != int(columns) or not (2 <= rows <= 40 and 2 <= columns <= 40):
             raise ValueError()
-        if rows * columns > 400 or width_mm <= 0 or length_mm <= 0:
+        if rows * columns > 800 or width_mm <= 0 or length_mm <= 0:
             raise ValueError()
         rows, columns = int(rows), int(columns)
         matrix_width = width_mm * COLOR_LBMT_MATRIX_SCALE
@@ -2859,7 +2878,7 @@ def color_lbmt_layout(data, width_mm, length_mm):
             raise ValueError()
         return rows, columns, usable_width / columns, usable_height / rows
     except (ValueError, TypeError, OverflowError) as error:
-        raise ValueError("Material Test presets need 2–100 rows and columns and at most 400 cells. The requested grid must also have room for LightBurn's 1 mm gaps between cells.") from error
+        raise ValueError("Material Test presets need 2–40 rows and columns and at most 800 cells. The requested grid must also have room for LightBurn's 1 mm gaps between cells.") from error
 
 
 def color_lbmt_axis(parameter, low, high, count):
@@ -3027,7 +3046,7 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
     if refinement:
         source_material = ET.Element("Material", {"Name":str(refinement_metadata.get("material") or "")})
         source_entry = ET.Element("Entry", {"Desc":str(refinement_metadata.get("setting_description") or "")})
-        source_cut = lightburn_snapshot_element(refinement_cell.get("laser_settings"))
+        source_cut = lightburn_snapshot_element(color_discovery_cell_snapshot(refinement_metadata, refinement_cell))
         label_options = refinement_metadata.get("label_options") or []
         requested_label_id = body_json(event).get("label_entry_id")
         if requested_label_id in (None, ""):
@@ -3071,7 +3090,7 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
     label_name.set("Value","Grid ID"); label_layer.set("type","Scan"); project.append(label_layer)
     grid_label=f"COLOR GRID {grid_id[:8]}"; label_height=2.1; label_width=len(grid_label)*label_height*.6
     title=ET.Element("Shape",{"Type":"Text","ShapeID":"0","CutIndex":"0","Font":"Arial,-1,100,5,50,0,0,0,0,0","Str":grid_label,"H":f"{label_height:g}","LS":"0","LnS":"0","Ah":"0","Av":"1","Weld":"1","HasBackupPath":"0"})
-    ET.SubElement(title,"XForm").text=f"1 0 0 1 {max(0,(columns*cell_mm-label_width)/2):g} {top_mm/2:g}"; project.append(title); cells=[]
+    ET.SubElement(title,"XForm").text=f"1 0 0 1 {max(0,(columns*cell_mm-label_width)/2):g} {top_mm/2:g}"; project.append(title); cells=[]; material_laser_settings=None
     for row,y_value in enumerate(y_values):
         for column,x_value in enumerate(x_values):
             index=row*columns+column+1; layer=deepcopy(source_cut)
@@ -3088,6 +3107,8 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
                 node=layer.find(f"./{field}")
                 if node is None: node=ET.SubElement(layer,field)
                 node.set("Value",repr(value) if output_format == "lbmt" else f"{value:g}")
+            if output_format == "lbmt" and material_laser_settings is None:
+                material_laser_settings = lightburn_setting_snapshot(layer)
             index_node=layer.find("./index")
             if index_node is None: index_node=ET.SubElement(layer,"index")
             index_node.set("Value",str(index)); name_node=layer.find("./name")
@@ -3097,7 +3118,10 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
             if min_node is not None and max_node is not None and float(min_node.get("Value",0))>float(max_node.get("Value",100)): raise ValueError("This sweep creates a cell whose minimum power exceeds maximum power")
             project.append(layer); shape=ET.Element("Shape",{"Type":"Rect","ShapeID":str(index),"CutIndex":str(index),"W":f"{cell_mm:g}","H":f"{cell_mm:g}","Cr":"0"})
             ET.SubElement(shape,"XForm").text=f"1 0 0 1 {(column+.5)*cell_mm:g} {top_mm+(row+.5)*cell_mm:g}"; project.append(shape)
-            cells.append({"index":index,"row":row+1,"column":column+1,"overrides":{x_parameter:x_value,y_parameter:y_value},"laser_settings":lightburn_setting_snapshot(layer)})
+            cell = {"index":index,"row":row+1,"column":column+1,"overrides":{x_parameter:x_value,y_parameter:y_value}}
+            if output_format != "lbmt":
+                cell["laser_settings"] = lightburn_setting_snapshot(layer)
+            cells.append(cell)
     metadata={"kind":"color_discovery_grid","schema_version":1,"grid_id":grid_id,"columns":columns,"rows":rows,"cell_size_mm":cell_mm,
               "grid_width_mm":columns*cell_mm,"grid_height_mm":rows*cell_mm,"requested_grid_width_mm":width_mm,"requested_grid_length_mm":length_mm,
               "top_label_band_mm":top_mm,"x_parameter":x_parameter,"y_parameter":y_parameter,"x_values":x_values,"y_values":y_values,"cells":cells,
@@ -3126,6 +3150,7 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
         metadata.update(cell_width_mm=cell_width, cell_height_mm=cell_height,
                         cell_gap_mm=COLOR_LBMT_CELL_GAP_MM, cell_size_mm=None,
                         matrix_scale=COLOR_LBMT_MATRIX_SCALE,
+                        material_laser_settings=material_laser_settings,
                         grid_width_mm=width_mm*COLOR_LBMT_MATRIX_SCALE,
                         grid_height_mm=length_mm*COLOR_LBMT_MATRIX_SCALE-COLOR_LBMT_VERTICAL_TEXT_ALLOWANCE_MM,
                         top_label_band_mm=0,
@@ -3303,7 +3328,7 @@ def save_color_discovery_palette(event):
     for cell,color,palette_index in selected:
         description,official_hex=PALETTE[palette_index]
         entry=ET.SubElement(material,"Entry",{"Thickness":"-1.0000","Desc":description,"NoThickTitle":f"{description} {color}"})
-        cut=lightburn_snapshot_element(cell.get("laser_settings")); index_node=cut.find("./index")
+        cut=lightburn_snapshot_element(color_discovery_cell_snapshot(metadata, cell)); index_node=cut.find("./index")
         if index_node is None: index_node=ET.SubElement(cut,"index")
         index_node.set("Value",str(palette_index)); name_node=cut.find("./name")
         if name_node is None: name_node=ET.SubElement(cut,"name")

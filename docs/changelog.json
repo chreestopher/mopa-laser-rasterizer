@@ -12,7 +12,7 @@
           "title": "Improvements to existing workflows",
           "items": [
             "Panel Tiling splits large Rasterizer designs across repeatable blanks and exports centered tile files, a manifest, and an assembly map.",
-            "Color Discovery can export native LightBurn Material Test presets with grids of up to 400 cells, avoiding the 30-cell limit of color-layer-based LightBurn projects.",
+            "Color Discovery can export native LightBurn Material Test presets with grids of up to 800 cells, avoiding the 30-cell limit of color-layer-based LightBurn projects.",
             "Expanded geometry options add Halftone Newsprint, custom Glyph and Krasnow cells, tighter packing, seeded rotation, per-swatch routing, and source-image detail in Parallax SVG exports.",
             "Job History thumbnails, steadier signed-in navigation, recoverable expired guest links, bulk swatch routing controls, and optional white engraving make everyday workflows easier to manage."
           ]

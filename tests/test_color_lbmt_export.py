@@ -3,6 +3,7 @@ import ast
 import io
 import json
 import math
+import re
 import time
 import unittest
 import uuid
@@ -17,20 +18,23 @@ class PresetExportTests(unittest.TestCase):
         source = Path('serverless_api/handler.py').read_text(encoding='utf-8')
         names = {'color_lbmt_layout', 'color_lbmt_axis', 'color_lbmt_cut',
                  'color_grid_layout', 'color_axis_values', 'create_color_discovery_grid',
-                 'lightburn_setting_snapshot'}
+                 'lightburn_setting_snapshot', 'validate_lightburn_setting_snapshot',
+                 'color_discovery_cell_snapshot'}
         nodes = [n for n in ast.parse(source).body if
                  isinstance(n, ast.FunctionDef) and n.name in names or
                  isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and
                  t.id in {'COLOR_DISCOVERY_PARAMETERS', 'COLOR_LBMT_CELL_GAP_MM', 'COLOR_LBMT_MATRIX_SCALE',
                           'COLOR_LBMT_VERTICAL_TEXT_ALLOWANCE_MM'} for t in n.targets)]
-        self.ns = dict(math=math, ET=ET, json=json, time=time, uuid=uuid, deepcopy=deepcopy)
+        self.ns = dict(math=math, re=re, ET=ET, json=json, time=time, uuid=uuid, deepcopy=deepcopy)
         exec(compile(ast.Module(body=nodes, type_ignores=[]), 'handler.py', 'exec'), self.ns)
 
     def test_dimensions_and_limits(self):
         layout = self.ns['color_lbmt_layout']
         self.assertEqual(layout({}, 100, 100), (10, 10, 8.1, 7.1))
+        self.assertEqual(layout(dict(rows=20, columns=40), 100, 100), (20, 40, 1.275, 3.05))
         self.assertEqual(layout(dict(rows=4, columns=6), 50, 100/4.5), (4, 6, 40/6, 7/4))
-        for data in ({'rows': 1}, {'columns': 2.5}, {'rows': 100, 'columns': 100},
+        for data in ({'rows': 1}, {'columns': 2.5}, {'rows': 41, 'columns': 2},
+                     {'rows': 2, 'columns': 41}, {'rows': 30, 'columns': 30},
                      {'rows': float('nan')}):
             with self.assertRaises(ValueError):
                 layout(data, 100, 100)
@@ -120,6 +124,20 @@ class PresetExportTests(unittest.TestCase):
         project = ET.fromstring(writes[0]['Body'])
         self.assertLessEqual(len(project.findall('./CutSetting')), 30)
         self.assertLess(result['metadata']['y_values'][0], result['metadata']['y_values'][-1])
+
+    def test_maximum_20_by_40_preset_uses_compact_cell_metadata(self):
+        result, writes = self.generate(rows=20, columns=40, grid_width_mm=100, grid_length_mm=100, cut_mode='line')
+        preset = next(iter(json.loads(writes[0]['Body']).values()))
+        metadata = result['metadata']
+        self.assertEqual((preset['XCount'], preset['YCount']), (40, 20))
+        self.assertEqual(len(metadata['cells']), 800)
+        self.assertIn('material_laser_settings', metadata)
+        self.assertTrue(all('laser_settings' not in cell for cell in metadata['cells']))
+        self.assertLess(len(json.dumps(metadata).encode()), 300000)
+        last = self.ns['color_discovery_cell_snapshot'](metadata, metadata['cells'][-1])
+        self.assertEqual(last['type'], 'Cut')
+        self.assertEqual(last['settings']['frequency'], 450000)
+        self.assertEqual(last['settings']['interval'], .001)
 
 
 if __name__ == '__main__':

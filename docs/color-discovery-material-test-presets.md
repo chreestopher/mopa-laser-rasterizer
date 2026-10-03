@@ -75,15 +75,16 @@ and material before running it.
   setting supplies its top-level laser values. An explicit cut mode deliberately
   omits additional LightBurn sublayers because a native Material Test preset has
   one material operation.
-- Rasterizer currently permits 2–100 rows/columns and at most 400 total cells.
+- Rasterizer currently permits 2–40 rows and 2–40 columns with at most 800 total
+  cells, including 20 × 40 and 40 × 20 presets.
   Rasterizer reserves 10% of the requested width, and 10% plus another 10 mm of
   the requested height, for LightBurn's title and axis labels. LightBurn also
   places a fixed 1 mm gap between neighboring
   Material Test cells, so Rasterizer subtracts those gaps before dividing the
   remaining matrix area into cells. X Center and Y Center default to half of the requested
   grid width and length. The optional border uses the selected Labels setting but
-  is exported with output disabled by default. A metadata-size safeguard may require fewer cells for
-  complex settings. These are application safeguards, not claimed LightBurn limits.
+  is exported with output disabled by default. These are Rasterizer application
+  safeguards, not claimed LightBurn limits.
 - Refinement preserves the source format and dimensions.
 
 ## Verify before engraving
