@@ -208,7 +208,26 @@ class ServerlessColorDiscoveryTests(unittest.TestCase):
         self.assertIn("setAxisBounds(x,$('#refineXLow'),$('#refineXHigh')", self.client)
         self.assertIn("setAxisBounds(y,$('#refineYLow'),$('#refineYHigh')", self.client)
         self.assertIn("for(const axis of ['X','Y'])", self.client)
-        self.assertIn('src="/color-lab.js?v=9"', self.page)
+        self.assertIn('src="/color-lab.js?v=11"', self.page)
+
+    def test_material_test_grid_limit_is_inclusive_800_cells(self):
+        self.assertIn('id="presetColumns" type="number" value="10" min="2" max="40"', self.page)
+        self.assertIn('id="presetRows" type="number" value="10" min="2" max="40"', self.page)
+        self.assertIn('p.rows>40||p.columns<2||p.columns>40', self.client)
+        self.assertIn('p.rows*p.columns>800', self.client)
+        self.assertIn('function cellLaserSettings(cell,metadata)', self.client)
+        self.assertIn('laser_settings:cellLaserSettings(c,m)', self.client)
+        self.assertIn('material_laser_settings = lightburn_setting_snapshot(layer)', self.api)
+
+    def test_output_format_precedes_grid_controls_and_filters_axis_options(self):
+        self.assertLess(self.page.index('id="outputFormat"'), self.page.index('id="librarySource"'))
+        self.assertLess(self.page.index('id="outputFormat"'), self.page.index('id="xParameter"'))
+        self.assertIn("const lbmtParameters=new Set(['speed','max_power','frequency','interval'])", self.client)
+        self.assertIn("function syncOutputFormatOptions(", self.client)
+        self.assertIn("filter(([key])=>!preset||lbmtParameters.has(key))", self.client)
+        self.assertIn("$('#outputFormat').onchange=()=>syncOutputFormatOptions()", self.client)
+        self.assertIn('id="projectLayoutNote"', self.page)
+        self.assertIn("$('#projectLayoutNote').hidden=preset", self.client)
 
     def test_signed_in_grids_are_durable_deletable_and_show_ancestry(self):
         creation = self.api[
@@ -345,7 +364,7 @@ class ServerlessColorDiscoveryTests(unittest.TestCase):
         self.assertIn('"x_low":x_center-x_step, "x_high":x_center+x_step', self.api)
         self.assertIn('"y_low":y_center-y_step, "y_high":y_center+y_step', self.api)
         self.assertIn('"refinement":refinement', self.api)
-        self.assertIn('source_cut = lightburn_snapshot_element(refinement_cell.get("laser_settings"))', self.api)
+        self.assertIn('source_cut = lightburn_snapshot_element(color_discovery_cell_snapshot(refinement_metadata, refinement_cell))', self.api)
         self.assertIn("if not library and contents is None and not refinement", self.api)
         self.assertIn('("refine_x_low","x_low")', self.api)
         self.assertIn('"requested_x_range":[data["x_low"],data["x_high"]]', self.api)
