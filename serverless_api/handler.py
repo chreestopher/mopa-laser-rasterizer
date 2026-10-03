@@ -88,6 +88,7 @@ ADMIN_DURABLE_OBJECT_TYPES = (
     ("depth_palette", "Depth Palettes"),
     ("fauxlographic_palette", "Fauxlographic Palettes"),
     ("fauxlographic_calibration", "Fauxlographic Calibration Sets"),
+    ("color_discovery_grid", "Color Discovery Grids"),
 )
 PROCESSING_PALETTE_ROLES = {"Cut", "Score", "Photo", "Fill", "Shovel", "Cleaning", "3D-Slice"}
 LASER_SOURCE_TYPES = {"", "fiber", "co2", "diode"}
@@ -1334,6 +1335,7 @@ def admin_object_counts(event):
         | Attr("sk").begins_with("DEPTHPALETTE#")
         | Attr("sk").begins_with("HOLORECIPE#")
         | Attr("sk").begins_with("HOLOCALIBRATION#")
+        | Attr("sk").begins_with("COLORDISCOVERY#")
     )
     options = {
         "ProjectionExpression": "pk, sk, library_intent",
@@ -1353,6 +1355,8 @@ def admin_object_counts(event):
                 object_type = "fauxlographic_palette"
             elif sort_key.startswith("HOLOCALIBRATION#"):
                 object_type = "fauxlographic_calibration"
+            elif sort_key.startswith("COLORDISCOVERY#"):
+                object_type = "color_discovery_grid"
             if not object_type:
                 continue
             counts[object_type] += 1
@@ -3142,7 +3146,7 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
     elif guest:
         table.put_item(Item={**runtime_key(grid_id),"task_id":grid_id,"status":"completed","guest":True,"guest_access_capability":refinement_record["guest_access_capability"],"guest_access_expires_at":now+GUEST_JOB_SECONDS,"metadata":dynamo_value(metadata),"artifact_keys":artifact_keys,"created_at":now,"updated_at":now,"expires_at":now+GUEST_JOB_SECONDS})
     else:
-        table.put_item(Item={"pk":f"USER#{owner}","sk":f"COLORDISCOVERY#{grid_id}","grid_id":grid_id,"metadata":dynamo_value(metadata),"artifact_keys":artifact_keys,"created_at":now,"updated_at":now,"expires_at":now+TTL_SECONDS})
+        table.put_item(Item={"pk":f"USER#{owner}","sk":f"COLORDISCOVERY#{grid_id}","grid_id":grid_id,"metadata":dynamo_value(metadata),"artifact_keys":artifact_keys,"created_at":now,"updated_at":now})
     downloads={name:s3.generate_presigned_url("get_object",Params={"Bucket":BUCKET,"Key":key,"ResponseContentDisposition":f'attachment; filename="{key.rsplit("/",1)[-1]}"'},ExpiresIn=900) for name,key in (("lightburn",project_key),("metadata",metadata_key))}
     return response(201,{"grid_id":grid_id,"metadata":metadata,"downloads":downloads})
 
@@ -3172,6 +3176,12 @@ def get_color_discovery_grid(event, grid_reference, guest=False):
         ).get("Item")
     if not item:
         return response(404, {"message":"Color Discovery grid not found or expired"})
+    if not guest and "expires_at" in item:
+        table.update_item(
+            Key={"pk":item["pk"], "sk":item["sk"]},
+            UpdateExpression="REMOVE expires_at",
+        )
+        item.pop("expires_at", None)
     grid_id = str(item.get("grid_id") or str(item.get("sk") or "").removeprefix("COLORDISCOVERY#"))
     artifacts = item.get("artifact_keys") if isinstance(item.get("artifact_keys"), dict) else {}
     downloads = {}
@@ -3191,21 +3201,65 @@ def get_color_discovery_grid(event, grid_reference, guest=False):
 
 
 def list_color_discovery_grids(event):
-    owner, now, grids = user_id(event), int(time.time()), []
-    for item in user_items(owner, "COLORDISCOVERY#", limit=50):
-        if int(item.get("expires_at") or 0) <= now:
-            continue
+    owner, grids, items, start_key = user_id(event), [], [], None
+    while True:
+        options = {
+            "KeyConditionExpression": Key("pk").eq(f"USER#{owner}") & Key("sk").begins_with("COLORDISCOVERY#"),
+            "ScanIndexForward": False,
+        }
+        if start_key:
+            options["ExclusiveStartKey"] = start_key
+        page = table.query(**options)
+        items.extend(page.get("Items", []))
+        start_key = page.get("LastEvaluatedKey")
+        if not start_key:
+            break
+    for item in items:
+        if "expires_at" in item:
+            table.update_item(
+                Key={"pk":item["pk"], "sk":item["sk"]},
+                UpdateExpression="REMOVE expires_at",
+            )
+            item.pop("expires_at", None)
         grid_id = str(item.get("grid_id") or str(item.get("sk") or "").removeprefix("COLORDISCOVERY#"))
         metadata = json_value(item.get("metadata") or {})
+        refinement = metadata.get("refinement") if isinstance(metadata.get("refinement"), dict) else {}
         grids.append({
             "grid_id":grid_id, "short_id":grid_id[:8],
             "created_at":int(item.get("created_at") or 0),
             "material":str(metadata.get("material") or ""),
             "setting_description":str(metadata.get("setting_description") or ""),
             "cell_count":len(metadata.get("cells") or []),
+            "output_format":str(metadata.get("output_format") or "lbrn2"),
+            "parent_grid_id":str(refinement.get("grid_id") or ""),
+            "parent_cell_index":int(refinement.get("cell_index") or 0),
         })
     grids.sort(key=lambda item:item["created_at"], reverse=True)
     return response(200, {"grids":grids})
+
+
+def delete_color_discovery_grid(event, grid_id):
+    owner = user_id(event)
+    try:
+        grid_id = str(uuid.UUID(str(grid_id or "")))
+    except ValueError as error:
+        raise ValueError("Choose a valid saved Color Discovery grid") from error
+    key = {"pk":f"USER#{owner}", "sk":f"COLORDISCOVERY#{grid_id}"}
+    item = table.get_item(Key=key, ConsistentRead=True).get("Item")
+    if not item:
+        return response(404, {"message":"Color Discovery grid not found"})
+    expected_prefix = f"users/{owner}/color-discovery/{grid_id}/"
+    artifact_keys = item.get("artifact_keys") if isinstance(item.get("artifact_keys"), dict) else {}
+    object_keys = sorted({str(value) for value in artifact_keys.values() if value})
+    if any(not object_key.startswith(expected_prefix) for object_key in object_keys):
+        return response(400, {"message":"We couldn't safely delete this Color Discovery grid, so it was left unchanged. Report the grid ID."})
+    if object_keys:
+        s3.delete_objects(
+            Bucket=BUCKET,
+            Delete={"Objects":[{"Key":object_key} for object_key in object_keys], "Quiet":True},
+        )
+    table.delete_item(Key=key)
+    return response(200, {"deleted_grid_id":grid_id})
 
 
 def save_color_discovery_palette(event):
@@ -5842,6 +5896,8 @@ def handler(event, _context):
             return create_holographic_calibration(event, upload_task_id=parts[2])
         if method == "GET" and len(parts) == 3 and parts[:2] == ["color-discovery", "grids"]:
             return get_color_discovery_grid(event, parts[2])
+        if method == "DELETE" and len(parts) == 3 and parts[:2] == ["color-discovery", "grids"]:
+            return delete_color_discovery_grid(event, parts[2])
         if method == "POST" and len(parts) == 4 and parts[:2] == ["account", "imports"] and parts[3] == "finalize":
             uuid.UUID(parts[2])
             return finalize_import(event, parts[2])

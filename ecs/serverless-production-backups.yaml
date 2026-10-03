@@ -83,6 +83,7 @@ Resources:
                   - !Sub arn:${AWS::Partition}:s3:::${SourceBucketName}/users/*/materials/*
                   - !Sub arn:${AWS::Partition}:s3:::${SourceBucketName}/users/*/holographic-recipes/*
                   - !Sub arn:${AWS::Partition}:s3:::${SourceBucketName}/users/*/holographic-calibrations/*
+                  - !Sub arn:${AWS::Partition}:s3:::${SourceBucketName}/users/*/color-discovery/*
               - Sid: ReconcileDurableBackup
                 Effect: Allow
                 Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
@@ -90,6 +91,7 @@ Resources:
                   - !Sub ${DurableBackupBucket.Arn}/users/*/materials/*
                   - !Sub ${DurableBackupBucket.Arn}/users/*/holographic-recipes/*
                   - !Sub ${DurableBackupBucket.Arn}/users/*/holographic-calibrations/*
+                  - !Sub ${DurableBackupBucket.Arn}/users/*/color-discovery/*
 
   BackupFunction:
     Type: AWS::Lambda::Function

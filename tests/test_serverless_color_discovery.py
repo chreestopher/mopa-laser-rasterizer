@@ -28,6 +28,8 @@ class ServerlessColorDiscoveryTests(unittest.TestCase):
         self.assertIn("RouteKey: \"GET /color-discovery/grids/{grid_id}\"", infrastructure)
         self.assertIn("ListColorDiscoveryGridsRoute:", infrastructure)
         self.assertIn("RouteKey: \"GET /color-discovery/grids\"", infrastructure)
+        self.assertIn("DeleteColorDiscoveryGridRoute:", infrastructure)
+        self.assertIn("RouteKey: \"DELETE /color-discovery/grids/{grid_id}\"", infrastructure)
         self.assertIn("users/*/color-discovery/*", infrastructure)
 
     def test_invalid_observed_color_identifies_the_cell_and_recovery(self):
@@ -142,7 +144,8 @@ class ServerlessColorDiscoveryTests(unittest.TestCase):
         self.assertNotIn('id="loadGridForm"', self.page)
         self.assertIn("def get_color_discovery_grid(event, grid_reference, guest=False):", self.api)
         self.assertIn("def list_color_discovery_grids(event):", self.api)
-        self.assertIn('user_items(owner, "COLORDISCOVERY#", limit=50)', self.api)
+        self.assertIn('Key("sk").begins_with("COLORDISCOVERY#")', self.api)
+        self.assertIn('page.get("LastEvaluatedKey")', self.api)
         self.assertIn('re.fullmatch(r"[0-9a-f]{8}", reference)', self.api)
         self.assertIn('f"COLORDISCOVERY#{reference}"', self.api)
         self.assertIn("async function loadSelectedGrid()", self.client)
@@ -205,7 +208,67 @@ class ServerlessColorDiscoveryTests(unittest.TestCase):
         self.assertIn("setAxisBounds(x,$('#refineXLow'),$('#refineXHigh')", self.client)
         self.assertIn("setAxisBounds(y,$('#refineYLow'),$('#refineYHigh')", self.client)
         self.assertIn("for(const axis of ['X','Y'])", self.client)
-        self.assertIn('src="/color-lab.js?v=8"', self.page)
+        self.assertIn('src="/color-lab.js?v=9"', self.page)
+
+    def test_signed_in_grids_are_durable_deletable_and_show_ancestry(self):
+        creation = self.api[
+            self.api.index("def create_color_discovery_grid("):
+            self.api.index("def get_color_discovery_grid(")
+        ]
+        self.assertIn('"sk":f"COLORDISCOVERY#{grid_id}"', creation)
+        self.assertNotIn('"expires_at":now+TTL_SECONDS', creation.split("else:")[-1])
+        self.assertIn('UpdateExpression="REMOVE expires_at"', self.api)
+        self.assertIn("def delete_color_discovery_grid(event, grid_id):", self.api)
+        self.assertIn('s3.delete_objects(', self.api)
+        self.assertIn('id="savedGridLibrary"', self.page)
+        self.assertIn('id="savedGridList"', self.page)
+        self.assertIn('data-grid-action="ancestry"', self.client)
+        self.assertIn('data-grid-action="delete"', self.client)
+        self.assertIn('data-grid-action="refine-source"', self.client)
+        self.assertIn("function gridAncestry(item)", self.client)
+        self.assertIn("async function useSavedGrid(gridId,refinementSource=false)", self.client)
+        self.assertIn("Choose its finished-grid photograph, measure it, then select one swatch", self.client)
+        self.assertIn("Refinement descendants will remain saved", self.client)
+
+    def test_grid_delete_removes_only_owned_artifacts_and_record(self):
+        tree = ast.parse(self.api)
+        delete_function = next(
+            node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "delete_color_discovery_grid"
+        )
+        grid_id = str(uuid.uuid4())
+        deleted_objects = []
+        deleted_records = []
+        record = {
+            "artifact_keys": {
+                "lightburn": f"users/test-user/color-discovery/{grid_id}/grid.lbrn2",
+                "metadata": f"users/test-user/color-discovery/{grid_id}/grid.json",
+            }
+        }
+        table = SimpleNamespace(
+            get_item=lambda **_kwargs: {"Item": record},
+            delete_item=lambda **kwargs: deleted_records.append(kwargs["Key"]),
+        )
+        s3 = SimpleNamespace(
+            delete_objects=lambda **kwargs: deleted_objects.extend(
+                item["Key"] for item in kwargs["Delete"]["Objects"]
+            )
+        )
+        namespace = {
+            "user_id": lambda _event: "test-user",
+            "uuid": uuid,
+            "table": table,
+            "s3": s3,
+            "BUCKET": "test-bucket",
+            "response": lambda status, body: {"status": status, "body": body},
+        }
+        exec(compile(ast.Module(body=[delete_function], type_ignores=[]), "handler.py", "exec"), namespace)
+
+        result = namespace["delete_color_discovery_grid"]({}, grid_id)
+
+        self.assertEqual(result["status"], 200)
+        self.assertEqual(len(deleted_objects), 2)
+        self.assertEqual(deleted_records, [{"pk": "USER#test-user", "sk": f"COLORDISCOVERY#{grid_id}"}])
 
     def test_deploy_script_uploads_color_lab_client(self):
         deploy = (ROOT / "dev_setup" / "deploy_serverless_staging_web.sh").read_text(encoding="utf-8")

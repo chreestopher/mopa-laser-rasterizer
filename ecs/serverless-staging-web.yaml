@@ -534,6 +534,9 @@ Resources:
   GetColorDiscoveryGridRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties: {ApiId: !Ref HttpApi, RouteKey: "GET /color-discovery/grids/{grid_id}", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
+  DeleteColorDiscoveryGridRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties: {ApiId: !Ref HttpApi, RouteKey: "DELETE /color-discovery/grids/{grid_id}", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
   ListColorDiscoveryGridsRoute:
     Type: AWS::ApiGatewayV2::Route
     Properties: {ApiId: !Ref HttpApi, RouteKey: "GET /color-discovery/grids", AuthorizationType: JWT, AuthorizerId: !Ref JwtAuthorizer, Target: !Sub "integrations/${ApiIntegration}"}
