@@ -655,7 +655,10 @@ class Lightburn:
                 elif child.tag == "speed":
                     setting.speed = float(value)
                 elif child.tag == "frequency":
-                    setting.frequency = int(value)
+                    # Native Material Test sweeps can interpolate whole-Hz fields
+                    # as decimal strings. Match the Rasterizer's displayed grid
+                    # value by truncating the finite decimal to integer Hz.
+                    setting.frequency = int(float(value))
                 elif child.tag == "QPulseWidth":
                     setting.QPulseWidth = float(value)
                 elif child.tag == "interval":

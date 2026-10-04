@@ -2828,7 +2828,7 @@ def color_discovery_cell_snapshot(metadata, cell):
     for parameter, value in (overrides or {}).items():
         definition = COLOR_DISCOVERY_PARAMETERS.get(str(parameter))
         if definition:
-            settings[definition[0]] = value
+            settings[definition[0]] = math.floor(float(value)) if definition[4] else value
     validate_lightburn_setting_snapshot(snapshot)
     return snapshot
 
