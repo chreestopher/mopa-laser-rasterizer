@@ -74,6 +74,27 @@ class LightburnLayerSerializationTests(unittest.TestCase):
         self.assertIsNone(layer.QPulseWidth)
         self.assertNotIn('<QPulseWidth', output.getvalue())
 
+    def test_import_accepts_decimal_frequency_from_native_material_test_sweep(self):
+        library_xml = """\
+<LightBurnLibrary>
+  <Material name="steel">
+    <Entry Desc="Blue">
+      <CutSetting type="Scan"><frequency Value="477777.77777777775"/></CutSetting>
+    </Entry>
+  </Material>
+</LightBurnLibrary>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            library_path = Path(directory) / "native-material-test.clb"
+            library_path.write_text(library_xml, encoding="utf-8")
+            layer = Lightburn().parse_material_library(library_path)[0]
+
+        output = io.StringIO()
+        layer.write(output)
+
+        self.assertEqual(layer.frequency, 477777)
+        self.assertIn('<frequency Value="477777"/>', output.getvalue())
+
     def test_explicit_q_pulse_width_is_preserved(self):
         layer = FillLayer(1, "Blue", 5, 27, qPulseWidth=4)
         output = io.StringIO()

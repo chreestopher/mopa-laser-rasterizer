@@ -139,6 +139,20 @@ class PresetExportTests(unittest.TestCase):
         self.assertEqual(last['settings']['frequency'], 450000)
         self.assertEqual(last['settings']['interval'], .001)
 
+    def test_compact_cell_snapshot_normalizes_integer_parameter_overrides(self):
+        metadata = {
+            'material_laser_settings': {
+                'type': 'Scan',
+                'settings': {'frequency': '300000', 'interval': '0.002'},
+            },
+        }
+        cell = {'overrides': {'frequency': 477777.77777777775, 'interval': .0035}}
+
+        snapshot = self.ns['color_discovery_cell_snapshot'](metadata, cell)
+
+        self.assertEqual(snapshot['settings']['frequency'], 477777)
+        self.assertEqual(snapshot['settings']['interval'], .0035)
+
 
 if __name__ == '__main__':
     unittest.main()
