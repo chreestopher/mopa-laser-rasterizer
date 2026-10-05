@@ -580,19 +580,19 @@ def test_rasterizer_module_graph_uploads_dependencies_before_entry_and_html():
 def test_spiralgraph_modules_upload_before_entry_and_html():
     deploy = DEPLOY.read_text(encoding="utf-8")
     geometry_dependency = (
-        'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/geometry-v1.js"'
+        'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/geometry-v2.js"'
     )
     hardware_dependency = (
-        'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/hardware-preview-v1.js"'
+        'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/hardware-preview-v2.js"'
     )
     canvas_dependency = (
-        'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/canvas-preview-v1.js"'
+        'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/canvas-preview-v2.js"'
     )
     drawing_editor_dependency = (
-        'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/drawing-editor-v1.js"'
+        'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/drawing-editor-v2.js"'
     )
     state_dependency = (
-        'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/state-v1.js"'
+        'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/state-v2.js"'
     )
     palette_routing_dependency = (
         'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/palette-routing-v1.js"'
@@ -635,16 +635,16 @@ def test_mandala_modules_upload_before_entry_and_html():
         'aws s3 cp "$REPO_ROOT/serverless_web/mandala/geometry-v1.js"'
     )
     preview_dependency = (
-        'aws s3 cp "$REPO_ROOT/serverless_web/mandala/preview-v1.js"'
+        'aws s3 cp "$REPO_ROOT/serverless_web/mandala/preview-v2.js"'
     )
     asset_constraints_dependency = (
-        'aws s3 cp "$REPO_ROOT/serverless_web/mandala/asset-constraints-v1.js"'
+        'aws s3 cp "$REPO_ROOT/serverless_web/mandala/asset-constraints-v2.js"'
     )
     job_lifecycle_dependency = (
         'aws s3 cp "$REPO_ROOT/serverless_web/mandala/job-lifecycle-v1.js"'
     )
     layer_editor_dependency = (
-        'aws s3 cp "$REPO_ROOT/serverless_web/mandala/layer-editor-v1.js"'
+        'aws s3 cp "$REPO_ROOT/serverless_web/mandala/layer-editor-v2.js"'
     )
     entry = 'aws s3 cp "$REPO_ROOT/serverless_web/mandala.js"'
     html = 'aws s3 cp "$BUILD_DIR/seo/mandala.html"'
@@ -684,7 +684,7 @@ def test_mandala_palette_routing_owns_palette_selection_and_cut_validation():
 
 def test_mandala_geometry_module_is_imported_by_entry():
     entry = (WEB / "mandala.js").read_text(encoding="utf-8")
-    preview = (WEB / "mandala" / "preview-v1.js").read_text(encoding="utf-8")
+    preview = (WEB / "mandala" / "preview-v2.js").read_text(encoding="utf-8")
     geometry = (WEB / "mandala" / "geometry-v1.js").read_text(encoding="utf-8")
 
     assert 'from "./geometry-v1.js"' in preview
@@ -697,9 +697,9 @@ def test_mandala_geometry_module_is_imported_by_entry():
 
 def test_mandala_preview_module_owns_canvas_rendering_and_imports_geometry():
     entry = (WEB / "mandala.js").read_text(encoding="utf-8")
-    preview = (WEB / "mandala" / "preview-v1.js").read_text(encoding="utf-8")
+    preview = (WEB / "mandala" / "preview-v2.js").read_text(encoding="utf-8")
 
-    assert 'from "./mandala/preview-v1.js"' in entry
+    assert 'from "./mandala/preview-v2.js"' in entry
     assert 'from "./geometry-v1.js"' in preview
     assert "export const COLORS=" in preview
     assert "export function createMandalaPreview(" in preview
@@ -708,16 +708,19 @@ def test_mandala_preview_module_owns_canvas_rendering_and_imports_geometry():
         assert f"function {function}(" not in entry
 
 
-def test_mandala_asset_constraints_module_owns_svg_and_dimension_rules():
+def test_mandala_asset_constraints_module_uses_shared_image_vectorizer_and_owns_dimensions():
     entry = (WEB / "mandala.js").read_text(encoding="utf-8")
-    constraints = (WEB / "mandala" / "asset-constraints-v1.js").read_text(encoding="utf-8")
+    constraints = (WEB / "mandala" / "asset-constraints-v2.js").read_text(encoding="utf-8")
 
-    assert 'from "./mandala/asset-constraints-v1.js"' in entry
-    assert "export async function normalizeSvg(" in constraints
+    vectorizer = (WEB / "custom-image-vectorizer-v1.js").read_text(encoding="utf-8")
+    assert 'from "./mandala/asset-constraints-v2.js"' in entry
+    assert 'from "../custom-image-vectorizer-v1.js"' in constraints
+    assert "export async function normalizeCustomImage(" in vectorizer
+    assert "export function maskToSvg(" in vectorizer
     assert "export function createMandalaAssetConstraints(" in constraints
-    assert "file.size>65536" in constraints
-    assert "new DOMParser()" in constraints
-    assert "new XMLSerializer()" in constraints
+    assert "file.size>SVG_LIMIT" in vectorizer
+    assert "new DOMParser()" in vectorizer
+    assert "new XMLSerializer()" in vectorizer
     assert "diameter*.15" in constraints and "diameter*.08" in constraints
     assert "function normalizeSvg(" not in entry
     assert "function syncProjectDimensions(" not in entry
@@ -742,9 +745,9 @@ def test_mandala_job_lifecycle_owns_payload_auth_submission_polling_and_resume()
 
 def test_mandala_layer_editor_owns_controls_collection_and_preview_selection():
     entry = (WEB / "mandala.js").read_text(encoding="utf-8")
-    editor = (WEB / "mandala" / "layer-editor-v1.js").read_text(encoding="utf-8")
+    editor = (WEB / "mandala" / "layer-editor-v2.js").read_text(encoding="utf-8")
 
-    assert 'from "./mandala/layer-editor-v1.js"' in entry
+    assert 'from "./mandala/layer-editor-v2.js"' in entry
     assert 'from "./state-v1.js"' in editor
     assert "export function createMandalaLayerEditor(" in editor
     for function in ("numberControl", "layerCard", "syncPreviewSelector", "renderLayers", "resetLayers", "bind"):
@@ -760,9 +763,9 @@ def test_mandala_layer_editor_owns_controls_collection_and_preview_selection():
 
 def test_spiralgraph_state_owns_defaults_selection_and_dimension_constraints():
     entry = (WEB / "spiralgraph.js").read_text(encoding="utf-8")
-    state = (WEB / "spiralgraph" / "state-v1.js").read_text(encoding="utf-8")
+    state = (WEB / "spiralgraph" / "state-v2.js").read_text(encoding="utf-8")
 
-    assert 'from "./spiralgraph/state-v1.js"' in entry
+    assert 'from "./spiralgraph/state-v2.js"' in entry
     assert "export const COLORS=" in state
     assert "export const GEARS=" in state
     assert "export function newLayer(" in state
@@ -894,13 +897,14 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
     assert referenced_modes[WEB / "rasterizer" / "form-state-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "ui-helpers-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "material-input-v1.js"] == {"module"}
+    assert referenced_modes[WEB / "custom-image-vectorizer-v1.js"] == {"module"}
     assert referenced_modes[WEB / "mandala" / "state-v1.js"] == {"module"}
     assert referenced_modes[WEB / "mandala" / "palette-routing-v1.js"] == {"module"}
     assert referenced_modes[WEB / "mandala" / "geometry-v1.js"] == {"module"}
-    assert referenced_modes[WEB / "mandala" / "preview-v1.js"] == {"module"}
-    assert referenced_modes[WEB / "mandala" / "asset-constraints-v1.js"] == {"module"}
+    assert referenced_modes[WEB / "mandala" / "preview-v2.js"] == {"module"}
+    assert referenced_modes[WEB / "mandala" / "asset-constraints-v2.js"] == {"module"}
     assert referenced_modes[WEB / "mandala" / "job-lifecycle-v1.js"] == {"module"}
-    assert referenced_modes[WEB / "mandala" / "layer-editor-v1.js"] == {"module"}
+    assert referenced_modes[WEB / "mandala" / "layer-editor-v2.js"] == {"module"}
     assert referenced_modes[ROOT / "static" / "community-set-v1.js"] == {"classic"}
     assert referenced_modes[ROOT / "static" / "docs-search-v1.js"] == {"classic"}
     for filename in (

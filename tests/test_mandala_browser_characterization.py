@@ -341,8 +341,8 @@ HARNESS = r"""
     card = $$('.layer-card')[0];
 
     attachFile(card.querySelector('[data-field="custom_file"]'), new File(['not svg'], 'motif.txt', {type: 'text/plain'}));
-    await waitFor(() => alerts.length === 1, 'non-SVG custom file did not report a validation error');
-    check(alerts[0] === 'Choose an SVG file.', `non-SVG error changed (${alerts[0]})`);
+    await waitFor(() => alerts.length === 1, 'non-image custom file did not report a validation error');
+    check(alerts[0] === 'Choose an SVG or raster image.', `non-image error changed (${alerts[0]})`);
 
     attachFile(card.querySelector('[data-field="custom_file"]'), new File(['x'.repeat(65537)], 'large.svg', {type: 'image/svg+xml'}));
     await waitFor(() => alerts.length === 2, 'oversized custom SVG did not report a validation error');
@@ -367,6 +367,12 @@ HARNESS = r"""
     attachFile(card.querySelector('[data-field="custom_file"]'), new File([safe], 'characterization-motif.svg', {type: 'image/svg+xml'}));
     await waitFor(() => $$('.layer-card')[0].querySelector('.custom-svg-status')?.textContent.includes('Loaded characterization-motif.svg'), 'safe custom SVG was not retained');
     check($$('.layer-card')[0].querySelector('[data-field="motif"]').value === 'custom', 'custom motif selection changed after loading SVG');
+
+    card = $$('.layer-card')[0];
+    const pngBytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='), character => character.charCodeAt(0));
+    attachFile(card.querySelector('[data-field="custom_file"]'), new File([pngBytes], 'characterization-motif.png', {type: 'image/png'}));
+    await waitFor(() => $$('.layer-card')[0].querySelector('.custom-svg-status')?.textContent.includes('Loaded characterization-motif.png'), 'raster motif was not converted and retained');
+    check($$('.layer-card')[0].querySelector('[data-field="motif"]').value === 'custom', 'custom motif selection changed after loading raster artwork');
   }
 
   async function submitChecks() {
@@ -511,9 +517,9 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
         page = page_path.read_text(encoding="utf-8")
         page = re.sub(r'\s*<script src="/staging-shell\.js\?v=4" defer></script>', '', page)
         page = page.replace(
-            '<script src="/mandala.js?v=14" type="module"></script>',
+            '<script src="/mandala.js?v=15" type="module"></script>',
             '<script src="/mandala-characterization-harness.js"></script>\n'
-            '<script src="/mandala.js?v=14" type="module"></script>',
+            '<script src="/mandala.js?v=15" type="module"></script>',
         )
         page_path.write_text(page, encoding="utf-8")
         (cls.site / "mandala-characterization-harness.js").write_text(
@@ -586,7 +592,7 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
     def test_selected_and_stacked_previews_preserve_colors_and_frame_coalescing(self):
         self._run_scenario("preview")
 
-    def test_custom_svg_rejects_executable_content_and_retains_safe_vector(self):
+    def test_custom_image_rejects_executable_content_and_converts_raster_artwork(self):
         self._run_scenario("custom-svg")
 
     def test_submission_payload_completion_outputs_and_resume_url(self):

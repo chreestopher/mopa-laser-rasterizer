@@ -36,6 +36,43 @@ def test_curated_curve_closes_and_scales_to_requested_size():
     assert max(bounds[2] - bounds[0], bounds[3] - bounds[1]) == pytest.approx(112.8, abs=.2)
 
 
+def test_component_sizes_are_preserved_and_drawing_size_controls_final_footprint():
+    customized = layer(
+        track="oval",
+        track_width_percent=140,
+        track_height_percent=65,
+        gear_size_percent=125,
+        pen_reach_percent=75,
+        drawing_size_percent=60,
+    )
+    clean, generated = generate_spiralgrap(config(customized))
+    curve, _ = generated[0]
+    saved = clean["layers"][0]
+    assert saved["track_width_percent"] == 140
+    assert saved["track_height_percent"] == 65
+    assert saved["gear_size_percent"] == 125
+    assert saved["pen_reach_percent"] == 75
+    assert saved["drawing_size_percent"] == 60
+    assert curve.coords[0] == curve.coords[-1]
+    bounds = curve.bounds
+    assert max(bounds[2] - bounds[0], bounds[3] - bounds[1]) == pytest.approx(67.68, abs=.2)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    (
+        ("track_width_percent", 39, "Track width percent"),
+        ("track_height_percent", 161, "Track height percent"),
+        ("gear_size_percent", 49, "Gear size percent"),
+        ("pen_reach_percent", 126, "Pen reach percent"),
+        ("drawing_size_percent", 19, "Drawing size percent"),
+    ),
+)
+def test_component_size_ranges_are_validated(field, value, message):
+    with pytest.raises(ValueError, match=message):
+        validate_spiralgrap_config(config(layer(**{field: value})))
+
+
 def test_custom_track_requires_a_closed_svg_path():
     open_svg = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0 L10 0 L10 10"/></svg>'
     with pytest.raises(ValueError, match="closed shape"):

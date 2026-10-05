@@ -96,11 +96,11 @@ write_static_page(
 )
 write_static_page(
     "mandala.html", "mandala.html",
-    "Build cuttable multi-layer radial mandala projects from built-in and custom SVG motifs.",
+    "Build cuttable multi-layer radial mandala projects from built-in motifs or custom SVG and raster artwork.",
 )
 write_static_page(
     "spiralgraph.html", "spiralgraph.html",
-    "Create laser-ready rolling-gear artwork with virtual plates, gears, pen holes, and custom closed SVG tracks.",
+    "Create laser-ready rolling-gear artwork with virtual plates, gears, pen holes, and custom SVG or raster-image tracks.",
 )
 (output_root / "spiralgrap.html").write_text(
     (repo_root / "serverless_web" / "spiralgrap.html").read_text(encoding="utf-8"),
