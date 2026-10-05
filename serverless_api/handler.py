@@ -1579,6 +1579,14 @@ def account_job(event, task_id):
     outputs = ordered_output_descriptors(task_id, source_name, objects)
     status = (live.get("status") if live and live.get("user_id") == owner else None) or record.get("status") or history.get("status") or "unknown"
     terminal_status = str(status).lower() in {"completed", "failed"}
+    rerunnable = bool(terminal_status and live and live.get("user_id") == owner and live.get("payload"))
+    current_palette_available = bool(
+        rerunnable and (
+            live.get("saved_material_library_id")
+            or live.get("generated_recipe_id")
+            or live.get("saved_holographic_recipe_id")
+        )
+    )
     ended_at = 0
     if terminal_status:
         ended_at = int(
@@ -1603,6 +1611,8 @@ def account_job(event, task_id):
         "logs_included": include_logs,
         "thumbnail_url": input_thumbnail_url(task_id, record, history),
         "outputs": outputs,
+        "rerunnable": rerunnable,
+        "current_palette_available": current_palette_available,
     })
 
 
@@ -1621,6 +1631,221 @@ def delete_account_job(event, task_id):
 
     deleted_assets, _ = delete_job_assets_and_records(task_id, owner, record)
     return response(200, {"task_id": task_id, "deleted": True, "deleted_assets": deleted_assets})
+
+
+def rerun_input_destination(source_key, source_task_id, new_task_id, index):
+    """Return a unique task-scoped destination for one retained rerun input."""
+    source_prefix = f"jobs/{source_task_id}/inputs/"
+    if source_key.startswith(source_prefix):
+        suffix = source_key[len(source_prefix):]
+    elif "/materials/" in source_key:
+        suffix = f"material-{source_key.rsplit('/', 1)[-1]}"
+    elif "/holographic-recipes/" in source_key:
+        suffix = f"recipe-{source_key.rsplit('/', 1)[-1]}"
+    else:
+        suffix = f"snapshot-{index}-{source_key.rsplit('/', 1)[-1]}"
+    return f"jobs/{new_task_id}/inputs/{safe_name(suffix, f'snapshot-{index}.bin')}"
+
+
+def replace_job_asset_keys(value, replacements, source_task_id, new_task_id):
+    """Recursively retarget a retained worker payload to its new job snapshot."""
+    if isinstance(value, dict):
+        return {
+            key: replace_job_asset_keys(item, replacements, source_task_id, new_task_id)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [replace_job_asset_keys(item, replacements, source_task_id, new_task_id) for item in value]
+    if isinstance(value, str):
+        if value in replacements:
+            return replacements[value]
+        return value.replace(source_task_id, new_task_id)
+    return value
+
+
+def current_recipe_rerun_assets(owner, live, payload, new_task_id):
+    """Build task-scoped material and recipe snapshots from the current saved palette."""
+    recipe_id = str(live.get("generated_recipe_id") or live.get("saved_holographic_recipe_id") or "")
+    recipe = owned_recipe(owner, recipe_id)
+    if not recipe:
+        raise ValueError("The saved Fauxlographic Palette used by this job no longer exists")
+    profile_bytes = s3.get_object(Bucket=BUCKET, Key=recipe["s3_key"])["Body"].read(MAX_RECIPE_BYTES + 1)
+    if len(profile_bytes) > MAX_RECIPE_BYTES:
+        raise ValueError("The saved Fauxlographic Palette is too large to rerun")
+    profile = json.loads(profile_bytes)
+    measured = profile.get("recipes") if isinstance(profile, dict) else None
+    if fauxlographic_schema_version(profile) < 2 or not isinstance(measured, list) or not measured:
+        raise ValueError("Only self-contained Fauxlographic Palettes can be used by Rasterizer")
+    selected_indexes = payload.get("selected_recipe_indexes")
+    if not isinstance(selected_indexes, list) or not selected_indexes:
+        selected_indexes = list(range(len(measured)))
+    if any(not isinstance(index, int) or index < 0 or index >= len(measured) for index in selected_indexes):
+        raise ValueError("The current Fauxlographic Palette no longer contains every selected swatch")
+    selections = [{"recipe_id": recipe_id, "recipe_index": index} for index in selected_indexes]
+    material_label = str(live.get("generated_material_name") or recipe.get("name") or "Fauxlographic Palette")
+    library_root = selected_settings_root(owner, selections, material_label)
+    embedded_black_name = ""
+    black_setting = usable_preserved_black_setting(profile.get("black_setting"))
+    if black_setting is not None:
+        embedded_black_name = "Rasterizer Preserved Black"
+        target_material = library_root.find("./Material")
+        black_entry = ET.SubElement(target_material, "Entry", {
+            "Thickness": "-1.0000", "Desc": embedded_black_name,
+            "NoThickTitle": embedded_black_name,
+        })
+        black_cut = lightburn_snapshot_element(black_setting["laser_settings"])
+        black_index = black_cut.find("./index")
+        if black_index is None:
+            black_index = ET.SubElement(black_cut, "index")
+        black_index.set("Value", "0")
+        black_name = black_cut.find("./name")
+        if black_name is None:
+            black_name = ET.SubElement(black_cut, "name")
+        black_name.set("Value", embedded_black_name)
+        black_entry.append(black_cut)
+    material_bytes = ET.tostring(library_root, encoding="utf-8", xml_declaration=True)
+    if len(material_bytes) > MAX_MATERIAL_BYTES:
+        raise ValueError("The current Fauxlographic Palette is too large to rerun")
+    material_name = safe_name(f"{material_label}.clb", "fauxlographic-palette.clb")
+    recipe_name = safe_name(recipe.get("original_name"), "recipe.json")
+    material_key = f"jobs/{new_task_id}/inputs/material-{material_name}"
+    recipe_key = f"jobs/{new_task_id}/inputs/recipe-{recipe_name}"
+    s3.put_object(Bucket=BUCKET, Key=material_key, Body=material_bytes, ContentType="application/xml")
+    s3.put_object(Bucket=BUCKET, Key=recipe_key, Body=profile_bytes, ContentType="application/json")
+    return material_key, recipe_key, embedded_black_name, material_label
+
+
+def rerun_account_job(event, source_task_id):
+    """Create a fresh queued job from one owned, retained terminal job."""
+    owner = user_id(event)
+    source_owner = table.get_item(
+        Key={"pk": f"JOB#{source_task_id}", "sk": "OWNER"}, ConsistentRead=True,
+    ).get("Item")
+    source_live = runtime(source_task_id)
+    if not source_owner or source_owner.get("user_id") != owner or not source_live or source_live.get("user_id") != owner:
+        return response(404, {"message": "Job not found"})
+    source_history = table.get_item(
+        Key={"pk": f"USER#{owner}", "sk": str(source_owner.get("history_sk") or "")},
+        ConsistentRead=True,
+    ).get("Item") or {}
+    status = str(source_live.get("status") or source_owner.get("status") or "").lower()
+    if status not in {"completed", "failed"} or not source_live.get("payload"):
+        return response(409, {"message": "Only completed or failed retained jobs can be rerun"})
+    mode = str(body_json(event).get("mode") or "exact").strip().lower()
+    if mode not in {"exact", "current_palette"}:
+        return response(400, {"message": "Choose an exact rerun or a current-palette rerun"})
+    if mode == "current_palette" and not (
+        source_live.get("saved_material_library_id")
+        or source_live.get("generated_recipe_id")
+        or source_live.get("saved_holographic_recipe_id")
+    ):
+        return response(409, {"message": "This job used a one-off uploaded palette, so it has no current saved palette to apply"})
+
+    new_task_id, now = str(uuid.uuid4()), int(time.time())
+    replacements, new_input_keys = {}, []
+    try:
+        for index, source_key in enumerate(dict.fromkeys(str(key) for key in source_owner.get("input_keys") or [] if key), 1):
+            destination = rerun_input_destination(source_key, source_task_id, new_task_id, index)
+            s3.copy_object(Bucket=BUCKET, CopySource={"Bucket": BUCKET, "Key": source_key}, Key=destination)
+            replacements[source_key] = destination
+            new_input_keys.append(destination)
+        payload = replace_job_asset_keys(
+            json_value(source_live["payload"]), replacements, source_task_id, new_task_id,
+        )
+        payload["task_id"] = new_task_id
+        payload["user_id"] = owner
+        current_material_key = ""
+        current_recipe_key = ""
+        current_black_name = str(source_live.get("generated_black_setting_name") or "")
+        current_material_label = str(source_live.get("generated_material_name") or "")
+        if mode == "current_palette" and source_live.get("saved_material_library_id"):
+            material = owned_material(owner, str(source_live["saved_material_library_id"]))
+            if not material:
+                raise ValueError("The saved Material Library used by this job no longer exists")
+            current_material_key = f"jobs/{new_task_id}/inputs/material-{safe_name(material.get('original_name'), 'materials.clb')}"
+            s3.copy_object(Bucket=BUCKET, CopySource={"Bucket": BUCKET, "Key": material["s3_key"]}, Key=current_material_key)
+            payload["material_key"] = current_material_key
+            new_input_keys.append(current_material_key)
+        if mode == "current_palette" and source_live.get("saved_holographic_recipe_id"):
+            recipe = owned_recipe(owner, str(source_live["saved_holographic_recipe_id"]))
+            if not recipe:
+                raise ValueError("The saved Fauxlographic Palette used by this job no longer exists")
+            current_recipe_key = f"jobs/{new_task_id}/inputs/recipe-{safe_name(recipe.get('original_name'), 'recipe.json')}"
+            s3.copy_object(Bucket=BUCKET, CopySource={"Bucket": BUCKET, "Key": recipe["s3_key"]}, Key=current_recipe_key)
+            payload["recipe_key"] = current_recipe_key
+            new_input_keys.append(current_recipe_key)
+        elif mode == "current_palette" and source_live.get("generated_recipe_id"):
+            current_material_key, current_recipe_key, current_black_name, current_material_label = current_recipe_rerun_assets(
+                owner, source_live, payload, new_task_id,
+            )
+            payload["material_key"] = current_material_key
+            payload["recipe_key"] = current_recipe_key
+            payload["embedded_material_name"] = current_material_label
+            payload["embedded_black_setting_name"] = current_black_name
+            new_input_keys.extend((current_material_key, current_recipe_key))
+
+        history_sk = f"JOB#{now:010d}#{new_task_id}"
+        artifact_prefix = f"users/{owner}/jobs/{new_task_id}/"
+        history = {
+            "pk": f"USER#{owner}", "sk": history_sk, "task_id": new_task_id,
+            "job_type": history_job_type(source_history),
+            "source_name": str(source_history.get("source_name") or source_owner.get("source_name") or "Artwork"),
+            "material_name": str(source_history.get("material_name") or source_owner.get("material_name") or ""),
+            "image_preset": str(source_history.get("image_preset") or source_owner.get("image_preset") or ""),
+            "abstract_filter": str(source_history.get("abstract_filter") or source_owner.get("abstract_filter") or "none"),
+            "run_parameters": source_history.get("run_parameters") or {},
+            "created_at": now, "updated_at": now, "status": "pending",
+            "artifact_prefix": artifact_prefix, "input_keys": list(dict.fromkeys(new_input_keys)),
+            "thumbnail_key": replacements.get(str(source_owner.get("thumbnail_key") or ""), ""),
+            "rerun_of": source_task_id, "rerun_mode": mode, "expires_at": now + TTL_SECONDS,
+        }
+        owner_record = {
+            "pk": f"JOB#{new_task_id}", "sk": "OWNER", "user_id": owner,
+            "job_type": history["job_type"], "source_name": history["source_name"],
+            "material_name": history["material_name"], "image_preset": history["image_preset"],
+            "abstract_filter": history["abstract_filter"], "created_at": now, "updated_at": now,
+            "history_sk": history_sk, "status": "pending", "artifact_prefix": artifact_prefix,
+            "input_keys": history["input_keys"], "thumbnail_key": history["thumbnail_key"],
+            "rerun_of": source_task_id, "rerun_mode": mode, "expires_at": now + TTL_SECONDS,
+        }
+        runtime_item = {
+            **runtime_key(new_task_id), "task_id": new_task_id, "user_id": owner,
+            "status": "pending", "payload": dynamo_value(payload), "log_count": 0,
+            "created_at": now, "updated_at": now, "expires_at": now + TTL_SECONDS,
+            "rerun_of": source_task_id, "rerun_mode": mode,
+        }
+        for field in (
+            "saved_material_library_id", "generated_recipe_id", "saved_holographic_recipe_id",
+            "generated_material_name", "generated_black_setting_name", "generated_recipe_count",
+        ):
+            if source_live.get(field) is not None:
+                runtime_item[field] = source_live[field]
+        if current_material_key:
+            runtime_item["saved_material_key"] = current_material_key
+        if current_recipe_key:
+            runtime_item["saved_recipe_key"] = current_recipe_key
+        with table.batch_writer() as batch:
+            batch.put_item(Item=runtime_item)
+            batch.put_item(Item=history)
+            batch.put_item(Item=owner_record)
+            batch.put_item(Item=admin_job_index_item(event, history))
+        queue_message = {"task_id": new_task_id}
+        if isinstance(payload.get("data"), dict) and payload["data"].get("high_resolution_panel") is True:
+            queue_message["worker_type"] = "high_resolution_panel"
+        sqs.send_message(QueueUrl=QUEUE_URL, MessageBody=json.dumps(queue_message, separators=(",", ":")))
+    except Exception:
+        existing = table.get_item(
+            Key={"pk": f"JOB#{new_task_id}", "sk": "OWNER"}, ConsistentRead=True,
+        ).get("Item")
+        if existing:
+            delete_job_assets_and_records(new_task_id, owner, existing)
+        else:
+            listed = s3.list_objects_v2(Bucket=BUCKET, Prefix=f"jobs/{new_task_id}/")
+            keys = [{"Key": str(item["Key"])} for item in listed.get("Contents", [])]
+            if keys:
+                s3.delete_objects(Bucket=BUCKET, Delete={"Objects": keys, "Quiet": True})
+        raise
+    return response(202, {"task_id": new_task_id, "status": "pending", "rerun_mode": mode})
 
 
 def clean_depth_palette(data):
@@ -3996,6 +4221,21 @@ def thumbnail_presigned_post(task_id, content_type, digest):
     )
 
 
+def snapshot_saved_input(task_id, digest, source_key, category, filename, maximum):
+    """Copy one mutable Vault object into the immutable retained job inputs."""
+    head = s3.head_object(Bucket=BUCKET, Key=source_key)
+    size = int(head.get("ContentLength") or 0)
+    if size < 1 or size > maximum:
+        raise ValueError("The selected saved input is empty or exceeds the allowed size")
+    destination = f"jobs/{task_id}/inputs/{category}-{safe_name(filename, 'input.bin')}"
+    s3.copy_object(
+        Bucket=BUCKET, CopySource={"Bucket": BUCKET, "Key": source_key}, Key=destination,
+        ContentType=str(head.get("ContentType") or "application/octet-stream"),
+        Metadata={"upload-capability": digest}, MetadataDirective="REPLACE",
+    )
+    return destination
+
+
 def create_upload(event):
     data = body_json(event)
     owner = user_id(event)
@@ -4039,8 +4279,12 @@ def create_upload(event):
         runtime_item["svg_only"] = True
     if thumbnail:
         runtime_item["expected_thumbnail_key"] = thumbnail["key"]
+    saved_material_key = ""
     if saved_material:
-        runtime_item["saved_material_key"] = saved_material["s3_key"]
+        saved_material_key = snapshot_saved_input(
+            task_id, digest, saved_material["s3_key"], "material", material_name, MAX_MATERIAL_BYTES,
+        )
+        runtime_item["saved_material_key"] = saved_material_key
         runtime_item["saved_material_name"] = material_name
         runtime_item["saved_material_library_id"] = saved_library_id
     generated_material_key = ""
@@ -4076,8 +4320,12 @@ def create_upload(event):
         s3.put_object(Bucket=BUCKET, Key=generated_material_key, Body=library_bytes,
                       ContentType="application/xml", Metadata={"upload-capability":digest})
         runtime_item["generated_recipe_id"] = saved_recipe_id
-        runtime_item["saved_recipe_key"] = saved_recipe["s3_key"]
-        runtime_item["saved_recipe_name"] = safe_name(saved_recipe.get("original_name"), "recipe.json")
+        saved_recipe_name = safe_name(saved_recipe.get("original_name"), "recipe.json")
+        saved_recipe_key = f"jobs/{task_id}/inputs/recipe-{saved_recipe_name}"
+        s3.put_object(Bucket=BUCKET, Key=saved_recipe_key, Body=json.dumps(profile, separators=(",", ":")).encode("utf-8"),
+                      ContentType="application/json", Metadata={"upload-capability":digest})
+        runtime_item["saved_recipe_key"] = saved_recipe_key
+        runtime_item["saved_recipe_name"] = saved_recipe_name
         runtime_item["generated_material_name"] = saved_recipe.get("name") or "Fauxlographic Palette"
         runtime_item["generated_black_setting_name"] = embedded_black_name
         runtime_item["generated_recipe_count"] = len(measured)
@@ -4092,7 +4340,7 @@ def create_upload(event):
     result["material"] = (None if svg_only else
                           {"key": generated_material_key, "saved": True, "generated": True, "name": material_name}
                           if saved_recipe else
-                          {"key": saved_material["s3_key"], "saved": True, "name": material_name}
+                          {"key": saved_material_key, "saved": True, "name": material_name}
                           if saved_material else
                           presigned_post(task_id, "material", material_name, material_type, MAX_MATERIAL_BYTES, digest))
     return response(201, result)
@@ -4834,16 +5082,24 @@ def create_holographic_upload(event):
     artwork_type = str(data.get("artwork_content_type") or mimetypes.guess_type(artwork_name)[0]
                        or "application/octet-stream")[:120]
     thumbnail = thumbnail_presigned_post(task_id, data.get("thumbnail_content_type"), digest)
+    material_name = safe_name(material.get("original_name"), "materials.clb")
+    recipe_name = safe_name(recipe.get("original_name"), "recipe.json")
+    material_key = snapshot_saved_input(
+        task_id, digest, material["s3_key"], "material", material_name, MAX_MATERIAL_BYTES,
+    )
+    recipe_key = snapshot_saved_input(
+        task_id, digest, recipe["s3_key"], "recipe", recipe_name, MAX_RECIPE_BYTES,
+    )
     now = int(time.time())
     runtime_item = {
         **runtime_key(task_id), "task_id": task_id, "user_id": owner,
         "status": "uploading", "upload_capability": digest, "log_count": 0,
         "upload_expires_at": now + UPLOAD_CAPABILITY_SECONDS,
         "created_at": now, "updated_at": now, "expires_at": now + TTL_SECONDS,
-        "saved_material_key": material["s3_key"],
-        "saved_material_name": safe_name(material.get("original_name"), "materials.clb"),
-        "saved_recipe_key": recipe["s3_key"],
-        "saved_recipe_name": safe_name(recipe.get("original_name"), "recipe.json"),
+        "saved_material_key": material_key, "saved_material_name": material_name,
+        "saved_material_library_id": str(data.get("saved_material_library_id") or "").strip(),
+        "saved_recipe_key": recipe_key, "saved_recipe_name": recipe_name,
+        "saved_holographic_recipe_id": str(data.get("saved_holographic_recipe_id") or "").strip(),
     }
     if thumbnail:
         runtime_item["expected_thumbnail_key"] = thumbnail["key"]
@@ -4853,8 +5109,8 @@ def create_holographic_upload(event):
         "artwork": presigned_post(task_id, "artwork", artwork_name, artwork_type,
                                     MAX_ARTWORK_BYTES, digest),
         "thumbnail": thumbnail,
-        "material": {"key": material["s3_key"], "saved": True},
-        "recipe": {"key": recipe["s3_key"], "saved": True},
+        "material": {"key": material_key, "saved": True},
+        "recipe": {"key": recipe_key, "saved": True},
         "expires_in_seconds": UPLOAD_CAPABILITY_SECONDS,
     })
 
@@ -4889,8 +5145,8 @@ def submit_holographic_job(event, task_id):
             if thumbnail_key != str(item.get("expected_thumbnail_key") or ""):
                 raise ValueError("The artwork thumbnail does not match this job. Submit the job again to start a fresh upload.")
             verify_upload(thumbnail_key, item["upload_capability"], MAX_THUMBNAIL_BYTES)
-        verify_saved_recipe(recipe_key, user_id(event), MAX_RECIPE_BYTES)
-        verify_saved_material(material_key, user_id(event), MAX_MATERIAL_BYTES)
+        verify_upload(recipe_key, item["upload_capability"], MAX_RECIPE_BYTES)
+        verify_upload(material_key, item["upload_capability"], MAX_MATERIAL_BYTES)
     except (TypeError, ValueError) as error:
         return response(400, {"message": str(error)})
     payload = {
@@ -5658,7 +5914,10 @@ def submit_job(event, task_id, guest=False):
         elif saved_material_key:
             if material_key != saved_material_key:
                 raise ValueError("The saved Material Library no longer matches this upload. Review your library choice, then submit the job again.")
-            verify_saved_material(material_key, owner, MAX_MATERIAL_BYTES)
+            if material_key.startswith(expected_prefix):
+                verify_upload(material_key, item["upload_capability"], MAX_MATERIAL_BYTES)
+            else:
+                verify_saved_material(material_key, owner, MAX_MATERIAL_BYTES)
         else:
             verify_upload(material_key, item["upload_capability"], MAX_MATERIAL_BYTES)
     except ValueError as error:
@@ -5945,6 +6204,9 @@ def handler(event, _context):
         if method in {"GET", "DELETE"} and len(parts) == 3 and parts[:2] == ["account", "jobs"]:
             uuid.UUID(parts[2])
             return account_job(event, parts[2]) if method == "GET" else delete_account_job(event, parts[2])
+        if method == "POST" and len(parts) == 4 and parts[:2] == ["account", "jobs"] and parts[3] == "rerun":
+            uuid.UUID(parts[2])
+            return rerun_account_job(event, parts[2])
         if method == "GET" and len(parts) == 3 and parts[:2] == ["admin", "jobs"]:
             uuid.UUID(parts[2])
             return admin_job(event, parts[2])
