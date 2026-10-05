@@ -163,7 +163,7 @@ def svg_to_unit_geometry(spec, padding=0.06):
             "containing closed paths and try again."
         ) from error
 
-    rings = []
+    element_geometries = []
     remaining_points = MAX_SVG_SAMPLED_POINTS
     for element in document.elements():
         if not isinstance(element, Shape):
@@ -172,26 +172,41 @@ def svg_to_unit_geometry(spec, padding=0.06):
             path = Path(element)
         except Exception:
             continue
+        element_rings = []
         for subpath in path.as_subpaths():
             polygon, remaining_points = _sample_closed_subpath(
                 subpath, remaining_points
             )
             if polygon is not None and not polygon.is_empty and polygon.area > 1e-12:
-                rings.append(polygon.buffer(0))
-    if not rings:
+                element_rings.append(polygon.buffer(0))
+        if not element_rings:
+            continue
+
+        # Compound paths commonly express counters as nested subpaths, so
+        # apply even-odd nesting within each SVG element. Separate SVG
+        # elements are independently painted shapes and must be combined;
+        # treating their overlaps as holes can cancel multi-color artwork or
+        # duplicated silhouette outlines almost completely.
+        ordered = sorted(element_rings, key=lambda item: item.area, reverse=True)
+        element_geometry = GeometryCollection()
+        for index, ring in enumerate(ordered):
+            marker = ring.representative_point()
+            depth = sum(parent.contains(marker) for parent in ordered[:index])
+            element_geometry = (
+                element_geometry.difference(ring)
+                if depth % 2
+                else unary_union((element_geometry, ring))
+            )
+        if not element_geometry.is_empty:
+            element_geometries.append(element_geometry)
+
+    if not element_geometries:
         raise ValueError(
             "The custom vector SVG does not contain a closed shape. Close at "
             "least one path in your vector editor and export the SVG again."
         )
 
-    # SVG glyphs commonly express holes as nested subpaths. Applying even-odd
-    # nesting here preserves those counters without retaining any SVG styling.
-    ordered = sorted(rings, key=lambda item: item.area, reverse=True)
-    geometry = GeometryCollection()
-    for index, ring in enumerate(ordered):
-        marker = ring.representative_point()
-        depth = sum(parent.contains(marker) for parent in ordered[:index])
-        geometry = geometry.difference(ring) if depth % 2 else unary_union((geometry, ring))
+    geometry = unary_union(element_geometries)
     # Rasterizer's image-derived geometry and exported SVG coordinates both
     # increase downward. Preserve the uploaded SVG's visual orientation so an
     # asymmetric custom glyph or Krasnow cell is not turned upside down.

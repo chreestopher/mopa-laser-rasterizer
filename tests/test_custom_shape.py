@@ -62,11 +62,28 @@ def test_automatic_svg_simplification_preserves_holes():
         "name": "over-detailed-ring.svg",
         "svg": (
             '<svg viewBox="0 0 2000 2000">'
-            f'<polygon points="{outer}"/>'
-            '<circle cx="1000" cy="1000" r="350"/>'
+            f'<path fill-rule="evenodd" d="M {outer} Z '
+            'M 1350,1000 A 350,350 0 1 0 650,1000 '
+            'A 350,350 0 1 0 1350,1000 Z"/>'
             '</svg>'
         ),
     }, padding=0)
 
     assert _geometry_point_count(geometry) <= MAX_SVG_POINTS
     assert not geometry.contains(geometry.centroid)
+
+
+def test_separate_overlapping_svg_elements_form_one_silhouette():
+    geometry = svg_to_unit_geometry({
+        "name": "layered-artwork.svg",
+        "svg": (
+            '<svg viewBox="0 0 100 100">'
+            '<rect x="0" y="0" width="100" height="100"/>'
+            '<circle cx="50" cy="50" r="30" fill="#00a000"/>'
+            '<path d="M0 0 H100 V100 H0 Z" fill="none"/>'
+            '</svg>'
+        ),
+    }, padding=0)
+
+    assert geometry.area == pytest.approx(1.0)
+    assert geometry.bounds == pytest.approx((-.5, -.5, .5, .5))
