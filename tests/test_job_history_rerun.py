@@ -68,4 +68,4 @@ def test_saved_palettes_are_snapshotted_for_future_exact_reruns():
 
 
 def test_history_uses_new_asset_version_for_rerun_ui():
-    assert '/history.js?v=11' in HISTORY_HTML
+    assert '/history.js?v=12' in HISTORY_HTML
