@@ -45,6 +45,7 @@ WORKER_LOG_GROUP_NAME = os.environ.get("WORKER_LOG_GROUP_NAME", "").strip()
 PIPE_NAME = os.environ.get("WORKER_PIPE_NAME", "").strip()
 AWS_ACCOUNT_ID = os.environ.get("DEPLOYMENT_ACCOUNT_ID", "").strip()
 MAX_JOB_LOG_EVENTS = max(1, min(10000, int(os.environ.get("MAX_JOB_LOG_EVENTS", "10000"))))
+HIGH_CAPACITY_PROCESSING_AXIS = 800
 MAX_STANDARD_PROCESSING_AXIS = 1600
 MAX_HIGH_RES_PANEL_PIXELS = 40_000_000
 
@@ -61,6 +62,25 @@ cloudwatch = boto3.client("cloudwatch", region_name=REGION)
 table = boto3.resource("dynamodb", region_name=REGION).Table(TABLE_NAME)
 
 SERVICE_CONTROL_KEY = {"pk": "SYSTEM#SERVICE", "sk": "CONTROL"}
+
+
+def needs_high_capacity_worker(width, height):
+    """Return whether requested processing dimensions need the larger worker."""
+    return max(int(width or 0), int(height or 0)) > HIGH_CAPACITY_PROCESSING_AXIS
+
+
+def raster_job_worker_type(data):
+    """Select the existing larger worker for high-capacity raster jobs."""
+    if not isinstance(data, dict):
+        return ""
+    if data.get("high_resolution_panel") is True or data.get("high_capacity_worker") is True:
+        return "high_resolution_panel"
+    try:
+        if needs_high_capacity_worker(data.get("new_width"), data.get("new_height")):
+            return "high_resolution_panel"
+    except (TypeError, ValueError):
+        pass
+    return ""
 
 PALETTE = [
     ("Black", "#000000"), ("Blue", "#0000FF"), ("Red", "#FF0000"),
@@ -1830,8 +1850,9 @@ def rerun_account_job(event, source_task_id):
             batch.put_item(Item=owner_record)
             batch.put_item(Item=admin_job_index_item(event, history))
         queue_message = {"task_id": new_task_id}
-        if isinstance(payload.get("data"), dict) and payload["data"].get("high_resolution_panel") is True:
-            queue_message["worker_type"] = "high_resolution_panel"
+        worker_type = raster_job_worker_type(payload.get("data"))
+        if worker_type:
+            queue_message["worker_type"] = worker_type
         sqs.send_message(QueueUrl=QUEUE_URL, MessageBody=json.dumps(queue_message, separators=(",", ":")))
     except Exception:
         existing = table.get_item(
@@ -5429,6 +5450,7 @@ def submit_job(event, task_id, guest=False):
         data["new_width"] = str(processing_width)
         data["new_height"] = str(processing_height)
         data["high_resolution_panel"] = high_resolution_panel
+        data["high_capacity_worker"] = needs_high_capacity_worker(processing_width, processing_height)
     else:
         panel_tiling = {"enabled": False}
         data["high_resolution_panel"] = False
@@ -5440,6 +5462,7 @@ def submit_job(event, task_id, guest=False):
                 raise ValueError
         except (TypeError, ValueError):
             return response(400, {"message": "Ordinary Rasterizer jobs are limited to 1,600 processing pixels per axis. Enable Panel Tiling for a larger assembled image."})
+        data["high_capacity_worker"] = needs_high_capacity_worker(*standard_dimensions)
     data["panel_tiling"] = panel_tiling
     crop_shape = str(data.get("crop_shape") or "").strip().lower()
     if crop_shape not in {"", "rectangle", "square", "oval", "circle", "transparency"}:
@@ -6043,8 +6066,9 @@ def submit_job(event, task_id, guest=False):
         batch.put_item(Item=admin_index)
     try:
         queue_message = {"task_id": task_id}
-        if data.get("high_resolution_panel") is True:
-            queue_message["worker_type"] = "high_resolution_panel"
+        worker_type = raster_job_worker_type(data)
+        if worker_type:
+            queue_message["worker_type"] = worker_type
         sqs.send_message(QueueUrl=QUEUE_URL, MessageBody=json.dumps(queue_message, separators=(",", ":")))
     except Exception:
         # Restore the capability so a transient SQS error is safely retryable.
