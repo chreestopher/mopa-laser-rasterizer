@@ -1,6 +1,6 @@
 import {createHardwarePreview} from "./spiralgraph/hardware-preview-v1.js";
 import {createCanvasPreview} from "./spiralgraph/canvas-preview-v1.js";
-import {createDrawingEditor} from "./spiralgraph/drawing-editor-v1.js";
+import {createDrawingEditor} from "./spiralgraph/drawing-editor-v1.js?v=2";
 import {createJobLifecycle} from "./spiralgraph/job-lifecycle-v1.js";
 import {createPaletteRouting} from "./spiralgraph/palette-routing-v1.js";
 import {COLORS,GEARS,constrainWorkbedToDiameter,createDrawingState,newLayer} from "./spiralgraph/state-v1.js";

@@ -10,7 +10,7 @@ def read(path):
 
 def test_mandala_lab_uses_external_assets_and_accessible_previews():
     page = read("serverless_web/mandala.html")
-    assert 'src="/mandala.js?v=14"' in page
+    assert 'src="/mandala.js?v=15"' in page
     assert 'href="/staging-pages.css?v=4"' in page
     assert 'href="/mandala.css?v=2"' in page
     assert "<script>" not in page
@@ -36,7 +36,7 @@ def test_mandala_lab_is_linked_and_deployed():
     assert '"/mandala.html"' in shell
     assert 'href="/mandala.html"' in landing
     assert '$BUILD_DIR/seo/mandala.html' in deploy
-    for filename in ("mandala.js", "mandala.css", "mandala/state-v1.js", "mandala/palette-routing-v1.js", "mandala/geometry-v1.js", "mandala/preview-v1.js", "mandala/asset-constraints-v1.js", "mandala/job-lifecycle-v1.js", "mandala/layer-editor-v1.js"):
+    for filename in ("custom-image-vectorizer-v1.js", "mandala.js", "mandala.css", "mandala/state-v1.js", "mandala/palette-routing-v1.js", "mandala/geometry-v1.js", "mandala/preview-v1.js", "mandala/asset-constraints-v1.js", "mandala/job-lifecycle-v1.js", "mandala/layer-editor-v1.js"):
         assert f'serverless_web/{filename}' in deploy
 
 
@@ -62,15 +62,18 @@ def test_mandala_jobs_are_authenticated_history_backed_worker_jobs():
     assert 'layered_mandala:"Layered Mandala Lab"' in history
 
 
-def test_mandala_client_defaults_cut_role_and_limits_custom_svg():
+def test_mandala_client_defaults_cut_role_and_accepts_custom_images():
     client = read("serverless_web/mandala.js")
     layer_editor = read("serverless_web/mandala/layer-editor-v1.js")
     job_lifecycle = read("serverless_web/mandala/job-lifecycle-v1.js")
     palette_routing = read("serverless_web/mandala/palette-routing-v1.js")
     asset_constraints = read("serverless_web/mandala/asset-constraints-v1.js")
     assert 'defaultRoleEntry(library,material,"Cut")' in palette_routing
-    assert 'file.size>65536' in asset_constraints
-    assert 'from "./mandala/asset-constraints-v1.js"' in client
+    vectorizer = read("serverless_web/custom-image-vectorizer-v1.js")
+    assert 'file.size>SVG_LIMIT' in vectorizer
+    assert 'file.size>RASTER_LIMIT' in vectorizer
+    assert 'normalizeCustomImage(event.target.files[0])' in asset_constraints
+    assert 'from "./mandala/asset-constraints-v1.js?v=2"' in client
     assert 'layers.length>=12' in layer_editor
     assert 'api("/mandala/jobs"' in job_lifecycle
 
@@ -89,21 +92,25 @@ def test_mandala_job_lifecycle_owns_payload_auth_submission_polling_and_resume()
     assert "_image,_imagePromise,...layer" in lifecycle
 
 
-def test_mandala_asset_constraints_own_svg_safety_and_project_dimensions():
+def test_mandala_asset_constraints_use_shared_image_tracing_and_own_project_dimensions():
     client = read("serverless_web/mandala.js")
     constraints = read("serverless_web/mandala/asset-constraints-v1.js")
-    assert "export async function normalizeSvg(" in constraints
+    vectorizer = read("serverless_web/custom-image-vectorizer-v1.js")
+    assert 'from "../custom-image-vectorizer-v1.js"' in constraints
+    assert "export async function normalizeCustomImage(" in vectorizer
+    assert "export function maskToSvg(" in vectorizer
     assert "export function createMandalaAssetConstraints(" in constraints
-    for function in ("normalizeSvg", "syncProjectDimensions", "handleCustomFileChange", "bindEvents"):
+    for function in ("syncProjectDimensions", "handleCustomFileChange", "bindEvents"):
         assert f"function {function}(" in constraints
         assert f"function {function}(" not in client
     for message in (
-        "Choose an SVG file.",
+        "Choose an SVG or raster image.",
         "Custom SVG files must be no larger than 64 KB.",
         "The custom SVG could not be read.",
         "Embedded or external SVG content is not supported.",
     ):
-        assert message in constraints
+        assert message in vectorizer
+    assert "Raster images must be no larger than 10 MB." in vectorizer
     assert "diameter*.15" in constraints
     assert "diameter*.08" in constraints
 
@@ -116,7 +123,7 @@ def test_mandala_preview_uses_slider_and_updates_live_with_layer_settings():
     assert "function syncPreviewSelector()" in layer_editor
     assert "syncPreviewSelector();schedulePreview()" in layer_editor
     assert 'data-action="select"' not in layer_editor
-    assert 'from "./mandala/preview-v1.js"' in client
+    assert 'from "./mandala/preview-v1.js?v=2"' in client
     assert "export function createMandalaPreview(" in preview
     for function in ("schedulePreview", "customImage", "drawLayer", "drawPreviews"):
         assert f"function {function}(" in preview
@@ -164,7 +171,7 @@ def test_each_mandala_layer_can_be_randomized_or_reset_to_defaults():
 def test_mandala_layer_editor_owns_controls_collection_and_preview_selection():
     client = read("serverless_web/mandala.js")
     layer_editor = read("serverless_web/mandala/layer-editor-v1.js")
-    assert 'from "./mandala/layer-editor-v1.js"' in client
+    assert 'from "./mandala/layer-editor-v1.js?v=2"' in client
     assert "export function createMandalaLayerEditor(" in layer_editor
     for function in ("numberControl", "layerCard", "syncPreviewSelector", "renderLayers", "resetLayers", "getLayers", "getActiveLayer", "bind"):
         assert f"function {function}(" in layer_editor

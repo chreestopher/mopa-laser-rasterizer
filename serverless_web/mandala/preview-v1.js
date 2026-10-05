@@ -17,7 +17,7 @@ export function createMandalaPreview({query,getLayers,getActiveLayer}){
     layer._imagePromise=new Promise((resolve,reject)=>{
       const image=new Image(),url=URL.createObjectURL(new Blob([layer.custom_svg.svg],{type:"image/svg+xml"}));
       image.onload=()=>{URL.revokeObjectURL(url);layer._image=image;resolve(image)};
-      image.onerror=()=>{URL.revokeObjectURL(url);reject(new Error("Custom SVG preview failed"))};
+      image.onerror=()=>{URL.revokeObjectURL(url);reject(new Error("Custom image preview failed"))};
       image.src=url;
     }).catch(()=>null);
     return layer._imagePromise;

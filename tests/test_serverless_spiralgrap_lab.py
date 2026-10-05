@@ -14,7 +14,7 @@ def test_spiralgrap_page_uses_external_assets_and_classic_controls():
     client = read("serverless_web/spiralgraph.js")
     job_lifecycle = read("serverless_web/spiralgraph/job-lifecycle-v1.js")
     drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v1.js")
-    assert 'src="/spiralgraph.js?v=10"' in page
+    assert 'src="/spiralgraph.js?v=11"' in page
     assert 'href="/staging-pages.css?v=4"' in page
     assert 'href="/spiralgraph.css?v=4"' in page
     assert "Track plate" in drawing_editor and "Rolling gear" in drawing_editor and "Pen hole" in drawing_editor
@@ -143,7 +143,7 @@ def test_spiralgrap_is_deployed_linked_documented_and_history_backed():
     worker = read("worker.py")
     template = read("ecs/serverless-staging-web.yaml")
     history = read("serverless_web/history.js")
-    for filename in ("spiralgraph.html", "spiralgraph.js", "spiralgraph.css", "spiralgraph/geometry-v1.js", "spiralgraph/hardware-preview-v1.js", "spiralgraph/canvas-preview-v1.js", "spiralgraph/drawing-editor-v1.js", "spiralgraph/state-v1.js", "spiralgraph/palette-routing-v1.js", "spiralgraph/job-lifecycle-v1.js"):
+    for filename in ("custom-image-vectorizer-v1.js", "spiralgraph.html", "spiralgraph.js", "spiralgraph.css", "spiralgraph/geometry-v1.js", "spiralgraph/hardware-preview-v1.js", "spiralgraph/canvas-preview-v1.js", "spiralgraph/drawing-editor-v1.js", "spiralgraph/state-v1.js", "spiralgraph/palette-routing-v1.js", "spiralgraph/job-lifecycle-v1.js"):
         assert filename in deploy
     assert '"/spiralgraph.html"' in shell and 'href="/spiralgraph.html"' in landing
     assert '"spiralgraph-lab": _page(' in docs
@@ -158,14 +158,17 @@ def test_spiralgrap_is_deployed_linked_documented_and_history_backed():
     assert 'spiralgrap:"SpiralGraph Lab"' in history
 
 
-def test_spiralgrap_validates_custom_svg_and_processing_modes_on_both_sides():
+def test_spiralgrap_validates_custom_images_and_processing_modes_on_both_sides():
     client = read("serverless_web/spiralgraph.js")
     drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v1.js")
     api = read("serverless_api/handler.py")
     backend = read("lib/spiralgrap.py")
     for field in ("track", "gear_teeth", "pen_hole", "side", "start_mark", "direction", "output_mode", "fill_thickness_mm", "swatch_hex"):
         assert (field in client or field in drawing_editor) and field in api and field in backend
-    assert "file.size>65536" in drawing_editor
+    vectorizer = read("serverless_web/custom-image-vectorizer-v1.js")
+    assert 'from "../custom-image-vectorizer-v1.js"' in drawing_editor
+    assert "normalizeCustomImage(event.target.files[0],{validateSvg:geometryPoints})" in drawing_editor
+    assert "file.size>SVG_LIMIT" in vectorizer and "file.size>RASTER_LIMIT" in vectorizer
     assert 'expected_type, required' in api
     assert 'closed=False' in backend
     assert "_fill_rings" in backend

@@ -337,6 +337,19 @@ HARNESS = r"""
     check(card.querySelector('.custom-status').textContent.includes('Loaded closed-track.svg'), 'valid custom closed SVG was not retained');
     check($('#hardwareSummary').textContent.includes('custom'), 'hardware summary did not switch to custom track');
     check(!$('#hardwareSummary').textContent.includes('unavailable'), 'custom track made hardware preview unavailable');
+
+    card = $$('.layer-card')[0];
+    const pngBytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='), character => character.charCodeAt(0));
+    const rasterInput = card.querySelector('[data-field="custom_file"]');
+    Object.defineProperty(rasterInput, 'files', {configurable: true, value: [new File([pngBytes], 'closed-track.png', {type: 'image/png'})]});
+    rasterInput.dispatchEvent(new Event('change', {bubbles: true}));
+    const rasterDeadline = Date.now() + 5000;
+    while (!$$('.layer-card')[0].querySelector('.custom-status').textContent.includes('Loaded closed-track.png') && Date.now() < rasterDeadline) {
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    card = $$('.layer-card')[0];
+    check(card.querySelector('.custom-status').textContent.includes('Loaded closed-track.png'), 'raster track was not converted and retained');
+    check(!$('#hardwareSummary').textContent.includes('unavailable'), 'converted raster track made hardware preview unavailable');
   }
 
   async function submitChecks() {
@@ -452,9 +465,9 @@ class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
         page = page_path.read_text(encoding="utf-8")
         page = re.sub(r'\s*<script src="/staging-shell\.js\?v=4" defer></script>', '', page)
         page = page.replace(
-            '<script src="/spiralgraph.js?v=10" type="module"></script>',
+            '<script src="/spiralgraph.js?v=11" type="module"></script>',
             '<script src="/spiralgraph-characterization-harness.js"></script>\n'
-            '<script src="/spiralgraph.js?v=10" type="module"></script>',
+            '<script src="/spiralgraph.js?v=11" type="module"></script>',
         )
         page_path.write_text(page, encoding="utf-8")
         (cls.site / "spiralgraph-characterization-harness.js").write_text(
@@ -530,7 +543,7 @@ class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
     def test_selected_and_stacked_canvas_previews_preserve_colors_and_frame_coalescing(self):
         self._run_scenario("canvas-preview")
 
-    def test_custom_closed_svg_track_updates_hardware(self):
+    def test_custom_svg_and_raster_tracks_update_hardware(self):
         self._run_scenario("custom-track")
 
     def test_submission_payload_completion_outputs_and_resume_url(self):

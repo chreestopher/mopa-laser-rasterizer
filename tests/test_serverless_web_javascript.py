@@ -699,7 +699,7 @@ def test_mandala_preview_module_owns_canvas_rendering_and_imports_geometry():
     entry = (WEB / "mandala.js").read_text(encoding="utf-8")
     preview = (WEB / "mandala" / "preview-v1.js").read_text(encoding="utf-8")
 
-    assert 'from "./mandala/preview-v1.js"' in entry
+    assert 'from "./mandala/preview-v1.js?v=2"' in entry
     assert 'from "./geometry-v1.js"' in preview
     assert "export const COLORS=" in preview
     assert "export function createMandalaPreview(" in preview
@@ -708,16 +708,19 @@ def test_mandala_preview_module_owns_canvas_rendering_and_imports_geometry():
         assert f"function {function}(" not in entry
 
 
-def test_mandala_asset_constraints_module_owns_svg_and_dimension_rules():
+def test_mandala_asset_constraints_module_uses_shared_image_vectorizer_and_owns_dimensions():
     entry = (WEB / "mandala.js").read_text(encoding="utf-8")
     constraints = (WEB / "mandala" / "asset-constraints-v1.js").read_text(encoding="utf-8")
 
-    assert 'from "./mandala/asset-constraints-v1.js"' in entry
-    assert "export async function normalizeSvg(" in constraints
+    vectorizer = (WEB / "custom-image-vectorizer-v1.js").read_text(encoding="utf-8")
+    assert 'from "./mandala/asset-constraints-v1.js?v=2"' in entry
+    assert 'from "../custom-image-vectorizer-v1.js"' in constraints
+    assert "export async function normalizeCustomImage(" in vectorizer
+    assert "export function maskToSvg(" in vectorizer
     assert "export function createMandalaAssetConstraints(" in constraints
-    assert "file.size>65536" in constraints
-    assert "new DOMParser()" in constraints
-    assert "new XMLSerializer()" in constraints
+    assert "file.size>SVG_LIMIT" in vectorizer
+    assert "new DOMParser()" in vectorizer
+    assert "new XMLSerializer()" in vectorizer
     assert "diameter*.15" in constraints and "diameter*.08" in constraints
     assert "function normalizeSvg(" not in entry
     assert "function syncProjectDimensions(" not in entry
@@ -744,7 +747,7 @@ def test_mandala_layer_editor_owns_controls_collection_and_preview_selection():
     entry = (WEB / "mandala.js").read_text(encoding="utf-8")
     editor = (WEB / "mandala" / "layer-editor-v1.js").read_text(encoding="utf-8")
 
-    assert 'from "./mandala/layer-editor-v1.js"' in entry
+    assert 'from "./mandala/layer-editor-v1.js?v=2"' in entry
     assert 'from "./state-v1.js"' in editor
     assert "export function createMandalaLayerEditor(" in editor
     for function in ("numberControl", "layerCard", "syncPreviewSelector", "renderLayers", "resetLayers", "bind"):
@@ -894,6 +897,7 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
     assert referenced_modes[WEB / "rasterizer" / "form-state-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "ui-helpers-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "material-input-v1.js"] == {"module"}
+    assert referenced_modes[WEB / "custom-image-vectorizer-v1.js"] == {"module"}
     assert referenced_modes[WEB / "mandala" / "state-v1.js"] == {"module"}
     assert referenced_modes[WEB / "mandala" / "palette-routing-v1.js"] == {"module"}
     assert referenced_modes[WEB / "mandala" / "geometry-v1.js"] == {"module"}

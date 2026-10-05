@@ -29,7 +29,7 @@
           "title": "New experimental laboratories",
           "items": [
             "Layered Mandala Lab builds coordinated multi-sheet radial artwork with custom motifs, openwork, structural supports, and per-layer Randomize and Reset controls.",
-            "SpiralGraph Lab creates open-line or filled-ribbon drawings from interactive virtual tracks, gears, pencil holes, and custom SVG tracks, with optional per-drawing palette routing.",
+            "SpiralGraph Lab creates open-line or filled-ribbon drawings from interactive virtual tracks, gears, pencil holes, and custom SVG or raster-image tracks, with optional per-drawing palette routing.",
             "Generated LightBurn projects remain editable starting points: inspect every layer and setting, then test on suitable scrap before running valuable work."
           ]
         }
