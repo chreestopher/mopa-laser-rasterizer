@@ -44,4 +44,4 @@ def test_job_history_renders_thumbnail_only_inside_expanded_details():
     assert "renderInputPreview(job)" in HISTORY_SCRIPT
     assert ".job-input-preview img" in HISTORY_PAGE
     assert "repeating-conic-gradient" in HISTORY_PAGE
-    assert '/history.js?v=10' in HISTORY_PAGE
+    assert '/history.js?v=11' in HISTORY_PAGE
