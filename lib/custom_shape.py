@@ -17,6 +17,7 @@ MAX_MASK_DIMENSION = 128
 MAX_MASK_BYTES = MAX_MASK_DIMENSION * MAX_MASK_DIMENSION
 MAX_SVG_CHARACTERS = 65_536
 MAX_SVG_POINTS = 4_096
+MAX_SVG_SAMPLED_POINTS = 32_768
 
 
 def _normalize_unit_geometry(geometry, padding, *, flip_y=True, empty_message=None):
@@ -66,6 +67,56 @@ def _validate_svg_text(svg_text):
     return svg_text
 
 
+def _geometry_point_count(geometry):
+    if isinstance(geometry, Polygon):
+        return len(geometry.exterior.coords) + sum(
+            len(interior.coords) for interior in geometry.interiors
+        )
+    return sum(
+        _geometry_point_count(component)
+        for component in getattr(geometry, "geoms", ())
+    )
+
+
+def _simplify_geometry_to_point_limit(geometry, max_points=MAX_SVG_POINTS):
+    """Reduce imported detail while keeping the SVG's topology and holes."""
+    if _geometry_point_count(geometry) <= max_points:
+        return geometry
+
+    lower_tolerance = 0.0
+    upper_tolerance = 1e-6
+    simplified = None
+    while upper_tolerance <= 0.05:
+        candidate = geometry.simplify(
+            upper_tolerance, preserve_topology=True
+        ).buffer(0)
+        if not candidate.is_empty and _geometry_point_count(candidate) <= max_points:
+            simplified = candidate
+            break
+        lower_tolerance = upper_tolerance
+        upper_tolerance *= 2
+
+    if simplified is None:
+        raise ValueError(
+            "The custom vector SVG remains too detailed after automatic "
+            "simplification. Simplify its paths in your vector editor and try again."
+        )
+
+    # Find the smallest tolerance that satisfies the cap so the imported cell
+    # retains as much of the uploaded outline as possible.
+    for _ in range(16):
+        tolerance = (lower_tolerance + upper_tolerance) / 2
+        candidate = geometry.simplify(
+            tolerance, preserve_topology=True
+        ).buffer(0)
+        if not candidate.is_empty and _geometry_point_count(candidate) <= max_points:
+            simplified = candidate
+            upper_tolerance = tolerance
+        else:
+            lower_tolerance = tolerance
+    return simplified
+
+
 def _sample_closed_subpath(subpath, remaining_points):
     segments = list(subpath)
     drawable = [segment for segment in segments if not isinstance(segment, Move)]
@@ -91,7 +142,8 @@ def _sample_closed_subpath(subpath, remaining_points):
             remaining_points -= 1
             if remaining_points < 0:
                 raise ValueError(
-                    f"Custom vector SVG shapes may contain at most {MAX_SVG_POINTS:,} sampled points."
+                    "The custom vector SVG contains too much source geometry to "
+                    "simplify safely. Simplify its paths in your vector editor and try again."
                 )
     if len(points) < 4:
         return None, remaining_points
@@ -112,7 +164,7 @@ def svg_to_unit_geometry(spec, padding=0.06):
         ) from error
 
     rings = []
-    remaining_points = MAX_SVG_POINTS
+    remaining_points = MAX_SVG_SAMPLED_POINTS
     for element in document.elements():
         if not isinstance(element, Shape):
             continue
@@ -143,7 +195,8 @@ def svg_to_unit_geometry(spec, padding=0.06):
     # Rasterizer's image-derived geometry and exported SVG coordinates both
     # increase downward. Preserve the uploaded SVG's visual orientation so an
     # asymmetric custom glyph or Krasnow cell is not turned upside down.
-    return _normalize_unit_geometry(geometry, padding, flip_y=False)
+    geometry = _normalize_unit_geometry(geometry, padding, flip_y=False)
+    return _simplify_geometry_to_point_limit(geometry)
 
 
 def decode_grayscale_mask(spec):
