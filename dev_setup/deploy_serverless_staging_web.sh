@@ -214,13 +214,13 @@ aws s3 cp "$REPO_ROOT/serverless_web/mandala/palette-routing-v1.js" "s3://$STATI
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/mandala/geometry-v1.js" "s3://$STATIC_BUCKET/web/mandala/geometry-v1.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
-aws s3 cp "$REPO_ROOT/serverless_web/mandala/preview-v1.js" "s3://$STATIC_BUCKET/web/mandala/preview-v1.js" \
+aws s3 cp "$REPO_ROOT/serverless_web/mandala/preview-v2.js" "s3://$STATIC_BUCKET/web/mandala/preview-v2.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
-aws s3 cp "$REPO_ROOT/serverless_web/mandala/asset-constraints-v1.js" "s3://$STATIC_BUCKET/web/mandala/asset-constraints-v1.js" \
+aws s3 cp "$REPO_ROOT/serverless_web/mandala/asset-constraints-v2.js" "s3://$STATIC_BUCKET/web/mandala/asset-constraints-v2.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/mandala/job-lifecycle-v1.js" "s3://$STATIC_BUCKET/web/mandala/job-lifecycle-v1.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
-aws s3 cp "$REPO_ROOT/serverless_web/mandala/layer-editor-v1.js" "s3://$STATIC_BUCKET/web/mandala/layer-editor-v1.js" \
+aws s3 cp "$REPO_ROOT/serverless_web/mandala/layer-editor-v2.js" "s3://$STATIC_BUCKET/web/mandala/layer-editor-v2.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/mandala.js" "s3://$STATIC_BUCKET/web/mandala.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
@@ -228,15 +228,15 @@ aws s3 cp "$REPO_ROOT/serverless_web/mandala.css" "s3://$STATIC_BUCKET/web/manda
   --region "$REGION" --content-type text/css --cache-control no-cache --only-show-errors
 aws s3 cp "$BUILD_DIR/seo/mandala.html" "s3://$STATIC_BUCKET/web/mandala.html" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
-aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/geometry-v1.js" "s3://$STATIC_BUCKET/web/spiralgraph/geometry-v1.js" \
+aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/geometry-v2.js" "s3://$STATIC_BUCKET/web/spiralgraph/geometry-v2.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
-aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/hardware-preview-v1.js" "s3://$STATIC_BUCKET/web/spiralgraph/hardware-preview-v1.js" \
+aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/hardware-preview-v2.js" "s3://$STATIC_BUCKET/web/spiralgraph/hardware-preview-v2.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
-aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/canvas-preview-v1.js" "s3://$STATIC_BUCKET/web/spiralgraph/canvas-preview-v1.js" \
+aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/canvas-preview-v2.js" "s3://$STATIC_BUCKET/web/spiralgraph/canvas-preview-v2.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
-aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/drawing-editor-v1.js" "s3://$STATIC_BUCKET/web/spiralgraph/drawing-editor-v1.js" \
+aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/drawing-editor-v2.js" "s3://$STATIC_BUCKET/web/spiralgraph/drawing-editor-v2.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
-aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/state-v1.js" "s3://$STATIC_BUCKET/web/spiralgraph/state-v1.js" \
+aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/state-v2.js" "s3://$STATIC_BUCKET/web/spiralgraph/state-v2.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/palette-routing-v1.js" "s3://$STATIC_BUCKET/web/spiralgraph/palette-routing-v1.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors

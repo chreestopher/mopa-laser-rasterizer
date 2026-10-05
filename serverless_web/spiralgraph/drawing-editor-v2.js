@@ -1,9 +1,10 @@
-import {geometryPoints} from "./geometry-v1.js";
+import {geometryPoints} from "./geometry-v2.js";
 import {normalizeCustomImage} from "../custom-image-vectorizer-v1.js";
 
 const $=value=>document.querySelector(value);
 
 function options(values,current){return values.map(([value,label])=>`<option value="${value}" ${String(current)===String(value)?"selected":""}>${label}</option>`).join("")}
+function sizeControl(field,label,value,min,max){return`<label>${label}<input data-field="${field}" type="number" min="${min}" max="${max}" step="1" value="${value}"></label>`}
 
 export function createDrawingEditor({
   colors,
@@ -24,8 +25,13 @@ export function createDrawingEditor({
 <label>Drawing name<input data-field="name" maxlength="80" value="${escapeHtml(layer.name)}"></label>
 <label>Track plate<select data-field="track">${options([["circle","96 · Circle"],["oval","105 · Oval"],["rounded_triangle","105 · Rounded triangle"],["rounded_square","120 · Rounded square"],["custom","Custom image"]],layer.track)}</select></label>
 <label class="custom-track" ${layer.track==="custom"?"":"hidden"}>Custom track image<input data-field="custom_file" type="file" accept="image/*,.svg"></label><p class="custom-status" ${layer.track==="custom"?"":"hidden"}>${layer.custom_svg?`Loaded ${escapeHtml(layer.custom_svg.name)}. The largest closed path is used.`:"Choose an SVG or raster image. Raster artwork is traced and its largest closed outline is used."}</p>
+${sizeControl("drawing_size_percent","Drawing size (%)",layer.drawing_size_percent??100,20,100)}
+${sizeControl("track_width_percent","Track width (%)",layer.track_width_percent??100,40,160)}
+${sizeControl("track_height_percent","Track height (%)",layer.track_height_percent??100,40,160)}
 <label>Rolling gear<select data-field="gear_teeth">${options(gears.map(value=>[value,`${value} · Gear ${value}`]),layer.gear_teeth)}</select></label>
+${sizeControl("gear_size_percent","Gear size (%)",layer.gear_size_percent??100,50,150)}
 <label>Pen hole<select data-field="pen_hole">${options([1,2,3,4,5,6].map(value=>[value,`${value} · ${value===1?"near center":value===6?"near edge":"offset"}`]),layer.pen_hole)}</select></label>
+${sizeControl("pen_reach_percent","Pen reach (%)",layer.pen_reach_percent??100,0,125)}
 <label>Rolling position<select data-field="side">${options([["inside","Inside the track"],["outside","Outside the track"]],layer.side)}</select></label>
 <label>Starting mark<select data-field="start_mark">${options([1,2,3,4,5,6,7,8].map(value=>[value,`Mark ${value}`]),layer.start_mark)}</select></label>
 <label>Rolling direction<select data-field="direction">${options([["clockwise","Clockwise"],["counterclockwise","Counterclockwise"]],layer.direction)}</select></label>

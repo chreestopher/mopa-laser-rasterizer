@@ -234,13 +234,23 @@ HARNESS = r"""
     const refreshed = $$('.layer-card')[1];
     input(refreshed.querySelector('[data-field="fill_thickness_mm"]'), 2.4);
     input(refreshed.querySelector('[data-field="include_track"]'), true);
+    input(refreshed.querySelector('[data-field="drawing_size_percent"]'), 72);
+    input(refreshed.querySelector('[data-field="track_width_percent"]'), 135);
+    input(refreshed.querySelector('[data-field="track_height_percent"]'), 75);
+    input(refreshed.querySelector('[data-field="gear_size_percent"]'), 120);
+    input(refreshed.querySelector('[data-field="pen_reach_percent"]'), 80);
     await settlePreviews();
     check($('#layerPreviewName').textContent === 'Characterized drawing', 'active drawing name did not update');
     check($('#layerPreviewSlider').max === '5', 'preview selector did not track drawing count');
     check(visible(refreshed.querySelector('.fill-thickness')), 'fill thickness did not become visible');
     check($('#hardwareSummary').textContent.includes('rounded square'), 'hardware did not reflect the track edit');
     check($('#hardwareSummary').textContent.includes('60-tooth gear'), 'hardware did not reflect the gear edit');
+    check($('#hardwareSummary').textContent.includes('72% drawing'), 'hardware did not reflect drawing size');
     check($('#hardwareSummary').textContent.includes('outside'), 'hardware did not reflect outside rolling');
+    check(refreshed.querySelector('[data-field="track_width_percent"]').value === '135', 'track width did not survive preview');
+    check(refreshed.querySelector('[data-field="track_height_percent"]').value === '75', 'track height did not survive preview');
+    check(refreshed.querySelector('[data-field="gear_size_percent"]').value === '120', 'gear size did not survive preview');
+    check(refreshed.querySelector('[data-field="pen_reach_percent"]').value === '80', 'pen reach did not survive preview');
 
     refreshed.querySelector('[data-action="up"]').click();
     check($('#layerPreviewPosition').textContent === 'Drawing 1 of 5', 'Earlier did not move the active drawing');
@@ -354,6 +364,12 @@ HARNESS = r"""
 
   async function submitChecks() {
     await paletteChecks();
+    const firstDrawing = $$('.layer-card')[0];
+    input(firstDrawing.querySelector('[data-field="drawing_size_percent"]'), 68);
+    input(firstDrawing.querySelector('[data-field="track_width_percent"]'), 128);
+    input(firstDrawing.querySelector('[data-field="track_height_percent"]'), 82);
+    input(firstDrawing.querySelector('[data-field="gear_size_percent"]'), 115);
+    input(firstDrawing.querySelector('[data-field="pen_reach_percent"]'), 88);
     input($('#projectName'), 'Characterization SpiralGraph');
     input($('#diameter'), 210);
     input($('#workbedWidth'), 240);
@@ -373,6 +389,11 @@ HARNESS = r"""
       check(submittedPayload.layers.length === 3, 'payload drawing count changed');
       check(submittedPayload.layers[0].swatch_hex === '#0000FF', 'selected drawing swatch was not submitted');
       check(submittedPayload.layers[0].output_mode === 'fill', 'palette-driven fill mode was not submitted');
+      check(submittedPayload.layers[0].drawing_size_percent === 68, 'drawing size changed in payload');
+      check(submittedPayload.layers[0].track_width_percent === 128, 'track width changed in payload');
+      check(submittedPayload.layers[0].track_height_percent === 82, 'track height changed in payload');
+      check(submittedPayload.layers[0].gear_size_percent === 115, 'gear size changed in payload');
+      check(submittedPayload.layers[0].pen_reach_percent === 88, 'pen reach changed in payload');
     }
     check(location.search === '?task=spiralgraph-characterization-task', 'resume URL was not installed after submit');
     check($('#status').textContent.startsWith('COMPLETED'), 'completed job status was not shown');
@@ -465,9 +486,9 @@ class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
         page = page_path.read_text(encoding="utf-8")
         page = re.sub(r'\s*<script src="/staging-shell\.js\?v=4" defer></script>', '', page)
         page = page.replace(
-            '<script src="/spiralgraph.js?v=11" type="module"></script>',
+            '<script src="/spiralgraph.js?v=12" type="module"></script>',
             '<script src="/spiralgraph-characterization-harness.js"></script>\n'
-            '<script src="/spiralgraph.js?v=11" type="module"></script>',
+            '<script src="/spiralgraph.js?v=12" type="module"></script>',
         )
         page_path.write_text(page, encoding="utf-8")
         (cls.site / "spiralgraph-characterization-harness.js").write_text(

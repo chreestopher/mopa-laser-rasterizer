@@ -4897,7 +4897,7 @@ def validate_spiralgrap_request(data):
     layers = data.get("layers")
     if not isinstance(layers, list) or not 1 <= len(layers) <= 6:
         raise ValueError("A SpiralGraph project needs 1 to 6 drawing layers")
-    permitted = {"name", "track", "custom_svg", "gear_teeth", "pen_hole", "side", "start_mark", "direction", "rotation_quarter_turns", "include_track", "output_mode", "fill_thickness_mm", "swatch_hex"}
+    permitted = {"name", "track", "custom_svg", "track_width_percent", "track_height_percent", "gear_size_percent", "pen_reach_percent", "drawing_size_percent", "gear_teeth", "pen_hole", "side", "start_mark", "direction", "rotation_quarter_turns", "include_track", "output_mode", "fill_thickness_mm", "swatch_hex"}
     clean_layers, total_svg = [], 0
     for index, layer in enumerate(layers, start=1):
         if not isinstance(layer, dict) or set(layer) - permitted:
@@ -4928,6 +4928,14 @@ def validate_spiralgrap_request(data):
             if value not in choices:
                 raise ValueError(f"SpiralGraph drawing {index} has an invalid {key.replace('_', ' ')}")
             return value
+        def layer_number(key, minimum, maximum, default):
+            try:
+                value = float(layer.get(key, default))
+            except (TypeError, ValueError) as error:
+                raise ValueError(f"SpiralGraph drawing {index} has an invalid {key.replace('_', ' ')}") from error
+            if not math.isfinite(value) or not minimum <= value <= maximum:
+                raise ValueError(f"SpiralGraph drawing {index} {key.replace('_', ' ')} must be between {minimum:g} and {maximum:g}")
+            return value
         try:
             thickness = float(layer.get("fill_thickness_mm", 1.2))
         except (TypeError, ValueError) as error:
@@ -4943,6 +4951,11 @@ def validate_spiralgrap_request(data):
         clean_layers.append({
             "name": str(layer.get("name") or f"Drawing {index}").strip()[:80] or f"Drawing {index}",
             "track": track, "custom_svg": custom_svg,
+            "track_width_percent": layer_number("track_width_percent", 40, 160, 100),
+            "track_height_percent": layer_number("track_height_percent", 40, 160, 100),
+            "gear_size_percent": layer_number("gear_size_percent", 50, 150, 100),
+            "pen_reach_percent": layer_number("pen_reach_percent", 0, 125, 100),
+            "drawing_size_percent": layer_number("drawing_size_percent", 20, 100, 100),
             "gear_teeth": choice("gear_teeth", {24, 30, 32, 36, 40, 42, 45, 48, 56, 60}, 40),
             "pen_hole": choice("pen_hole", set(range(1, 7)), 5),
             "side": choice("side", {"inside", "outside"}, "inside"),

@@ -13,12 +13,14 @@ def test_spiralgrap_page_uses_external_assets_and_classic_controls():
     page = read("serverless_web/spiralgraph.html")
     client = read("serverless_web/spiralgraph.js")
     job_lifecycle = read("serverless_web/spiralgraph/job-lifecycle-v1.js")
-    drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v1.js")
-    assert 'src="/spiralgraph.js?v=11"' in page
+    drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v2.js")
+    assert 'src="/spiralgraph.js?v=12"' in page
     assert 'href="/staging-pages.css?v=4"' in page
     assert 'href="/spiralgraph.css?v=4"' in page
     assert "Track plate" in drawing_editor and "Rolling gear" in drawing_editor and "Pen hole" in drawing_editor
     assert "Starting mark" in drawing_editor and "Rolling position" in drawing_editor
+    for label in ("Drawing size (%)", "Track width (%)", "Track height (%)", "Gear size (%)", "Pen reach (%)"):
+        assert label in drawing_editor
     assert "output_mode" in drawing_editor and "fill_thickness_mm" in drawing_editor
     assert "Line / Cut · open path" in drawing_editor and "Filled ribbon · closed path" in drawing_editor
     assert 'api("/spiralgraph/jobs"' in job_lifecycle
@@ -36,8 +38,8 @@ def test_spiralgraph_can_use_saved_color_palette_swatches_for_preview_and_output
     client = read("serverless_web/spiralgraph.js")
     job_lifecycle = read("serverless_web/spiralgraph/job-lifecycle-v1.js")
     palette_routing = read("serverless_web/spiralgraph/palette-routing-v1.js")
-    drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v1.js")
-    canvas_preview = read("serverless_web/spiralgraph/canvas-preview-v1.js")
+    drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v2.js")
+    canvas_preview = read("serverless_web/spiralgraph/canvas-preview-v2.js")
     styles = read("serverless_web/spiralgraph.css")
     api = read("serverless_api/handler.py")
     backend = read("lib/spiralgrap.py")
@@ -68,9 +70,9 @@ class SpiralGraphHardwarePreviewTests(unittest.TestCase):
     def test_virtual_hardware_is_live_accessible_and_synchronized(self):
         page = read("serverless_web/spiralgraph.html")
         client = read("serverless_web/spiralgraph.js")
-        geometry = read("serverless_web/spiralgraph/geometry-v1.js")
-        hardware = read("serverless_web/spiralgraph/hardware-preview-v1.js")
-        drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v1.js")
+        geometry = read("serverless_web/spiralgraph/geometry-v2.js")
+        hardware = read("serverless_web/spiralgraph/hardware-preview-v2.js")
+        drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v2.js")
         styles = read("serverless_web/spiralgraph.css")
         self.assertIn('id="hardwarePreview"', page)
         for label in ("Track plate", "Rolling gear and pencil holes", "Assembled position"):
@@ -80,8 +82,8 @@ class SpiralGraphHardwarePreviewTests(unittest.TestCase):
         self.assertIn("PEN_HOLE_FACTORS=[0,.2,.36,.52,.68,.82,.94]", geometry)
         self.assertIn("function rollingModel(layer)", geometry)
         self.assertIn("function rollingState(model,distance)", geometry)
-        self.assertIn('from "./geometry-v1.js"', drawing_editor)
-        self.assertIn('from "./spiralgraph/hardware-preview-v1.js"', client)
+        self.assertIn('from "./geometry-v2.js"', drawing_editor)
+        self.assertIn('from "./spiralgraph/hardware-preview-v2.js"', client)
         self.assertIn(
             "createHardwarePreview({getActiveLayer:()=>getLayers()[getActiveLayerIndex()],getActiveLayerIndex,schedulePreview})",
             client,
@@ -103,7 +105,7 @@ class SpiralGraphHardwarePreviewTests(unittest.TestCase):
 
     def test_curve_and_hardware_share_precomputed_geometry(self):
         client = read("serverless_web/spiralgraph.js")
-        geometry = read("serverless_web/spiralgraph/geometry-v1.js")
+        geometry = read("serverless_web/spiralgraph/geometry-v2.js")
         curve = geometry.split("function curvePoints(layer)", 1)[1].split("function bounds", 1)[0]
         self.assertIn("const model=rollingModel(layer)", curve)
         self.assertIn("rollingState(model", curve)
@@ -117,11 +119,11 @@ class SpiralGraphHardwarePreviewTests(unittest.TestCase):
 class SpiralGraphCanvasPreviewTests(unittest.TestCase):
     def test_selected_and_stacked_canvas_preview_owns_frame_scheduling(self):
         client = read("serverless_web/spiralgraph.js")
-        canvas_preview = read("serverless_web/spiralgraph/canvas-preview-v1.js")
-        self.assertIn('from "./spiralgraph/canvas-preview-v1.js"', client)
+        canvas_preview = read("serverless_web/spiralgraph/canvas-preview-v2.js")
+        self.assertIn('from "./spiralgraph/canvas-preview-v2.js"', client)
         self.assertIn("createCanvasPreview({colors:COLORS", client)
         self.assertIn("function schedulePreview(){canvasPreview.schedulePreview()}", client)
-        self.assertIn('from "./geometry-v1.js"', canvas_preview)
+        self.assertIn('from "./geometry-v2.js"', canvas_preview)
         self.assertIn("function previewColor(layer,index)", canvas_preview)
         self.assertIn("function drawLayer(canvas,layer,index,alpha=1,clear=false)", canvas_preview)
         self.assertIn("cancelAnimationFrame(previewFrame)", canvas_preview)
@@ -143,7 +145,7 @@ def test_spiralgrap_is_deployed_linked_documented_and_history_backed():
     worker = read("worker.py")
     template = read("ecs/serverless-staging-web.yaml")
     history = read("serverless_web/history.js")
-    for filename in ("custom-image-vectorizer-v1.js", "spiralgraph.html", "spiralgraph.js", "spiralgraph.css", "spiralgraph/geometry-v1.js", "spiralgraph/hardware-preview-v1.js", "spiralgraph/canvas-preview-v1.js", "spiralgraph/drawing-editor-v1.js", "spiralgraph/state-v1.js", "spiralgraph/palette-routing-v1.js", "spiralgraph/job-lifecycle-v1.js"):
+    for filename in ("custom-image-vectorizer-v1.js", "spiralgraph.html", "spiralgraph.js", "spiralgraph.css", "spiralgraph/geometry-v2.js", "spiralgraph/hardware-preview-v2.js", "spiralgraph/canvas-preview-v2.js", "spiralgraph/drawing-editor-v2.js", "spiralgraph/state-v2.js", "spiralgraph/palette-routing-v1.js", "spiralgraph/job-lifecycle-v1.js"):
         assert filename in deploy
     assert '"/spiralgraph.html"' in shell and 'href="/spiralgraph.html"' in landing
     assert '"spiralgraph-lab": _page(' in docs
@@ -160,11 +162,16 @@ def test_spiralgrap_is_deployed_linked_documented_and_history_backed():
 
 def test_spiralgrap_validates_custom_images_and_processing_modes_on_both_sides():
     client = read("serverless_web/spiralgraph.js")
-    drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v1.js")
+    drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v2.js")
     api = read("serverless_api/handler.py")
     backend = read("lib/spiralgrap.py")
-    for field in ("track", "gear_teeth", "pen_hole", "side", "start_mark", "direction", "output_mode", "fill_thickness_mm", "swatch_hex"):
+    for field in ("track", "track_width_percent", "track_height_percent", "gear_size_percent", "pen_reach_percent", "drawing_size_percent", "gear_teeth", "pen_hole", "side", "start_mark", "direction", "output_mode", "fill_thickness_mm", "swatch_hex"):
         assert (field in client or field in drawing_editor) and field in api and field in backend
+    geometry = read("serverless_web/spiralgraph/geometry-v2.js")
+    canvas_preview = read("serverless_web/spiralgraph/canvas-preview-v2.js")
+    assert "rollRadius" in geometry
+    assert "distance/model.rollRadius" in geometry
+    assert "drawing_size_percent" in canvas_preview
     vectorizer = read("serverless_web/custom-image-vectorizer-v1.js")
     assert 'from "../custom-image-vectorizer-v1.js"' in drawing_editor
     assert "normalizeCustomImage(event.target.files[0],{validateSvg:geometryPoints})" in drawing_editor
