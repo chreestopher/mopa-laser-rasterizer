@@ -214,8 +214,8 @@ def svg_to_unit_geometry(spec, padding=0.06):
     return _simplify_geometry_to_point_limit(geometry)
 
 
-def decode_grayscale_mask(spec):
-    """Decode a browser-normalized 8-bit mask after strict size validation."""
+def _decode_mask_plane(spec, field, label):
+    """Decode one browser-normalized 8-bit mask plane after strict validation."""
     if not isinstance(spec, dict):
         raise ValueError("Custom shape mask must be an object.")
     try:
@@ -227,16 +227,28 @@ def decode_grayscale_mask(spec):
         raise ValueError(
             f"Custom shape masks must be between 8 and {MAX_MASK_DIMENSION} pixels per side."
         )
-    encoded = spec.get("data")
+    encoded = spec.get(field)
     if not isinstance(encoded, str) or len(encoded) > ((MAX_MASK_BYTES + 2) // 3) * 4 + 8:
-        raise ValueError("Custom shape mask data is invalid.")
+        raise ValueError(f"Custom shape mask {label} is invalid.")
     try:
         raw = base64.b64decode(encoded, validate=True)
     except (binascii.Error, ValueError):
-        raise ValueError("Custom shape mask data is invalid.") from None
+        raise ValueError(f"Custom shape mask {label} is invalid.") from None
     if len(raw) != width * height:
-        raise ValueError("Custom shape mask data does not match its dimensions.")
+        raise ValueError(f"Custom shape mask {label} does not match its dimensions.")
     return np.frombuffer(raw, dtype=np.uint8).reshape((height, width))
+
+
+def decode_grayscale_mask(spec):
+    """Decode a browser-normalized 8-bit luminance/mask plane."""
+    return _decode_mask_plane(spec, "data", "data")
+
+
+def decode_alpha_mask(spec):
+    """Decode an optional coverage plane used by transparent grayscale masks."""
+    if not isinstance(spec, dict) or "alpha" not in spec:
+        return None
+    return _decode_mask_plane(spec, "alpha", "alpha data")
 
 
 def _contour_points(contour, width, height):

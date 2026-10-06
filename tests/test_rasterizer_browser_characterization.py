@@ -58,8 +58,16 @@ HARNESS = r"""
     canvas.width = scenario === 'panel-tiling' || scenario === 'shape-assets' || scenario === 'flow-painter' ? 4 : 1;
     canvas.height = scenario === 'panel-tiling' || scenario === 'shape-assets' || scenario === 'flow-painter' ? 2 : 1;
     const context = canvas.getContext('2d');
-    context.fillStyle = '#000000';
-    context.fillRect(0, 0, 1, 1);
+    if (scenario === 'flow-painter') {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = '#404040';
+      context.fillRect(0, 0, 2, 2);
+      context.fillStyle = '#C0C0C0';
+      context.fillRect(2, 0, 2, 2);
+    } else {
+      context.fillStyle = '#000000';
+      context.fillRect(0, 0, 1, 1);
+    }
     canvas.close = () => {};
     return canvas;
   };
@@ -459,8 +467,9 @@ HARNESS = r"""
       assert(flow?.regions?.[0]?.curve === 1.5 && flow?.regions?.[0]?.fixed_angle === 15 && flow?.regions?.[0]?.angle_offset === -20 && flow?.regions?.[0]?.reverse === true, `painted region advanced controls changed (${JSON.stringify(flow?.regions?.[0])})`);
       assert(flow?.strokes?.[0]?.erase === false && flow?.strokes?.[0]?.width === 0.2 && flow?.strokes?.[0]?.points?.length === 2, `painted stroke changed (${JSON.stringify(flow?.strokes?.[0])})`);
       assert(flow?.regions?.[1]?.region_type === 'image_mask' && flow?.regions?.[1]?.mask_name === 'characterization.png', `image-mask region changed (${JSON.stringify(flow?.regions?.[1])})`);
-      assert(flow?.regions?.[1]?.mask_mode === 'silhouette' && flow?.regions?.[1]?.mask_threshold === 0.25 && flow?.regions?.[1]?.mask_invert === true, `image-mask controls changed (${JSON.stringify(flow?.regions?.[1])})`);
-      assert(flow?.regions?.[1]?.mask?.width === 96 && flow?.regions?.[1]?.mask?.height === 96 && typeof flow?.regions?.[1]?.mask?.data === 'string', `normalized flow mask changed (${JSON.stringify(flow?.regions?.[1]?.mask)})`);
+      assert(flow?.regions?.[1]?.mask_mode === 'grayscale' && flow?.regions?.[1]?.mask_threshold === 0.25 && flow?.regions?.[1]?.mask_invert === true, `image-mask controls changed (${JSON.stringify(flow?.regions?.[1])})`);
+      assert(flow?.regions?.[1]?.mask?.width === 96 && flow?.regions?.[1]?.mask?.height === 96 && typeof flow?.regions?.[1]?.mask?.data === 'string' && typeof flow?.regions?.[1]?.mask?.alpha === 'string', `normalized flow mask changed (${JSON.stringify(flow?.regions?.[1]?.mask)})`);
+      assert(flow.regions[1].mask.data !== flow.regions[1].mask.alpha, 'transparent grayscale flow mask collapsed luminance into alpha');
       assert(flow?.regions?.[1]?.mask_offset?.some(value => Math.abs(value) > 0.01), `flow mask offset was not retained (${JSON.stringify(flow?.regions?.[1]?.mask_offset)})`);
       assert(document.querySelector('#flowCanvas').width > 0 && document.querySelector('#flowCanvas').height > 0, 'flow canvas was not initialized');
       assert(document.querySelector('#flowPainter').open === false, 'flow dialog remained open after accepting the flow');
@@ -848,7 +857,7 @@ HARNESS = r"""
     if (!window.__flowMaskReady) {
       if (!document.querySelector('#flowMaskStatus').textContent.includes('is attached to this region')) return;
       window.__flowMaskReady = true;
-      document.querySelector('#flowMaskMode').value = 'silhouette';
+      document.querySelector('#flowMaskMode').value = 'grayscale';
       document.querySelector('#flowMaskMode').dispatchEvent(new Event('change', {bubbles: true}));
       document.querySelector('#flowMaskThreshold').value = '0.25';
       document.querySelector('#flowMaskInvert').checked = true;
