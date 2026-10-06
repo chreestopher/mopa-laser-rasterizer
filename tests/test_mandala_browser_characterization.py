@@ -232,12 +232,15 @@ HARNESS = r"""
     check($('#activePreview').width === 620 && $('#stackPreview').width === 620, 'preview canvas dimensions changed');
 
     let firstLayer = $$('.layer-card')[0];
+    check(firstLayer.querySelector('[data-field="layer_diameter_mm"]').value === '150', 'default layer diameter did not match the project');
+    check(firstLayer.querySelector('[data-field="layer_diameter_mm"]').max === '150', 'layer diameter maximum did not match the project');
     input(firstLayer.querySelector('[data-field="rim_width_mm"]'), 30);
     input(firstLayer.querySelector('[data-field="bridge_width_mm"]'), 20);
     change($('#diameter'), 100);
     firstLayer = $$('.layer-card')[0];
     check(firstLayer.querySelector('[data-field="rim_width_mm"]').value === '15', 'rim width did not follow the diameter limit');
     check(firstLayer.querySelector('[data-field="bridge_width_mm"]').value === '8', 'bridge width did not follow the diameter limit');
+    check(firstLayer.querySelector('[data-field="layer_diameter_mm"]').value === '100', 'layer diameter was not clamped to the project');
     input(firstLayer.querySelector('[data-field="rim_width_mm"]'), 4);
     input(firstLayer.querySelector('[data-field="bridge_width_mm"]'), 1.5);
     change($('#diameter'), 210);
@@ -258,6 +261,7 @@ HARNESS = r"""
 
     let card = $$('.layer-card')[1];
     input(card.querySelector('[data-field="name"]'), 'Characterized layer');
+    input(card.querySelector('[data-field="layer_diameter_mm"]'), 84);
     input(card.querySelector('[data-field="ornament_style"]'), 'paisley');
     input(card.querySelector('[data-field="motif_composition"]'), 'flow_character');
     input(card.querySelector('[data-field="support_mode"]'), 'fully_connected');
@@ -270,6 +274,7 @@ HARNESS = r"""
     input(card.querySelector('[data-field="mirror_wedges"]'), false);
     await settle();
     check($('#layerPreviewName').textContent === 'Characterized layer', 'active-layer name did not update');
+    check(card.querySelector('[data-field="layer_diameter_mm"]').value === '84', 'independent layer diameter did not update');
     check($('#layerPreviewSlider').max === '5', 'preview selector did not track layer count');
 
     card.querySelector('[data-action="up"]').click();
@@ -304,6 +309,7 @@ HARNESS = r"""
     card.querySelector('[data-action="randomize"]').click();
     card = $$('.layer-card')[0];
     check(card.querySelector('[data-field="name"]').value === 'Named layer', 'Randomize changed the layer name');
+    check(card.querySelector('[data-field="layer_diameter_mm"]').value === '100', 'Randomize changed the layer diameter');
     check(card.querySelector('[data-field="repetitions"]').value !== before, 'Randomize did not change bounded geometry controls');
     check(Number(card.querySelector('[data-field="bridge_wave_amount"]').value) >= 0 && Number(card.querySelector('[data-field="bridge_wave_amount"]').value) <= 1, 'random bridge wave left its allowed range');
     card.querySelector('[data-action="reset"]').click();
@@ -312,6 +318,7 @@ HARNESS = r"""
     check(card.querySelector('[data-field="motif"]').value === 'petal', 'Reset did not restore the default motif');
     check(card.querySelector('[data-field="repetitions"]').value === '12', 'Reset did not restore default repetitions');
     check(card.querySelector('[data-field="support_mode"]').value === 'automatic_bridges', 'Reset did not restore automatic bridges');
+    check(card.querySelector('[data-field="layer_diameter_mm"]').value === '150', 'Reset did not restore the full project diameter');
   }
 
   async function previewChecks() {
@@ -382,6 +389,7 @@ HARNESS = r"""
     input($('#workbedWidth'), 240);
     input($('#workbedHeight'), 230);
     let card = $$('.layer-card')[0];
+    input(card.querySelector('[data-field="layer_diameter_mm"]'), 96);
     input(card.querySelector('[data-field="ornament_style"]'), 'billow');
     input(card.querySelector('[data-field="motif_composition"]'), 'flow_character');
     input(card.querySelector('[data-field="support_sweep_degrees"]'), 24);
@@ -399,6 +407,7 @@ HARNESS = r"""
     check(submittedPayload?.processing_palette_id === 'processing-1', 'Processing Palette ID was not submitted');
     check(submittedPayload?.material === 'Maple' && submittedPayload?.cut_entry_ref === 'cut-1', 'Cut role selection changed in payload');
     check(submittedPayload?.layers?.length === 3, 'payload layer count changed');
+    check(submittedPayload?.layers?.[0]?.layer_diameter_mm === 96, 'layer diameter changed in payload');
     check(submittedPayload?.layers?.[0]?.ornament_style === 'billow' && submittedPayload?.layers?.[0]?.motif_composition === 'flow_character', 'ornament settings changed in payload');
     check(submittedPayload?.layers?.[0]?.support_sweep_degrees === 24 && submittedPayload?.layers?.[0]?.bridge_wave_amount === 0.75, 'bridge settings changed in payload');
     check(submittedPayload?.layers?.[0]?.layer_openness === 0.35 && submittedPayload?.layers?.[0]?.opening_inner_ratio === 0.42, 'openwork settings changed in payload');
@@ -517,9 +526,9 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
         page = page_path.read_text(encoding="utf-8")
         page = re.sub(r'\s*<script src="/staging-shell\.js\?v=4" defer></script>', '', page)
         page = page.replace(
-            '<script src="/mandala.js?v=15" type="module"></script>',
+            '<script src="/mandala.js?v=16" type="module"></script>',
             '<script src="/mandala-characterization-harness.js"></script>\n'
-            '<script src="/mandala.js?v=15" type="module"></script>',
+            '<script src="/mandala.js?v=16" type="module"></script>',
         )
         page_path.write_text(page, encoding="utf-8")
         (cls.site / "mandala-characterization-harness.js").write_text(

@@ -1,8 +1,8 @@
-import {createMandalaAssetConstraints} from "./mandala/asset-constraints-v2.js";
+import {createMandalaAssetConstraints} from "./mandala/asset-constraints-v3.js";
 import {createMandalaJobLifecycle} from "./mandala/job-lifecycle-v1.js";
-import {createMandalaLayerEditor} from "./mandala/layer-editor-v2.js";
+import {createMandalaLayerEditor} from "./mandala/layer-editor-v3.js";
 import {createPaletteRouting} from "./mandala/palette-routing-v1.js";
-import {createMandalaPreview} from "./mandala/preview-v2.js";
+import {createMandalaPreview} from "./mandala/preview-v3.js";
 
 let resources={},preview;
 const $=selector=>document.querySelector(selector);
