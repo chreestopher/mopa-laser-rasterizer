@@ -35,6 +35,9 @@ jobs:
       SERVERLESS_PRODUCTION_USE_CLOUDFRONT_CALLBACK: ${{ vars.SERVERLESS_PRODUCTION_USE_CLOUDFRONT_CALLBACK || 'false' }}
       SERVERLESS_PRODUCTION_RELEASE_COMMIT: ${{ github.sha }}
       ECR_REPOSITORY: mopa-laser-rasterizer
+      SERVERLESS_SKIP_FOUNDATION_DEPLOY: "true"
+      SERVERLESS_RECONCILE_ECR_LIFECYCLE: "false"
+      SERVERLESS_REMOVE_RETIRED_DOCS: "false"
       COGNITO_UPDATE_DOMAIN: "false"
       COGNITO_APPLY_PRODUCTION_BRANDING: "false"
       COGNITO_APPLY_STAGING_BRANDING: "false"
@@ -42,6 +45,24 @@ jobs:
     steps:
       - name: Check out promoted revision
         uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Select affected deployment components
+        id: deployment
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            python dev_setup/classify_serverless_deployment_changes.py \
+              --target release >> "$GITHUB_OUTPUT"
+          else
+            python dev_setup/classify_serverless_deployment_changes.py \
+              --base "$BEFORE_SHA" --head "$CURRENT_SHA" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v7.0.0
@@ -70,6 +91,7 @@ jobs:
         run: python -m unittest discover -s tests
 
       - name: Configure short-lived AWS credentials
+        if: steps.deployment.outputs.any == 'true'
         uses: aws-actions/configure-aws-credentials@v6.2.4
         with:
           role-to-assume: ${{ vars.AWS_PRODUCTION_DEPLOY_ROLE_ARN }}
@@ -78,12 +100,14 @@ jobs:
           allowed-account-ids: "401716294893"
 
       - name: Verify production deployment identity
+        if: steps.deployment.outputs.any == 'true'
         run: |
           set -euo pipefail
           test -n "${{ vars.AWS_PRODUCTION_DEPLOY_ROLE_ARN }}"
           aws sts get-caller-identity
 
       - name: Guard production login configuration
+        if: steps.deployment.outputs.web == 'true'
         run: |
           set -euo pipefail
           test -n "$SERVERLESS_PRODUCTION_CERTIFICATE_ARN"
@@ -92,6 +116,7 @@ jobs:
           test "${SERVERLESS_PRODUCTION_ALTERNATE_HOSTNAME:-www.mopa-laser-rasterizer.com}" = www.mopa-laser-rasterizer.com
 
       - name: Build and publish immutable worker image
+        if: steps.deployment.outputs.worker == 'true'
         run: |
           set -euo pipefail
           ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
@@ -105,8 +130,22 @@ jobs:
           test "${DIGEST#sha256:}" != "$DIGEST"
           echo "SERVERLESS_PRODUCTION_IMAGE_URI=${REGISTRY}/${ECR_REPOSITORY}@${DIGEST}" >> "$GITHUB_ENV"
 
-      - name: Deploy promoted production release
-        run: bash dev_setup/deploy_serverless_production_release.sh --apply
+      - name: Deploy production worker
+        if: steps.deployment.outputs.worker == 'true'
+        run: bash dev_setup/deploy_serverless_production.sh --apply
+
+      - name: Deploy production web and API
+        if: steps.deployment.outputs.web == 'true'
+        run: bash dev_setup/deploy_serverless_production_web.sh --apply
+
+      - name: Verify production authentication
+        if: steps.deployment.outputs.web == 'true'
+        run: python dev_setup/verify_production_auth.py
+
+      - name: Report deployment skipped
+        if: steps.deployment.outputs.any != 'true'
+        run: echo "No production application component is affected; deployment skipped after tests."
 
       - name: Verify production endpoint
+        if: steps.deployment.outputs.any == 'true'
         run: curl --fail --silent --show-error --head --max-time 30 https://mopa-laser-rasterizer.com/ >/dev/null
