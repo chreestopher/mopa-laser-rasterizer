@@ -4670,7 +4670,7 @@ def validate_mandala_request(data):
     if not isinstance(layers, list) or not 1 <= len(layers) <= 12:
         raise ValueError("A Layered Mandala needs 1 to 12 layers")
     permitted = {
-        "name", "motif", "ornament_style", "motif_composition", "custom_svg", "construction", "support_mode", "rim_style",
+        "name", "layer_diameter_mm", "motif", "ornament_style", "motif_composition", "custom_svg", "construction", "support_mode", "rim_style",
         "repetitions", "rings", "inner_radius_ratio", "motif_scale",
         "motif_radial_position", "motif_tangential_position", "fragment_scale",
         "radial_stretch", "tangent_stretch", "twist_degrees",
@@ -4744,9 +4744,11 @@ def validate_mandala_request(data):
             raise ValueError(f"Mandala layer {index} has an invalid ornament family")
         if motif_composition not in {"flow_character", "whole_repeat", "kaleidoscope", "hybrid"}:
             raise ValueError(f"Mandala layer {index} has an invalid motif composition")
+        layer_diameter = layer_number("layer_diameter_mm", "diameter", 20, diameter, diameter)
         cleaned = {key: value for key, value in layer.items() if key in permitted}
         cleaned.update({
             "name": str(layer.get("name") or f"Layer {index}").strip()[:80] or f"Layer {index}",
+            "layer_diameter_mm": layer_diameter,
             "motif": motif,
             "custom_svg": custom_svg,
             "construction": construction,
@@ -4767,11 +4769,11 @@ def validate_mandala_request(data):
             "rotation_degrees": layer_number("rotation_degrees", "rotation", -180, 180, 0),
             "alternate_rotation": layer_boolean("alternate_rotation", "alternate ring phase", True),
             "mirror_alternating": layer_boolean("mirror_alternating", "mirror alternating motifs", False),
-            "rim_width_mm": layer_number("rim_width_mm", "rim width", .5, diameter * .15, max(2, diameter * .025)),
-            "bridge_width_mm": layer_number("bridge_width_mm", "bridge width", .4, diameter * .08, max(1, diameter * .012)),
+            "rim_width_mm": layer_number("rim_width_mm", "rim width", .5, layer_diameter * .15, min(layer_diameter * .15, max(.5, layer_diameter * .025))),
+            "bridge_width_mm": layer_number("bridge_width_mm", "bridge width", .4, layer_diameter * .08, min(layer_diameter * .08, max(.4, layer_diameter * .012))),
             "support_sweep_degrees": layer_number("support_sweep_degrees", "support sweep", -75, 75, 0),
             "bridge_wave_amount": layer_number("bridge_wave_amount", "bridge wave amount", 0, 1, 0),
-            "bridge_wave_amplitude_mm": layer_number("bridge_wave_amplitude_mm", "bridge wave amplitude", 0, diameter * .2, max(2, diameter * .04)),
+            "bridge_wave_amplitude_mm": layer_number("bridge_wave_amplitude_mm", "bridge wave amplitude", 0, layer_diameter * .2, min(layer_diameter * .2, max(2, layer_diameter * .04))),
             "bridge_wave_position": layer_number("bridge_wave_position", "bridge wave position", .1, .9, .5),
             "layer_openness": layer_number("layer_openness", "openness", 0, 1, 0),
             "opening_inner_ratio": layer_number("opening_inner_ratio", "opening inner position", .05, .85, .25),
