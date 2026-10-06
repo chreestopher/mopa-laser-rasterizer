@@ -44,4 +44,14 @@ def test_job_history_renders_thumbnail_only_inside_expanded_details():
     assert "renderInputPreview(job)" in HISTORY_SCRIPT
     assert ".job-input-preview img" in HISTORY_PAGE
     assert "repeating-conic-gradient" in HISTORY_PAGE
-    assert '/history.js?v=11' in HISTORY_PAGE
+    assert '/history.js?v=12' in HISTORY_PAGE
+
+
+def test_job_history_replaces_saved_image_parameters_with_thumbnails():
+    assert "function compactSvgThumbnailHtml(image)" in HISTORY_SCRIPT
+    assert 'typeof parsed.svg==="string"' in HISTORY_SCRIPT
+    assert "return compactSvgThumbnailHtml(parsed)" in HISTORY_SCRIPT
+    assert 'data:image/svg+xml;charset=utf-8,' in HISTORY_SCRIPT
+    assert 'class="job-image-thumbnail"' in HISTORY_SCRIPT
+    assert '.job-image-preview' in HISTORY_PAGE
+    assert '.job-image-thumbnail' in HISTORY_PAGE
