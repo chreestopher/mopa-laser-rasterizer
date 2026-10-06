@@ -5545,7 +5545,14 @@ def submit_job(event, task_id, guest=False):
             "The custom glyph image couldn't be used. Remove it and choose a PNG, "
             "JPEG, or WebP image again."
         )
-        if not isinstance(value, dict) or set(value) != {"width", "height", "data"}:
+        allowed_keys = {"width", "height", "data"}
+        if flow_region_number is not None:
+            allowed_keys.add("alpha")
+        if (
+            not isinstance(value, dict)
+            or not {"width", "height", "data"}.issubset(value)
+            or set(value) - allowed_keys
+        ):
             raise ValueError(message)
         width, height, encoded = value.get("width"), value.get("height"), value.get("data")
         if (
@@ -5560,6 +5567,16 @@ def submit_job(event, task_id, guest=False):
             raise ValueError(message) from error
         if len(decoded) != width * height:
             raise ValueError(message)
+        if "alpha" in value:
+            encoded_alpha = value.get("alpha")
+            if not isinstance(encoded_alpha, str) or len(encoded_alpha) > 21856:
+                raise ValueError(message)
+            try:
+                decoded_alpha = base64.b64decode(encoded_alpha, validate=True)
+            except Exception as error:
+                raise ValueError(message) from error
+            if len(decoded_alpha) != width * height:
+                raise ValueError(message)
     def validate_custom_svg(value, label):
         message = (
             f"The custom {label} SVG couldn't be used. Choose a plain SVG "
