@@ -217,6 +217,9 @@ if [ "$RESUME_PIPE" = true ]; then
   RESUME_PIPE=false
 fi
 
+bash "$SCRIPT_DIR/prune_ecs_task_definitions.sh" \
+  "$WORKER_NAME" "${WORKER_NAME}-panel"
+
 cat <<EOF
 $ENVIRONMENT_LABEL worker data plane is ready.
 Image: $IMAGE_URI

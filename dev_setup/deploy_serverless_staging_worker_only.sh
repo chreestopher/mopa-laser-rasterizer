@@ -11,6 +11,7 @@ WORKER_STACK="mopa-rasterizer-serverless-staging-worker"
 ORCHESTRATION_STACK="mopa-rasterizer-serverless-staging-orchestration"
 FOUNDATION_STACK="mopa-rasterizer-serverless-staging"
 REPOSITORY="${ECR_REPOSITORY:-mopa-laser-rasterizer}"
+LIFECYCLE_POLICY="$SCRIPT_DIR/ecr-lifecycle-policy.json"
 
 for stack in "$WORKER_STACK" "$ORCHESTRATION_STACK"; do
   aws cloudformation describe-stacks --region "$REGION" --stack-name "$stack" >/dev/null
@@ -18,6 +19,13 @@ done
 
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
+
+if [ "${SERVERLESS_RECONCILE_ECR_LIFECYCLE:-true}" = "true" ]; then
+  aws ecr put-lifecycle-policy --region "$REGION" \
+    --repository-name "$REPOSITORY" \
+    --lifecycle-policy-text "file://${LIFECYCLE_POLICY}" >/dev/null
+fi
+
 LOCAL_IMAGE="${REPOSITORY}:serverless-staging-worker-only-build"
 docker build --pull -t "$LOCAL_IMAGE" "$REPO_ROOT"
 IMAGE_ID="$(docker image inspect --format '{{.Id}}' "$LOCAL_IMAGE")"
@@ -55,5 +63,9 @@ aws cloudformation deploy --region "$REGION" --stack-name "$ORCHESTRATION_STACK"
   --parameter-overrides "TaskDefinitionArn=$TASK_DEFINITION_ARN" \
     "PanelTaskDefinitionArn=$PANEL_TASK_DEFINITION_ARN" "SqsQueueUrl=$QUEUE_URL" \
   --no-fail-on-empty-changeset
+
+bash "$SCRIPT_DIR/prune_ecs_task_definitions.sh" \
+  "mopa-rasterizer-serverless-staging-worker" \
+  "mopa-rasterizer-serverless-staging-worker-panel"
 
 echo "Serverless staging worker-only update complete: $IMAGE_URI"
