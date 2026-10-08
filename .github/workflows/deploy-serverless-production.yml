@@ -36,7 +36,7 @@ jobs:
       SERVERLESS_PRODUCTION_RELEASE_COMMIT: ${{ github.sha }}
       ECR_REPOSITORY: mopa-laser-rasterizer
       SERVERLESS_SKIP_FOUNDATION_DEPLOY: "true"
-      SERVERLESS_RECONCILE_ECR_LIFECYCLE: "false"
+      SERVERLESS_RECONCILE_ECR_LIFECYCLE: "true"
       SERVERLESS_REMOVE_RETIRED_DOCS: "false"
       COGNITO_UPDATE_DOMAIN: "false"
       COGNITO_APPLY_PRODUCTION_BRANDING: "false"
@@ -80,6 +80,7 @@ jobs:
         run: >-
           bash -n
           dev_setup/load-aws-env.sh
+          dev_setup/prune_ecs_task_definitions.sh
           dev_setup/serverless-production-guard.sh
           dev_setup/deploy_serverless_staging.sh
           dev_setup/deploy_serverless_staging_web.sh

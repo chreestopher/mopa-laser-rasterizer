@@ -114,6 +114,10 @@ Resources:
                 Effect: Allow
                 Action: ecs:RegisterTaskDefinition
                 Resource: "*"
+              - Sid: ListTaskDefinitions
+                Effect: Allow
+                Action: ecs:ListTaskDefinitions
+                Resource: "*"
               - Sid: UpdateProductionWorkerLogs
                 Effect: Allow
                 Action:
@@ -228,6 +232,7 @@ Resources:
                   - ecr:DescribeImages
                   - ecr:GetDownloadUrlForLayer
                   - ecr:InitiateLayerUpload
+                  - ecr:PutLifecyclePolicy
                   - ecr:PutImage
                   - ecr:UploadLayerPart
                 Resource: !Sub arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/mopa-laser-rasterizer
