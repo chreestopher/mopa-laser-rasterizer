@@ -51,7 +51,13 @@ class DeploymentRetentionTests(unittest.TestCase):
             with self.subTest(template=relative_path):
                 template = read(relative_path)
                 self.assertIn("ecs:ListTaskDefinitions", template)
-                self.assertIn("ecs:DeregisterTaskDefinition", template)
+                self.assertIn(
+                    "- Sid: DeregisterTaskDefinition\n"
+                    "                Effect: Allow\n"
+                    "                Action: ecs:DeregisterTaskDefinition\n"
+                    '                Resource: "*"',
+                    template,
+                )
                 self.assertIn("ecr:PutLifecyclePolicy", template)
 
 
