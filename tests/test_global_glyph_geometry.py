@@ -843,6 +843,10 @@ def test_staging_ui_exposes_fauxlogram_flow_painter():
     assert "Math.min(1,960/flowBitmap.width,680/flowBitmap.height)" not in page
     assert "normalizeShapeImage(file,96,'grayscale')" in page
     assert "alpha:bytesToBase64(alphaValues)" in page
+    assert "function flowMaskPreviewPixels(" in page
+    assert "const coverage=alphaValues?alphaValues[pixel]:255" in page
+    assert "pixels[position]=value;pixels[position+1]=value;pixels[position+2]=value" in page
+    assert "Math.round(value*coverage/255)" not in page
 
 
 def _compact_mask(values, alpha=None):
