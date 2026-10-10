@@ -101,7 +101,6 @@ Resources:
               - Sid: UpdateProductionWorker
                 Effect: Allow
                 Action:
-                  - ecs:DeregisterTaskDefinition
                   - ecs:DescribeClusters
                   - ecs:DescribeTaskDefinition
                   - ecs:TagResource
@@ -117,6 +116,10 @@ Resources:
               - Sid: ListTaskDefinitions
                 Effect: Allow
                 Action: ecs:ListTaskDefinitions
+                Resource: "*"
+              - Sid: DeregisterTaskDefinition
+                Effect: Allow
+                Action: ecs:DeregisterTaskDefinition
                 Resource: "*"
               - Sid: UpdateProductionWorkerLogs
                 Effect: Allow
