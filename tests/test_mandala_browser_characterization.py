@@ -287,6 +287,10 @@ HARNESS = r"""
     await startupChecks();
     const card = $$('.layer-card')[0];
     const group = name => card.querySelector(`[data-control-group="${name}"]`);
+    const motifColumn = card.querySelector('[data-control-column="motif"]');
+    for (const name of ['motif', 'custom-image', 'flow-strength', 'flowing-form', 'motif-position', 'fragment-slicing', 'motif-mirroring']) {
+      check(group(name).parentElement === motifColumn, `${name} was not kept in the motif column`);
+    }
     check(!visible(group('custom-image')), 'custom image controls were shown for a built-in motif');
     check(!visible(group('flowing-form')), 'flowing controls were shown for a hybrid composition');
     check(visible(group('motif-position')) && visible(group('fragment-slicing')), 'hybrid motif controls were not shown');

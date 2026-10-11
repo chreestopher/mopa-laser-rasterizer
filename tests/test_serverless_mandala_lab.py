@@ -12,7 +12,7 @@ def test_mandala_lab_uses_external_assets_and_accessible_previews():
     page = read("serverless_web/mandala.html")
     assert 'src="/mandala.js?v=17"' in page
     assert 'href="/staging-pages.css?v=4"' in page
-    assert 'href="/mandala.css?v=3"' in page
+    assert 'href="/mandala.css?v=4"' in page
     assert "<script>" not in page
     assert 'id="layerPreviewSlider"' in page and 'type="range"' in page
     assert 'id="layerPreviewName"' in page and 'id="layerPreviewPosition"' in page
@@ -222,6 +222,12 @@ def test_mandala_layer_editor_hides_controls_until_their_geometry_is_relevant():
     assert 'connected&&Number(layer.bridge_wave_amount??0)>0' in layer_editor
     assert 'Number(layer.layer_openness??0)>0' in layer_editor
     assert ".layer-control-group[hidden]{display:none}" in css
+    assert 'data-control-column="motif"' in layer_editor
+    assert 'data-control-column="layout"' in layer_editor
+    assert 'data-control-column="support"' in layer_editor
+    assert ".layer-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))" in css
+    assert ".layer-control-column{display:grid" in css
+    assert ".layer-controls{grid-template-columns:1fr}" in css
 
 
 def test_mandala_support_labels_state_connectivity_truthfully():
