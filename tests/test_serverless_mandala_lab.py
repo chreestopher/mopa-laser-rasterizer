@@ -10,9 +10,9 @@ def read(path):
 
 def test_mandala_lab_uses_external_assets_and_accessible_previews():
     page = read("serverless_web/mandala.html")
-    assert 'src="/mandala.js?v=16"' in page
+    assert 'src="/mandala.js?v=17"' in page
     assert 'href="/staging-pages.css?v=4"' in page
-    assert 'href="/mandala.css?v=2"' in page
+    assert 'href="/mandala.css?v=3"' in page
     assert "<script>" not in page
     assert 'id="layerPreviewSlider"' in page and 'type="range"' in page
     assert 'id="layerPreviewName"' in page and 'id="layerPreviewPosition"' in page
@@ -36,7 +36,7 @@ def test_mandala_lab_is_linked_and_deployed():
     assert '"/mandala.html"' in shell
     assert 'href="/mandala.html"' in landing
     assert '$BUILD_DIR/seo/mandala.html' in deploy
-    for filename in ("custom-image-vectorizer-v1.js", "mandala.js", "mandala.css", "mandala/state-v2.js", "mandala/palette-routing-v1.js", "mandala/geometry-v1.js", "mandala/preview-v3.js", "mandala/asset-constraints-v3.js", "mandala/job-lifecycle-v1.js", "mandala/layer-editor-v3.js"):
+    for filename in ("custom-image-vectorizer-v1.js", "mandala.js", "mandala.css", "mandala/state-v2.js", "mandala/palette-routing-v1.js", "mandala/geometry-v1.js", "mandala/preview-v3.js", "mandala/asset-constraints-v3.js", "mandala/job-lifecycle-v1.js", "mandala/layer-editor-v4.js"):
         assert f'serverless_web/{filename}' in deploy
 
 
@@ -64,7 +64,7 @@ def test_mandala_jobs_are_authenticated_history_backed_worker_jobs():
 
 def test_mandala_client_defaults_cut_role_and_accepts_custom_images():
     client = read("serverless_web/mandala.js")
-    layer_editor = read("serverless_web/mandala/layer-editor-v3.js")
+    layer_editor = read("serverless_web/mandala/layer-editor-v4.js")
     job_lifecycle = read("serverless_web/mandala/job-lifecycle-v1.js")
     palette_routing = read("serverless_web/mandala/palette-routing-v1.js")
     asset_constraints = read("serverless_web/mandala/asset-constraints-v3.js")
@@ -118,7 +118,7 @@ def test_mandala_asset_constraints_use_shared_image_tracing_and_own_project_dime
 
 def test_mandala_preview_uses_slider_and_updates_live_with_layer_settings():
     client = read("serverless_web/mandala.js")
-    layer_editor = read("serverless_web/mandala/layer-editor-v3.js")
+    layer_editor = read("serverless_web/mandala/layer-editor-v4.js")
     preview = read("serverless_web/mandala/preview-v3.js")
     assert '$("#layerPreviewSlider").addEventListener("input"' in layer_editor
     assert "function syncPreviewSelector()" in layer_editor
@@ -136,7 +136,7 @@ def test_mandala_preview_uses_slider_and_updates_live_with_layer_settings():
 
 def test_mandala_layer_diameter_is_wired_from_editor_to_authoritative_geometry():
     state = read("serverless_web/mandala/state-v2.js")
-    editor = read("serverless_web/mandala/layer-editor-v3.js")
+    editor = read("serverless_web/mandala/layer-editor-v4.js")
     constraints = read("serverless_web/mandala/asset-constraints-v3.js")
     preview = read("serverless_web/mandala/preview-v3.js")
     api = read("serverless_api/handler.py")
@@ -170,7 +170,7 @@ def test_mandala_geometry_module_owns_motifs_flow_and_support_bridges():
 
 def test_each_mandala_layer_can_be_randomized_or_reset_to_defaults():
     client = read("serverless_web/mandala.js")
-    layer_editor = read("serverless_web/mandala/layer-editor-v3.js")
+    layer_editor = read("serverless_web/mandala/layer-editor-v4.js")
     state = read("serverless_web/mandala/state-v2.js")
     assert 'data-action="randomize">Randomize' in layer_editor
     assert 'data-action="reset">Reset to defaults' in layer_editor
@@ -187,8 +187,8 @@ def test_each_mandala_layer_can_be_randomized_or_reset_to_defaults():
 
 def test_mandala_layer_editor_owns_controls_collection_and_preview_selection():
     client = read("serverless_web/mandala.js")
-    layer_editor = read("serverless_web/mandala/layer-editor-v3.js")
-    assert 'from "./mandala/layer-editor-v3.js"' in client
+    layer_editor = read("serverless_web/mandala/layer-editor-v4.js")
+    assert 'from "./mandala/layer-editor-v4.js"' in client
     assert "export function createMandalaLayerEditor(" in layer_editor
     for function in ("numberControl", "layerCard", "syncPreviewSelector", "renderLayers", "resetLayers", "getLayers", "getActiveLayer", "bind"):
         assert f"function {function}(" in layer_editor
@@ -199,8 +199,33 @@ def test_mandala_layer_editor_owns_controls_collection_and_preview_selection():
     assert '$("#diameter").addEventListener("input",schedulePreview)' in layer_editor
 
 
+def test_mandala_layer_editor_hides_controls_until_their_geometry_is_relevant():
+    layer_editor = read("serverless_web/mandala/layer-editor-v4.js")
+    css = read("serverless_web/mandala.css")
+    assert "function controlGroup(" in layer_editor
+    assert "function syncDependentControls(" in layer_editor
+    for group in (
+        "custom-image",
+        "flow-strength",
+        "flowing-form",
+        "motif-position",
+        "fragment-slicing",
+        "motif-mirroring",
+        "outer-edge",
+        "support-bridges",
+        "support-sweep",
+        "bridge-wave",
+        "opening-placement",
+    ):
+        assert f'setGroupVisible(card,"{group}"' in layer_editor
+    assert 'composition==="flow_character"&&layer.motif!=="custom"' in layer_editor
+    assert 'connected&&Number(layer.bridge_wave_amount??0)>0' in layer_editor
+    assert 'Number(layer.layer_openness??0)>0' in layer_editor
+    assert ".layer-control-group[hidden]{display:none}" in css
+
+
 def test_mandala_support_labels_state_connectivity_truthfully():
-    layer_editor = read("serverless_web/mandala/layer-editor-v3.js")
+    layer_editor = read("serverless_web/mandala/layer-editor-v4.js")
     page = read("serverless_web/mandala.html")
     assert "Rim and hub; motifs may remain loose" in layer_editor
     assert "Automatic bridges — one piece" in layer_editor
@@ -209,7 +234,7 @@ def test_mandala_support_labels_state_connectivity_truthfully():
 
 
 def test_mandala_support_and_openwork_controls_are_wired_end_to_end():
-    layer_editor = read("serverless_web/mandala/layer-editor-v3.js")
+    layer_editor = read("serverless_web/mandala/layer-editor-v4.js")
     api = read("serverless_api/handler.py")
     backend = read("lib/mandala.py")
     docs = read("routes/docs.py")

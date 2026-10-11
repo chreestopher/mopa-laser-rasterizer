@@ -644,7 +644,7 @@ def test_mandala_modules_upload_before_entry_and_html():
         'aws s3 cp "$REPO_ROOT/serverless_web/mandala/job-lifecycle-v1.js"'
     )
     layer_editor_dependency = (
-        'aws s3 cp "$REPO_ROOT/serverless_web/mandala/layer-editor-v3.js"'
+        'aws s3 cp "$REPO_ROOT/serverless_web/mandala/layer-editor-v4.js"'
     )
     entry = 'aws s3 cp "$REPO_ROOT/serverless_web/mandala.js"'
     html = 'aws s3 cp "$BUILD_DIR/seo/mandala.html"'
@@ -746,9 +746,9 @@ def test_mandala_job_lifecycle_owns_payload_auth_submission_polling_and_resume()
 
 def test_mandala_layer_editor_owns_controls_collection_and_preview_selection():
     entry = (WEB / "mandala.js").read_text(encoding="utf-8")
-    editor = (WEB / "mandala" / "layer-editor-v3.js").read_text(encoding="utf-8")
+    editor = (WEB / "mandala" / "layer-editor-v4.js").read_text(encoding="utf-8")
 
-    assert 'from "./mandala/layer-editor-v3.js"' in entry
+    assert 'from "./mandala/layer-editor-v4.js"' in entry
     assert 'from "./state-v2.js"' in editor
     assert "export function createMandalaLayerEditor(" in editor
     for function in ("numberControl", "layerCard", "syncPreviewSelector", "renderLayers", "resetLayers", "bind"):
@@ -884,6 +884,7 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
         WEB / "mandala" / "preview-v2.js",
         WEB / "mandala" / "asset-constraints-v2.js",
         WEB / "mandala" / "layer-editor-v2.js",
+        WEB / "mandala" / "layer-editor-v3.js",
     }
     assert set(referenced_modes) == javascript_files - retained_versioned_assets
     assert all(len(modes) == 1 for modes in referenced_modes.values())
@@ -911,7 +912,7 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
     assert referenced_modes[WEB / "mandala" / "preview-v3.js"] == {"module"}
     assert referenced_modes[WEB / "mandala" / "asset-constraints-v3.js"] == {"module"}
     assert referenced_modes[WEB / "mandala" / "job-lifecycle-v1.js"] == {"module"}
-    assert referenced_modes[WEB / "mandala" / "layer-editor-v3.js"] == {"module"}
+    assert referenced_modes[WEB / "mandala" / "layer-editor-v4.js"] == {"module"}
     assert referenced_modes[ROOT / "static" / "community-set-v1.js"] == {"classic"}
     assert referenced_modes[ROOT / "static" / "docs-search-v1.js"] == {"classic"}
     for filename in (

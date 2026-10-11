@@ -283,6 +283,52 @@ HARNESS = r"""
     check($$('.layer-card').length === 4, 'Remove did not remove the active layer');
   }
 
+  async function contextualControlChecks() {
+    await startupChecks();
+    const card = $$('.layer-card')[0];
+    const group = name => card.querySelector(`[data-control-group="${name}"]`);
+    check(!visible(group('custom-image')), 'custom image controls were shown for a built-in motif');
+    check(!visible(group('flowing-form')), 'flowing controls were shown for a hybrid composition');
+    check(visible(group('motif-position')) && visible(group('fragment-slicing')), 'hybrid motif controls were not shown');
+    check(visible(group('support-bridges')) && visible(group('bridge-wave')), 'connected bridge controls were not shown');
+    check(visible(group('opening-placement')), 'opening placement was hidden for nonzero openness');
+
+    input(card.querySelector('[data-field="fragment_scale"]'), 2.2);
+    input(card.querySelector('[data-field="motif_composition"]'), 'whole_repeat');
+    check(!visible(group('fragment-slicing')), 'fragment controls remained visible for whole motifs');
+    input(card.querySelector('[data-field="motif_composition"]'), 'flow_character');
+    check(visible(group('flowing-form')), 'flowing controls did not appear for flowing character');
+    check(!visible(group('motif-position')) && !visible(group('fragment-slicing')), 'fragment placement controls remained visible for flowing character');
+    input(card.querySelector('[data-field="flow_amount"]'), 0);
+    check(!visible(group('flowing-form')) && visible(group('motif-mirroring')), 'zero flow did not switch to repeated-motif controls');
+    input(card.querySelector('[data-field="flow_amount"]'), 0.6);
+    check(visible(group('flowing-form')) && !visible(group('motif-mirroring')), 'nonzero flow did not restore flowing-form controls');
+    input(card.querySelector('[data-field="motif"]'), 'custom');
+    check(visible(group('custom-image')), 'custom image controls did not appear for a custom motif');
+    check(!visible(group('flowing-form')), 'procedural flowing controls remained visible for a custom image');
+    input(card.querySelector('[data-field="motif"]'), 'petal');
+    input(card.querySelector('[data-field="motif_composition"]'), 'hybrid');
+    check(card.querySelector('[data-field="fragment_scale"]').value === '2.2', 'hidden fragment value was not retained');
+
+    input(card.querySelector('[data-field="support_mode"]'), 'loose');
+    check(!visible(group('outer-edge')) && !visible(group('support-bridges')) && !visible(group('support-sweep')), 'support controls remained visible for loose pieces');
+    input(card.querySelector('[data-field="support_mode"]'), 'outer_rim');
+    input(card.querySelector('[data-field="rim_style"]'), 'closed');
+    check(visible(group('outer-edge')) && !visible(group('support-sweep')), 'closed rim showed an unrelated sweep control');
+    input(card.querySelector('[data-field="rim_style"]'), 'petal');
+    check(visible(group('support-sweep')), 'petal crown did not show its sweep control');
+    input(card.querySelector('[data-field="support_mode"]'), 'automatic_bridges');
+    input(card.querySelector('[data-field="bridge_wave_amount"]'), 0);
+    check(!visible(group('bridge-wave')), 'wave shape controls remained visible for a straight bridge');
+    input(card.querySelector('[data-field="bridge_wave_amount"]'), 0.5);
+    check(visible(group('bridge-wave')), 'wave shape controls did not appear for a curved bridge');
+
+    input(card.querySelector('[data-field="layer_openness"]'), 0);
+    check(!visible(group('opening-placement')), 'opening placement remained visible with no openwork');
+    input(card.querySelector('[data-field="layer_openness"]'), 0.25);
+    check(visible(group('opening-placement')), 'opening placement did not appear for openwork');
+  }
+
   async function paletteRoutingChecks() {
     await startupChecks();
     change($('#processingPalette'), 'processing-2');
@@ -472,6 +518,7 @@ HARNESS = r"""
     } else if (scenario === 'startup') await startupChecks();
     else if (scenario === 'palette-routing') await paletteRoutingChecks();
     else if (scenario === 'editor') await editorChecks();
+    else if (scenario === 'contextual-controls') await contextualControlChecks();
     else if (scenario === 'randomize-reset') await randomizeResetChecks();
     else if (scenario === 'preview') await previewChecks();
     else if (scenario === 'custom-svg') await customSvgChecks();
@@ -526,9 +573,9 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
         page = page_path.read_text(encoding="utf-8")
         page = re.sub(r'\s*<script src="/staging-shell\.js\?v=4" defer></script>', '', page)
         page = page.replace(
-            '<script src="/mandala.js?v=16" type="module"></script>',
+            '<script src="/mandala.js?v=17" type="module"></script>',
             '<script src="/mandala-characterization-harness.js"></script>\n'
-            '<script src="/mandala.js?v=16" type="module"></script>',
+            '<script src="/mandala.js?v=17" type="module"></script>',
         )
         page_path.write_text(page, encoding="utf-8")
         (cls.site / "mandala-characterization-harness.js").write_text(
@@ -594,6 +641,9 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
 
     def test_layer_add_duplicate_edit_reorder_and_remove(self):
         self._run_scenario("editor")
+
+    def test_layer_controls_follow_their_geometry_dependencies(self):
+        self._run_scenario("contextual-controls")
 
     def test_layer_randomize_is_bounded_and_reset_restores_defaults(self):
         self._run_scenario("randomize-reset")

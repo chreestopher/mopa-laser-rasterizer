@@ -230,6 +230,8 @@ aws s3 cp "$REPO_ROOT/serverless_web/mandala/layer-editor-v2.js" "s3://$STATIC_B
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/mandala/layer-editor-v3.js" "s3://$STATIC_BUCKET/web/mandala/layer-editor-v3.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/mandala/layer-editor-v4.js" "s3://$STATIC_BUCKET/web/mandala/layer-editor-v4.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/mandala.js" "s3://$STATIC_BUCKET/web/mandala.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/mandala.css" "s3://$STATIC_BUCKET/web/mandala.css" \
