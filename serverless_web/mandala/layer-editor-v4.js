@@ -7,6 +7,7 @@ export function createMandalaLayerEditor({escapeHtml,schedulePreview}){
 
   function numberControl(field,label,value,min,max,step){return`<label>${label}<input data-field="${field}" type="number" value="${value}" min="${min}" max="${max}" step="${step}"></label>`}
   function controlGroup(name,title,content){return`<fieldset class="layer-control-group" data-control-group="${name}"><legend>${title}</legend><div class="layer-control-grid">${content}</div></fieldset>`}
+  function dependentSection(name,title,content){return`<section class="motif-dependent-section" data-control-group="${name}"><h4>${title}</h4><div class="layer-control-grid">${content}</div></section>`}
   function projectDiameter(){return Math.max(20,Math.min(1000,Number($("#diameter")?.value)||150))}
   function setGroupVisible(card,name,visible){const group=card.querySelector(`[data-control-group="${name}"]`);if(group)group.hidden=!visible}
   function syncDependentControls(card,layer){
@@ -36,13 +37,13 @@ export function createMandalaLayerEditor({escapeHtml,schedulePreview}){
     return`<article class="layer-card" data-layer="${index}"><div class="layer-heading"><div><h3>Layer ${index+1}</h3><p>Front-to-back position ${index+1}</p></div><div class="layer-actions"><button type="button" class="mandala-button" data-action="randomize">Randomize</button><button type="button" class="mandala-button" data-action="reset">Reset to defaults</button><button type="button" class="mandala-button" data-action="duplicate">Duplicate</button><button type="button" class="mandala-button" data-action="up" ${index===0?"disabled":""}>Earlier</button><button type="button" class="mandala-button" data-action="down" ${index===layers.length-1?"disabled":""}>Later</button><button type="button" class="mandala-button" data-action="remove" ${layers.length===1?"disabled":""}>Remove</button></div></div><div class="layer-controls">
 <div class="layer-control-column" data-control-column="motif">
 ${controlGroup("identity","Layer",identity)}
-${controlGroup("motif","Motif",motif)}
-${controlGroup("custom-image","Custom image",customImage)}
-${controlGroup("flow-strength","Flowing character",numberControl("flow_amount","Flowing form",layer.flow_amount??.92,0,1,.01))}
-${controlGroup("flowing-form","Flowing form",flowingForm)}
-${controlGroup("motif-position","Motif placement",`${numberControl("motif_radial_position","Motif radial position",layer.motif_radial_position??0,-.4,.4,.01)}${numberControl("motif_tangential_position","Motif sideways position",layer.motif_tangential_position??0,-.45,.45,.01)}`)}
-${controlGroup("fragment-slicing","Fragment slicing",numberControl("fragment_scale","Fragment slicing scale",layer.fragment_scale??1.7,1,2.5,.05))}
-${controlGroup("motif-mirroring","Motif mirroring",`<label class="check-control"><input data-field="mirror_alternating" type="checkbox" ${layer.mirror_alternating?"checked":""}> Mirror alternating motifs</label>`)}
+${controlGroup("motif","Motif",`${motif}
+${dependentSection("custom-image","Custom image",customImage)}
+${dependentSection("flow-strength","Flowing character",numberControl("flow_amount","Flowing form",layer.flow_amount??.92,0,1,.01))}
+${dependentSection("flowing-form","Flowing form",flowingForm)}
+${dependentSection("motif-position","Motif placement",`${numberControl("motif_radial_position","Motif radial position",layer.motif_radial_position??0,-.4,.4,.01)}${numberControl("motif_tangential_position","Motif sideways position",layer.motif_tangential_position??0,-.45,.45,.01)}`)}
+${dependentSection("fragment-slicing","Fragment slicing",numberControl("fragment_scale","Fragment slicing scale",layer.fragment_scale??1.7,1,2.5,.05))}
+${dependentSection("motif-mirroring","Motif mirroring",`<label class="check-control"><input data-field="mirror_alternating" type="checkbox" ${layer.mirror_alternating?"checked":""}> Mirror alternating motifs</label>`)}`)}
 </div><div class="layer-control-column" data-control-column="layout">
 ${controlGroup("layout","Radial layout",layout)}
 ${controlGroup("openwork","Openwork",numberControl("layer_openness","Layer openness",layer.layer_openness??0,0,1,.01))}
