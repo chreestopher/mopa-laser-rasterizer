@@ -203,6 +203,7 @@ def test_mandala_layer_editor_hides_controls_until_their_geometry_is_relevant():
     layer_editor = read("serverless_web/mandala/layer-editor-v4.js")
     css = read("serverless_web/mandala.css")
     assert "function controlGroup(" in layer_editor
+    assert "function dependentSection(" in layer_editor
     assert "function syncDependentControls(" in layer_editor
     for group in (
         "custom-image",
@@ -225,8 +226,13 @@ def test_mandala_layer_editor_hides_controls_until_their_geometry_is_relevant():
     assert 'data-control-column="motif"' in layer_editor
     assert 'data-control-column="layout"' in layer_editor
     assert 'data-control-column="support"' in layer_editor
+    assert 'dependentSection("custom-image"' in layer_editor
+    assert 'dependentSection("flowing-form"' in layer_editor
+    assert 'dependentSection("fragment-slicing"' in layer_editor
     assert ".layer-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))" in css
     assert ".layer-control-column{display:grid" in css
+    assert ".motif-dependent-section{display:grid;grid-column:1/-1" in css
+    assert ".motif-dependent-section[hidden]{display:none}" in css
     assert ".layer-controls{grid-template-columns:1fr}" in css
 
 
