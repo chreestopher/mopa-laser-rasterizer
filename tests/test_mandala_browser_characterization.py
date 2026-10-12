@@ -287,11 +287,19 @@ HARNESS = r"""
     await startupChecks();
     const card = $$('.layer-card')[0];
     const group = name => card.querySelector(`[data-control-group="${name}"]`);
-    const motifColumn = card.querySelector('[data-control-column="motif"]');
-    const motifCard = group('motif');
-    check(motifCard.parentElement === motifColumn, 'Motif card was not kept in the motif column');
-    for (const name of ['custom-image', 'flow-strength', 'flowing-form', 'motif-position', 'fragment-slicing', 'motif-mirroring']) {
+    const controls = card.querySelector('.layer-controls');
+    const layerCard = group('layer-settings');
+    const motifCard = group('motif-settings');
+    const supportCard = group('support-settings');
+    check(layerCard.parentElement === controls && motifCard.parentElement === controls && supportCard.parentElement === controls, 'settings were not consolidated into three top-level cards');
+    for (const name of ['motif-layout', 'custom-image', 'flow-strength', 'flowing-form', 'motif-position', 'fragment-slicing', 'motif-mirroring']) {
       check(motifCard.contains(group(name)), `${name} was not consolidated inside the Motif card`);
+    }
+    for (const name of ['construction', 'openwork', 'opening-placement']) {
+      check(layerCard.contains(group(name)), `${name} was not consolidated inside the Layer settings card`);
+    }
+    for (const name of ['outer-edge', 'support-bridges', 'support-sweep', 'bridge-wave']) {
+      check(supportCard.contains(group(name)), `${name} was not consolidated inside the Structural support card`);
     }
     check(!visible(group('custom-image')), 'custom image controls were shown for a built-in motif');
     check(!visible(group('flowing-form')), 'flowing controls were shown for a hybrid composition');

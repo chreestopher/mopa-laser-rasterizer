@@ -203,7 +203,7 @@ def test_mandala_layer_editor_hides_controls_until_their_geometry_is_relevant():
     layer_editor = read("serverless_web/mandala/layer-editor-v4.js")
     css = read("serverless_web/mandala.css")
     assert "function controlGroup(" in layer_editor
-    assert "function dependentSection(" in layer_editor
+    assert "function settingsSection(" in layer_editor
     assert "function syncDependentControls(" in layer_editor
     for group in (
         "custom-image",
@@ -223,16 +223,18 @@ def test_mandala_layer_editor_hides_controls_until_their_geometry_is_relevant():
     assert 'connected&&Number(layer.bridge_wave_amount??0)>0' in layer_editor
     assert 'Number(layer.layer_openness??0)>0' in layer_editor
     assert ".layer-control-group[hidden]{display:none}" in css
-    assert 'data-control-column="motif"' in layer_editor
-    assert 'data-control-column="layout"' in layer_editor
-    assert 'data-control-column="support"' in layer_editor
-    assert 'dependentSection("custom-image"' in layer_editor
-    assert 'dependentSection("flowing-form"' in layer_editor
-    assert 'dependentSection("fragment-slicing"' in layer_editor
+    assert 'controlGroup("layer-settings","Layer settings"' in layer_editor
+    assert 'controlGroup("motif-settings","Motif settings"' in layer_editor
+    assert 'controlGroup("support-settings","Structural support"' in layer_editor
+    assert 'settingsSection("custom-image"' in layer_editor
+    assert 'settingsSection("motif-layout","Pattern layout"' in layer_editor
+    assert 'settingsSection("flowing-form"' in layer_editor
+    assert 'settingsSection("fragment-slicing"' in layer_editor
+    assert 'settingsSection("opening-placement"' in layer_editor
+    assert 'settingsSection("bridge-wave"' in layer_editor
     assert ".layer-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))" in css
-    assert ".layer-control-column{display:grid" in css
-    assert ".motif-dependent-section{display:grid;grid-column:1/-1" in css
-    assert ".motif-dependent-section[hidden]{display:none}" in css
+    assert ".settings-subsection{display:grid;grid-column:1/-1" in css
+    assert ".settings-subsection[hidden]{display:none}" in css
     assert ".layer-controls{grid-template-columns:1fr}" in css
 
 
