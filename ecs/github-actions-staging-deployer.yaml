@@ -146,6 +146,14 @@ Resources:
                   - logs:TagResource
                   - logs:UntagResource
                 Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/mopa-rasterizer-serverless-staging-worker:*
+              - Sid: UpdateWorkerLogsLogGroup
+                Effect: Allow
+                Action:
+                  - logs:ListTagsForResource
+                  - logs:PutRetentionPolicy
+                  - logs:TagResource
+                  - logs:UntagResource
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/mopa-rasterizer-serverless-staging-worker
               - Sid: UpdateStagingOrchestration
                 Effect: Allow
                 Action:
