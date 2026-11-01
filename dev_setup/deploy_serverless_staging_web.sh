@@ -250,6 +250,8 @@ aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/canvas-preview-v2.js" "s3://$ST
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/drawing-editor-v2.js" "s3://$STATIC_BUCKET/web/spiralgraph/drawing-editor-v2.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/drawing-editor-v3.js" "s3://$STATIC_BUCKET/web/spiralgraph/drawing-editor-v3.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/state-v2.js" "s3://$STATIC_BUCKET/web/spiralgraph/state-v2.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/palette-routing-v1.js" "s3://$STATIC_BUCKET/web/spiralgraph/palette-routing-v1.js" \

@@ -589,7 +589,7 @@ def test_spiralgraph_modules_upload_before_entry_and_html():
         'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/canvas-preview-v2.js"'
     )
     drawing_editor_dependency = (
-        'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/drawing-editor-v2.js"'
+        'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/drawing-editor-v3.js"'
     )
     state_dependency = (
         'aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/state-v2.js"'
@@ -887,6 +887,7 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
         WEB / "mandala" / "layer-editor-v3.js",
         WEB / "mandala" / "layer-editor-v4.js",
         WEB / "mandala" / "job-lifecycle-v1.js",
+        WEB / "spiralgraph" / "drawing-editor-v2.js",
     }
     assert set(referenced_modes) == javascript_files - retained_versioned_assets
     assert all(len(modes) == 1 for modes in referenced_modes.values())

@@ -1,6 +1,6 @@
 import {createHardwarePreview} from "./spiralgraph/hardware-preview-v2.js";
 import {createCanvasPreview} from "./spiralgraph/canvas-preview-v2.js";
-import {createDrawingEditor} from "./spiralgraph/drawing-editor-v2.js";
+import {createDrawingEditor} from "./spiralgraph/drawing-editor-v3.js";
 import {createJobLifecycle} from "./spiralgraph/job-lifecycle-v1.js";
 import {createPaletteRouting} from "./spiralgraph/palette-routing-v1.js";
 import {COLORS,GEARS,constrainWorkbedToDiameter,createDrawingState,newLayer} from "./spiralgraph/state-v2.js";
@@ -24,3 +24,13 @@ paletteRouting.bindEvents(renderLayers);$("#diameter").addEventListener("input",
 const jobLifecycle=createJobLifecycle({escapeHtml:esc,getLayers,onAuthenticated:accountResources=>{resources=accountResources;drawingState.resetLayers();populatePalettes();renderLayers()}});
 jobLifecycle.bind();
 jobLifecycle.start();
+
+// Fit below the shared navigation while preserving a readable mobile layout.
+const workspace=document.querySelector("#spiralgraphWorkspace");
+function fitWorkspace(){
+  const top=workspace.getBoundingClientRect().top+window.scrollY;
+  workspace.style.setProperty("--workspace-height",`${Math.max(320,window.innerHeight-top-32)}px`);
+}
+new ResizeObserver(()=>requestAnimationFrame(fitWorkspace)).observe(document.body);
+window.addEventListener("resize",fitWorkspace);
+fitWorkspace();
