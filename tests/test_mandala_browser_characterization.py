@@ -59,6 +59,7 @@ HARNESS = r"""
   }
 
   const scenario = new URLSearchParams(location.search).get('scenario');
+  if (scenario === 'workspace') document.write('<script src="/staging-shell.js?v=4" defer><' + '/script>');
   const failures = [];
   const runtimeErrors = [];
   const fetchHistory = [];
@@ -286,7 +287,11 @@ HARNESS = r"""
   async function contextualControlChecks() {
     await startupChecks();
     const card = $$('.layer-card')[0];
-    const group = name => card.querySelector(`[data-control-group="${name}"]`);
+    const group = name => {
+      const pages = {'custom-image':'shape','flow-strength':'flow','flowing-form':'flow','motif-position':'placement','fragment-slicing':'placement','motif-mirroring':'placement','outer-edge':'support','support-bridges':'bridges','support-sweep':'support','bridge-wave':'bridges'};
+      if (pages[name]) change($('#settingsPage'), pages[name]);
+      return card.querySelector(`[data-control-group="${name}"]`);
+    };
     const controls = card.querySelector('.layer-controls');
     const layerCard = group('layer-settings');
     const motifCard = group('motif-settings');
@@ -514,6 +519,64 @@ HARNESS = r"""
     check($$('#outputs a').length === 1, 'resumed output was not rendered');
   }
 
+  async function workspaceChecks() {
+    await startupChecks();
+    await settle();
+    const onScreen = element => {
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.bottom <= innerHeight + 1 && rect.left >= 0 && rect.right <= innerWidth + 1;
+    };
+    const shown = element => element.getClientRects().length && getComputedStyle(element).display !== 'none';
+    check(Boolean($('.staging-shell')), 'workspace was not tested with shared navigation');
+    check(document.documentElement.scrollHeight <= innerHeight + 1, `desktop page needs scrolling (${document.documentElement.scrollHeight} > ${innerHeight})`);
+    check(onScreen($('#activePreview')), 'preview did not fit in the viewport');
+    check(onScreen($('#generate')), 'Generate did not fit in the viewport');
+    check($$('.layer-card').filter(shown).length === 1, 'multiple layer editors were shown');
+    for (const composition of ['hybrid','flow_character']) {
+      input($('.layer-card [data-field="motif_composition"]'), composition);
+    for (const page of ['layer','shape','pattern','transform','flow','placement','support','bridges']) {
+      change($('#settingsPage'), page);
+      for (const field of $$('.layer-card input, .layer-card select').filter(shown)) {
+        check(onScreen(field), `${page}: ${field.dataset.field} did not fit in the viewport`);
+        const pane = $('.layer-workspace').getBoundingClientRect();
+        check(field.getBoundingClientRect().bottom <= pane.bottom + 1, `${page}: ${field.dataset.field} needs control-pane scrolling`);
+      }
+    }
+    }
+    input($('.layer-card [data-field="motif_composition"]'), 'hybrid');
+    input($('.layer-card [data-field="motif"]'), 'custom');
+    change($('#settingsPage'), 'shape');
+    check(onScreen($('.layer-card [data-field="custom_file"]')), 'custom image upload did not fit');
+    input($('.layer-card [data-field="motif"]'), 'petal');
+    change($('#settingsPage'), 'pattern');
+    input($('.layer-card [data-field="repetitions"]'), 19);
+    change($('#layerSelector'), '1');
+    check($('#layerPreviewPosition').textContent === 'Layer 2 of 3', 'layer selector did not select the preview');
+    check($$('.layer-card').filter(shown)[0].dataset.layer === '1', 'selector and editor disagree');
+    input($('#layerPreviewSlider'), 1);
+    check($('#layerSelector').value === '0', 'slider and selector disagree');
+    check($('.layer-card [data-field="repetitions"]').value === '19', 'switching layers lost edits');
+    const invalidField = $('.layer-card [data-field="radial_stretch"]');
+    input(invalidField, 9);
+    change($('#layerSelector'), '1');
+    change($('#settingsPage'), 'layer');
+    check(!$('#mandalaForm').reportValidity(), 'invalid hidden-layer control was accepted');
+    check($('#layerSelector').value === '0' && $('#settingsPage').value === 'transform', 'validation did not reveal the invalid layer and settings section');
+    check(onScreen(invalidField), 'invalid field remained hidden');
+    input(invalidField, 1);
+    change($('#previewMode'), 'stack');
+    check($('#activePreview').hidden && !$('#stackPreview').hidden, 'stack view did not switch canvases');
+    check(onScreen($('#stackPreview')), 'stacked preview did not fit');
+    $('#openProjectSetup').click();
+    check($('#projectSetup').open && onScreen($('#diameter')), 'project setup did not open accessibly');
+    $('#closeProjectSetup').click();
+    check(!$('#projectSetup').open, 'project setup did not close');
+    while (!$('#addLayer').disabled) $('#addLayer').click();
+    check($('#layerSelector').options.length === 12, 'layer selector did not stop at twelve layers');
+    check($$('.layer-card').filter(shown).length === 1, 'adding layers exposed other editors');
+    check(onScreen($('#stackPreview')) && onScreen($('#generate')), 'twelve-layer project exceeded the viewport');
+  }
+
   async function mobileChecks() {
     await startupChecks();
     check(innerWidth <= 500, `mobile viewport was not applied (${innerWidth})`);
@@ -541,6 +604,7 @@ HARNESS = r"""
     else if (scenario === 'polling-failure') await pollingFailureChecks();
     else if (scenario === 'auth-retry') await authRetryChecks();
     else if (scenario === 'resume') await resumeChecks();
+    else if (scenario === 'workspace') await workspaceChecks();
     else if (scenario === 'mobile') await mobileChecks();
     else fail(`unknown scenario: ${scenario}`);
   }
@@ -583,13 +647,14 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
         cls.temp = tempfile.TemporaryDirectory(prefix="mopa-mandala-browser-")
         cls.site = Path(cls.temp.name) / "site"
         shutil.copytree(WEB, cls.site)
+        shutil.copyfile(ROOT / "static" / "machine_chrome.css", cls.site / "machine_chrome.css")
         page_path = cls.site / "mandala.html"
         page = page_path.read_text(encoding="utf-8")
         page = re.sub(r'\s*<script src="/staging-shell\.js\?v=4" defer></script>', '', page)
         page = page.replace(
-            '<script src="/mandala.js?v=17" type="module"></script>',
+            '<script src="/mandala.js?v=18" type="module"></script>',
             '<script src="/mandala-characterization-harness.js"></script>\n'
-            '<script src="/mandala.js?v=17" type="module"></script>',
+            '<script src="/mandala.js?v=18" type="module"></script>',
         )
         page_path.write_text(page, encoding="utf-8")
         (cls.site / "mandala-characterization-harness.js").write_text(
@@ -608,7 +673,7 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
         cls.thread.join(timeout=2)
         cls.temp.cleanup()
 
-    def _run_scenario(self, scenario, query="", mobile=False):
+    def _run_scenario(self, scenario, query="", mobile=False, size=None):
         port = self.server.server_address[1]
         url = f"http://127.0.0.1:{port}/mandala.html?scenario={scenario}{query}"
         with tempfile.TemporaryDirectory(prefix="mopa-mandala-profile-") as profile:
@@ -624,6 +689,8 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
             ]
             if mobile:
                 command.extend(["--window-size=390,844", "--force-device-scale-factor=1"])
+            if size:
+                command.extend([f"--window-size={size}", "--force-device-scale-factor=1"])
             command.append(url)
             completed = subprocess.run(
                 command,
@@ -682,6 +749,11 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
 
     def test_existing_task_resumes_and_renders_downloads(self):
         self._run_scenario("resume", "&task=mandala-resume-task")
+
+    def test_workspace_fits_desktop_and_laptop_with_shared_navigation(self):
+        for size in ("1366,768", "1440,900", "1920,1080", "1024,768"):
+            with self.subTest(size=size):
+                self._run_scenario("workspace", size=size)
 
     def test_mobile_layout_has_no_horizontal_overflow(self):
         self._run_scenario("mobile", mobile=True)
