@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="/staging-shell.css?v=1">
   <link rel="stylesheet" href="/staging-shell-v2.css">
   <link rel="stylesheet" href="/staging-pages.css?v=4">
-  <link rel="stylesheet" href="/mandala.css?v=5">
+  <link rel="stylesheet" href="/mandala.css?v=6">
   <script src="/staging-shell.js?v=4" defer></script>
   <script src="/mandala.js?v=19" type="module"></script>
 </head>
@@ -45,9 +45,15 @@
         </dialog>
         <section id="mandalaWorkspace" class="mandala-panel mandala-workspace" aria-label="Mandala layer editor">
           <div class="workspace-toolbar">
-            <label>Edit layer<select id="layerSelector" aria-describedby="layerOrderHint"></select></label>
-            <p id="layerOrderHint">Front-to-back order</p>
-            <button id="addLayer" type="button" class="mandala-button">Add layer</button>
+            <div class="layer-toolbar">
+              <label>Edit layer<select id="layerSelector" aria-describedby="layerOrderHint"></select></label>
+              <p id="layerOrderHint">Front-to-back order</p>
+              <button id="addLayer" type="button" class="mandala-button">Add layer</button>
+            </div>
+            <div class="preview-heading">
+              <div><h2>Live preview</h2><p id="layerPreviewName">Layer 1</p></div>
+              <label>View<select id="previewMode"><option value="layer">Single layer</option><option value="stack">Fully stacked assembly</option></select></label>
+            </div>
           </div>
           <div class="workspace-body">
             <section class="layer-workspace" aria-label="Selected layer controls">
@@ -64,10 +70,6 @@
               <div id="layerList" class="layer-list"></div>
             </section>
             <section class="preview-workspace" aria-label="Live design preview">
-              <div class="preview-heading">
-                <div><h2>Live preview</h2><p id="layerPreviewName">Layer 1</p></div>
-                <label>View<select id="previewMode"><option value="layer">Single layer</option><option value="stack">Fully stacked assembly</option></select></label>
-              </div>
               <div class="preview-stage">
                 <canvas id="activePreview" width="620" height="620" aria-label="Selected mandala layer preview"></canvas>
                 <canvas id="stackPreview" width="620" height="620" aria-label="Stacked mandala assembly preview" hidden></canvas>
