@@ -13,10 +13,10 @@ def test_spiralgrap_page_uses_external_assets_and_classic_controls():
     page = read("serverless_web/spiralgraph.html")
     client = read("serverless_web/spiralgraph.js")
     job_lifecycle = read("serverless_web/spiralgraph/job-lifecycle-v1.js")
-    drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v2.js")
-    assert 'src="/spiralgraph.js?v=12"' in page
+    drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v3.js")
+    assert 'src="/spiralgraph.js?v=13"' in page
     assert 'href="/staging-pages.css?v=4"' in page
-    assert 'href="/spiralgraph.css?v=4"' in page
+    assert 'href="/spiralgraph.css?v=5"' in page
     assert "Track plate" in drawing_editor and "Rolling gear" in drawing_editor and "Pen hole" in drawing_editor
     assert "Starting mark" in drawing_editor and "Rolling position" in drawing_editor
     for label in ("Drawing size (%)", "Track width (%)", "Track height (%)", "Gear size (%)", "Pen reach (%)"):
@@ -38,7 +38,7 @@ def test_spiralgraph_can_use_saved_color_palette_swatches_for_preview_and_output
     client = read("serverless_web/spiralgraph.js")
     job_lifecycle = read("serverless_web/spiralgraph/job-lifecycle-v1.js")
     palette_routing = read("serverless_web/spiralgraph/palette-routing-v1.js")
-    drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v2.js")
+    drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v3.js")
     canvas_preview = read("serverless_web/spiralgraph/canvas-preview-v2.js")
     styles = read("serverless_web/spiralgraph.css")
     api = read("serverless_api/handler.py")
@@ -72,7 +72,7 @@ class SpiralGraphHardwarePreviewTests(unittest.TestCase):
         client = read("serverless_web/spiralgraph.js")
         geometry = read("serverless_web/spiralgraph/geometry-v2.js")
         hardware = read("serverless_web/spiralgraph/hardware-preview-v2.js")
-        drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v2.js")
+        drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v3.js")
         styles = read("serverless_web/spiralgraph.css")
         self.assertIn('id="hardwarePreview"', page)
         for label in ("Track plate", "Rolling gear and pencil holes", "Assembled position"):
@@ -133,7 +133,7 @@ class SpiralGraphCanvasPreviewTests(unittest.TestCase):
         self.assertIn("renderHardware()", canvas_preview)
         self.assertNotIn("function previewColor", client)
         self.assertNotIn("function drawLayer", client)
-        self.assertNotIn("requestAnimationFrame", client)
+        self.assertNotIn("cancelAnimationFrame", client)
 
 
 def test_spiralgrap_is_deployed_linked_documented_and_history_backed():
@@ -145,7 +145,7 @@ def test_spiralgrap_is_deployed_linked_documented_and_history_backed():
     worker = read("worker.py")
     template = read("ecs/serverless-staging-web.yaml")
     history = read("serverless_web/history.js")
-    for filename in ("custom-image-vectorizer-v1.js", "spiralgraph.html", "spiralgraph.js", "spiralgraph.css", "spiralgraph/geometry-v2.js", "spiralgraph/hardware-preview-v2.js", "spiralgraph/canvas-preview-v2.js", "spiralgraph/drawing-editor-v2.js", "spiralgraph/state-v2.js", "spiralgraph/palette-routing-v1.js", "spiralgraph/job-lifecycle-v1.js"):
+    for filename in ("custom-image-vectorizer-v1.js", "spiralgraph.html", "spiralgraph.js", "spiralgraph.css", "spiralgraph/geometry-v2.js", "spiralgraph/hardware-preview-v2.js", "spiralgraph/canvas-preview-v2.js", "spiralgraph/drawing-editor-v3.js", "spiralgraph/state-v2.js", "spiralgraph/palette-routing-v1.js", "spiralgraph/job-lifecycle-v1.js"):
         assert filename in deploy
     assert '"/spiralgraph.html"' in shell and 'href="/spiralgraph.html"' in landing
     assert '"spiralgraph-lab": _page(' in docs
@@ -162,7 +162,7 @@ def test_spiralgrap_is_deployed_linked_documented_and_history_backed():
 
 def test_spiralgrap_validates_custom_images_and_processing_modes_on_both_sides():
     client = read("serverless_web/spiralgraph.js")
-    drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v2.js")
+    drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v3.js")
     api = read("serverless_api/handler.py")
     backend = read("lib/spiralgrap.py")
     for field in ("track", "track_width_percent", "track_height_percent", "gear_size_percent", "pen_reach_percent", "drawing_size_percent", "gear_teeth", "pen_hole", "side", "start_mark", "direction", "output_mode", "fill_thickness_mm", "swatch_hex"):

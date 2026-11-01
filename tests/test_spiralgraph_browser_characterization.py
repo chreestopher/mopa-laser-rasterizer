@@ -44,7 +44,7 @@ HARNESS = r"""
   let requestedFrames = 0;
   let cancelledFrames = 0;
   window.requestAnimationFrame = callback => {
-    requestedFrames += 1;
+    if(callback.name !== 'fitWorkspace') requestedFrames += 1;
     return setTimeout(() => callback(performance.now()), 0);
   };
   window.cancelAnimationFrame = handle => {
@@ -58,6 +58,7 @@ HARNESS = r"""
     return originalCanvasStroke.apply(this, args);
   };
   const scenario = new URLSearchParams(location.search).get('scenario');
+  if(scenario === 'workspace') document.write('<script src="/staging-shell.js?v=4" defer><'+'/script>');
   const failures = [];
   const runtimeErrors = [];
   const fetchHistory = [];
@@ -242,6 +243,7 @@ HARNESS = r"""
     await settlePreviews();
     check($('#layerPreviewName').textContent === 'Characterized drawing', 'active drawing name did not update');
     check($('#layerPreviewSlider').max === '5', 'preview selector did not track drawing count');
+    change($('#settingsPage'),'output');
     check(visible(refreshed.querySelector('.fill-thickness')), 'fill thickness did not become visible');
     check($('#hardwareSummary').textContent.includes('rounded square'), 'hardware did not reflect the track edit');
     check($('#hardwareSummary').textContent.includes('60-tooth gear'), 'hardware did not reflect the gear edit');
@@ -413,6 +415,52 @@ HARNESS = r"""
     check($$('#outputs a').length === 1, 'resumed output was not rendered');
   }
 
+  async function workspaceChecks(){
+    await startupChecks();await settlePreviews();
+    const shown=element=>Boolean(element.getClientRects().length)&&getComputedStyle(element).display!=='none';
+    const onScreen=element=>{const rect=element.getBoundingClientRect();return rect.width>0&&rect.height>0&&rect.top>=0&&rect.bottom<=innerHeight+1&&rect.left>=0&&rect.right<=innerWidth+1};
+    check(Boolean($('.staging-shell')), 'shared navigation was missing from layout checks');
+    check($('#projectSetup').compareDocumentPosition($('#hardwarePreview')) & Node.DOCUMENT_POSITION_FOLLOWING, 'hardware must follow project setup');
+    check($('#hardwarePreview').compareDocumentPosition($('.workspace-toolbar')) & Node.DOCUMENT_POSITION_FOLLOWING, 'selectors must follow hardware');
+    check(document.documentElement.scrollHeight<=innerHeight+1, `desktop page needs scrolling (${document.documentElement.scrollHeight}>${innerHeight})`);
+    check(onScreen($('#activePreview'))&&onScreen($('#generate')), 'preview or Generate did not fit the desktop viewport');
+    check($$('.layer-card').filter(shown).length===1,'more than one drawing editor was displayed');
+    const layerTools=$('.layer-toolbar').getBoundingClientRect(),previewTools=$('.workspace-toolbar .preview-heading').getBoundingClientRect();
+    check(Math.abs(layerTools.top+layerTools.height/2-previewTools.top-previewTools.height/2)<=1,'selector headers are not aligned');
+    for(const page of ['track','gear','pattern','output']){
+      change($('#settingsPage'),page);
+      for(const field of $$('.layer-card input:not([type=radio]),.layer-card select').filter(shown)){
+        check(onScreen(field),`${page}: ${field.dataset.field} did not fit the viewport`);
+        check(field.getBoundingClientRect().bottom<=$('.layer-workspace').getBoundingClientRect().bottom+1,`${page}: ${field.dataset.field} needs pane scrolling`);
+      }
+    }
+    change($('#settingsPage'),'track');input($('.layer-card [data-field="track"]'),'custom');
+    check(onScreen($('.layer-card [data-field="custom_file"]')),'custom track upload did not fit');
+    input($('.layer-card [data-field="track"]'),'circle');
+    change($('#settingsPage'),'output');input($('.layer-card [data-field="output_mode"]'),'fill');
+    check(onScreen($('.layer-card [data-field="fill_thickness_mm"]')),'ribbon thickness did not fit');
+    input($('.layer-card [data-field="output_mode"]'),'line');
+    change($('#settingsPage'),'gear');
+    input($('.layer-card [data-field="pen_reach_percent"]'),88);
+    change($('#layerSelector'),'1');
+    check($('#layerPreviewPosition').textContent==='Drawing 2 of 3','layer selector did not select the preview');
+    check($$('.layer-card').filter(shown)[0].dataset.layer==='1','layer selector did not select the editor');
+    input($('#layerPreviewSlider'),1);
+    check($('#layerSelector').value==='0'&&$('.layer-card [data-field="pen_reach_percent"]').value==='88','switching layers lost controls or edits');
+    change($('#previewMode'),'combined');
+    check($('#activePreview').hidden&&!$('#stackPreview').hidden&&onScreen($('#stackPreview')),'combined view was not shown');
+    $('#hardwarePreview').open=true;await settlePreviews();
+    check(shown($('#gearHardware')),'hardware disclosure did not expose interactive gear');
+    $('#gearHardware [data-hole="2"]').dispatchEvent(new MouseEvent('click',{bubbles:true}));await settlePreviews();
+    check($('.layer-card [data-field="pen_hole"]').value==='2','hardware pen hole did not update the selected drawing');
+    $('#hardwarePreview').open=false;
+    const invalid=$('.layer-card [data-field="gear_size_percent"]');input(invalid,200);change($('#layerSelector'),'1');change($('#settingsPage'),'track');
+    check(!$('#spiralgrapForm').reportValidity()&&$('#layerSelector').value==='0'&&$('#settingsPage').value==='gear','validation did not reveal the invalid drawing and section');input(invalid,100);
+    $('#projectSetup').open=true;check(shown($('#diameter')),'project setup disclosure did not expose configuration');$('#projectSetup').open=false;
+    while(!$('#addLayer').disabled)$('#addLayer').click();
+    check($('#layerSelector').options.length===6&&$$('.layer-card').filter(shown).length===1,'six drawing limit or visibility was not preserved');
+  }
+
   async function mobileChecks() {
     await startupChecks();
     check(innerWidth <= 500, `mobile viewport was not applied (${innerWidth})`);
@@ -437,6 +485,7 @@ HARNESS = r"""
     else if (scenario === 'custom-track') await customTrackChecks();
     else if (scenario === 'submit') await submitChecks();
     else if (scenario === 'resume') await resumeChecks();
+    else if (scenario === 'workspace') await workspaceChecks();
     else if (scenario === 'mobile') await mobileChecks();
     else fail(`unknown scenario: ${scenario}`);
   }
@@ -482,13 +531,14 @@ class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
         cls.temp = tempfile.TemporaryDirectory(prefix="mopa-spiralgraph-browser-")
         cls.site = Path(cls.temp.name) / "site"
         shutil.copytree(WEB, cls.site)
+        shutil.copyfile(ROOT / "static" / "machine_chrome.css", cls.site / "machine_chrome.css")
         page_path = cls.site / "spiralgraph.html"
         page = page_path.read_text(encoding="utf-8")
         page = re.sub(r'\s*<script src="/staging-shell\.js\?v=4" defer></script>', '', page)
         page = page.replace(
-            '<script src="/spiralgraph.js?v=12" type="module"></script>',
+            '<script src="/spiralgraph.js?v=13" type="module"></script>',
             '<script src="/spiralgraph-characterization-harness.js"></script>\n'
-            '<script src="/spiralgraph.js?v=12" type="module"></script>',
+            '<script src="/spiralgraph.js?v=13" type="module"></script>',
         )
         page_path.write_text(page, encoding="utf-8")
         (cls.site / "spiralgraph-characterization-harness.js").write_text(
@@ -507,7 +557,7 @@ class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
         cls.thread.join(timeout=2)
         cls.temp.cleanup()
 
-    def _run_scenario(self, scenario, query="", mobile=False):
+    def _run_scenario(self, scenario, query="", mobile=False, size=None):
         port = self.server.server_address[1]
         url = f"http://127.0.0.1:{port}/spiralgraph.html?scenario={scenario}{query}"
         with tempfile.TemporaryDirectory(prefix="mopa-spiralgraph-profile-") as profile:
@@ -523,6 +573,8 @@ class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
             ]
             if mobile:
                 command.extend(["--window-size=390,844", "--force-device-scale-factor=1"])
+            if size:
+                command.extend([f"--window-size={size}", "--force-device-scale-factor=1"])
             command.append(url)
             completed = subprocess.run(
                 command,
@@ -572,6 +624,11 @@ class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
 
     def test_existing_task_resumes_and_renders_downloads(self):
         self._run_scenario("resume", "&task=spiralgraph-resume-task")
+
+    def test_workspace_fits_desktop_and_preserves_selected_drawing_workflows(self):
+        for size in ('1024,768','1366,768','1440,900','1920,1080'):
+            with self.subTest(size=size):
+                self._run_scenario('workspace',size=size)
 
     def test_mobile_layout_has_no_horizontal_overflow(self):
         self._run_scenario("mobile", mobile=True)
