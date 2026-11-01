@@ -536,6 +536,9 @@ HARNESS = r"""
     check(Boolean($('.staging-shell')), 'workspace was not tested with shared navigation');
     check(document.documentElement.scrollHeight <= innerHeight + 1, `desktop page needs scrolling (${document.documentElement.scrollHeight} > ${innerHeight})`);
     check(onScreen($('#activePreview')), 'preview did not fit in the viewport');
+    check($('#activePreview').getBoundingClientRect().height >= innerHeight * .4, 'desktop preview is too small for detailed inspection');
+    const layerTools=$('.layer-toolbar').getBoundingClientRect(),previewTools=$('.workspace-toolbar .preview-heading').getBoundingClientRect();
+    check(Math.abs(layerTools.top+layerTools.height/2-previewTools.top-previewTools.height/2) <= 1, 'layer and preview headers are not aligned in the same row');
     check(onScreen($('#generate')), 'Generate did not fit in the viewport');
     check($$('.layer-card').filter(shown).length === 1, 'multiple layer editors were shown');
     for (const composition of ['hybrid','flow_character']) {

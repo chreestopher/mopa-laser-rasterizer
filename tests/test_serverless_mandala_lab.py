@@ -12,7 +12,7 @@ def test_mandala_lab_uses_external_assets_and_accessible_previews():
     page = read("serverless_web/mandala.html")
     assert 'src="/mandala.js?v=19"' in page
     assert 'href="/staging-pages.css?v=4"' in page
-    assert 'href="/mandala.css?v=5"' in page
+    assert 'href="/mandala.css?v=6"' in page
     assert "<script>" not in page
     assert 'id="layerPreviewSlider"' in page and 'type="range"' in page
     assert 'id="layerPreviewName"' in page and 'id="layerPreviewPosition"' in page
