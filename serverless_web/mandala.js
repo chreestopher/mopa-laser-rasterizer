@@ -1,5 +1,5 @@
 import {createMandalaAssetConstraints} from "./mandala/asset-constraints-v3.js";
-import {createMandalaJobLifecycle} from "./mandala/job-lifecycle-v1.js";
+import {createMandalaJobLifecycle} from "./mandala/job-lifecycle-v2.js";
 import {createMandalaLayerEditor} from "./mandala/layer-editor-v5.js";
 import {createPaletteRouting} from "./mandala/palette-routing-v1.js";
 import {createMandalaPreview} from "./mandala/preview-v3.js";

@@ -10,7 +10,7 @@ def read(path):
 
 def test_mandala_lab_uses_external_assets_and_accessible_previews():
     page = read("serverless_web/mandala.html")
-    assert 'src="/mandala.js?v=18"' in page
+    assert 'src="/mandala.js?v=19"' in page
     assert 'href="/staging-pages.css?v=4"' in page
     assert 'href="/mandala.css?v=5"' in page
     assert "<script>" not in page
@@ -36,7 +36,7 @@ def test_mandala_lab_is_linked_and_deployed():
     assert '"/mandala.html"' in shell
     assert 'href="/mandala.html"' in landing
     assert '$BUILD_DIR/seo/mandala.html' in deploy
-    for filename in ("custom-image-vectorizer-v1.js", "mandala.js", "mandala.css", "mandala/state-v2.js", "mandala/palette-routing-v1.js", "mandala/geometry-v1.js", "mandala/preview-v3.js", "mandala/asset-constraints-v3.js", "mandala/job-lifecycle-v1.js", "mandala/layer-editor-v5.js"):
+    for filename in ("custom-image-vectorizer-v1.js", "mandala.js", "mandala.css", "mandala/state-v2.js", "mandala/palette-routing-v1.js", "mandala/geometry-v1.js", "mandala/preview-v3.js", "mandala/asset-constraints-v3.js", "mandala/job-lifecycle-v2.js", "mandala/layer-editor-v5.js"):
         assert f'serverless_web/{filename}' in deploy
 
 
@@ -65,7 +65,7 @@ def test_mandala_jobs_are_authenticated_history_backed_worker_jobs():
 def test_mandala_client_defaults_cut_role_and_accepts_custom_images():
     client = read("serverless_web/mandala.js")
     layer_editor = read("serverless_web/mandala/layer-editor-v5.js")
-    job_lifecycle = read("serverless_web/mandala/job-lifecycle-v1.js")
+    job_lifecycle = read("serverless_web/mandala/job-lifecycle-v2.js")
     palette_routing = read("serverless_web/mandala/palette-routing-v1.js")
     asset_constraints = read("serverless_web/mandala/asset-constraints-v3.js")
     assert 'defaultRoleEntry(library,material,"Cut")' in palette_routing
@@ -80,8 +80,8 @@ def test_mandala_client_defaults_cut_role_and_accepts_custom_images():
 
 def test_mandala_job_lifecycle_owns_payload_auth_submission_polling_and_resume():
     client = read("serverless_web/mandala.js")
-    lifecycle = read("serverless_web/mandala/job-lifecycle-v1.js")
-    assert 'from "./mandala/job-lifecycle-v1.js"' in client
+    lifecycle = read("serverless_web/mandala/job-lifecycle-v2.js")
+    assert 'from "./mandala/job-lifecycle-v2.js"' in client
     assert "export function createMandalaJobLifecycle(" in lifecycle
     for function in ("payloadLayer", "payload", "tokenExpiresSoon", "refreshSession", "api", "outputsHtml", "poll", "bind", "bootstrap", "start"):
         assert f"function {function}(" in lifecycle

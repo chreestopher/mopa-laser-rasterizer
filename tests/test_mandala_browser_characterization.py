@@ -41,7 +41,8 @@ HARNESS = r"""
   let requestedFrames = 0;
   let cancelledFrames = 0;
   window.requestAnimationFrame = callback => {
-    requestedFrames += 1;
+    // Workspace sizing shares RAF; count only design-preview requests.
+    if (callback.name !== 'fitWorkspace') requestedFrames += 1;
     return setTimeout(() => callback(performance.now()), 0);
   };
   window.cancelAnimationFrame = handle => {
@@ -59,7 +60,7 @@ HARNESS = r"""
   }
 
   const scenario = new URLSearchParams(location.search).get('scenario');
-  if (scenario === 'workspace') document.write('<script src="/staging-shell.js?v=4" defer><' + '/script>');
+  if (['workspace','guest-login'].includes(scenario)) document.write('<script src="/staging-shell.js?v=4" defer><' + '/script>');
   const failures = [];
   const runtimeErrors = [];
   const fetchHistory = [];
@@ -167,24 +168,29 @@ HARNESS = r"""
     },
   };
 
-  if (scenario === 'guest') {
+  if (['guest','guest-login','refresh-only','login-during-config','restored-login'].includes(scenario)) {
     localStorage.removeItem('id_token');
     sessionStorage.removeItem('id_token');
   } else {
     localStorage.setItem('id_token', '__JWT__');
   }
+  if (scenario === 'refresh-only') localStorage.setItem('refresh_token', 'characterization-refresh');
   if (scenario === 'auth-retry') localStorage.setItem('refresh_token', 'characterization-refresh');
 
   window.fetch = async (inputValue, options = {}) => {
     const url = new URL(typeof inputValue === 'string' ? inputValue : inputValue.url, location.href);
     const method = options.method || 'GET';
     fetchHistory.push(`${method} ${url.pathname}`);
-    if (url.pathname === '/config.json') return jsonResponse({
+    if (url.pathname === '/config.json') {
+      if (scenario === 'login-during-config') localStorage.setItem('id_token','__JWT__');
+      return jsonResponse({
       api_url: '/api',
       client_id: 'characterization-client',
       cognito_domain: 'example.invalid',
       callback_url: `${location.origin}/callback`,
     });
+    }
+    if (url.pathname === '/api/service-status') return jsonResponse({status: 'active'});
     if (url.pathname === '/oauth2/token') return jsonResponse({id_token: 'characterization-refreshed-token'});
     if (url.pathname === '/api/account/resources') {
       accountRequests += 1;
@@ -587,11 +593,33 @@ HARNESS = r"""
   }
 
   async function runScenario() {
-    if (scenario === 'guest') {
+    if (scenario === 'guest-login') {
+      $('#loginLink').click();
+      await waitFor(() => Boolean(window.__loginUrl), 'shared login did not create an authorization request');
+      const url=new URL(window.__loginUrl);
+      const verifier=sessionStorage.getItem('pkce_verifier');
+      check(Boolean(verifier) && verifier.length >= 43, 'login did not preserve a PKCE verifier');
+      check(url.searchParams.get('code_challenge_method') === 'S256', 'login did not use S256');
+      const digest=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+      const challenge=btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+      check(url.searchParams.get('code_challenge') === challenge, 'challenge does not match the stored verifier');
+      check(url.searchParams.get('redirect_uri') === new URL('/',location.origin).href, 'login callback changed origin');
+      check(sessionStorage.getItem('post_login_path') === location.pathname+location.search, 'login lost the Mandala return path');
+    } else if (scenario === 'guest') {
       check(visible($('#registeredAccess')), 'signed-out access prompt was not shown');
       check(!visible($('#registeredContent')), 'signed-out content was exposed');
-      check($('#loginLink').href.includes('example.invalid/oauth2/authorize'), 'sign-in link was not configured');
+      check($('#loginLink').hasAttribute('data-registered-access-login'), 'sign-in did not use the shared PKCE login flow');
       check(!fetchHistory.includes('GET /api/account/resources'), 'signed-out page requested account resources');
+    } else if (scenario === 'refresh-only' || scenario === 'login-during-config') {
+      await startupChecks();
+      check(accountAuthorization.every(value => value.startsWith('Bearer ')), 'shared session was not sent to account API');
+      check(!sessionStorage.getItem('oauth_state'), 'Mandala created an incompatible standalone OAuth flow');
+    } else if (scenario === 'restored-login') {
+      check(visible($('#registeredAccess')), 'missing session did not show access prompt');
+      localStorage.setItem('id_token','__JWT__');
+      dispatchEvent(new Event('pageshow'));
+      await waitFor(() => $$('.layer-card').length === 3, 'restored page did not recover the shared session');
+      check(!visible($('#registeredAccess')), 'access prompt remained after recovery');
     } else if (scenario === 'startup') await startupChecks();
     else if (scenario === 'palette-routing') await paletteRoutingChecks();
     else if (scenario === 'editor') await editorChecks();
@@ -611,7 +639,7 @@ HARNESS = r"""
 
   const timer = setInterval(async () => {
     if (started) return;
-    const ready = scenario === 'guest' ? visible($('#registeredAccess')) : visible($('#registeredContent')) && $$('.layer-card').length === 3;
+    const ready = ['guest','guest-login','restored-login'].includes(scenario) ? visible($('#registeredAccess')) : visible($('#registeredContent')) && $$('.layer-card').length === 3;
     if (!ready) return;
     started = true;
     try { await runScenario(); }
@@ -648,13 +676,18 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
         cls.site = Path(cls.temp.name) / "site"
         shutil.copytree(WEB, cls.site)
         shutil.copyfile(ROOT / "static" / "machine_chrome.css", cls.site / "machine_chrome.css")
+        shell_path = cls.site / "staging-shell.js"
+        shell_path.write_text(shell_path.read_text(encoding="utf-8").replace(
+            'location.href = `https://${config.cognito_domain}/oauth2/authorize?${query}`;',
+            'window.__loginUrl = `https://${config.cognito_domain}/oauth2/authorize?${query}`;',
+        ), encoding="utf-8")
         page_path = cls.site / "mandala.html"
         page = page_path.read_text(encoding="utf-8")
         page = re.sub(r'\s*<script src="/staging-shell\.js\?v=4" defer></script>', '', page)
         page = page.replace(
-            '<script src="/mandala.js?v=18" type="module"></script>',
+            '<script src="/mandala.js?v=19" type="module"></script>',
             '<script src="/mandala-characterization-harness.js"></script>\n'
-            '<script src="/mandala.js?v=18" type="module"></script>',
+            '<script src="/mandala.js?v=19" type="module"></script>',
         )
         page_path.write_text(page, encoding="utf-8")
         (cls.site / "mandala-characterization-harness.js").write_text(
@@ -713,6 +746,14 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
 
     def test_signed_out_access_is_gated(self):
         self._run_scenario("guest")
+
+    def test_signed_out_login_uses_the_shared_pkce_callback_contract(self):
+        self._run_scenario('guest-login')
+
+    def test_shared_session_recovery_without_another_login(self):
+        for scenario in ('refresh-only', 'login-during-config', 'restored-login'):
+            with self.subTest(scenario=scenario):
+                self._run_scenario(scenario)
 
     def test_authenticated_startup_palette_dimensions_and_previews(self):
         self._run_scenario("startup")
