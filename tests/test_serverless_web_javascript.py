@@ -641,7 +641,7 @@ def test_mandala_modules_upload_before_entry_and_html():
         'aws s3 cp "$REPO_ROOT/serverless_web/mandala/asset-constraints-v3.js"'
     )
     job_lifecycle_dependency = (
-        'aws s3 cp "$REPO_ROOT/serverless_web/mandala/job-lifecycle-v1.js"'
+        'aws s3 cp "$REPO_ROOT/serverless_web/mandala/job-lifecycle-v2.js"'
     )
     layer_editor_dependency = (
         'aws s3 cp "$REPO_ROOT/serverless_web/mandala/layer-editor-v5.js"'
@@ -729,9 +729,9 @@ def test_mandala_asset_constraints_module_uses_shared_image_vectorizer_and_owns_
 
 def test_mandala_job_lifecycle_owns_payload_auth_submission_polling_and_resume():
     entry = (WEB / "mandala.js").read_text(encoding="utf-8")
-    lifecycle = (WEB / "mandala" / "job-lifecycle-v1.js").read_text(encoding="utf-8")
+    lifecycle = (WEB / "mandala" / "job-lifecycle-v2.js").read_text(encoding="utf-8")
 
-    assert 'from "./mandala/job-lifecycle-v1.js"' in entry
+    assert 'from "./mandala/job-lifecycle-v2.js"' in entry
     assert "export function createMandalaJobLifecycle(" in lifecycle
     assert "function payloadLayer(source)" in lifecycle
     assert "function tokenExpiresSoon()" in lifecycle
@@ -886,6 +886,7 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
         WEB / "mandala" / "layer-editor-v2.js",
         WEB / "mandala" / "layer-editor-v3.js",
         WEB / "mandala" / "layer-editor-v4.js",
+        WEB / "mandala" / "job-lifecycle-v1.js",
     }
     assert set(referenced_modes) == javascript_files - retained_versioned_assets
     assert all(len(modes) == 1 for modes in referenced_modes.values())
@@ -912,7 +913,7 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
     assert referenced_modes[WEB / "mandala" / "geometry-v1.js"] == {"module"}
     assert referenced_modes[WEB / "mandala" / "preview-v3.js"] == {"module"}
     assert referenced_modes[WEB / "mandala" / "asset-constraints-v3.js"] == {"module"}
-    assert referenced_modes[WEB / "mandala" / "job-lifecycle-v1.js"] == {"module"}
+    assert referenced_modes[WEB / "mandala" / "job-lifecycle-v2.js"] == {"module"}
     assert referenced_modes[WEB / "mandala" / "layer-editor-v5.js"] == {"module"}
     assert referenced_modes[ROOT / "static" / "community-set-v1.js"] == {"classic"}
     assert referenced_modes[ROOT / "static" / "docs-search-v1.js"] == {"classic"}
