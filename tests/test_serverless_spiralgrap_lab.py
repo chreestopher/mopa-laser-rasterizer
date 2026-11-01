@@ -14,9 +14,9 @@ def test_spiralgrap_page_uses_external_assets_and_classic_controls():
     client = read("serverless_web/spiralgraph.js")
     job_lifecycle = read("serverless_web/spiralgraph/job-lifecycle-v1.js")
     drawing_editor = read("serverless_web/spiralgraph/drawing-editor-v3.js")
-    assert 'src="/spiralgraph.js?v=13"' in page
+    assert 'src="/spiralgraph.js?v=14"' in page
     assert 'href="/staging-pages.css?v=4"' in page
-    assert 'href="/spiralgraph.css?v=5"' in page
+    assert 'href="/spiralgraph.css?v=6"' in page
     assert "Track plate" in drawing_editor and "Rolling gear" in drawing_editor and "Pen hole" in drawing_editor
     assert "Starting mark" in drawing_editor and "Rolling position" in drawing_editor
     for label in ("Drawing size (%)", "Track width (%)", "Track height (%)", "Gear size (%)", "Pen reach (%)"):

@@ -44,7 +44,7 @@ HARNESS = r"""
   let requestedFrames = 0;
   let cancelledFrames = 0;
   window.requestAnimationFrame = callback => {
-    if(callback.name !== 'fitWorkspace') requestedFrames += 1;
+    requestedFrames += 1;
     return setTimeout(() => callback(performance.now()), 0);
   };
   window.cancelAnimationFrame = handle => {
@@ -422,8 +422,13 @@ HARNESS = r"""
     check(Boolean($('.staging-shell')), 'shared navigation was missing from layout checks');
     check($('#projectSetup').compareDocumentPosition($('#hardwarePreview')) & Node.DOCUMENT_POSITION_FOLLOWING, 'hardware must follow project setup');
     check($('#hardwarePreview').compareDocumentPosition($('.workspace-toolbar')) & Node.DOCUMENT_POSITION_FOLLOWING, 'selectors must follow hardware');
-    check(document.documentElement.scrollHeight<=innerHeight+1, `desktop page needs scrolling (${document.documentElement.scrollHeight}>${innerHeight})`);
-    check(onScreen($('#activePreview'))&&onScreen($('#generate')), 'preview or Generate did not fit the desktop viewport');
+    const preview=$('#activePreview').getBoundingClientRect(),stage=$('.preview-stage').getBoundingClientRect();
+    check(preview.width>=Math.min(360,innerWidth*.33),'desktop preview is too small for inspection');
+    check(preview.width>=stage.width-1&&Math.abs(preview.width-preview.height)<=1,'preview did not fill its square viewing area');
+    check(document.documentElement.scrollWidth<=innerWidth+1,'desktop preview caused horizontal scrolling');
+    const row=$('.layer-workspace').getBoundingClientRect();
+    check(Math.abs(row.top-$('.preview-workspace').getBoundingClientRect().top)<=1,'controls and preview are not side by side');
+    check($('#generate').getBoundingClientRect().top>=preview.bottom,'generation controls overlap the larger preview');
     check($$('.layer-card').filter(shown).length===1,'more than one drawing editor was displayed');
     const layerTools=$('.layer-toolbar').getBoundingClientRect(),previewTools=$('.workspace-toolbar .preview-heading').getBoundingClientRect();
     check(Math.abs(layerTools.top+layerTools.height/2-previewTools.top-previewTools.height/2)<=1,'selector headers are not aligned');
@@ -448,7 +453,10 @@ HARNESS = r"""
     input($('#layerPreviewSlider'),1);
     check($('#layerSelector').value==='0'&&$('.layer-card [data-field="pen_reach_percent"]').value==='88','switching layers lost controls or edits');
     change($('#previewMode'),'combined');
-    check($('#activePreview').hidden&&!$('#stackPreview').hidden&&onScreen($('#stackPreview')),'combined view was not shown');
+    check($('#activePreview').hidden&&!$('#stackPreview').hidden&&Math.abs($('#stackPreview').getBoundingClientRect().width-preview.width)<=1,'combined view did not retain the larger preview size');
+    window.scrollTo(0,Math.max(0,preview.top-12));await settlePreviews();
+    check(onScreen($('.layer-card [data-field="pen_reach_percent"]')),'selected parameters disappeared while scrolling the larger preview');
+    window.scrollTo(0,0);
     $('#hardwarePreview').open=true;await settlePreviews();
     check(shown($('#gearHardware')),'hardware disclosure did not expose interactive gear');
     $('#gearHardware [data-hole="2"]').dispatchEvent(new MouseEvent('click',{bubbles:true}));await settlePreviews();
@@ -536,9 +544,9 @@ class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
         page = page_path.read_text(encoding="utf-8")
         page = re.sub(r'\s*<script src="/staging-shell\.js\?v=4" defer></script>', '', page)
         page = page.replace(
-            '<script src="/spiralgraph.js?v=13" type="module"></script>',
+            '<script src="/spiralgraph.js?v=14" type="module"></script>',
             '<script src="/spiralgraph-characterization-harness.js"></script>\n'
-            '<script src="/spiralgraph.js?v=13" type="module"></script>',
+            '<script src="/spiralgraph.js?v=14" type="module"></script>',
         )
         page_path.write_text(page, encoding="utf-8")
         (cls.site / "spiralgraph-characterization-harness.js").write_text(
@@ -625,7 +633,7 @@ class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
     def test_existing_task_resumes_and_renders_downloads(self):
         self._run_scenario("resume", "&task=spiralgraph-resume-task")
 
-    def test_workspace_fits_desktop_and_preserves_selected_drawing_workflows(self):
+    def test_large_desktop_preview_preserves_selected_drawing_workflows(self):
         for size in ('1024,768','1366,768','1440,900','1920,1080'):
             with self.subTest(size=size):
                 self._run_scenario('workspace',size=size)
