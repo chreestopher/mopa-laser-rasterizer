@@ -136,9 +136,12 @@ if [ "${SERVERLESS_CONFIGURE_ARTIFACT_CORS:-false}" = "true" ]; then
   [ -z "$PRIMARY_HOSTNAME" ] || CORS_ORIGINS+=("https://$PRIMARY_HOSTNAME")
   [ -z "$ALTERNATE_HOSTNAME" ] || CORS_ORIGINS+=("https://$ALTERNATE_HOSTNAME")
   CORS_ALLOWED_ORIGINS="$(IFS=,; echo "${CORS_ORIGINS[*]}")"
-  CORS_CONFIGURATION="$(CORS_ALLOWED_ORIGINS="$CORS_ALLOWED_ORIGINS" python3 -c 'import json,os
+  CORS_CONFIGURATION="$(CORS_ALLOWED_ORIGINS="$CORS_ALLOWED_ORIGINS" CORS_ENVIRONMENT_LABEL="$ENVIRONMENT_LABEL" python3 -c 'import json,os
 origins=[value for value in os.environ["CORS_ALLOWED_ORIGINS"].split(",") if value]
-print(json.dumps({"CORSRules":[{"AllowedHeaders":["*"],"AllowedMethods":["POST"],"AllowedOrigins":origins,"ExposeHeaders":["ETag"],"MaxAgeSeconds":600}]},separators=(",",":")))')"
+rules=[{"AllowedHeaders":["*"],"AllowedMethods":["POST"],"AllowedOrigins":origins,"ExposeHeaders":["ETag"],"MaxAgeSeconds":600}]
+if os.environ["CORS_ENVIRONMENT_LABEL"] == "Serverless staging":
+    rules.append({"AllowedMethods":["GET"],"AllowedOrigins":["https://serverless-staging.mopa-laser-rasterizer.com"],"MaxAgeSeconds":600})
+print(json.dumps({"CORSRules":rules},separators=(",",":")))')"
   aws s3api put-bucket-cors --region "$REGION" --bucket "$BUCKET" \
     --cors-configuration "$CORS_CONFIGURATION"
   echo "Artifact upload CORS configured for: ${CORS_ORIGINS[*]}"
@@ -290,15 +293,38 @@ aws s3 cp "$REPO_ROOT/static/depthmap_lightburn.js" "s3://$STATIC_BUCKET/web/dep
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/depthmap_bootstrap.js" "s3://$STATIC_BUCKET/web/depthmap_bootstrap.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
+# The integration module is inert outside its explicit staging origin and when
+# extension discovery fails. Publish dependencies before the History document.
+aws s3 cp "$REPO_ROOT/serverless_web/lightburn-integration.js" "s3://$STATIC_BUCKET/web/lightburn-integration.js" \
+  --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/lightburn-integration.css" "s3://$STATIC_BUCKET/web/lightburn-integration.css" \
+  --region "$REGION" --content-type text/css --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/history.html" "s3://$STATIC_BUCKET/web/history.html" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/history.js" "s3://$STATIC_BUCKET/web/history.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
+if [ "$ENVIRONMENT_LABEL" = "Serverless staging" ]; then
+  # Isolated extension POC; dependencies precede the page. Never publish to production.
+  aws s3 cp "$REPO_ROOT/serverless_web/lightburn-connection-test.js" "s3://$STATIC_BUCKET/web/lightburn-connection-test.js" \
+    --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
+  aws s3 cp "$REPO_ROOT/serverless_web/lightburn-connection-test.css" "s3://$STATIC_BUCKET/web/lightburn-connection-test.css" \
+    --region "$REGION" --content-type text/css --cache-control no-cache --only-show-errors
+  aws s3 cp "$REPO_ROOT/serverless_web/lightburn-connection-test.html" "s3://$STATIC_BUCKET/web/lightburn-connection-test.html" \
+    --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
+fi
 aws s3 cp "$REPO_ROOT/serverless_web/admin.html" "s3://$STATIC_BUCKET/web/admin.html" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/admin.js" "s3://$STATIC_BUCKET/web/admin.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/admin.css" "s3://$STATIC_BUCKET/web/admin.css" \
+  --region "$REGION" --content-type text/css --cache-control no-cache --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/lightburn-page-bridge.js" "s3://$STATIC_BUCKET/web/lightburn-page-bridge.js" \
+  --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/lightburn-palette-model.js" "s3://$STATIC_BUCKET/web/lightburn-palette-model.js" \
+  --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/lightburn-palette-import.js" "s3://$STATIC_BUCKET/web/lightburn-palette-import.js" \
+  --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/lightburn-palette-import.css" "s3://$STATIC_BUCKET/web/lightburn-palette-import.css" \
   --region "$REGION" --content-type text/css --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/vault.html" "s3://$STATIC_BUCKET/web/vault.html" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors

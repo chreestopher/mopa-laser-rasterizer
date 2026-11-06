@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "MOPA Rasterizer — LightBurn Connection POC",
+  "version": "0.7.0",
+  "description": "Pair with local LightBurn, read materials, and explicitly open staged native projects for the Rasterizer POC.",
+  "permissions": ["storage"],
+  "host_permissions": ["http://localhost/*"],
+  "externally_connectable": {"matches": ["https://serverless-staging.mopa-laser-rasterizer.com/*"]},
+  "content_scripts": [{"matches": ["https://serverless-staging.mopa-laser-rasterizer.com/history.html*", "https://serverless-staging.mopa-laser-rasterizer.com/lightburn-connection-test.html*", "https://serverless-staging.mopa-laser-rasterizer.com/vault.html*"], "js": ["discovery.js"], "run_at": "document_start"}],
+  "background": {"service_worker": "background.js", "type": "module"},
+  "action": {"default_title": "Open LightBurn connection test"}
+}
