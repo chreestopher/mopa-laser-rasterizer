@@ -15,7 +15,7 @@ export function installProcessingImport({api, upload, reload, roles, send}) {
     const dialog = document.createElement('dialog'); panel = dialog;
     dialog.className = 'lightburn-dialog lightburn-palette-dialog';
     dialog.setAttribute('aria-labelledby', 'lb-processing-heading');
-    dialog.innerHTML = '<h2 id="lb-processing-heading">Import processing palette from LightBurn</h2><p>Read the selected LightBurn library, then choose a setting for each processing role. Roles can remain unassigned. A setting used for multiple roles is imported once.</p><button type="button" data-proc-read>Read selected library</button><label>Palette name <input data-proc-name maxlength="160"></label><div data-proc-roles></div><button type="button" data-proc-preview disabled>Preview import</button><div data-proc-details></div><label data-proc-warning hidden><input type="checkbox" data-proc-ack> I reviewed the fields retained for reference only, not applied as settings.</label><p data-proc-status role="status" aria-live="polite" tabindex="-1"></p><button type="button" data-proc-save disabled>Create processing palette</button><button type="button" data-proc-close>Close</button>';
+    dialog.innerHTML = '<h2 id="lb-processing-heading">Import processing palette from LightBurn</h2><p>Read the selected LightBurn library, then choose a setting for each processing role. Roles can remain unassigned. A setting used for multiple roles is imported once.</p><button type="button" data-proc-read>Read selected library</button><label>Palette name <input data-proc-name maxlength="160"></label><div data-proc-roles></div><button type="button" data-proc-preview disabled>Preview import</button><div data-proc-details></div><label data-proc-warning hidden><input type="checkbox" data-proc-ack> I understand some source fields are stored for reference only and are not applied as settings.</label><p data-proc-status role="status" aria-live="polite" tabindex="-1"></p><button type="button" data-proc-save disabled>Create processing palette</button><button type="button" data-proc-close>Close</button>';
     const find = key => dialog.querySelector(`[data-proc-${key}]`);
     let snapshot, preview, choices = {};
     const status = find('status'), name = find('name'), save = find('save'), ack = find('ack');
@@ -72,7 +72,6 @@ export function installProcessingImport({api, upload, reload, roles, send}) {
           settings.textContent = JSON.stringify({type: entry.type, settings: entry.settings, subLayers: entry.subLayers}, null, 2);
           detail.append(heading, settings); details.append(detail);
         }
-        const warnings = document.createElement('pre'); warnings.textContent = preview.warnings.join('\n'); details.append(warnings);
         find('warning').hidden = !preview.warnings.length; ack.checked = false;
         save.disabled = preview.warnings.length > 0;
         status.textContent = `Preview ready: ${preview.entries.length} unique settings. Nothing has been saved.`;

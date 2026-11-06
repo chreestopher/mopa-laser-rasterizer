@@ -60,7 +60,7 @@ export async function paletteScenario({context, page, extensionId}) {
   await web.locator('[data-lbp-entry="0"]').check(); await web.locator('[data-lbp-name]').fill('My new palette');
   await web.locator('[data-lbp-preview]').click();
   assert.equal(await web.locator('[data-lbp-save]').isDisabled(), true);
-  assert.match(await web.locator('[data-lbp-preview-details]').textContent(), /fiber_pulse_width/);
+  assert.doesNotMatch(await web.locator('[data-lbp-preview-details]').textContent(), /fiber_pulse_width|retained in the source snapshot only/);
   assert.equal(writes.length, 0);
   assert.equal(await web.locator('[data-lbp-swatch="0"]').inputValue(), '');
   await web.locator('[data-lbp-swatch="0"]').selectOption('#0000FF');
@@ -148,6 +148,7 @@ export async function paletteScenario({context, page, extensionId}) {
   await web.locator('[data-proc-role="Cut"]').selectOption('0');
   await web.locator('[data-proc-role="Score"]').selectOption('0');
   await web.locator('[data-proc-preview]').click();
+  assert.doesNotMatch(await web.locator('[data-proc-details]').textContent(), /fiber_pulse_width|retained in the source snapshot only/);
   assert.equal(await web.locator('[data-proc-save]').isDisabled(), true);
   await web.locator('[data-proc-ack]').check();
   // Changing a role revokes the previous preview and acknowledgment.
