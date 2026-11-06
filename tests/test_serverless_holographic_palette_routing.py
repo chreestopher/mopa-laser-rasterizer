@@ -535,7 +535,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertIn("name.endsWith('.svg') ? 0 : name.endsWith('.lbrn2') ? 1 : 2", output_rendering)
         self.assertIn("renderOutputs(job.outputs)", jobs)
         self.assertIn('name.endsWith(".svg")?0:name.endsWith(".lbrn2")?1:2', history)
-        self.assertIn('const label=`Download ${outputBasename(output)}`', history)
+        self.assertIn('const name=outputBasename(output),label=`Download ${name}`', history)
         self.assertIn('class="staging-action-button"', history)
         self.assertIn(".job-primary-downloads a{display:flex!important", history_page)
         shared_styles = (ROOT / "serverless_web" / "staging-pages.css").read_text(encoding="utf-8")
@@ -640,7 +640,7 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
         self.assertIn('<strong>Job Duration:</strong> <span data-job-duration></span>', script)
         self.assertIn('setText("[data-job-duration]",formatDuration(job))', script)
         self.assertIn('active?" (in progress)":""', script)
-        self.assertIn('src="/history.js?v=12"', page)
+        self.assertRegex(page, r'<script type="module" src="/history\.js\?v=[0-9]+"></script>')
 
     def test_serverless_docs_rewrite_production_only_routes(self):
         builder = (ROOT / "dev_setup" / "build_serverless_docs.py").read_text(encoding="utf-8")
