@@ -42,3 +42,15 @@ test('swatch defaults match names exactly, preserve unassigned entries and rejec
   assert.throws(() => paletteSwatchMapping(entries, ['#0000FF', '#0000FF', ''], palette), /already assigned/);
   assert.throws(() => paletteSwatchMapping(entries, ['#123456', '', ''], palette), /official swatch/);
 });
+
+
+test('append preview avoids existing names and reserves existing swatch assignments', async () => {
+  const {existingSwatchMapping, mergeSwatchAssignments} = await import('../serverless_web/lightburn-palette-model.js');
+  const library = {library_id: 'target', summary: {entries: [{description: 'Blue', hex: '#0000FF'}]}};
+  assert.deepEqual(existingSwatchMapping(library, {}), {'#0000FF':'Blue'});
+  assert.deepEqual(existingSwatchMapping(library, {material_library_color_assignments:{target:{}}}), {});
+  assert.deepEqual(mergeSwatchAssignments({'#0000FF':'Blue'}, {'#FF0000':'Red'}), {'#0000FF':'Blue','#FF0000':'Red'});
+  assert.throws(() => mergeSwatchAssignments({'#0000FF':'Blue'}, {'#0000FF':'Other'}), /already assigned/);
+  const result = buildPaletteImport(snapshot, [0], 'Target', [snapshot.library.entries[0].description]);
+  assert.notEqual(result.entries[0].description, snapshot.library.entries[0].description);
+});

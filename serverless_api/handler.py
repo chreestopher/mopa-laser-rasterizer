@@ -3768,6 +3768,11 @@ def import_upload(event):
     extension = os.path.splitext(filename)[1].lower()
     if kind not in extensions or extension not in extensions[kind]:
         raise ValueError("Choose a supported Material Library or Fauxlographic Palette file")
+    target_id = str(data.get("target_library_id") or "")
+    if target_id:
+        target = owned_material(owner, target_id)
+        if kind != "material" or not target or (target.get("library_intent") or "color_palette") != "color_palette":
+            raise ValueError("Choose an existing Color palette for these swatches.")
     import_id, token = str(uuid.uuid4()), secrets.token_urlsafe(32)
     digest, now = token_hash(token), int(time.time())
     key = f"imports/{owner}/{import_id}/{filename}"
@@ -3787,6 +3792,7 @@ def import_upload(event):
         "kind": kind, "filename": filename, "s3_key": key, "capability": digest,
         "display_name": str(data.get("name") or os.path.splitext(filename)[0]).strip()[:160],
         "material_name": material_name,
+        "target_library_id": target_id,
         "base_setting_id": data.get("base_setting_id"),
         "hatch_operation": str(data.get("hatch_operation") or "setting"),
         "start_angle": str(data.get("start_angle", "0")), "angular_span": str(data.get("angular_span", "180")),
@@ -4053,6 +4059,37 @@ def hatch_palette_contents(material_name, base_entry=None, base_settings=None, b
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
+def append_imported_swatches(owner, target_id, contents):
+    library = owned_material(owner, target_id)
+    if not library or (library.get("library_intent") or "color_palette") != "color_palette":
+        raise ValueError("The destination Color palette is no longer available. Refresh the Vault and choose a Color palette.")
+    stored = s3.get_object(Bucket=BUCKET, Key=library["s3_key"])
+    original = stored["Body"].read(MAX_MATERIAL_BYTES + 1)
+    if len(original) > MAX_MATERIAL_BYTES:
+        raise ValueError("The destination palette exceeds the import size limit.")
+    root = ET.fromstring(original)
+    destination, material_name = single_palette_material(root, "Destination palette")
+    incoming, _ = single_palette_material(ET.fromstring(contents), "Imported swatches")
+    entries = incoming.findall("./Entry")
+    if not 1 <= len(entries) <= 100:
+        raise ValueError("Import between 1 and 100 swatches at a time.")
+    destination.extend(deepcopy(entries))
+    validate_library_descriptions(root)
+    updated = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    if len(updated) > MAX_MATERIAL_BYTES:
+        raise ValueError("These swatches would exceed the palette size limit. Import fewer settings.")
+    summary = material_summary(updated)
+    # Do not overwrite edits made after this read. No automatic retry on conflict.
+    s3.put_object(Bucket=BUCKET, Key=library["s3_key"], Body=updated,
+                  ContentType="application/xml", IfMatch=stored["ETag"])
+    table.update_item(Key={"pk": f"USER#{owner}", "sk": f"MATERIAL#{target_id}"},
+                      UpdateExpression="SET summary=:summary, updated_at=:now",
+                      ConditionExpression="attribute_exists(pk)",
+                      ExpressionAttributeValues={":summary": dynamo_value(summary), ":now": int(time.time())})
+    return response(200, {"material_library": public_library_summary(summary) | {
+        "library_id": target_id, "name": library["name"], "library_intent": "color_palette"}})
+
+
 def finalize_import(event, import_id):
     owner, data = user_id(event), body_json(event)
     key = {"pk": f"USER#{owner}", "sk": f"IMPORT#{import_id}"}
@@ -4095,6 +4132,8 @@ def finalize_import(event, import_id):
         asset_id, now = str(uuid.uuid4()), int(time.time())
         if pending["kind"] == "material":
             contents = retain_selected_material(contents, pending.get("material_name"))
+            if pending.get("target_library_id"):
+                return append_imported_swatches(owner, pending["target_library_id"], contents)
             if pending.get("library_intent") == "hatch_palette":
                 root = ET.fromstring(contents)
                 source_entries = [entry for material in root.findall("./Material") for entry in material.findall("./Entry")]
