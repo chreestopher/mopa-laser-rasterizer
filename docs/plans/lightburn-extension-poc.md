@@ -353,3 +353,19 @@ Browser coverage includes role-first selection, search, shared entry import,
 preview invalidation, unsupported-field acknowledgment, role persistence,
 existing-mapping preservation, missing/empty library handling, partial saves,
 and extension-free UI. Live operator acceptance follows staging deployment.
+
+## Coordinated LightBurn styling pass
+
+The operator accepted Processing palette import and requested that all in-page
+LightBurn flows match the site's machine facade. Shared dialog CSS now follows
+the existing dark olive and light metal themes, Impact/Arial Narrow headings,
+Courier New labels and controls, raised gradient buttons, inset settings panels,
+and bordered status displays. Checkboxes, focus outlines, disabled controls,
+warning acknowledgments, and long preview text receive consistent treatment.
+Processing roles use two columns on desktop and one on narrow screens. Native
+load dialogs use the same shared surface. No import logic or extension code changed.
+
+Expanded browser checks exercise palette flows with actual site theme classes,
+assert dark/light colors and font families, and check narrow-screen overflow.
+Edge and Chrome palette scenarios pass; desktop and mobile screenshots were
+visually inspected. Live operator visual acceptance is pending after deployment.

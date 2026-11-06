@@ -52,6 +52,7 @@ export async function paletteScenario({context, page, extensionId}) {
   await page.close();
   const web = await context.newPage(); const errors = []; web.on('pageerror', error => errors.push(error.message));
   await web.goto(origin + '/vault.html');
+  await web.evaluate(() => document.body.classList.add('staging-prototype', 'staging-vault'));
   await web.locator('[data-lightburn-palette-import]').click();
   await web.locator('[data-lbp-read]').click();
   await web.locator('[data-lbp-entry="0"]').waitFor();
@@ -125,6 +126,20 @@ export async function paletteScenario({context, page, extensionId}) {
   await web.locator('[data-proc-read]').click();
   await web.locator('[data-proc-role="Cut"]').waitFor();
   assert.equal(await web.locator('[data-proc-role]').count(), 7);
+  for (const light of [false, true]) {
+    await web.evaluate(value => document.body.classList.toggle('light-machine', value), light);
+    const appearance = await web.locator('.lightburn-dialog').evaluate(dialog => ({background:getComputedStyle(dialog).backgroundColor, heading:getComputedStyle(dialog.querySelector('h2')).fontFamily, field:getComputedStyle(dialog.querySelector('select')).fontFamily, overflow:dialog.scrollWidth > dialog.clientWidth}));
+    assert.equal(appearance.background, light ? 'rgb(216, 217, 211)' : 'rgb(30, 30, 30)');
+    assert.match(appearance.heading, /Impact/); assert.match(appearance.field, /Courier New/); assert.equal(appearance.overflow, false);
+    await web.screenshot({path:fileURLToPath(new URL(`processing-style-${process.env.MOPA_BROWSER_CHANNEL}-${light ? 'light' : 'dark'}.png`,directory)),fullPage:true});
+  }
+  await web.setViewportSize({width:390,height:844});
+  assert.equal(await web.locator('.lightburn-dialog').evaluate(dialog => dialog.scrollWidth <= dialog.clientWidth && dialog.getBoundingClientRect().width <= innerWidth), true);
+  assert.equal(await web.locator('[data-proc-roles]').evaluate(node => getComputedStyle(node).gridTemplateColumns.split(' ').length),1);
+  await web.screenshot({path:fileURLToPath(new URL(`processing-style-${process.env.MOPA_BROWSER_CHANNEL}-mobile.png`,directory)),fullPage:true});
+  await web.setViewportSize({width:1280,height:900});
+  await web.evaluate(() => document.body.classList.remove('light-machine'));
+
   assert.equal(await web.locator('[data-proc-role="Cut"]').inputValue(), '');
   assert.equal(await web.locator('[data-proc-preview]').isDisabled(), true);
   await web.locator('[data-proc-name]').fill('My processing palette');
