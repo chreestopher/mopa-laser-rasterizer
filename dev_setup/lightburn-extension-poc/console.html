@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LightBurn Connection Test</title>
+  <link rel="stylesheet" href="console.css">
+  <script type="module" src="console.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">MOPA RASTERIZER · CONNECTION POC</p>
+    <h1>Connect to LightBurn</h1>
+    <p>Open LightBurn on this computer, then check whether this extension can reach its REST API.</p>
+    <p class="note">Check connection only reads connection responses. Use the separate pairing controls below to authorize library reads.</p>
+    <p>Extension ID: <code id="extension-id"></code></p>
+    <p id="bridge-status" role="status">Connecting website bridge…</p>
+    <button id="check" type="button">Check connection</button>
+    <p id="status" role="status" aria-live="polite">Ready to check.</p>
+    <ul id="results" aria-label="Connection check results"></ul>
+    <details>
+      <summary>What does this check?</summary>
+      <p>The extension calls <code>http://localhost:19520</code>. It expects HTTP 200 from the API root and HTTP 401 from a request using a deliberately invalid token. A readable 401 proves that the extension can receive authentication responses.</p>
+      <p>Passing these checks does not confirm pairing, device connection, or readiness to run a job. Use Read selected Material Library below to verify paired access.</p>
+    </details>
+    <section aria-labelledby="pairing-heading">
+      <h2 id="pairing-heading">Pair and read your library</h2>
+      <p>Pairing requests state, project, and upload access for this POC. Project access includes camera imagery, but this extension never requests camera data.</p>
+      <p>The secret stays in this browser's extension storage. Pairing separately in Edge and Chrome is expected.</p>
+      <button id="pair" type="button">Pair with LightBurn</button>
+      <button id="forget" type="button">Forget local pairing</button>
+      <p id="pairing-status" role="status" aria-live="polite">Checking saved pairing…</p>
+      <button id="read-library" type="button">Read selected Material Library</button>
+      <p id="library-status" role="status" aria-live="polite"></p>
+      <p id="library-summary"></p>
+      <label for="library-entry">Inspect a library setting</label>
+      <select id="library-entry" disabled></select>
+      <p>Values are unchanged: speed and distance units are shown above; frequency is Hz and MOPA pulse width is ns. Sublayers appear below when provided.</p>
+      <pre id="entry-details"></pre>
+    </section>
+    <section aria-labelledby="native-heading">
+      <h2 id="native-heading">Native project loading</h2>
+      <p>Stage a .lbrn2 file from the website (up to 100 MiB). Opening replaces the current LightBurn project. Save your current work first.</p>
+      <p>For this POC, keep only one LightBurn instance open and do not import other files or change projects during this operation. Completion events do not identify the file.</p>
+      <p>Use Load in LightBurn beside a native project download in Job History. Review, confirmation, and progress now appear on that page. This diagnostics tab can be closed during file loading.</p>
+      <p>This opens artwork only. Inspect geometry and settings in LightBurn before any laser operation. If completion is unknown, check LightBurn before sending again.</p>
+    </section>
+  </main>
+</body>
+</html>

@@ -201,6 +201,7 @@ ALLOWED_SOURCE_INLINE_SCRIPTS = {
     "source/holographic.html": [],
     "source/holographic-redirect.html": [],
     "source/index.html": [],
+    "source/lightburn-connection-test.html": [],
     "source/mandala.html": [],
     "source/release-story.html": [],
     "source/spiralgrap.html": [],

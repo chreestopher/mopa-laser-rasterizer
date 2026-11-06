@@ -1,0 +1,21 @@
+:root { color-scheme: dark; font-family: system-ui, sans-serif; font-size: 16px; background: #101820; color: #e8edf2; }
+body { margin: 0; padding: 32px 20px; }
+main { max-width: 680px; margin: 32px auto; }
+.eyebrow { color: #72d5c5; font-size: .8rem; letter-spacing: .1em; }
+h1 { font-size: 2rem; line-height: 1.2; }
+p, li { line-height: 1.6; }
+.note, details { color: #bac7d2; }
+button { padding: 12px 20px; border: 0; border-radius: 8px; background: #72d5c5; color: #101820; font: inherit; font-weight: 650; cursor: pointer; }
+button:disabled { opacity: .6; cursor: wait; }
+button:focus-visible, summary:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
+#status { padding: 16px; border: 1px solid #435461; border-radius: 8px; }
+#status[data-outcome="passed"] { border-color: #72d5c5; }
+#status[data-outcome="failed"] { border-color: #ecb274; }
+ul { padding-left: 24px; }
+details { margin-top: 28px; }
+summary { cursor: pointer; }
+code { overflow-wrap: anywhere; }
+section { margin-top: 32px; padding-top: 20px; border-top: 1px solid #435461; }
+section button { margin: 4px 8px 4px 0; }
+select { width: 100%; padding: 10px; margin-top: 8px; font: inherit; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 440px; overflow: auto; font-size: .85rem; }

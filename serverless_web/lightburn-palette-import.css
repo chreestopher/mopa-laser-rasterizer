@@ -1,0 +1,5 @@
+.lightburn-palette-dialog { width: min(740px, calc(100vw - 64px)); }
+.lightburn-palette-dialog label { display: block; margin: 12px 0; }
+.lightburn-palette-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.lightburn-palette-entries { max-height: 240px; overflow-y: auto; margin: 12px 0; border-block: 1px solid #566251; }
+.lightburn-palette-entries label[hidden] { display: none; }
