@@ -66,7 +66,7 @@ class ProcessingPaletteTests(unittest.TestCase):
         self.assertIn('imported values remain stored', client)
         self.assertIn('payload.laser_source_type=', client)
         self.assertIn('payload.motion_system_type=', client)
-        self.assertIn('src="/vault.js?v=17"', page)
+        self.assertRegex(page, r'<script type="module" src="/vault\.js\?v=[0-9]+"></script>')
 
     def test_tab_and_perforation_settings_are_preserved_but_not_displayed(self):
         handler = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
