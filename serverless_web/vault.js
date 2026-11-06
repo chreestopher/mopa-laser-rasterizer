@@ -275,5 +275,5 @@ document.querySelector("#materialImportMaterial").onchange=populateHatchImportBa
 document.querySelector("#importHolographic").onclick=()=>importPalette("recipe");
 updatePaletteAction();
 async function start(){config=await fetch("/config.json",{cache:"no-store"}).then(r=>r.json());if(!token){showRegisteredAccess(false);return}if(tokenExpiresSoon()){try{if(!await refreshSession()){showRegisteredAccess(false);return}}catch{showRegisteredAccess(false);return}}try{await reload();showRegisteredAccess(true)}catch(error){if(/401|unauthor|token|session/i.test(error.message)){showRegisteredAccess(false);return}showRegisteredAccess(true);notice.textContent=`Could not load Swatch Palette Vault: ${error.message}`}}
-installPaletteImport({api, upload, reload, getPalette: () => resources?.palette || [], getResources: () => resources});
+installPaletteImport({api, upload, reload, getPalette: () => resources?.palette || [], getResources: () => resources, processingRoles});
 start().catch(error=>{if(!token){showRegisteredAccess(false);return}showRegisteredAccess(true);notice.textContent=`Could not load Swatch Palette Vault: ${error.message}`});

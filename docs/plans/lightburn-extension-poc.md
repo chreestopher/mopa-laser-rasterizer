@@ -324,3 +324,32 @@ retained assignments, destination identity, and extension-free UI.
 Live operator review is pending after the staging PR merges and deploys. The
 extension itself is unchanged; refresh Vault after deployment. Processing palette
 builder integration remains a separate future feature.
+
+## Processing palette import: role-first review checkpoint
+
+Operator accepted the existing Color palette append feature. The next authorized
+feature creates a new Processing palette from LightBurn with one searchable
+setting selector per existing Vault role: Cut, Score, Photo, Fill, Shovel,
+Cleaning, and 3D-Slice. All start Unassigned. At least one role is required;
+multiple roles may share an entry, which is imported once. Source material,
+setting name, and operation type identify each choice. The destination is one
+new palette material group; original source metadata stays in provenance.
+
+Implemented in separate processing import UI/model modules. The role list is
+supplied by Vault rather than duplicated. Existing library conversion and
+unsupported-field acknowledgment are reused. Changing a role/name invalidates
+the preview and consent. Saving uses the existing material upload/finalize API
+with processing_palette intent, then saves material-scoped roles using server
+entry references and explicit blanks, preserving other palettes' mappings.
+Partial/unknown completion is reported beside the action with no automatic retry.
+Only extension-enabled staging pages expose this workflow. No extension or
+backend API change is required. The coordinated visual styling pass remains
+explicitly deferred until the palette import workflows are complete.
+
+Validation: model tests first failed before implementation. 60 focused Node tests
+and 35 Python web/parser/processing checks pass. Compatibility coverage resolves
+multiple source materials and duplicate names against the actual backend parser.
+Browser coverage includes role-first selection, search, shared entry import,
+preview invalidation, unsupported-field acknowledgment, role persistence,
+existing-mapping preservation, missing/empty library handling, partial saves,
+and extension-free UI. Live operator acceptance follows staging deployment.
