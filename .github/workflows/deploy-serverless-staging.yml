@@ -26,13 +26,14 @@ concurrency:
 jobs:
   test-and-deploy:
     name: Test and deploy staging
+    if: github.ref == 'refs/heads/staging'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     environment:
       name: serverless-staging
       url: https://serverless-staging.mopa-laser-rasterizer.com/
     permissions:
-      contents: read
+      contents: write
       id-token: write
     env:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-2' }}
@@ -62,7 +63,6 @@ jobs:
         id: deployment
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BEFORE_SHA: ${{ github.event.before }}
           CURRENT_SHA: ${{ github.sha }}
           MANUAL_TARGET: ${{ inputs.target }}
         run: |
@@ -71,8 +71,8 @@ jobs:
             python dev_setup/classify_serverless_deployment_changes.py \
               --target "$MANUAL_TARGET" >> "$GITHUB_OUTPUT"
           else
-            python dev_setup/classify_serverless_deployment_changes.py \
-              --base "$BEFORE_SHA" --head "$CURRENT_SHA" >> "$GITHUB_OUTPUT"
+            python dev_setup/staging_deployment_state.py select \
+              --head "$CURRENT_SHA" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Set up Python
@@ -101,6 +101,12 @@ jobs:
       - name: Run regression tests
         run: python -m unittest discover -s tests
 
+      - name: Reject superseded staging revision
+        if: steps.deployment.outputs.any == 'true'
+        env:
+          DEPLOYED_SHA: ${{ github.sha }}
+        run: python dev_setup/staging_deployment_state.py verify-head --head "$DEPLOYED_SHA"
+
       - name: Configure short-lived AWS credentials
         if: steps.deployment.outputs.any == 'true'
         uses: aws-actions/configure-aws-credentials@v6.2.4
@@ -121,6 +127,12 @@ jobs:
         if: steps.deployment.outputs.worker == 'true'
         run: bash dev_setup/deploy_serverless_staging_worker_only.sh
 
+      - name: Record successful worker deployment
+        if: steps.deployment.outputs.worker == 'true'
+        env:
+          DEPLOYED_SHA: ${{ github.sha }}
+        run: python dev_setup/staging_deployment_state.py record --component worker --head "$DEPLOYED_SHA"
+
       - name: Deploy web and API
         if: steps.deployment.outputs.web == 'true'
         run: bash dev_setup/deploy_serverless_staging_web.sh
@@ -130,9 +142,16 @@ jobs:
         run: echo "No staging application component is affected; deployment skipped after tests."
 
       - name: Verify staging endpoint
-        if: steps.deployment.outputs.any == 'true'
+        if: steps.deployment.outputs.web == 'true'
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --head --max-time 30 \
             --header "Authorization: Basic ${SERVERLESS_STAGING_ACCESS_GATE_AUTHORIZATION}" \
             https://serverless-staging.mopa-laser-rasterizer.com/ >/dev/null
+
+
+      - name: Record successful web/API deployment
+        if: steps.deployment.outputs.web == 'true'
+        env:
+          DEPLOYED_SHA: ${{ github.sha }}
+        run: python dev_setup/staging_deployment_state.py record --component web --head "$DEPLOYED_SHA"

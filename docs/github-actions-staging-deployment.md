@@ -43,13 +43,46 @@ and require the audience `sts.amazonaws.com`.
 
 ## Running a deployment
 
-Merging a pull request into the protected `staging` branch automatically deploys a complete staging release. For a targeted or repeat deployment, open **Actions → Deploy serverless staging → Run workflow**, select the Git revision and one target:
+Merging a pull request into the protected `staging` branch runs tests and deploys components changed since their last successful deployment, including changes left pending by a failed earlier run. For a targeted or repeat deployment, open **Actions → Deploy serverless staging → Run workflow**, select the `staging` branch and one target:
 
 - `web-api`: Lambda API, static frontend, documentation, and media.
 - `worker`: worker image and orchestration task reference.
 - `release`: existing worker/orchestration resources followed by the API and frontend.
 
 Only one staging deployment runs at a time. A queued run will not cancel an active deployment. Every run validates shell syntax and passes the regression suite before AWS credentials are requested.
+
+## Successful deployment baselines
+
+The staging job uses two mutable lightweight Git tags as deployment records:
+
+- `staging-deployed-web`: the last successfully deployed and endpoint-verified web/API revision.
+- `staging-deployed-worker`: the last revision whose worker/orchestration deployment script completed successfully (CloudFormation updates included; this is not an engraving/job smoke test).
+
+Each component is classified against its own recorded revision. Test-only or
+documentation-only merges skip deployment only when no runtime changes remain
+since those baselines. Manual targets still force only the requested components
+and advance only their corresponding records. Skipped or failed components never
+advance. A worker success is recorded before starting web deployment, so a later
+web failure does not discard the worker result.
+
+Missing markers cause a conservative deployment of the missing component. The
+first run after enabling this mechanism therefore deploys both components. Tags
+are updated with compare-and-swap leases; write failures fail the run and retain
+the prior baseline for a later retry. The job needs `contents: write` for these
+two tags using its existing GitHub token; no new AWS permission or personal token
+is needed. Repository tag rules must allow this workflow to update these names.
+Production workflow permissions and baseline logic are unchanged.
+
+The job only runs on `staging` and checks that its revision is still the branch
+tip after tests, before requesting AWS credentials. An obsolete queued run fails
+rather than deploying an old revision; the latest staging run should be used.
+Marker rewinds or divergent-history updates are rejected. A rewritten staging
+history requires operator reconciliation of deployment records before proceeding.
+Read/authentication errors are not treated as missing markers.
+
+Workstation deployments do not automatically update these records. After an
+out-of-band deployment, use the staging workflow for the affected component to
+establish a verified record. Do not advance tags just because tests passed.
 
 ## Production promotion policy
 
