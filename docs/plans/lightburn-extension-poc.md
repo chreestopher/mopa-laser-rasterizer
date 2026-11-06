@@ -291,3 +291,36 @@ Tests-first: new defaults/uniqueness validation and browser selector regression
 failed before implementation. Four model tests pass; Edge and Chrome palette
 scenarios pass including saved mapping, existing mapping preservation, and partial
 mapping-save failure. Live acceptance and staging publication remain pending.
+
+
+## Existing Color palette imports
+
+The operator accepted the latest new-palette flow and requested an **Import
+LightBurn Swatches** button on each existing palette, replacing the earlier +
+label. Implemented on branch `feature/lightburn-existing-palette`.
+
+Only Color palettes accept these imported swatches. The button is injected by
+the isolated extension integration when the extension is detected and is restored
+after Vault refreshes. No controls appear without the extension. The same dialog
+selects settings, previews conversions and unsupported fields, and assigns
+available Rasterizer swatches. The destination is fixed to the clicked palette.
+Existing assignments are reserved; duplicate descriptions receive unique names.
+Users should save pending Vault edits before importing.
+
+The existing upload/finalize API now accepts an owned Color palette target. It
+appends XML entries without recreating the palette or changing existing settings,
+metadata, provenance, or mappings. Duplicate descriptions and size overflow are
+rejected before writing. Conditional S3 writes reject intervening object edits;
+no automatic retry occurs. Settings and mapping saves are separate steps, as in
+the new-palette flow. A partial/unknown result directs the user to inspect the
+Vault before another import.
+
+Tests-first coverage includes name collisions, inferred and explicit existing
+mappings, reserved swatches, backend ownership/type checks, source preservation,
+combined size limits, conditional write failure, and targeted finalization with
+session cleanup. Browser coverage checks new-palette and existing-palette flows,
+retained assignments, destination identity, and extension-free UI.
+
+Live operator review is pending after the staging PR merges and deploys. The
+extension itself is unchanged; refresh Vault after deployment. Processing palette
+builder integration remains a separate future feature.

@@ -11,12 +11,12 @@ const xml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;',
 const valueXml = (key, value) => `<${key} Value="${xml(value)}"/>`;
 function label(value) {const result = String(value || '').trim(); if (!result || result.length > 160 || /[\x00-\x1f\x7f]/.test(result)) throw new Error('Use a name of 1–160 characters without control characters.'); return result;}
 
-export function buildPaletteImport(snapshot, selected, paletteName) {
+export function buildPaletteImport(snapshot, selected, paletteName, existingNames = []) {
   const name = label(paletteName), units = snapshot?.units;
   const speeds = {'mm/s': 1, 'mm/min': 1 / 60, 'in/s': 25.4, 'in/min': 25.4 / 60};
   if (!Object.hasOwn(speeds, units?.units) || !['mm', 'in'].includes(units?.distance_units)) throw new Error('Unsupported LightBurn units. Read the library again.');
   if (!Array.isArray(selected) || !selected.length || selected.length > 100 || new Set(selected).size !== selected.length) throw new Error('Select between 1 and 100 distinct settings.');
-  const warnings = [], descriptions = new Set();
+  const warnings = [], descriptions = new Set(existingNames.map(name => name.trim().toLowerCase()));
   function convert(layer, context, kind = 'normal') {
     const type = kind === 'image' ? 'Image' : {cut: 'Cut', scan: 'Scan', offset: 'Offset'}[layer.mode];
     if (!type) throw new Error(`${context}: unsupported operation type.`);
@@ -80,4 +80,21 @@ export function paletteSwatchMapping(entries, assignments, palette) {
     mapping[hex] = entry.description;
   });
   return mapping;
+}
+
+
+export function existingSwatchMapping(library, preferences) {
+  const explicit = preferences?.material_library_color_assignments?.[library.library_id];
+  if (explicit !== undefined) return {...explicit};
+  const mapping = {};
+  for (const entry of library.summary?.entries || []) {
+    const hex = String(entry.hex || '').toUpperCase();
+    if (hex && !Object.hasOwn(mapping, hex)) mapping[hex] = entry.description;
+  }
+  return mapping;
+}
+
+export function mergeSwatchAssignments(existing, additions) {
+  for (const hex of Object.keys(additions)) if (Object.hasOwn(existing, hex)) throw new Error('This swatch is already assigned in the destination palette. Review assignments in the Vault.');
+  return {...existing, ...additions};
 }

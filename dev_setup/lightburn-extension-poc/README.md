@@ -291,3 +291,15 @@ swatch names are preselected; other settings begin Unassigned. Choose assignment
 before Create palette; occupied swatches cannot be assigned twice. If the palette
 is saved but mapping cannot be confirmed, review assignments in Vault rather than
 creating a second palette. The creation result is shown beside the action button.
+
+
+### Import into an existing Color palette
+
+With the extension enabled, each Color palette has **Import LightBurn Swatches**.
+Save pending Vault edits, click the destination palette's button, read the library,
+select entries, and preview. Existing swatch assignments are marked unavailable;
+choose free swatches or leave new settings unassigned. Confirm **Import swatches**.
+The destination palette's identity and existing settings remain intact. Duplicate
+setting names receive a suffix shown in the preview. Other palette types do not
+accept this Color palette workflow. Refresh Vault after deployment; no extension
+update is needed for this addition.
