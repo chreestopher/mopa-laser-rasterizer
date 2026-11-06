@@ -1,9 +1,11 @@
+import {installProcessingImport} from './lightburn-processing-import.js';
 import {observeLightBurn} from './lightburn-page-bridge.js';
 import {buildPaletteImport, defaultSwatchAssignments, paletteSwatchMapping, existingSwatchMapping, mergeSwatchAssignments} from './lightburn-palette-model.js';
 
-export function installPaletteImport({api, upload, reload, getPalette, getResources}) {
+export function installPaletteImport({api, upload, reload, getPalette, getResources, processingRoles}) {
   if (location.origin !== 'https://serverless-staging.mopa-laser-rasterizer.com') return;
   let button, dialog, snapshot, preview, selected = new Set(), saving = false;
+  const processing = installProcessingImport({api, upload, reload, roles: processingRoles, send: command => bridge.send(command)});
   let extensionEnabled = false;
   function syncPaletteButtons() {
     for (const card of document.querySelectorAll('[data-material]')) {
@@ -20,6 +22,7 @@ export function installPaletteImport({api, upload, reload, getPalette, getResour
   }
   new MutationObserver(syncPaletteButtons).observe(document.querySelector('#materials'), {childList: true, subtree: true});
   const bridge = observeLightBurn(enabled => {
+    processing.setEnabled(enabled);
     extensionEnabled = enabled;
     syncPaletteButtons();
     if (!enabled) {button?.remove(); button = null; dialog?.close(); dialog?.remove(); dialog = null; return;}

@@ -303,3 +303,15 @@ The destination palette's identity and existing settings remain intact. Duplicat
 setting names receive a suffix shown in the preview. Other palette types do not
 accept this Color palette workflow. Refresh Vault after deployment; no extension
 update is needed for this addition.
+
+### Create a Processing palette from LightBurn
+
+After deployment, refresh staging Vault with the extension enabled. Click
+**Import processing palette from LightBurn**, read the selected library, and name
+the palette. Each role starts Unassigned; search by material, setting, or operation
+and select settings for the roles you need. One setting can serve multiple roles
+and will be imported once. Preview the role assignments and converted settings,
+acknowledge any unsupported fields, then create the palette. Review its roles in
+Vault. If creation succeeds but saving roles cannot be confirmed, inspect the
+existing palette instead of importing again. This feature needs no extension
+update. A coordinated styling pass across the import workflows is deferred.

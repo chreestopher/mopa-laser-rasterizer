@@ -322,6 +322,10 @@ aws s3 cp "$REPO_ROOT/serverless_web/lightburn-page-bridge.js" "s3://$STATIC_BUC
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/lightburn-palette-model.js" "s3://$STATIC_BUCKET/web/lightburn-palette-model.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/lightburn-processing-model.js" "s3://$STATIC_BUCKET/web/lightburn-processing-model.js" \
+  --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/lightburn-processing-import.js" "s3://$STATIC_BUCKET/web/lightburn-processing-import.js" \
+  --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/lightburn-palette-import.js" "s3://$STATIC_BUCKET/web/lightburn-palette-import.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/lightburn-palette-import.css" "s3://$STATIC_BUCKET/web/lightburn-palette-import.css" \
