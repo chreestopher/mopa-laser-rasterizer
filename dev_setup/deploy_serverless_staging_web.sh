@@ -320,12 +320,15 @@ aws s3 cp "$REPO_ROOT/serverless_web/admin.css" "s3://$STATIC_BUCKET/web/admin.c
   --region "$REGION" --content-type text/css --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/lightburn-page-bridge.js" "s3://$STATIC_BUCKET/web/lightburn-page-bridge.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
-python3 "$REPO_ROOT/dev_setup/package_lightburn_extension.py" --output "$BUILD_DIR/lightburn-extension.zip"
+EXTENSION_ENVIRONMENT=production
+if [ "$ENVIRONMENT_LABEL" = "Serverless staging" ]; then EXTENSION_ENVIRONMENT=staging; fi
+python3 "$REPO_ROOT/dev_setup/package_lightburn_extension.py" --output "$BUILD_DIR/lightburn-extension.zip" \
+  --origin "$PUBLIC_BASE_URL" --environment "$EXTENSION_ENVIRONMENT" --guide-output "$BUILD_DIR/lightburn-extension.html"
 aws s3 cp "$BUILD_DIR/lightburn-extension.zip" "s3://$STATIC_BUCKET/web/downloads/mopa-lightburn-extension-beta.zip" \
   --content-type application/zip --cache-control no-cache --region "$REGION" --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/lightburn-extension-guide.css" "s3://$STATIC_BUCKET/web/lightburn-extension-guide.css" \
   --content-type text/css --cache-control no-cache --region "$REGION" --only-show-errors
-aws s3 cp "$REPO_ROOT/serverless_web/lightburn-extension.html" "s3://$STATIC_BUCKET/web/lightburn-extension.html" \
+aws s3 cp "$BUILD_DIR/lightburn-extension.html" "s3://$STATIC_BUCKET/web/lightburn-extension.html" \
   --content-type text/html --cache-control no-cache --region "$REGION" --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/lightburn-palette-model.js" "s3://$STATIC_BUCKET/web/lightburn-palette-model.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
