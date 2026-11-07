@@ -6,7 +6,7 @@
       "version": "LightBurn integration beta",
       "date": "2026-11-06",
       "title": "Connect Rasterizer directly to LightBurn",
-      "summary": "Beta integration tested on staging in Chrome and Edge. Production availability follows promotion; this entry does not announce a new tagged production release.",
+      "summary": "Requires LightBurn 2.23 or later. Beta integration tested on staging in Chrome and Edge. Production availability follows promotion; this entry does not announce a new tagged production release.",
       "groups": [
         {
           "title": "Material Library imports",

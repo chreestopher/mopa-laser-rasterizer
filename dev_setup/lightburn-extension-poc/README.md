@@ -1,5 +1,7 @@
 ## Distributed beta builds
 
+**Requires LightBurn 2.23 or later**, running on the same computer as the browser.
+
 The instructions below describe the staging development source. For normal installation, use `/lightburn-extension.html` on the target website. Enable LightBurn's **Edit > Settings > Extensions > Allow API Access from Network** before pairing.
 
 Deployment runs `dev_setup/package_lightburn_extension.py` with `--origin`, `--environment`, `--output`, and `--guide-output`. It packages the manifest, message validation, and tab-close ownership cleanup for that exact HTTPS origin and generates matching guide text. Staging is named Development; production is named Beta. Do not distribute the raw staging source as a production extension.

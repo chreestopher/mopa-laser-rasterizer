@@ -252,6 +252,8 @@ Use suitable materials, guarding, extraction, fixturing, and manufacturer-approv
 
 ## LightBurn browser integration beta
 
+**Requires LightBurn 2.23 or later**, running on the same computer as the browser.
+
 Chrome and Edge users can import Material Library settings into new or existing Color palettes, create Processing palettes by operation role, and load native projects up to 100 MiB from Job History. The extension connects to local LightBurn; it does not operate the laser. Imports are snapshots and require review.
 
 Use the website's **Guides before you begin** extension link for the download, installation, pairing, and troubleshooting instructions. In LightBurn, enable **Edit > Settings > Extensions > Allow API Access from Network** before pairing. Installation uses **Developer mode > Load unpacked**; updates are manual.

@@ -965,6 +965,8 @@ Either way:
 
 ## Latest update: LightBurn browser integration beta
 
+**Requires LightBurn 2.23 or later**, running on the same computer as the browser.
+
 Tested on staging in Chrome and Edge; production availability follows promotion.
 
 The new browser extension connects Rasterizer to LightBurn on the same computer. Import selected Material Library settings into a new Color palette, add swatches to an existing palette, or assign settings to Processing palette roles. Preview swatch assignments before saving. Imports are snapshots, not live synchronization.
