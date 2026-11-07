@@ -2,53 +2,11 @@
   "schema_version": 1,
   "releases": [
     {
-      "id": "lightburn-extension-beta",
-      "version": "LightBurn integration beta",
-      "date": "2026-11-06",
-      "title": "Connect Rasterizer directly to LightBurn",
-      "summary": "Requires LightBurn 2.23 or later. Beta integration tested on staging in Chrome and Edge. Production availability follows promotion; this entry does not announce a new tagged production release.",
-      "groups": [
-        {
-          "title": "Material Library imports",
-          "items": [
-            "Create a Color palette from selected LightBurn Material Library entries and assign each entry to a Rasterizer swatch during preview.",
-            "Import LightBurn swatches into an existing Color palette, or create a Processing palette by assigning settings to Cut, Score, Photo, Fill, Shovel, Cleaning, and 3D-Slice roles.",
-            "Imports show completion feedback and use the shared machine facade in both themes. Detailed source-only field messages no longer crowd the preview; imported settings remain snapshots rather than live synchronization."
-          ]
-        },
-        {
-          "title": "Load projects and install the beta",
-          "items": [
-            "Load native .lbrn2 files up to 250 MiB from Job History, review the current project, and explicitly confirm replacement. The extension does not start the laser.",
-            "Connection, pairing, and import failure handling help recover interrupted operations. If completion is unknown, inspect LightBurn before retrying; closing a dialog does not cancel an import.",
-            "A download and installation guide covers Chrome/Edge, enabling LightBurn API access, pairing, usage, and manual updates. Extension controls appear only when the extension is enabled.",
-            "Deployment packages each download for its own website origin: Development for staging and Beta for production. Unpacked installations require manual updates."
-          ]
-        },
-        {
-          "title": "Deployment reliability",
-          "items": [
-            "Staging deployment compares each component against its last successful deployment, so changes missed by a failed deployment remain eligible on the next run."
-          ]
-        }
-      ],
-      "links": [
-        {
-          "label": "Install the LightBurn extension beta",
-          "href": "/lightburn-extension.html"
-        },
-        {
-          "label": "Read the release story",
-          "href": "/release-story"
-        }
-      ]
-    },
-    {
       "id": "v1-1-0",
       "version": "v1.1.0",
       "date": "2026-10-02",
       "title": "Build Bigger, Shape Deeper, and Control More of the Engraving",
-      "summary": "A major workflow release adding panel-sized production, richer LightBurn exports, operation-based Processing Palettes, and new tools for layered and geometric artwork.",
+      "summary": "A major workflow release adding panel-sized production, richer LightBurn exports and browser integration, operation-based Processing Palettes, and new tools for layered and geometric artwork.",
       "groups": [
         {
           "title": "Improvements to existing workflows",
@@ -74,6 +32,25 @@
             "SpiralGraph Lab creates open-line or filled-ribbon drawings from resizable virtual tracks, gears, pencil reaches, and custom SVG or raster-image tracks, with independent drawing sizes and optional per-drawing palette routing.",
             "Generated LightBurn projects remain editable starting points: inspect every layer and setting, then test on suitable scrap before running valuable work."
           ]
+        },
+        {
+          "title": "LightBurn browser extension beta",
+          "items": [
+            "Connect Rasterizer to local LightBurn through the Chrome/Edge browser extension beta. Requires LightBurn 2.23 or later.",
+            "Create a Color palette from selected LightBurn Material Library entries and assign each entry to a Rasterizer swatch during preview.",
+            "Import LightBurn swatches into an existing Color palette, or create a Processing palette by assigning settings to Cut, Score, Photo, Fill, Shovel, Cleaning, and 3D-Slice roles.",
+            "Imports show completion feedback; imported settings remain snapshots rather than live synchronization.",
+            "Load native .lbrn2 files up to 250 MiB from Job History, review the current project, and explicitly confirm replacement. The extension does not start the laser.",
+            "Connection, pairing, and import failure handling help recover interrupted operations. If completion is unknown, inspect LightBurn before retrying; closing a dialog does not cancel an import.",
+            "A download and installation guide covers Chrome/Edge, enabling LightBurn API access, pairing, usage, and manual updates. Extension controls appear only when the extension is enabled.",
+            "Deployment packages each download for its own website origin: Development for staging and Beta for production. Unpacked installations require manual updates."
+          ]
+        },
+        {
+          "title": "Deployment reliability",
+          "items": [
+            "Staging deployment compares each component against its last successful deployment, so changes missed by a failed deployment remain eligible on the next run."
+          ]
         }
       ],
       "links": [
@@ -84,6 +61,10 @@
         {
           "label": "Read the release story",
           "href": "/release-story"
+        },
+        {
+          "label": "Install the LightBurn extension beta",
+          "href": "/lightburn-extension.html"
         }
       ]
     },
