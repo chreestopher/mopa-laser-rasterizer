@@ -1,3 +1,11 @@
+## Distributed beta builds
+
+The instructions below describe the staging development source. For normal installation, use `/lightburn-extension.html` on the target website. Enable LightBurn's **Edit > Settings > Extensions > Allow API Access from Network** before pairing.
+
+Deployment runs `dev_setup/package_lightburn_extension.py` with `--origin`, `--environment`, `--output`, and `--guide-output`. It packages the manifest, message validation, and tab-close ownership cleanup for that exact HTTPS origin and generates matching guide text. Staging is named Development; production is named Beta. Do not distribute the raw staging source as a production extension.
+
+Unpacked extensions do not update automatically. Replace files in the installed folder, click Reload in the browser extension manager, and refresh website tabs. Keep staging and production installations in separate folders. Pairing is stored per extension/browser profile; pair again if installing as a new extension. No production deployment or live production validation is implied by building a ZIP.
+
 # LightBurn Connection POC — version 0.7.0
 
 ## Current review: import a new swatch palette
