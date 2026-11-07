@@ -37,9 +37,10 @@
     { href: "/history.html", label: "Job History", match: path => path === "/history.html" },
     { href: "/vault.html", label: "Swatch Palette Vault", match: path => path === "/vault.html" },
     { href: "/community-set", label: "Community Set", match: path => path === "/community-set" },
-    { href: "/docs", label: "Docs", match: path => path === "/docs" || path.startsWith("/docs/") || path === "/release-story" || path === "/changelog" },
+    { href: "/docs", label: "Docs", match: path => path === "/docs" || path.startsWith("/docs/") || path === "/release-story" || path === "/changelog" || path === "/lightburn-extension.html" },
   ];
   const pageHeroes = {
+    "/lightburn-extension.html": ["Browser extension beta", "Connect Rasterizer to LightBurn", "Bring settings from your LightBurn Material Library into Rasterizer palettes, and load finished projects into LightBurn directly from Job History. The extension connects this website to LightBurn running on the same computer.", "Beta - Chrome and Microsoft Edge - Desktop"],
     "/": ["Serverless raster processing", "MOPA Laser Rasterizer", "Turn artwork into a laser-ready color engraving project using your saved Material Libraries and palettes.", isStagingEnvironment ? "Production-parity staging" : "Production service"],
     "/fauxlographic.html": ["Directional engraving workflow", "Fauxlographic Etching Lab", "Map artwork through a saved Fauxlographic Palette and its LightBurn Material Library.", "Experimental - active development"],
     "/depthmap.html": ["Client-side monocular depth estimation", "Depth Map Generator", "Estimate relative scene depth from a single image, inspect a relief-style projection, adjust the usable range, and export grayscale depth maps for further preparation.", "Experimental - active development"],
@@ -66,7 +67,8 @@
   function render() {
     if (document.querySelector(".staging-shell")) return;
     const isDocs = location.pathname === "/docs" || location.pathname.startsWith("/docs/");
-    const pageClass = location.pathname === "/history.html" ? "staging-history"
+    const pageClass = location.pathname === "/lightburn-extension.html" ? "staging-extension-guide"
+      : location.pathname === "/history.html" ? "staging-history"
       : location.pathname === "/vault.html" ? "staging-vault"
       : location.pathname === "/community-set" ? "staging-community"
       : location.pathname === "/admin.html" ? "staging-admin"

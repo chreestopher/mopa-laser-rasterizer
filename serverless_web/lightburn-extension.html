@@ -9,16 +9,11 @@
   <link rel="stylesheet" href="/staging-shell-v2.css">
   <link rel="stylesheet" href="/staging-pages.css?v=3">
   <link rel="stylesheet" href="/lightburn-extension-guide.css">
-  <script src="/staging-shell.js?v=4" defer></script>
+  <script src="/staging-shell.js?v=5" defer></script>
 </head>
-<body class="staging-prototype staging-extension-guide">
-  <main class="extension-guide">
-    <header class="staging-page-hero">
-      <p class="eyebrow">MOPA Laser Rasterizer · Browser extension beta</p>
-      <h1>Connect Rasterizer to LightBurn</h1>
-      <p>Bring settings from your LightBurn Material Library into Rasterizer palettes, and load finished projects into LightBurn directly from Job History. The extension connects this website to LightBurn running on the same computer.</p>
-      <p class="experimental">Beta · Chrome and Microsoft Edge · Desktop</p>
-    </header>
+<body>
+  <div class="extension-guide">
+
     <nav class="guide-jump-links" aria-label="Extension guide sections"><a href="#download">Download</a><a href="#install">Install</a><a href="#pair">Connect</a><a href="#use">Use</a><a href="#help">Troubleshoot</a></nav>
     <section class="panel" aria-labelledby="features-heading">
       <h2 id="features-heading">What the integration does</h2>
@@ -35,7 +30,7 @@
       <h2 id="download-heading">Download the beta</h2>
       <p><strong>This beta works with the <a href="https://serverless-staging.mopa-laser-rasterizer.com/">staging Rasterizer website</a>.</strong> It does not currently enable integration on the production website. You need access to staging and a Rasterizer account for Vault and Job History.</p>
       <p>Use a desktop Chrome or Edge browser and a version of LightBurn with its REST API available. Keep LightBurn on the same computer as your browser. The tested installation path is Windows; other desktop platforms have not been verified here.</p>
-      <p><a class="guide-download" href="/downloads/mopa-lightburn-extension-beta.zip" download>Download LightBurn Browser Extension Beta (.zip)</a></p>
+      <p><a class="guide-download staging-action-button" href="/downloads/mopa-lightburn-extension-beta.zip" download>Download LightBurn Browser Extension Beta (.zip)</a></p>
       <p>This is an unpacked extension, not a browser-store installer. Installation takes a few manual steps, including enabling Developer mode. Updates are manual too. No developer account or registration is needed to install this download.</p>
       <p>The installed extension is currently named <strong>MOPA Rasterizer — LightBurn Connection POC</strong>. That is the beta's name in the browser extension list.</p>
     </section>
@@ -84,6 +79,6 @@
       <details><summary>How do I remove it?</summary><p>Finish any active import, then open your browser's extension manager and click Remove. The website's extension controls disappear after refresh. Ordinary file downloads still work. Removing the extension clears its local pairing data; it does not delete your saved Vault palettes.</p></details>
     </section>
     <p><a href="/">Back to Rasterizer</a> · <a href="/vault.html">Swatch Palette Vault</a> · <a href="/history.html">Job History</a></p>
-  </main>
+  </div>
 </body>
 </html>
