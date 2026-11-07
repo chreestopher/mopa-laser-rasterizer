@@ -40,7 +40,7 @@
             "Create a Color palette from selected LightBurn Material Library entries and assign each entry to a Rasterizer swatch during preview.",
             "Import LightBurn swatches into an existing Color palette, or create a Processing palette by assigning settings to Cut, Score, Photo, Fill, Shovel, Cleaning, and 3D-Slice roles.",
             "Imports show completion feedback; imported settings remain snapshots rather than live synchronization.",
-            "Load native .lbrn2 files up to 100 MiB from Job History, review the current project, and explicitly confirm replacement. The extension does not start the laser.",
+            "Load native .lbrn2 files up to 250 MiB from Job History, review the current project, and explicitly confirm replacement. The extension does not start the laser.",
             "Connection, pairing, and import failure handling help recover interrupted operations. If completion is unknown, inspect LightBurn before retrying; closing a dialog does not cancel an import.",
             "A download and installation guide covers Chrome/Edge, enabling LightBurn API access, pairing, usage, and manual updates. Extension controls appear only when the extension is enabled.",
             "Deployment packages each download for its own website origin: Development for staging and Beta for production. Unpacked installations require manual updates."

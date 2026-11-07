@@ -8,7 +8,7 @@ export function validateRequest(message, sender) {
       if (new URL(sender.url).origin !== ALLOWED_ORIGIN || sender.frameId !== 0 || message.version !== 1 || typeof message.id !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(message.id) || Object.keys(message).sort().join(',') !== uploadKeys[message.command]) return false;
       if (message.command === 'beginNativeUpload') {validateNativeFile({name: message.name, base64: btoa('<LightBurnProject/>')}); return true;}
       if (typeof message.uploadId !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(message.uploadId)) return false;
-      return message.command === 'finishNativeUpload' || (Number.isInteger(message.offset) && message.offset >= 0 && message.offset < 104857600 && typeof message.base64 === 'string' && message.base64.length > 0 && message.base64.length <= 349528);
+      return message.command === 'finishNativeUpload' || (Number.isInteger(message.offset) && message.offset >= 0 && message.offset < 262144000 && typeof message.base64 === 'string' && message.base64.length > 0 && message.base64.length <= 349528);
     }
     const staging = message?.command === 'prepareNativeImport';
     const confirming = message?.command === 'confirmNativeImport';

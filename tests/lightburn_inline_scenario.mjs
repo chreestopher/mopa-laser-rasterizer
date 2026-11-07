@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 export async function inlineScenario({context, page, extensionId}) {
   const origin = 'https://serverless-staging.mopa-laser-rasterizer.com';
   const large = process.argv.includes('--large');
-  const expectedBytes = large ? 100 * 1024 * 1024 : 2 * 1024 * 1024;
+  const expectedBytes = large ? 250 * 1024 * 1024 : 2 * 1024 * 1024;
   const job = {task_id: 'native-test', status: 'completed', source_name: 'Sample artwork', created_at: '2026-11-05T12:00:00Z',
     outputs: [{name: 'tiny.lbrn2', bytes: 19, download_url: origin + '/fixture.lbrn2'}, {name: 'tiny.svg', bytes: 10, download_url: origin + '/fixture.svg'}], run_parameters: {}};
   await context.route(`${origin}/**`, async route => {
@@ -62,9 +62,9 @@ export async function inlineScenario({context, page, extensionId}) {
   await web.locator('[data-load-lightburn]').waitFor();
   assert.equal(await web.locator('[data-load-lightburn]').count(), 1, 'Only native projects get the button');
   await web.locator('[data-load-lightburn]').click();
-  await web.waitForFunction(() => document.querySelector('[data-lb-status]')?.textContent.includes('100 MiB'));
+  await web.waitForFunction(() => document.querySelector('[data-lb-status]')?.textContent.includes('250 MiB'));
   await web.waitForTimeout(3200);
-  assert.match(await web.locator('[data-lb-status]').textContent(), /100 MiB/, 'Idle polling must not erase the staging failure');
+  assert.match(await web.locator('[data-lb-status]').textContent(), /250 MiB/, 'Idle polling must not erase the staging failure');
   assert.equal(await web.locator('[data-lb-stage]').isEnabled(), true, 'Staging failure offers recovery');
   assert.equal(await worker.evaluate(() => self.testPosts), 0);
   await web.evaluate(() => {window.testOversized = false;});

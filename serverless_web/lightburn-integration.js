@@ -1,14 +1,14 @@
-const LARGE_LIMIT = 100 * 1024 * 1024;
+const LARGE_LIMIT = 250 * 1024 * 1024;
 export async function uploadNativeFile(url, name, send, progress = () => {}, fetchImpl = globalThis.fetch) {
   if (new URL(url).protocol !== 'https:' || !/\.lbrn2$/i.test(name)) throw new Error('Choose a retained native LightBurn project.');
-  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 180000);
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 300000);
   let reader, started = false;
   try {
     let response;
     try {response = await fetchImpl(url, {credentials: 'omit', cache: 'no-store', signal: controller.signal});}
     catch {throw new Error('The native file download could not start. Check your connection and refresh Job History before trying again.');}
     if (!response.ok) throw new Error('Could not download this retained file. Refresh Job History and try again.');
-    if (Number(response.headers.get('content-length')) > LARGE_LIMIT) throw new Error('Native projects up to 100 MiB are supported. Use Download for this file.');
+    if (Number(response.headers.get('content-length')) > LARGE_LIMIT) throw new Error('Native projects up to 250 MiB are supported. Use Download for this file.');
     const {uploadId} = await send('beginNativeUpload', {name}); started = true;
     reader = response.body.getReader(); let offset = 0;
     while (true) {
@@ -16,7 +16,7 @@ export async function uploadNativeFile(url, name, send, progress = () => {}, fet
       try {chunkResult = await reader.read();}
       catch {throw new Error('The native file download was interrupted. Check your connection, then stage the file again.');}
       const {done, value} = chunkResult; if (done) break;
-      if (offset + value.length > LARGE_LIMIT) throw new Error('Native projects up to 100 MiB are supported. Use Download for this file.');
+      if (offset + value.length > LARGE_LIMIT) throw new Error('Native projects up to 250 MiB are supported. Use Download for this file.');
       for (let index = 0; index < value.length; index += 262144) {
         const chunk = value.subarray(index, index + 262144); let raw = '';
         for (const byte of chunk) raw += String.fromCharCode(byte);
@@ -42,7 +42,7 @@ export function installLightBurn() {
   async function send(command, fields = {}, id = extensionId) {
     const request = {version: 1, id: crypto.randomUUID(), command, ...fields};
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Response timed out. Check LightBurn before trying again.')), command === 'confirmNativeImport' ? 60000 : 12000);
+      const timeout = setTimeout(() => reject(new Error('Response timed out. Check LightBurn before trying again.')), command === 'confirmNativeImport' ? 540000 : 12000);
       try {
         chrome.runtime.sendMessage(id, request, response => {
           clearTimeout(timeout);
@@ -110,13 +110,13 @@ export function installLightBurn() {
     timer = setTimeout(poll, 1500);
   }
   async function stageSelected() {
-      if (!largeFiles) throw new Error('Reload extension version 0.6.0 or newer, then refresh this page to enable files up to 100 MiB.');
+      if (!largeFiles) throw new Error('Reload extension version 0.7.2 or newer, then refresh this page to enable files up to 250 MiB.');
       const snapshot = await send('getNativeImportStatus');
       if (snapshot.state !== 'idle') return snapshot;
       paint(snapshot);
       status.textContent = 'Downloading native project…';
       return uploadNativeFile(selectedAnchor.href, selectedAnchor.dataset.lightburnName, send,
-        bytes => {if (dialog) status.textContent = `Staging ${(bytes / 1048576).toFixed(1)} MiB of up to 100 MiB…`;});
+        bytes => {if (dialog) status.textContent = `Staging ${(bytes / 1048576).toFixed(1)} MiB of up to 250 MiB…`;});
   }
   async function open(anchor, button) {
     selectedAnchor = anchor;

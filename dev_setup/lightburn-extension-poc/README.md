@@ -1,3 +1,5 @@
+Version 0.7.2 raises native uploads to 250 MiB, allows two minutes for the upload response and five minutes for import completion. Ordinary API checks retain their 20-second timeout. Earlier test results below describe their original limits.
+
 ## Distributed beta builds
 
 **Requires LightBurn 2.23 or later**, running on the same computer as the browser.
@@ -68,7 +70,7 @@ laser. It is not yet published in an extension store.
    both browsers. Disable the extension and refresh: all new controls should be
    absent and ordinary downloads should still work.
 
-Current limit: 100 MiB native files, simple ASCII filenames. Files transfer in
+Current limit: 250 MiB native files, simple ASCII filenames. Files transfer in
 bounded 256 KiB chunks and are held in extension IndexedDB; session storage
 contains only the small operation journal and file reference. Files are cleared
 after an open attempt or discard; orphaned bytes are cleared on worker startup

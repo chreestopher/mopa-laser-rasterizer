@@ -20,7 +20,7 @@ class ExtensionDownloadTests(unittest.TestCase):
         root=Path(__file__).resolve().parents[1]
         page=(root/'serverless_web/lightburn-extension.html').read_text(encoding="utf-8")
         self.assertIn('/downloads/mopa-lightburn-extension-beta.zip',page)
-        for phrase in ['chrome://extensions','edge://extensions','Load unpacked','Developer mode','Pair with LightBurn','staging','Processing','100 MiB']:
+        for phrase in ['chrome://extensions','edge://extensions','Load unpacked','Developer mode','Pair with LightBurn','staging','Processing','250 MiB']:
             self.assertIn(phrase,page)
         self.assertIn('/lightburn-extension.html',(root/'serverless_web/index.html').read_text(encoding="utf-8"))
         script=(root/'dev_setup/deploy_serverless_staging_web.sh').read_text(encoding="utf-8")

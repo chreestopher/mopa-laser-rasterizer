@@ -42,7 +42,7 @@ export function createImportController({storage, opener}) {
     });},
     finishUpload(uploadId, size, owner) {return locked(async () => {
       checkOwner(owner);
-      if (!Number.isInteger(size) || size <= 0 || size > 104857600) throw new Error('Native projects must be no larger than 100 MiB.');
+      if (!Number.isInteger(size) || size <= 0 || size > 262144000) throw new Error('Native projects must be no larger than 250 MiB.');
       if (record.state !== 'uploading' || record.uploadId !== uploadId) throw new Error('This upload is no longer active.');
       await save({...record, state: 'staged', size, file: {fileId: uploadId, name: record.name}, message: 'File staged. Review the current LightBurn project.'});
       return snapshot();

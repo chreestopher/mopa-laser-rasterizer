@@ -38,6 +38,7 @@ function harness({mode = 'success', metadata = project} = {}) {
       return new Response(stream, {headers: {'Content-Type': 'text/event-stream'}});
     }
     assert.ok(url.endsWith('/api/file/open'));
+    if (mode === 'slow-upload') {await new Promise(resolve => setTimeout(resolve, 150)); emit('event: file_imported\ndata: {"success":true}\n\n');}
     if (mode === 'post401') return new Response('', {status: 401});
     if (mode === 'network') throw new TypeError('Connection lost');
     if (mode === 'rejected') return new Response('', {status: 413});
@@ -141,4 +142,23 @@ test('pairing rejected at stream or upload gives recovery instructions without r
     assert.match(result.message, /pair again/i);
     assert.equal(calls.filter(call => call.options.method === 'POST').length, mode === 'stream401' ? 0 : 1);
   }
+});
+
+
+test('unknown results identify upload versus completion failure without retrying', async () => {
+  for (const [mode, expected] of [['network', /Upload response could not be received/], ['no-event', /accepted the file.*completion event/i]]) {
+    const {opener, calls} = harness({mode});
+    const result = await opener.open(payload, {confirmed: true, reviewedProject: project});
+    assert.equal(result.state, 'unknown');
+    assert.match(result.message, expected);
+    assert.match(result.message, /Check LightBurn/);
+    assert.equal(calls.filter(call => call.path === '/api/file/open').length, 1);
+  }
+});
+
+test('upload has a separate longer deadline than ordinary project requests', async () => {
+  const {opener, calls} = harness({mode: 'slow-upload'});
+  const result = await opener.open(payload, {confirmed: true, reviewedProject: project});
+  assert.equal(result.state, 'loaded');
+  assert.equal(calls.filter(call => call.path === '/api/file/open').length, 1);
 });

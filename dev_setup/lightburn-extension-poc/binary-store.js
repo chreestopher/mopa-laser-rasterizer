@@ -26,7 +26,7 @@ export function createBinaryStore() {
         const request = tx.objectStore('meta').get('current');
         request.onsuccess = () => {
           const meta = request.result;
-          if (!meta || meta.id !== id || meta.size !== offset || meta.size + bytes.length > MAX_NATIVE_BYTES) return fail(new Error('Invalid upload offset or file exceeds 100 MiB.'));
+          if (!meta || meta.id !== id || meta.size !== offset || meta.size + bytes.length > MAX_NATIVE_BYTES) return fail(new Error('Invalid upload offset or file exceeds 250 MiB.'));
           tx.objectStore('parts').put(bytes, offset); meta.size += bytes.length; tx.objectStore('meta').put(meta, 'current'); done({size: meta.size});
         };
       });
