@@ -73,4 +73,3 @@ test('failed journal write prevents any open and public status never includes by
   await assert.rejects(controller.open(review.reviewId)); assert.equal(f.posts(), 0);
   assert.doesNotMatch(JSON.stringify(await controller.status()), /base64|LightBurnProject/);
 });
-
