@@ -971,7 +971,7 @@ Tested on staging in Chrome and Edge; production availability follows promotion.
 
 The new browser extension connects Rasterizer to LightBurn on the same computer. Import selected Material Library settings into a new Color palette, add swatches to an existing palette, or assign settings to Processing palette roles. Preview swatch assignments before saving. Imports are snapshots, not live synchronization.
 
-Job History can load native `.lbrn2` projects up to 100 MiB into LightBurn after reviewing the current project and confirming replacement. The extension does not start the laser. If completion is unknown, inspect LightBurn before retrying.
+Job History can load native `.lbrn2` projects up to 250 MiB into LightBurn after reviewing the current project and confirming replacement. The extension does not start the laser. If completion is unknown, inspect LightBurn before retrying.
 
 The integration uses the website's machine facade and appears only when the extension is enabled. Each deployment provides a download scoped to its own website. Install through Developer mode and Load unpacked; updates are manual. In LightBurn, open Edit > Settings > Extensions and check Allow API Access from Network before pairing.
 
