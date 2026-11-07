@@ -10,7 +10,7 @@ const filesReady = (async () => {
   const previous = (await chrome.storage.session.get('nativeImport')).nativeImport;
   if (!previous?.file?.fileId && previous?.state !== 'uploading') await files.clear();
 })();
-const nativeOpener = createNativeOpener({store: createCredentialStore(chrome.storage.local), fetchImpl: (...args) => fetch(...args), requestMs: 20000, completionMs: 20000});
+const nativeOpener = createNativeOpener({store: createCredentialStore(chrome.storage.local), fetchImpl: (...args) => fetch(...args), requestMs: 20000, uploadMs: 120000, completionMs: 300000});
 
 const imports = createImportController({
   storage: {
@@ -29,7 +29,7 @@ async function handle(message, sender) {
   if (!validateRequest(message, sender) || !Number.isInteger(sender.tab?.id)) return {version: 1, id: message?.id, ok: false, error: 'denied'};
   const reply = result => ({version: 1, id: message.id, ok: true, result});
   const owner = `${new URL(sender.url).origin}:${sender.tab.id}`;
-  if (message.command === 'getExtensionInfo') return reply({nativeImport: true, materialImport: true, maxFileBytes: 104857600, version: chrome.runtime.getManifest().version});
+  if (message.command === 'getExtensionInfo') return reply({nativeImport: true, materialImport: true, maxFileBytes: 262144000, version: chrome.runtime.getManifest().version});
   try {
     await filesReady;
     const previousOwner = (await chrome.storage.session.get('nativeImport')).nativeImport?.owner;

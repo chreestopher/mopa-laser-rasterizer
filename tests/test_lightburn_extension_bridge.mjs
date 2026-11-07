@@ -9,7 +9,7 @@ test('chunk protocol bounds messages and requires exact upload schemas', () => {
   assert.equal(validateRequest(begin, sender), true);
   const append = {...request, command: 'appendNativeUpload', uploadId: 'test', offset: 0, base64: btoa('hello')};
   assert.equal(validateRequest(append, sender), true);
-  for (const invalid of [{...append, offset: -1}, {...append, offset: 104857600}, {...append, base64: 'x'.repeat(349529)}, {...append, url: 'http://elsewhere'}, {...begin, name: '../file.lbrn2'}]) assert.equal(validateRequest(invalid, sender), false);
+  for (const invalid of [{...append, offset: -1}, {...append, offset: 262144000}, {...append, base64: 'x'.repeat(349529)}, {...append, url: 'http://elsewhere'}, {...begin, name: '../file.lbrn2'}]) assert.equal(validateRequest(invalid, sender), false);
 });
 test('website can stage a bounded native file but cannot confirm or open it', () => {
   const staged = {...request, command: 'prepareNativeImport', file: {name: 'tiny.lbrn2', base64: btoa('<LightBurnProject/>')}};

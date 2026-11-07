@@ -13,9 +13,9 @@ test('chunked upload reserves one owner and journals only the binary file refere
   const f = fixture(), controller = f.make();
   const upload = await controller.beginUpload('large.lbrn2', 'tab-1');
   await assert.rejects(controller.beginUpload('other.lbrn2', 'tab-2'));
-  await assert.rejects(controller.finishUpload(upload.uploadId, 104857600, 'tab-2'));
-  await assert.rejects(controller.finishUpload(upload.uploadId, 104857601, 'tab-1'));
-  await controller.finishUpload(upload.uploadId, 104857600, 'tab-1');
+  await assert.rejects(controller.finishUpload(upload.uploadId, 262144000, 'tab-2'));
+  await assert.rejects(controller.finishUpload(upload.uploadId, 262144001, 'tab-1'));
+  await controller.finishUpload(upload.uploadId, 262144000, 'tab-1');
   const saved = await f.storage.get();
   assert.deepEqual(saved.file, {name: 'large.lbrn2', fileId: upload.uploadId});
   assert.ok(JSON.stringify(saved).length < 4096);
@@ -73,3 +73,4 @@ test('failed journal write prevents any open and public status never includes by
   await assert.rejects(controller.open(review.reviewId)); assert.equal(f.posts(), 0);
   assert.doesNotMatch(JSON.stringify(await controller.status()), /base64|LightBurnProject/);
 });
+
