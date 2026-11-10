@@ -78,12 +78,6 @@ Resources:
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          - Sid: AllowAccountAdministration
-            Effect: Allow
-            Principal:
-              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
-            Action: sns:*
-            Resource: !Ref SignupAlertTopic
           # EventBridge-to-SNS does not support a SourceArn condition here.
           # Publish is restricted to this one notification topic.
           - Sid: AllowEventBridgePublish

@@ -58,6 +58,7 @@ HARNESS = r"""
     return originalCanvasStroke.apply(this, args);
   };
   const scenario = new URLSearchParams(location.search).get('scenario');
+  if(scenario === 'workspace') document.write('<script src="/staging-shell.js?v=4" defer><'+'/script>');
   const failures = [];
   const runtimeErrors = [];
   const fetchHistory = [];
@@ -234,13 +235,24 @@ HARNESS = r"""
     const refreshed = $$('.layer-card')[1];
     input(refreshed.querySelector('[data-field="fill_thickness_mm"]'), 2.4);
     input(refreshed.querySelector('[data-field="include_track"]'), true);
+    input(refreshed.querySelector('[data-field="drawing_size_percent"]'), 72);
+    input(refreshed.querySelector('[data-field="track_width_percent"]'), 135);
+    input(refreshed.querySelector('[data-field="track_height_percent"]'), 75);
+    input(refreshed.querySelector('[data-field="gear_size_percent"]'), 120);
+    input(refreshed.querySelector('[data-field="pen_reach_percent"]'), 80);
     await settlePreviews();
     check($('#layerPreviewName').textContent === 'Characterized drawing', 'active drawing name did not update');
     check($('#layerPreviewSlider').max === '5', 'preview selector did not track drawing count');
+    change($('#settingsPage'),'output');
     check(visible(refreshed.querySelector('.fill-thickness')), 'fill thickness did not become visible');
     check($('#hardwareSummary').textContent.includes('rounded square'), 'hardware did not reflect the track edit');
     check($('#hardwareSummary').textContent.includes('60-tooth gear'), 'hardware did not reflect the gear edit');
+    check($('#hardwareSummary').textContent.includes('72% drawing'), 'hardware did not reflect drawing size');
     check($('#hardwareSummary').textContent.includes('outside'), 'hardware did not reflect outside rolling');
+    check(refreshed.querySelector('[data-field="track_width_percent"]').value === '135', 'track width did not survive preview');
+    check(refreshed.querySelector('[data-field="track_height_percent"]').value === '75', 'track height did not survive preview');
+    check(refreshed.querySelector('[data-field="gear_size_percent"]').value === '120', 'gear size did not survive preview');
+    check(refreshed.querySelector('[data-field="pen_reach_percent"]').value === '80', 'pen reach did not survive preview');
 
     refreshed.querySelector('[data-action="up"]').click();
     check($('#layerPreviewPosition').textContent === 'Drawing 1 of 5', 'Earlier did not move the active drawing');
@@ -337,10 +349,29 @@ HARNESS = r"""
     check(card.querySelector('.custom-status').textContent.includes('Loaded closed-track.svg'), 'valid custom closed SVG was not retained');
     check($('#hardwareSummary').textContent.includes('custom'), 'hardware summary did not switch to custom track');
     check(!$('#hardwareSummary').textContent.includes('unavailable'), 'custom track made hardware preview unavailable');
+
+    card = $$('.layer-card')[0];
+    const pngBytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='), character => character.charCodeAt(0));
+    const rasterInput = card.querySelector('[data-field="custom_file"]');
+    Object.defineProperty(rasterInput, 'files', {configurable: true, value: [new File([pngBytes], 'closed-track.png', {type: 'image/png'})]});
+    rasterInput.dispatchEvent(new Event('change', {bubbles: true}));
+    const rasterDeadline = Date.now() + 5000;
+    while (!$$('.layer-card')[0].querySelector('.custom-status').textContent.includes('Loaded closed-track.png') && Date.now() < rasterDeadline) {
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    card = $$('.layer-card')[0];
+    check(card.querySelector('.custom-status').textContent.includes('Loaded closed-track.png'), 'raster track was not converted and retained');
+    check(!$('#hardwareSummary').textContent.includes('unavailable'), 'converted raster track made hardware preview unavailable');
   }
 
   async function submitChecks() {
     await paletteChecks();
+    const firstDrawing = $$('.layer-card')[0];
+    input(firstDrawing.querySelector('[data-field="drawing_size_percent"]'), 68);
+    input(firstDrawing.querySelector('[data-field="track_width_percent"]'), 128);
+    input(firstDrawing.querySelector('[data-field="track_height_percent"]'), 82);
+    input(firstDrawing.querySelector('[data-field="gear_size_percent"]'), 115);
+    input(firstDrawing.querySelector('[data-field="pen_reach_percent"]'), 88);
     input($('#projectName'), 'Characterization SpiralGraph');
     input($('#diameter'), 210);
     input($('#workbedWidth'), 240);
@@ -360,6 +391,11 @@ HARNESS = r"""
       check(submittedPayload.layers.length === 3, 'payload drawing count changed');
       check(submittedPayload.layers[0].swatch_hex === '#0000FF', 'selected drawing swatch was not submitted');
       check(submittedPayload.layers[0].output_mode === 'fill', 'palette-driven fill mode was not submitted');
+      check(submittedPayload.layers[0].drawing_size_percent === 68, 'drawing size changed in payload');
+      check(submittedPayload.layers[0].track_width_percent === 128, 'track width changed in payload');
+      check(submittedPayload.layers[0].track_height_percent === 82, 'track height changed in payload');
+      check(submittedPayload.layers[0].gear_size_percent === 115, 'gear size changed in payload');
+      check(submittedPayload.layers[0].pen_reach_percent === 88, 'pen reach changed in payload');
     }
     check(location.search === '?task=spiralgraph-characterization-task', 'resume URL was not installed after submit');
     check($('#status').textContent.startsWith('COMPLETED'), 'completed job status was not shown');
@@ -377,6 +413,60 @@ HARNESS = r"""
     check(fetchHistory.includes('GET /api/jobs/spiralgraph-resume-task'), 'resume task was not requested');
     check($('#status').textContent.startsWith('COMPLETED'), 'resumed completion was not shown');
     check($$('#outputs a').length === 1, 'resumed output was not rendered');
+  }
+
+  async function workspaceChecks(){
+    await startupChecks();await settlePreviews();
+    const shown=element=>Boolean(element.getClientRects().length)&&getComputedStyle(element).display!=='none';
+    const onScreen=element=>{const rect=element.getBoundingClientRect();return rect.width>0&&rect.height>0&&rect.top>=0&&rect.bottom<=innerHeight+1&&rect.left>=0&&rect.right<=innerWidth+1};
+    check(Boolean($('.staging-shell')), 'shared navigation was missing from layout checks');
+    check($('#projectSetup').compareDocumentPosition($('#hardwarePreview')) & Node.DOCUMENT_POSITION_FOLLOWING, 'hardware must follow project setup');
+    check($('#hardwarePreview').compareDocumentPosition($('.workspace-toolbar')) & Node.DOCUMENT_POSITION_FOLLOWING, 'selectors must follow hardware');
+    const preview=$('#activePreview').getBoundingClientRect(),stage=$('.preview-stage').getBoundingClientRect();
+    check(preview.width>=Math.min(360,innerWidth*.33),'desktop preview is too small for inspection');
+    check(preview.width>=stage.width-1&&Math.abs(preview.width-preview.height)<=1,'preview did not fill its square viewing area');
+    check(document.documentElement.scrollWidth<=innerWidth+1,'desktop preview caused horizontal scrolling');
+    const row=$('.layer-workspace').getBoundingClientRect();
+    check(Math.abs(row.top-$('.preview-workspace').getBoundingClientRect().top)<=1,'controls and preview are not side by side');
+    check($('#generate').getBoundingClientRect().top>=preview.bottom,'generation controls overlap the larger preview');
+    check($$('.layer-card').filter(shown).length===1,'more than one drawing editor was displayed');
+    const layerTools=$('.layer-toolbar').getBoundingClientRect(),previewTools=$('.workspace-toolbar .preview-heading').getBoundingClientRect();
+    check(Math.abs(layerTools.top+layerTools.height/2-previewTools.top-previewTools.height/2)<=1,'selector headers are not aligned');
+    for(const page of ['track','gear','pattern','output']){
+      change($('#settingsPage'),page);
+      for(const field of $$('.layer-card input:not([type=radio]),.layer-card select').filter(shown)){
+        check(onScreen(field),`${page}: ${field.dataset.field} did not fit the viewport`);
+        check(field.getBoundingClientRect().bottom<=$('.layer-workspace').getBoundingClientRect().bottom+1,`${page}: ${field.dataset.field} needs pane scrolling`);
+      }
+    }
+    change($('#settingsPage'),'track');input($('.layer-card [data-field="track"]'),'custom');
+    check(onScreen($('.layer-card [data-field="custom_file"]')),'custom track upload did not fit');
+    input($('.layer-card [data-field="track"]'),'circle');
+    change($('#settingsPage'),'output');input($('.layer-card [data-field="output_mode"]'),'fill');
+    check(onScreen($('.layer-card [data-field="fill_thickness_mm"]')),'ribbon thickness did not fit');
+    input($('.layer-card [data-field="output_mode"]'),'line');
+    change($('#settingsPage'),'gear');
+    input($('.layer-card [data-field="pen_reach_percent"]'),88);
+    change($('#layerSelector'),'1');
+    check($('#layerPreviewPosition').textContent==='Drawing 2 of 3','layer selector did not select the preview');
+    check($$('.layer-card').filter(shown)[0].dataset.layer==='1','layer selector did not select the editor');
+    input($('#layerPreviewSlider'),1);
+    check($('#layerSelector').value==='0'&&$('.layer-card [data-field="pen_reach_percent"]').value==='88','switching layers lost controls or edits');
+    change($('#previewMode'),'combined');
+    check($('#activePreview').hidden&&!$('#stackPreview').hidden&&Math.abs($('#stackPreview').getBoundingClientRect().width-preview.width)<=1,'combined view did not retain the larger preview size');
+    window.scrollTo(0,Math.max(0,preview.top-12));await settlePreviews();
+    check(onScreen($('.layer-card [data-field="pen_reach_percent"]')),'selected parameters disappeared while scrolling the larger preview');
+    window.scrollTo(0,0);
+    $('#hardwarePreview').open=true;await settlePreviews();
+    check(shown($('#gearHardware')),'hardware disclosure did not expose interactive gear');
+    $('#gearHardware [data-hole="2"]').dispatchEvent(new MouseEvent('click',{bubbles:true}));await settlePreviews();
+    check($('.layer-card [data-field="pen_hole"]').value==='2','hardware pen hole did not update the selected drawing');
+    $('#hardwarePreview').open=false;
+    const invalid=$('.layer-card [data-field="gear_size_percent"]');input(invalid,200);change($('#layerSelector'),'1');change($('#settingsPage'),'track');
+    check(!$('#spiralgrapForm').reportValidity()&&$('#layerSelector').value==='0'&&$('#settingsPage').value==='gear','validation did not reveal the invalid drawing and section');input(invalid,100);
+    $('#projectSetup').open=true;check(shown($('#diameter')),'project setup disclosure did not expose configuration');$('#projectSetup').open=false;
+    while(!$('#addLayer').disabled)$('#addLayer').click();
+    check($('#layerSelector').options.length===6&&$$('.layer-card').filter(shown).length===1,'six drawing limit or visibility was not preserved');
   }
 
   async function mobileChecks() {
@@ -403,6 +493,7 @@ HARNESS = r"""
     else if (scenario === 'custom-track') await customTrackChecks();
     else if (scenario === 'submit') await submitChecks();
     else if (scenario === 'resume') await resumeChecks();
+    else if (scenario === 'workspace') await workspaceChecks();
     else if (scenario === 'mobile') await mobileChecks();
     else fail(`unknown scenario: ${scenario}`);
   }
@@ -448,13 +539,14 @@ class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
         cls.temp = tempfile.TemporaryDirectory(prefix="mopa-spiralgraph-browser-")
         cls.site = Path(cls.temp.name) / "site"
         shutil.copytree(WEB, cls.site)
+        shutil.copyfile(ROOT / "static" / "machine_chrome.css", cls.site / "machine_chrome.css")
         page_path = cls.site / "spiralgraph.html"
         page = page_path.read_text(encoding="utf-8")
         page = re.sub(r'\s*<script src="/staging-shell\.js\?v=4" defer></script>', '', page)
         page = page.replace(
-            '<script src="/spiralgraph.js?v=10" type="module"></script>',
+            '<script src="/spiralgraph.js?v=14" type="module"></script>',
             '<script src="/spiralgraph-characterization-harness.js"></script>\n'
-            '<script src="/spiralgraph.js?v=10" type="module"></script>',
+            '<script src="/spiralgraph.js?v=14" type="module"></script>',
         )
         page_path.write_text(page, encoding="utf-8")
         (cls.site / "spiralgraph-characterization-harness.js").write_text(
@@ -473,7 +565,7 @@ class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
         cls.thread.join(timeout=2)
         cls.temp.cleanup()
 
-    def _run_scenario(self, scenario, query="", mobile=False):
+    def _run_scenario(self, scenario, query="", mobile=False, size=None):
         port = self.server.server_address[1]
         url = f"http://127.0.0.1:{port}/spiralgraph.html?scenario={scenario}{query}"
         with tempfile.TemporaryDirectory(prefix="mopa-spiralgraph-profile-") as profile:
@@ -489,6 +581,8 @@ class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
             ]
             if mobile:
                 command.extend(["--window-size=390,844", "--force-device-scale-factor=1"])
+            if size:
+                command.extend([f"--window-size={size}", "--force-device-scale-factor=1"])
             command.append(url)
             completed = subprocess.run(
                 command,
@@ -530,7 +624,7 @@ class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
     def test_selected_and_stacked_canvas_previews_preserve_colors_and_frame_coalescing(self):
         self._run_scenario("canvas-preview")
 
-    def test_custom_closed_svg_track_updates_hardware(self):
+    def test_custom_svg_and_raster_tracks_update_hardware(self):
         self._run_scenario("custom-track")
 
     def test_submission_payload_completion_outputs_and_resume_url(self):
@@ -538,6 +632,11 @@ class SpiralGraphBrowserCharacterizationTests(unittest.TestCase):
 
     def test_existing_task_resumes_and_renders_downloads(self):
         self._run_scenario("resume", "&task=spiralgraph-resume-task")
+
+    def test_large_desktop_preview_preserves_selected_drawing_workflows(self):
+        for size in ('1024,768','1366,768','1440,900','1920,1080'):
+            with self.subTest(size=size):
+                self._run_scenario('workspace',size=size)
 
     def test_mobile_layout_has_no_horizontal_overflow(self):
         self._run_scenario("mobile", mobile=True)

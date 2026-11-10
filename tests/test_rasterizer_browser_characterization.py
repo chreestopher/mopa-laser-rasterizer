@@ -41,6 +41,7 @@ HARNESS = r"""
 (() => {
   const params = new URLSearchParams(location.search);
   const scenario = params.get('scenario');
+  const eventDrivenScenario = ['shape-assets', 'flow-painter'].includes(scenario);
   const failures = [];
   const runtimeErrors = [];
   const statusHistory = [];
@@ -58,8 +59,16 @@ HARNESS = r"""
     canvas.width = scenario === 'panel-tiling' || scenario === 'shape-assets' || scenario === 'flow-painter' ? 4 : 1;
     canvas.height = scenario === 'panel-tiling' || scenario === 'shape-assets' || scenario === 'flow-painter' ? 2 : 1;
     const context = canvas.getContext('2d');
-    context.fillStyle = '#000000';
-    context.fillRect(0, 0, 1, 1);
+    if (scenario === 'flow-painter') {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = '#404040';
+      context.fillRect(0, 0, 2, 2);
+      context.fillStyle = '#C0C0C0';
+      context.fillRect(2, 0, 2, 2);
+    } else {
+      context.fillStyle = '#000000';
+      context.fillRect(0, 0, 1, 1);
+    }
     canvas.close = () => {};
     return canvas;
   };
@@ -459,8 +468,9 @@ HARNESS = r"""
       assert(flow?.regions?.[0]?.curve === 1.5 && flow?.regions?.[0]?.fixed_angle === 15 && flow?.regions?.[0]?.angle_offset === -20 && flow?.regions?.[0]?.reverse === true, `painted region advanced controls changed (${JSON.stringify(flow?.regions?.[0])})`);
       assert(flow?.strokes?.[0]?.erase === false && flow?.strokes?.[0]?.width === 0.2 && flow?.strokes?.[0]?.points?.length === 2, `painted stroke changed (${JSON.stringify(flow?.strokes?.[0])})`);
       assert(flow?.regions?.[1]?.region_type === 'image_mask' && flow?.regions?.[1]?.mask_name === 'characterization.png', `image-mask region changed (${JSON.stringify(flow?.regions?.[1])})`);
-      assert(flow?.regions?.[1]?.mask_mode === 'silhouette' && flow?.regions?.[1]?.mask_threshold === 0.25 && flow?.regions?.[1]?.mask_invert === true, `image-mask controls changed (${JSON.stringify(flow?.regions?.[1])})`);
-      assert(flow?.regions?.[1]?.mask?.width === 96 && flow?.regions?.[1]?.mask?.height === 96 && typeof flow?.regions?.[1]?.mask?.data === 'string', `normalized flow mask changed (${JSON.stringify(flow?.regions?.[1]?.mask)})`);
+      assert(flow?.regions?.[1]?.mask_mode === 'grayscale' && flow?.regions?.[1]?.mask_threshold === 0.25 && flow?.regions?.[1]?.mask_invert === true, `image-mask controls changed (${JSON.stringify(flow?.regions?.[1])})`);
+      assert(flow?.regions?.[1]?.mask?.width === 96 && flow?.regions?.[1]?.mask?.height === 96 && typeof flow?.regions?.[1]?.mask?.data === 'string' && typeof flow?.regions?.[1]?.mask?.alpha === 'string', `normalized flow mask changed (${JSON.stringify(flow?.regions?.[1]?.mask)})`);
+      assert(flow.regions[1].mask.data !== flow.regions[1].mask.alpha, 'transparent grayscale flow mask collapsed luminance into alpha');
       assert(flow?.regions?.[1]?.mask_offset?.some(value => Math.abs(value) > 0.01), `flow mask offset was not retained (${JSON.stringify(flow?.regions?.[1]?.mask_offset)})`);
       assert(document.querySelector('#flowCanvas').width > 0 && document.querySelector('#flowCanvas').height > 0, 'flow canvas was not initialized');
       assert(document.querySelector('#flowPainter').open === false, 'flow dialog remained open after accepting the flow');
@@ -541,10 +551,9 @@ HARNESS = r"""
     form.addEventListener('submit', markDispatched, {once: true});
     form.requestSubmit();
     if (!dispatched) form.removeEventListener('submit', markDispatched);
-    // Shape assets advance from observable DOM and submission state changes.
-    // Keep that scenario event-driven after dispatch too: a virtual-time
-    // deadline can outrun async image/SVG normalization under CI load.
-    else if (scenario !== 'shape-assets') deadline = Date.now() + 20000;
+    // Image/SVG normalization, flow masks, and thumbnail encoding complete
+    // outside the virtual timer clock. Wait for their observable state changes.
+    else if (!eventDrivenScenario) deadline = Date.now() + 20000;
     return dispatched;
   };
   const startGuestSubmission = () => {
@@ -785,29 +794,28 @@ HARNESS = r"""
       if (geometryStyle.value !== 'krasnow_grating') {
         geometryStyle.value = 'krasnow_grating';
         geometryStyle.dispatchEvent(new Event('change', {bubbles: true}));
-        return;
+        return true;
       }
       if (document.querySelector('#flowPainter').open || !summary.includes('2 flow regions') || !summary.includes('1 painted shape') || !summary.includes('1 image mask')) return;
-      beginMultistageSubmission(form);
-      return;
+      return beginMultistageSubmission(form);
     }
     if (!window.__flowConfigured) {
       window.__flowConfigured = true;
       materialChoice.value = 'svg';
       materialChoice.dispatchEvent(new Event('change', {bubbles: true}));
       attachArtwork('#artwork');
-      return;
+      return true;
     }
     if (materialChoice.value !== 'svg') return;
     if (window.__flowGeometrySelected && geometryStyle.value !== 'krasnow_grating') {
       window.__flowGeometrySelected = false;
-      return;
+      return true;
     }
     if (!window.__flowGeometrySelected) {
       window.__flowGeometrySelected = true;
       geometryStyle.value = 'krasnow_grating';
       geometryStyle.dispatchEvent(new Event('change', {bubbles: true}));
-      return;
+      return true;
     }
     const dialog = document.querySelector('#flowPainter');
     const canvas = document.querySelector('#flowCanvas');
@@ -822,11 +830,11 @@ HARNESS = r"""
         document.querySelector('#resetGeometryStyle').click();
         const resetControls = document.querySelector('#routedKrasnowControls');
         window.__fauxlogramDefaultsReset = initialDefaults && angleRangesMatch && resetControls.querySelector('[data-geometry-parameter="gradient_top"]').value === '0' && resetControls.querySelector('[data-geometry-parameter="gradient_bottom"]').value === '255' && resetControls.querySelector('[data-geometry-parameter="angle_min"]').value === '-180' && resetControls.querySelector('[data-geometry-parameter="angle_max"]').value === '180';
-        return;
+        return true;
       }
       window.__flowOpened = true;
       document.querySelector('#openFlowPainter').click();
-      return;
+      return true;
     }
     if (!dialog.open || canvas.width === 0 || canvas.height === 0) return;
     if (!window.__flowPainted) {
@@ -843,12 +851,12 @@ HARNESS = r"""
       window.__flowPainted = true;
       document.querySelector('#flowAddMaskRegion').click();
       attachFile('#flowMaskFile', artworkFile());
-      return;
+      return true;
     }
     if (!window.__flowMaskReady) {
       if (!document.querySelector('#flowMaskStatus').textContent.includes('is attached to this region')) return;
       window.__flowMaskReady = true;
-      document.querySelector('#flowMaskMode').value = 'silhouette';
+      document.querySelector('#flowMaskMode').value = 'grayscale';
       document.querySelector('#flowMaskMode').dispatchEvent(new Event('change', {bubbles: true}));
       document.querySelector('#flowMaskThreshold').value = '0.25';
       document.querySelector('#flowMaskInvert').checked = true;
@@ -863,7 +871,7 @@ HARNESS = r"""
       window.__flowMaskMoved = true;
       document.querySelector('#flowDone').click();
       window.__flowReadyToSubmit = true;
-      return;
+      return true;
     }
   };
   const waitForApplication = () => {
@@ -872,7 +880,7 @@ HARNESS = r"""
       setTimeout(waitForApplication, 25);
       return;
     }
-    if (deadline === 0) deadline = scenario === 'shape-assets'
+    if (deadline === 0) deadline = eventDrivenScenario
       ? Number.POSITIVE_INFINITY
       : Date.now() + (scenario === 'flow-painter' ? 50000 : scenario === 'polling' ? 30000 : 20000);
     if (scenario === 'guest-submit') startGuestSubmission();
@@ -885,9 +893,9 @@ HARNESS = r"""
     if (scenario === 'material-input') startMaterialInputCharacterization();
     const shapeAssetsAdvanced = scenario === 'shape-assets' && startShapeAssetsCharacterization();
     if (scenario === 'geometry-routing') startGeometryRoutingCharacterization();
-    if (scenario === 'flow-painter') startFlowPainterCharacterization();
+    const flowPainterAdvanced = scenario === 'flow-painter' && startFlowPainterCharacterization();
     if (scenario === 'submission-error' && !window.__submissionStarted) return;
-    if (scenario !== 'shape-assets') submissionReadinessObserver?.disconnect();
+    if (!eventDrivenScenario) submissionReadinessObserver?.disconnect();
     const ready = scenario === 'guest' || scenario === 'guest-stale-task-no-capability' || scenario === 'auth-refresh' || scenario === 'auth-retry'
       ? document.querySelectorAll('#rasterPalette .color-card').length === palette.length
       : scenario === 'guest-expired-task'
@@ -953,8 +961,8 @@ HARNESS = r"""
       return;
     }
     if (ready || Date.now() >= deadline) finish();
-    else if (scenario === 'shape-assets') {
-      if (shapeAssetsAdvanced) queueApplicationCheck();
+    else if (eventDrivenScenario) {
+      if (shapeAssetsAdvanced || flowPainterAdvanced) queueApplicationCheck();
     }
     else setTimeout(waitForApplication, 25);
   };
@@ -963,7 +971,7 @@ HARNESS = r"""
       submissionReadinessObserver = new MutationObserver(waitForApplication);
       submissionReadinessObserver.observe(document.querySelector('#rasterPalette'), {childList: true, subtree: true});
     }
-    if (scenario === 'shape-assets') {
+    if (eventDrivenScenario) {
       submissionReadinessObserver = new MutationObserver(queueApplicationCheck);
       submissionReadinessObserver.observe(document.body, {
         attributes: true,

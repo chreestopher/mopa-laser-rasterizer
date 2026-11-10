@@ -110,7 +110,7 @@ AWS account 401716294893 / us-east-2
 │  │  ├─ DEPTHPALETTE#<id>                   durable depth-palette metadata
 │  │  ├─ HOLORECIPE#<id> / HOLOCALIBRATION#<id> durable lab records
 │  │  ├─ JOB#<time>#<task-id>                7-day job history
-│  │  ├─ COLORDISCOVERY#<id>                 7-day grid record
+│  │  ├─ COLORDISCOVERY#<id>                 durable signed-in grid record
 │  │  └─ IMPORT#<id>                         15-minute import staging
 │  ├─ JOB#<task-id> / RUNTIME, OWNER          7-day job state/ownership;
 │  │                                         guest runtime can be 24 hours
@@ -124,9 +124,10 @@ AWS account 401716294893 / us-east-2
 │     ├─ jobs/<task-id>/...                   tagged job objects; 7-day lifecycle
 │     ├─ materials/...                        durable library files
 │     ├─ holographic-recipes/...              durable recipe files
-│     └─ holographic-calibrations/...         durable calibration files
+│     ├─ holographic-calibrations/...         durable calibration files
+│     └─ color-discovery/...                  durable grid and metadata files
 ├─ Static-site S3 /web/...                    rebuildable site, docs, media, API zip
-└─ Separate versioned backup S3               daily copies of three durable prefixes
+└─ Separate versioned backup S3               daily copies of four durable prefixes
 ```
 
 The tree is a representative ownership map, not a complete list of every internal item variant or generated file. Always inspect code/schema and actual records before a migration. Saved vault metadata and its S3 object must be kept together. Some data (for example depth/color palette payloads) may live entirely in DynamoDB rather than having a paired S3 file. Community data is shared, not under an individual `USER#<sub>` partition.
@@ -140,7 +141,7 @@ The tree is a representative ownership map, not a complete list of every interna
 | Worker logs | Worker log group default 7 days | CloudWatch, not thousands of DynamoDB log-row writes per job. |
 | Static site and release media | Until replaced/deleted | Rebuild from protected repository; static bucket is not the user-data backup. |
 
-Live checks: the artifact bucket defaults to SSE-S3 (`AES256`), has the stated 7-day lifecycle rules and **has no source-bucket versioning**. The DynamoDB table has 35-day PITR enabled (its current earliest restorable instant started on 2026-09-16). The separate encrypted backup bucket has versioning enabled, 30-day expiry of superseded versions, and a daily 05:00 UTC scheduled copy of only `users/<sub>/materials/`, `.../holographic-recipes/`, and `.../holographic-calibrations/`. Its failure alarm was `OK`, and the 2026-09-18 Lambda log shows a successful run: 19 source/backup objects, zero changed copies, zero deletions. This verifies that invocation, **not** an end-to-end restore. The authoritative tested recovery limits are in [AWS disaster recovery](AWS_DISASTER_RECOVERY.md).
+Live checks: the artifact bucket defaults to SSE-S3 (`AES256`), has the stated 7-day lifecycle rules and **has no source-bucket versioning**. The DynamoDB table has 35-day PITR enabled (its current earliest restorable instant started on 2026-09-16). The separate encrypted backup bucket has versioning enabled, 30-day expiry of superseded versions, and a daily 05:00 UTC scheduled copy of `users/<sub>/materials/`, `.../holographic-recipes/`, `.../holographic-calibrations/`, and `.../color-discovery/`. Its failure alarm was `OK`, and the 2026-09-18 Lambda log shows a successful run under the earlier three-prefix scope. Revalidate the expanded scope after deployment. This verifies invocation, **not** an end-to-end restore. The authoritative tested recovery limits are in [AWS disaster recovery](AWS_DISASTER_RECOVERY.md).
 
 ## 6. Main feature/data paths
 
@@ -150,7 +151,7 @@ Live checks: the artifact bucket defaults to SSE-S3 (`AES256`), has the stated 7
 | Material Library import | LightBurn `.clb`, chosen material/entry descriptions, swatch assignment | Normalized, user-owned library metadata and stored file/settings. The entry description is the meaningful swatch match. |
 | Palette and Community Set | User swatches/settings; optional publication | Private saved palettes or shared community entries. Shared records must not be treated as disposable jobs. |
 | Fauxlographic Etching / Krasnow | Calibration or recipe, grating/flow/region/mask parameters and user-provided laser setting | Lab outputs and saved recipes/calibrations; artwork jobs still use the normal queue/worker path. |
-| Color Discovery | Grid generation, photographed grid, measurement and selection | Calibration/grid files and measured swatches; raw grid record has 7-day TTL, saved palette is durable. |
+| Color Discovery | Grid generation, photographed grid, measurement and selection | Signed-in grids, lineage metadata, and saved palettes are durable until deleted; guest grids remain temporary. |
 | Depth/relief tools | Source image and depth/preview controls | Browser/lab artifacts and optionally saved depth palette or job output, depending on action. |
 
 For a new feature, explicitly decide whether its data is durable vault data or ephemeral job data, whether it needs an S3 prefix and backup coverage, whether the API can render it or needs a worker, whether guests may access it, and how owner `sub` is checked. A new durable S3 prefix is **not** automatically backed up by the present copy function.
@@ -212,7 +213,7 @@ Keep task IDs, timestamps, stack events, and relevant log stream names in an inc
 
 The [disaster-recovery runbook](AWS_DISASTER_RECOVERY.md) is the detailed procedure. Its key distinction is **rebuildable application infrastructure versus irreplaceable user data**. A repository redeploy can rebuild code/static assets and update the application stacks; it cannot recreate missing Cognito identities, the production table, or durable S3 files. DynamoDB PITR restores to a **new table**, and TTL may need explicit re-enablement after a restore. The backup S3 bucket retains prior versions of selected durable user files; restore table records and their referenced S3 objects from compatible points. Staging is not a recovery source.
 
-The isolated DynamoDB PITR restore and sample S3-object restore documented on 2026-09-16 succeeded. A complete application cutover and demonstrated RPO/RTO have **not** been performed. The artifact source bucket is unversioned, and the daily backup excludes job data, exports, and color-discovery grids. Check backup-job success and coverage after introducing each new durable prefix. A same-account/same-Region backup is not protection against loss of the whole account or Region.
+The isolated DynamoDB PITR restore and sample S3-object restore documented on 2026-09-16 succeeded. A complete application cutover and demonstrated RPO/RTO have **not** been performed. The artifact source bucket is unversioned, and the daily backup excludes job data and exports. Check backup-job success and coverage after introducing each new durable prefix. A same-account/same-Region backup is not protection against loss of the whole account or Region.
 
 ## 11. Change-of-ownership checklist
 

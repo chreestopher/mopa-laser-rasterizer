@@ -1,3 +1,4 @@
+import ast
 import json
 import sys
 import zipfile
@@ -323,9 +324,36 @@ def test_panel_tiling_settings_are_disclosed_only_when_enabled():
     assert 'fit_mode = str(panel_tiling.get("fit_mode") or "stretch")' in api
     assert 'border_width = panel_number("border_width_mm", 0, 100, 0)' in api
     assert 'Ordinary Rasterizer jobs are limited to 1,600 processing pixels per axis' in api
-    assert 'queue_message["worker_type"] = "high_resolution_panel"' in api
+    assert api.count('queue_message["worker_type"] = worker_type') == 2
+    assert 'worker_type = raster_job_worker_type(payload.get("data"))' in api
+    assert "worker_type = raster_job_worker_type(data)" in api
     assert 'data["high_resolution_panel"] = high_resolution_panel' in api
+    assert 'data["high_capacity_worker"] = needs_high_capacity_worker(processing_width, processing_height)' in api
+    assert 'data["high_capacity_worker"] = needs_high_capacity_worker(*standard_dimensions)' in api
     assert "MAX_HIGH_RES_PANEL_PIXELS = 40_000_000" in api
+
+
+def test_processing_axis_over_800_selects_the_high_capacity_worker():
+    api = (ROOT / "serverless_api" / "handler.py").read_text(encoding="utf-8")
+    tree = ast.parse(api)
+    wanted = {"needs_high_capacity_worker", "raster_job_worker_type"}
+    functions = [
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name in wanted
+    ]
+    namespace = {"HIGH_CAPACITY_PROCESSING_AXIS": 800}
+    exec(compile(ast.Module(body=functions, type_ignores=[]), "handler.py", "exec"), namespace)
+
+    needs_larger_worker = namespace["needs_high_capacity_worker"]
+    worker_type = namespace["raster_job_worker_type"]
+
+    assert needs_larger_worker(800, 800) is False
+    assert needs_larger_worker(801, 0) is True
+    assert needs_larger_worker(0, 801) is True
+    assert worker_type({"high_capacity_worker": False, "high_resolution_panel": False}) == ""
+    assert worker_type({"high_capacity_worker": True}) == "high_resolution_panel"
+    assert worker_type({"high_resolution_panel": True}) == "high_resolution_panel"
+    assert worker_type({"new_width": "801", "new_height": "0"}) == "high_resolution_panel"
 
 
 def test_panel_tiling_controls_oversized_dimension_fields_and_aspect_matching():

@@ -63,6 +63,6 @@ def test_material_test_guide_is_registered_and_linked_from_color_discovery():
     assert guide["title"] == "Color Discovery: LightBurn Material Test Presets"
     text = _page_text("color-discovery-material-test-presets")
     assert "Laser Tools" in text
-    assert "400 total cells" in text
+    assert "800 total cells" in text
     assert "output disabled by default" in text
     assert "color-discovery-material-test-presets" in DOCS["color-discovery"]["related"]

@@ -1,3 +1,4 @@
+import {installPaletteImport} from './lightburn-palette-import.js';
 let token=localStorage.getItem("id_token")||sessionStorage.getItem("id_token"),refreshToken=localStorage.getItem("refresh_token")||sessionStorage.getItem("refresh_token"),config,resources;
 if(token)localStorage.setItem("id_token",token);if(refreshToken)localStorage.setItem("refresh_token",refreshToken);sessionStorage.removeItem("id_token");sessionStorage.removeItem("refresh_token");
 const notice=document.querySelector("#notice"),materials=document.querySelector("#materials"),recipes=document.querySelector("#recipes"),depth=document.querySelector("#depth");
@@ -274,4 +275,5 @@ document.querySelector("#materialImportMaterial").onchange=populateHatchImportBa
 document.querySelector("#importHolographic").onclick=()=>importPalette("recipe");
 updatePaletteAction();
 async function start(){config=await fetch("/config.json",{cache:"no-store"}).then(r=>r.json());if(!token){showRegisteredAccess(false);return}if(tokenExpiresSoon()){try{if(!await refreshSession()){showRegisteredAccess(false);return}}catch{showRegisteredAccess(false);return}}try{await reload();showRegisteredAccess(true)}catch(error){if(/401|unauthor|token|session/i.test(error.message)){showRegisteredAccess(false);return}showRegisteredAccess(true);notice.textContent=`Could not load Swatch Palette Vault: ${error.message}`}}
+installPaletteImport({api, upload, reload, getPalette: () => resources?.palette || [], getResources: () => resources, processingRoles});
 start().catch(error=>{if(!token){showRegisteredAccess(false);return}showRegisteredAccess(true);notice.textContent=`Could not load Swatch Palette Vault: ${error.message}`});

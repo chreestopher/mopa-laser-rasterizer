@@ -83,7 +83,11 @@ def test_github_production_workflow_uses_main_oidc_and_immutable_image():
     assert 'allowed-account-ids: "401716294893"' in workflow
     assert "SERVERLESS_PRODUCTION_RELEASE_COMMIT: ${{ github.sha }}" in workflow
     assert "@${DIGEST}" in workflow
-    assert "deploy_serverless_production_release.sh --apply" in workflow
+    assert "deploy_serverless_production.sh --apply" in workflow
+    assert "deploy_serverless_production_web.sh --apply" in workflow
+    assert "steps.deployment.outputs.worker == 'true'" in workflow
+    assert "steps.deployment.outputs.web == 'true'" in workflow
+    assert 'SERVERLESS_SKIP_FOUNDATION_DEPLOY: "true"' in workflow
     assert "deploy_serverless_cost_guard" not in workflow
     assert "AWS_ACCESS_KEY_ID" not in workflow
 

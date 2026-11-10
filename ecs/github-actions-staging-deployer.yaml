@@ -118,7 +118,6 @@ Resources:
               - Sid: UpdateStagingWorker
                 Effect: Allow
                 Action:
-                  - ecs:DeregisterTaskDefinition
                   - ecs:DescribeClusters
                   - ecs:DescribeTaskDefinition
                   - ecs:TagResource
@@ -131,6 +130,14 @@ Resources:
                 Effect: Allow
                 Action: ecs:RegisterTaskDefinition
                 Resource: "*"
+              - Sid: ListTaskDefinitions
+                Effect: Allow
+                Action: ecs:ListTaskDefinitions
+                Resource: "*"
+              - Sid: DeregisterTaskDefinition
+                Effect: Allow
+                Action: ecs:DeregisterTaskDefinition
+                Resource: "*"
               - Sid: UpdateWorkerLogs
                 Effect: Allow
                 Action:
@@ -139,6 +146,14 @@ Resources:
                   - logs:TagResource
                   - logs:UntagResource
                 Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/mopa-rasterizer-serverless-staging-worker:*
+              - Sid: UpdateWorkerLogsLogGroup
+                Effect: Allow
+                Action:
+                  - logs:ListTagsForResource
+                  - logs:PutRetentionPolicy
+                  - logs:TagResource
+                  - logs:UntagResource
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/mopa-rasterizer-serverless-staging-worker
               - Sid: UpdateStagingOrchestration
                 Effect: Allow
                 Action:
@@ -232,6 +247,7 @@ Resources:
                   - ecr:DescribeImages
                   - ecr:GetDownloadUrlForLayer
                   - ecr:InitiateLayerUpload
+                  - ecr:PutLifecyclePolicy
                   - ecr:PutImage
                   - ecr:UploadLayerPart
                 Resource: !Sub arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/mopa-laser-rasterizer-staging

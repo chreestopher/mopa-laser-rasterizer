@@ -13,7 +13,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 
-DURABLE_PREFIXES = ("MATERIAL#", "DEPTHPALETTE#", "HOLOCALIBRATION#", "HOLORECIPE#")
+DURABLE_PREFIXES = ("MATERIAL#", "DEPTHPALETTE#", "HOLOCALIBRATION#", "HOLORECIPE#", "COLORDISCOVERY#")
 
 
 def stack_value(cf, stack_name, category, key):

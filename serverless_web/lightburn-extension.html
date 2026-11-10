@@ -1,0 +1,84 @@
+﻿<!doctype html>
+<html lang="en" class="staging-shell-pending">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Install the LightBurn Browser Extension Beta · MOPA Laser Rasterizer</title>
+  <link rel="stylesheet" href="/machine_chrome.css?v=3">
+  <link rel="stylesheet" href="/staging-shell.css?v=1">
+  <link rel="stylesheet" href="/staging-shell-v2.css">
+  <link rel="stylesheet" href="/staging-pages.css?v=3">
+  <link rel="stylesheet" href="/lightburn-extension-guide.css">
+  <script src="/staging-shell.js?v=5" defer></script>
+</head>
+<body>
+  <div class="extension-guide">
+
+    <nav class="guide-jump-links" aria-label="Extension guide sections"><a href="#download">Download</a><a href="#install">Install</a><a href="#pair">Connect</a><a href="#use">Use</a><a href="#help">Troubleshoot</a></nav>
+    <section class="panel" aria-labelledby="features-heading">
+      <h2 id="features-heading">What the integration does</h2>
+      <ul>
+        <li><strong>Create a Color palette:</strong> choose one or more LightBurn settings, preview them, and assign Rasterizer swatches before saving.</li>
+        <li><strong>Add to an existing Color palette:</strong> use its Import LightBurn Swatches button. Existing settings and swatch assignments are kept.</li>
+        <li><strong>Create a Processing palette:</strong> choose settings for Cut, Score, Photo, Fill, Shovel, Cleaning, and 3D-Slice. Leave unused roles unassigned.</li>
+        <li><strong>Load a finished project:</strong> use Load in LightBurn beside a native .lbrn2 download in Job History, review the current project, and confirm replacement.</li>
+      </ul>
+      <p>These controls appear only while the extension is enabled. The extension does not start your laser. Review imported settings and artwork in LightBurn before engraving.</p>
+      <p>Imported palettes are snapshots, not live synchronization. The preview shows the settings applied by the importer; some source fields are retained for reference only. Creating a palette saves selected settings to your Rasterizer account. The pairing secret stays in this browser's extension storage.</p>
+    </section>
+    <section class="panel" id="download" aria-labelledby="download-heading">
+      <h2 id="download-heading">Download the beta</h2>
+      <p><strong>This beta works with the <a href="https://serverless-staging.mopa-laser-rasterizer.com/">staging Rasterizer website</a>.</strong> It does not currently enable integration on the production website. You need access to staging and a Rasterizer account for Vault and Job History.</p>
+      <p>Use a desktop Chrome or Edge browser and <strong>LightBurn 2.23 or later</strong>. Keep LightBurn on the same computer as your browser. The tested installation path is Windows; other desktop platforms have not been verified here.</p>
+      <p><a class="guide-download staging-action-button" href="/downloads/mopa-lightburn-extension-beta.zip" download>Download LightBurn Browser Extension Beta (.zip)</a></p>
+      <p>This is an unpacked extension, not a browser-store installer. Installation takes a few manual steps, including enabling Developer mode. Updates are manual too. No developer account or registration is needed to install this download.</p>
+      <p>The installed extension is currently named <strong>MOPA Rasterizer — LightBurn Connection POC</strong>. That is the beta's name in the browser extension list.</p>
+    </section>
+    <section class="panel" id="install" aria-labelledby="install-heading">
+      <h2 id="install-heading">Install in Chrome or Edge</h2>
+      <ol>
+        <li><strong>Download and extract the ZIP.</strong> In Windows, right-click the download and choose Extract All. Put the extracted folder somewhere permanent, such as Documents\MOPA Browser Extension. Do not load it from inside the ZIP.</li>
+        <li><strong>Open your browser's extension manager.</strong> Copy the address below into the address bar of the browser you want to use.</li>
+      </ol>
+      <div class="guide-browser-grid"><div class="card"><h3>Google Chrome</h3><code>chrome://extensions</code><p>Turn on <strong>Developer mode</strong> near the top-right corner.</p></div><div class="card"><h3>Microsoft Edge</h3><code>edge://extensions</code><p>Turn on <strong>Developer mode</strong> in the extension manager, usually in the left sidebar.</p></div></div>
+      <ol start="3">
+        <li><strong>Click Load unpacked.</strong> Select the extracted <code>mopa-lightburn-extension-beta</code> folder that directly contains <code>manifest.json</code>. If you see another folder with that name inside it, open that inner folder first.</li>
+        <li><strong>Check that the extension is enabled.</strong> You should see MOPA Rasterizer — LightBurn Connection POC in the list. You can pin it using the browser's Extensions menu for easier access.</li>
+        <li><strong>Keep the folder in place.</strong> The browser reads the extension from this folder. Moving or deleting it can stop the extension working.</li>
+      </ol>
+      <p>Repeat installation separately for each browser or browser profile you use. A work-managed browser may block unpacked extensions; in that case your administrator must allow them.</p>
+    </section>
+    <section class="panel" id="pair" aria-labelledby="pair-heading">
+      <h2 id="pair-heading">Connect and pair with LightBurn</h2>
+      <ol>
+        <li>Open LightBurn and keep one instance running.</li>
+        <li>In LightBurn, click <strong>Edit</strong>, then <strong>Settings</strong>. Open the <strong>Extensions</strong> tab and ensure <strong>Allow API Access from Network</strong> is checked.</li>
+        <li>Select a populated Material Library if you want to import settings.</li>
+        <li>Click the extension icon in your browser's Extensions menu. Its connection and diagnostics page opens.</li>
+        <li>Click <strong>Check connection</strong>. A passing check confirms that the extension can reach LightBurn. It does not mean it is paired yet.</li>
+        <li>Click <strong>Pair with LightBurn</strong> and approve the request in LightBurn. The request identifies MOPA Rasterizer Connection POC.</li>
+        <li>Click <strong>Read selected Material Library</strong> to verify access. Then refresh the staging Vault or Job History page. You can close the diagnostics tab afterward.</li>
+      </ol>
+      <p>Pairing is separate in Chrome and Edge. The beta requests state, project, and upload access to read settings and load projects. It does not request laser operation access.</p>
+    </section>
+    <section class="panel" id="use" aria-labelledby="use-heading">
+      <h2 id="use-heading">Use it from the website</h2>
+      <h3>Import settings in Swatch Palette Vault</h3>
+      <p>Open <a href="https://serverless-staging.mopa-laser-rasterizer.com/vault.html">staging Swatch Palette Vault</a>. Choose <strong>Import swatch palette from LightBurn</strong> for a new Color palette, <strong>Import LightBurn Swatches</strong> on an existing Color palette, or <strong>Import processing palette from LightBurn</strong>.</p>
+      <p>Read the library, select settings or assign processing roles, then click <strong>Preview import</strong>. For Color palettes, choose swatch assignments in the preview. Review the settings and any acknowledgment, then confirm the import. A completion message appears beside the action. Save pending Vault edits before importing into an existing palette.</p>
+      <h3>Load a project from Job History</h3>
+      <p>Open <a href="https://serverless-staging.mopa-laser-rasterizer.com/history.html">staging Job History</a> and expand a completed job with a retained .lbrn2 download. Click <strong>Load in LightBurn</strong>. Save your current LightBurn work, review the displayed project, and confirm replacement. The beta accepts native files up to <strong>250 MiB</strong> with extension version <strong>0.7.2 or later</strong>. Large projects may take up to two minutes to upload and a further five minutes for LightBurn to report completion.</p>
+      <p>Keep one LightBurn instance open and avoid other imports or project edits during transfer. Closing the dialog does not cancel an import. If completion is unknown, inspect LightBurn before sending again.</p>
+    </section>
+    <section class="panel" id="help" aria-labelledby="help-heading">
+      <h2 id="help-heading">Troubleshooting and updates</h2>
+      <details><summary>No import or Load in LightBurn buttons?</summary><p>Check that you are on staging, signed in, and using the browser profile where the extension is enabled. Refresh the website after installation. Color palette append buttons appear on Color palettes; project loading appears beside .lbrn2 files, not SVG downloads.</p></details>
+      <details><summary>Connection check fails or pairing is rejected?</summary><p>Make sure LightBurn is open on this computer and supports its REST API. The beta uses the local API at <code>http://localhost:19520</code>. Reopen the extension's diagnostics page and check again. If pairing is rejected, use Pair with LightBurn and approve the new request. An HTTP 401 in the connection check is expected: that check deliberately uses an invalid token.</p></details>
+      <details><summary>The library is empty or the expected setting is missing?</summary><p>Select the correct Material Library in LightBurn, then read it again. The extension reads the currently selected library; it does not search all library files on your computer.</p></details>
+      <details><summary>How do I update the beta?</summary><p>Finish any active import first. Download and extract the latest ZIP, then replace the files inside the same permanent extension folder. Open your browser's extension manager, click Reload on the extension card, and refresh Rasterizer. Keeping the same installation normally preserves pairing; pair again if prompted. Updates are not installed automatically.</p></details>
+      <details><summary>How do I remove it?</summary><p>Finish any active import, then open your browser's extension manager and click Remove. The website's extension controls disappear after refresh. Ordinary file downloads still work. Removing the extension clears its local pairing data; it does not delete your saved Vault palettes.</p></details>
+    </section>
+    <p><a href="/">Back to Rasterizer</a> · <a href="/vault.html">Swatch Palette Vault</a> · <a href="/history.html">Job History</a></p>
+  </div>
+</body>
+</html>

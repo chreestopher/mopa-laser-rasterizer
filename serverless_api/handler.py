@@ -45,6 +45,7 @@ WORKER_LOG_GROUP_NAME = os.environ.get("WORKER_LOG_GROUP_NAME", "").strip()
 PIPE_NAME = os.environ.get("WORKER_PIPE_NAME", "").strip()
 AWS_ACCOUNT_ID = os.environ.get("DEPLOYMENT_ACCOUNT_ID", "").strip()
 MAX_JOB_LOG_EVENTS = max(1, min(10000, int(os.environ.get("MAX_JOB_LOG_EVENTS", "10000"))))
+HIGH_CAPACITY_PROCESSING_AXIS = 800
 MAX_STANDARD_PROCESSING_AXIS = 1600
 MAX_HIGH_RES_PANEL_PIXELS = 40_000_000
 
@@ -61,6 +62,25 @@ cloudwatch = boto3.client("cloudwatch", region_name=REGION)
 table = boto3.resource("dynamodb", region_name=REGION).Table(TABLE_NAME)
 
 SERVICE_CONTROL_KEY = {"pk": "SYSTEM#SERVICE", "sk": "CONTROL"}
+
+
+def needs_high_capacity_worker(width, height):
+    """Return whether requested processing dimensions need the larger worker."""
+    return max(int(width or 0), int(height or 0)) > HIGH_CAPACITY_PROCESSING_AXIS
+
+
+def raster_job_worker_type(data):
+    """Select the existing larger worker for high-capacity raster jobs."""
+    if not isinstance(data, dict):
+        return ""
+    if data.get("high_resolution_panel") is True or data.get("high_capacity_worker") is True:
+        return "high_resolution_panel"
+    try:
+        if needs_high_capacity_worker(data.get("new_width"), data.get("new_height")):
+            return "high_resolution_panel"
+    except (TypeError, ValueError):
+        pass
+    return ""
 
 PALETTE = [
     ("Black", "#000000"), ("Blue", "#0000FF"), ("Red", "#FF0000"),
@@ -88,6 +108,7 @@ ADMIN_DURABLE_OBJECT_TYPES = (
     ("depth_palette", "Depth Palettes"),
     ("fauxlographic_palette", "Fauxlographic Palettes"),
     ("fauxlographic_calibration", "Fauxlographic Calibration Sets"),
+    ("color_discovery_grid", "Color Discovery Grids"),
 )
 PROCESSING_PALETTE_ROLES = {"Cut", "Score", "Photo", "Fill", "Shovel", "Cleaning", "3D-Slice"}
 LASER_SOURCE_TYPES = {"", "fiber", "co2", "diode"}
@@ -1334,6 +1355,7 @@ def admin_object_counts(event):
         | Attr("sk").begins_with("DEPTHPALETTE#")
         | Attr("sk").begins_with("HOLORECIPE#")
         | Attr("sk").begins_with("HOLOCALIBRATION#")
+        | Attr("sk").begins_with("COLORDISCOVERY#")
     )
     options = {
         "ProjectionExpression": "pk, sk, library_intent",
@@ -1353,6 +1375,8 @@ def admin_object_counts(event):
                 object_type = "fauxlographic_palette"
             elif sort_key.startswith("HOLOCALIBRATION#"):
                 object_type = "fauxlographic_calibration"
+            elif sort_key.startswith("COLORDISCOVERY#"):
+                object_type = "color_discovery_grid"
             if not object_type:
                 continue
             counts[object_type] += 1
@@ -1575,6 +1599,14 @@ def account_job(event, task_id):
     outputs = ordered_output_descriptors(task_id, source_name, objects)
     status = (live.get("status") if live and live.get("user_id") == owner else None) or record.get("status") or history.get("status") or "unknown"
     terminal_status = str(status).lower() in {"completed", "failed"}
+    rerunnable = bool(terminal_status and live and live.get("user_id") == owner and live.get("payload"))
+    current_palette_available = bool(
+        rerunnable and (
+            live.get("saved_material_library_id")
+            or live.get("generated_recipe_id")
+            or live.get("saved_holographic_recipe_id")
+        )
+    )
     ended_at = 0
     if terminal_status:
         ended_at = int(
@@ -1599,6 +1631,8 @@ def account_job(event, task_id):
         "logs_included": include_logs,
         "thumbnail_url": input_thumbnail_url(task_id, record, history),
         "outputs": outputs,
+        "rerunnable": rerunnable,
+        "current_palette_available": current_palette_available,
     })
 
 
@@ -1617,6 +1651,222 @@ def delete_account_job(event, task_id):
 
     deleted_assets, _ = delete_job_assets_and_records(task_id, owner, record)
     return response(200, {"task_id": task_id, "deleted": True, "deleted_assets": deleted_assets})
+
+
+def rerun_input_destination(source_key, source_task_id, new_task_id, index):
+    """Return a unique task-scoped destination for one retained rerun input."""
+    source_prefix = f"jobs/{source_task_id}/inputs/"
+    if source_key.startswith(source_prefix):
+        suffix = source_key[len(source_prefix):]
+    elif "/materials/" in source_key:
+        suffix = f"material-{source_key.rsplit('/', 1)[-1]}"
+    elif "/holographic-recipes/" in source_key:
+        suffix = f"recipe-{source_key.rsplit('/', 1)[-1]}"
+    else:
+        suffix = f"snapshot-{index}-{source_key.rsplit('/', 1)[-1]}"
+    return f"jobs/{new_task_id}/inputs/{safe_name(suffix, f'snapshot-{index}.bin')}"
+
+
+def replace_job_asset_keys(value, replacements, source_task_id, new_task_id):
+    """Recursively retarget a retained worker payload to its new job snapshot."""
+    if isinstance(value, dict):
+        return {
+            key: replace_job_asset_keys(item, replacements, source_task_id, new_task_id)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [replace_job_asset_keys(item, replacements, source_task_id, new_task_id) for item in value]
+    if isinstance(value, str):
+        if value in replacements:
+            return replacements[value]
+        return value.replace(source_task_id, new_task_id)
+    return value
+
+
+def current_recipe_rerun_assets(owner, live, payload, new_task_id):
+    """Build task-scoped material and recipe snapshots from the current saved palette."""
+    recipe_id = str(live.get("generated_recipe_id") or live.get("saved_holographic_recipe_id") or "")
+    recipe = owned_recipe(owner, recipe_id)
+    if not recipe:
+        raise ValueError("The saved Fauxlographic Palette used by this job no longer exists")
+    profile_bytes = s3.get_object(Bucket=BUCKET, Key=recipe["s3_key"])["Body"].read(MAX_RECIPE_BYTES + 1)
+    if len(profile_bytes) > MAX_RECIPE_BYTES:
+        raise ValueError("The saved Fauxlographic Palette is too large to rerun")
+    profile = json.loads(profile_bytes)
+    measured = profile.get("recipes") if isinstance(profile, dict) else None
+    if fauxlographic_schema_version(profile) < 2 or not isinstance(measured, list) or not measured:
+        raise ValueError("Only self-contained Fauxlographic Palettes can be used by Rasterizer")
+    selected_indexes = payload.get("selected_recipe_indexes")
+    if not isinstance(selected_indexes, list) or not selected_indexes:
+        selected_indexes = list(range(len(measured)))
+    if any(not isinstance(index, int) or index < 0 or index >= len(measured) for index in selected_indexes):
+        raise ValueError("The current Fauxlographic Palette no longer contains every selected swatch")
+    selections = [{"recipe_id": recipe_id, "recipe_index": index} for index in selected_indexes]
+    material_label = str(live.get("generated_material_name") or recipe.get("name") or "Fauxlographic Palette")
+    library_root = selected_settings_root(owner, selections, material_label)
+    embedded_black_name = ""
+    black_setting = usable_preserved_black_setting(profile.get("black_setting"))
+    if black_setting is not None:
+        embedded_black_name = "Rasterizer Preserved Black"
+        target_material = library_root.find("./Material")
+        black_entry = ET.SubElement(target_material, "Entry", {
+            "Thickness": "-1.0000", "Desc": embedded_black_name,
+            "NoThickTitle": embedded_black_name,
+        })
+        black_cut = lightburn_snapshot_element(black_setting["laser_settings"])
+        black_index = black_cut.find("./index")
+        if black_index is None:
+            black_index = ET.SubElement(black_cut, "index")
+        black_index.set("Value", "0")
+        black_name = black_cut.find("./name")
+        if black_name is None:
+            black_name = ET.SubElement(black_cut, "name")
+        black_name.set("Value", embedded_black_name)
+        black_entry.append(black_cut)
+    material_bytes = ET.tostring(library_root, encoding="utf-8", xml_declaration=True)
+    if len(material_bytes) > MAX_MATERIAL_BYTES:
+        raise ValueError("The current Fauxlographic Palette is too large to rerun")
+    material_name = safe_name(f"{material_label}.clb", "fauxlographic-palette.clb")
+    recipe_name = safe_name(recipe.get("original_name"), "recipe.json")
+    material_key = f"jobs/{new_task_id}/inputs/material-{material_name}"
+    recipe_key = f"jobs/{new_task_id}/inputs/recipe-{recipe_name}"
+    s3.put_object(Bucket=BUCKET, Key=material_key, Body=material_bytes, ContentType="application/xml")
+    s3.put_object(Bucket=BUCKET, Key=recipe_key, Body=profile_bytes, ContentType="application/json")
+    return material_key, recipe_key, embedded_black_name, material_label
+
+
+def rerun_account_job(event, source_task_id):
+    """Create a fresh queued job from one owned, retained terminal job."""
+    owner = user_id(event)
+    source_owner = table.get_item(
+        Key={"pk": f"JOB#{source_task_id}", "sk": "OWNER"}, ConsistentRead=True,
+    ).get("Item")
+    source_live = runtime(source_task_id)
+    if not source_owner or source_owner.get("user_id") != owner or not source_live or source_live.get("user_id") != owner:
+        return response(404, {"message": "Job not found"})
+    source_history = table.get_item(
+        Key={"pk": f"USER#{owner}", "sk": str(source_owner.get("history_sk") or "")},
+        ConsistentRead=True,
+    ).get("Item") or {}
+    status = str(source_live.get("status") or source_owner.get("status") or "").lower()
+    if status not in {"completed", "failed"} or not source_live.get("payload"):
+        return response(409, {"message": "Only completed or failed retained jobs can be rerun"})
+    mode = str(body_json(event).get("mode") or "exact").strip().lower()
+    if mode not in {"exact", "current_palette"}:
+        return response(400, {"message": "Choose an exact rerun or a current-palette rerun"})
+    if mode == "current_palette" and not (
+        source_live.get("saved_material_library_id")
+        or source_live.get("generated_recipe_id")
+        or source_live.get("saved_holographic_recipe_id")
+    ):
+        return response(409, {"message": "This job used a one-off uploaded palette, so it has no current saved palette to apply"})
+
+    new_task_id, now = str(uuid.uuid4()), int(time.time())
+    replacements, new_input_keys = {}, []
+    try:
+        for index, source_key in enumerate(dict.fromkeys(str(key) for key in source_owner.get("input_keys") or [] if key), 1):
+            destination = rerun_input_destination(source_key, source_task_id, new_task_id, index)
+            s3.copy_object(Bucket=BUCKET, CopySource={"Bucket": BUCKET, "Key": source_key}, Key=destination)
+            replacements[source_key] = destination
+            new_input_keys.append(destination)
+        payload = replace_job_asset_keys(
+            json_value(source_live["payload"]), replacements, source_task_id, new_task_id,
+        )
+        payload["task_id"] = new_task_id
+        payload["user_id"] = owner
+        current_material_key = ""
+        current_recipe_key = ""
+        current_black_name = str(source_live.get("generated_black_setting_name") or "")
+        current_material_label = str(source_live.get("generated_material_name") or "")
+        if mode == "current_palette" and source_live.get("saved_material_library_id"):
+            material = owned_material(owner, str(source_live["saved_material_library_id"]))
+            if not material:
+                raise ValueError("The saved Material Library used by this job no longer exists")
+            current_material_key = f"jobs/{new_task_id}/inputs/material-{safe_name(material.get('original_name'), 'materials.clb')}"
+            s3.copy_object(Bucket=BUCKET, CopySource={"Bucket": BUCKET, "Key": material["s3_key"]}, Key=current_material_key)
+            payload["material_key"] = current_material_key
+            new_input_keys.append(current_material_key)
+        if mode == "current_palette" and source_live.get("saved_holographic_recipe_id"):
+            recipe = owned_recipe(owner, str(source_live["saved_holographic_recipe_id"]))
+            if not recipe:
+                raise ValueError("The saved Fauxlographic Palette used by this job no longer exists")
+            current_recipe_key = f"jobs/{new_task_id}/inputs/recipe-{safe_name(recipe.get('original_name'), 'recipe.json')}"
+            s3.copy_object(Bucket=BUCKET, CopySource={"Bucket": BUCKET, "Key": recipe["s3_key"]}, Key=current_recipe_key)
+            payload["recipe_key"] = current_recipe_key
+            new_input_keys.append(current_recipe_key)
+        elif mode == "current_palette" and source_live.get("generated_recipe_id"):
+            current_material_key, current_recipe_key, current_black_name, current_material_label = current_recipe_rerun_assets(
+                owner, source_live, payload, new_task_id,
+            )
+            payload["material_key"] = current_material_key
+            payload["recipe_key"] = current_recipe_key
+            payload["embedded_material_name"] = current_material_label
+            payload["embedded_black_setting_name"] = current_black_name
+            new_input_keys.extend((current_material_key, current_recipe_key))
+
+        history_sk = f"JOB#{now:010d}#{new_task_id}"
+        artifact_prefix = f"users/{owner}/jobs/{new_task_id}/"
+        history = {
+            "pk": f"USER#{owner}", "sk": history_sk, "task_id": new_task_id,
+            "job_type": history_job_type(source_history),
+            "source_name": str(source_history.get("source_name") or source_owner.get("source_name") or "Artwork"),
+            "material_name": str(source_history.get("material_name") or source_owner.get("material_name") or ""),
+            "image_preset": str(source_history.get("image_preset") or source_owner.get("image_preset") or ""),
+            "abstract_filter": str(source_history.get("abstract_filter") or source_owner.get("abstract_filter") or "none"),
+            "run_parameters": source_history.get("run_parameters") or {},
+            "created_at": now, "updated_at": now, "status": "pending",
+            "artifact_prefix": artifact_prefix, "input_keys": list(dict.fromkeys(new_input_keys)),
+            "thumbnail_key": replacements.get(str(source_owner.get("thumbnail_key") or ""), ""),
+            "rerun_of": source_task_id, "rerun_mode": mode, "expires_at": now + TTL_SECONDS,
+        }
+        owner_record = {
+            "pk": f"JOB#{new_task_id}", "sk": "OWNER", "user_id": owner,
+            "job_type": history["job_type"], "source_name": history["source_name"],
+            "material_name": history["material_name"], "image_preset": history["image_preset"],
+            "abstract_filter": history["abstract_filter"], "created_at": now, "updated_at": now,
+            "history_sk": history_sk, "status": "pending", "artifact_prefix": artifact_prefix,
+            "input_keys": history["input_keys"], "thumbnail_key": history["thumbnail_key"],
+            "rerun_of": source_task_id, "rerun_mode": mode, "expires_at": now + TTL_SECONDS,
+        }
+        runtime_item = {
+            **runtime_key(new_task_id), "task_id": new_task_id, "user_id": owner,
+            "status": "pending", "payload": dynamo_value(payload), "log_count": 0,
+            "created_at": now, "updated_at": now, "expires_at": now + TTL_SECONDS,
+            "rerun_of": source_task_id, "rerun_mode": mode,
+        }
+        for field in (
+            "saved_material_library_id", "generated_recipe_id", "saved_holographic_recipe_id",
+            "generated_material_name", "generated_black_setting_name", "generated_recipe_count",
+        ):
+            if source_live.get(field) is not None:
+                runtime_item[field] = source_live[field]
+        if current_material_key:
+            runtime_item["saved_material_key"] = current_material_key
+        if current_recipe_key:
+            runtime_item["saved_recipe_key"] = current_recipe_key
+        with table.batch_writer() as batch:
+            batch.put_item(Item=runtime_item)
+            batch.put_item(Item=history)
+            batch.put_item(Item=owner_record)
+            batch.put_item(Item=admin_job_index_item(event, history))
+        queue_message = {"task_id": new_task_id}
+        worker_type = raster_job_worker_type(payload.get("data"))
+        if worker_type:
+            queue_message["worker_type"] = worker_type
+        sqs.send_message(QueueUrl=QUEUE_URL, MessageBody=json.dumps(queue_message, separators=(",", ":")))
+    except Exception:
+        existing = table.get_item(
+            Key={"pk": f"JOB#{new_task_id}", "sk": "OWNER"}, ConsistentRead=True,
+        ).get("Item")
+        if existing:
+            delete_job_assets_and_records(new_task_id, owner, existing)
+        else:
+            listed = s3.list_objects_v2(Bucket=BUCKET, Prefix=f"jobs/{new_task_id}/")
+            keys = [{"Key": str(item["Key"])} for item in listed.get("Contents", [])]
+            if keys:
+                s3.delete_objects(Bucket=BUCKET, Delete={"Objects": keys, "Quiet": True})
+        raise
+    return response(202, {"task_id": new_task_id, "status": "pending", "rerun_mode": mode})
 
 
 def clean_depth_palette(data):
@@ -2810,6 +3060,25 @@ def color_refinement_center(cell, parameter):
     return value
 
 
+def color_discovery_cell_snapshot(metadata, cell):
+    """Resolve legacy per-cell settings or a compact preset cell override."""
+    snapshot = cell.get("laser_settings") if isinstance(cell, dict) else None
+    if isinstance(snapshot, dict):
+        return snapshot
+    base = metadata.get("material_laser_settings") if isinstance(metadata, dict) else None
+    if not isinstance(base, dict):
+        raise ValueError("The selected Color Discovery cell has no saved LightBurn setting")
+    snapshot = deepcopy(base)
+    settings = snapshot.setdefault("settings", {})
+    overrides = cell.get("overrides") if isinstance(cell, dict) else None
+    for parameter, value in (overrides or {}).items():
+        definition = COLOR_DISCOVERY_PARAMETERS.get(str(parameter))
+        if definition:
+            settings[definition[0]] = math.floor(float(value)) if definition[4] else value
+    validate_lightburn_setting_snapshot(snapshot)
+    return snapshot
+
+
 def color_refinement_step(metadata, parameter):
     if parameter == metadata.get("x_parameter"):
         values = metadata.get("x_values") or []
@@ -2842,9 +3111,9 @@ def color_lbmt_layout(data, width_mm, length_mm):
         width_mm, length_mm = float(width_mm), float(length_mm)
         if not all(math.isfinite(v) for v in (rows, columns, width_mm, length_mm)):
             raise ValueError()
-        if rows != int(rows) or columns != int(columns) or not (2 <= rows <= 100 and 2 <= columns <= 100):
+        if rows != int(rows) or columns != int(columns) or not (2 <= rows <= 40 and 2 <= columns <= 40):
             raise ValueError()
-        if rows * columns > 400 or width_mm <= 0 or length_mm <= 0:
+        if rows * columns > 800 or width_mm <= 0 or length_mm <= 0:
             raise ValueError()
         rows, columns = int(rows), int(columns)
         matrix_width = width_mm * COLOR_LBMT_MATRIX_SCALE
@@ -2855,7 +3124,7 @@ def color_lbmt_layout(data, width_mm, length_mm):
             raise ValueError()
         return rows, columns, usable_width / columns, usable_height / rows
     except (ValueError, TypeError, OverflowError) as error:
-        raise ValueError("Material Test presets need 2–100 rows and columns and at most 400 cells. The requested grid must also have room for LightBurn's 1 mm gaps between cells.") from error
+        raise ValueError("Material Test presets need 2–40 rows and columns and at most 800 cells. The requested grid must also have room for LightBurn's 1 mm gaps between cells.") from error
 
 
 def color_lbmt_axis(parameter, low, high, count):
@@ -3023,7 +3292,7 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
     if refinement:
         source_material = ET.Element("Material", {"Name":str(refinement_metadata.get("material") or "")})
         source_entry = ET.Element("Entry", {"Desc":str(refinement_metadata.get("setting_description") or "")})
-        source_cut = lightburn_snapshot_element(refinement_cell.get("laser_settings"))
+        source_cut = lightburn_snapshot_element(color_discovery_cell_snapshot(refinement_metadata, refinement_cell))
         label_options = refinement_metadata.get("label_options") or []
         requested_label_id = body_json(event).get("label_entry_id")
         if requested_label_id in (None, ""):
@@ -3067,7 +3336,7 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
     label_name.set("Value","Grid ID"); label_layer.set("type","Scan"); project.append(label_layer)
     grid_label=f"COLOR GRID {grid_id[:8]}"; label_height=2.1; label_width=len(grid_label)*label_height*.6
     title=ET.Element("Shape",{"Type":"Text","ShapeID":"0","CutIndex":"0","Font":"Arial,-1,100,5,50,0,0,0,0,0","Str":grid_label,"H":f"{label_height:g}","LS":"0","LnS":"0","Ah":"0","Av":"1","Weld":"1","HasBackupPath":"0"})
-    ET.SubElement(title,"XForm").text=f"1 0 0 1 {max(0,(columns*cell_mm-label_width)/2):g} {top_mm/2:g}"; project.append(title); cells=[]
+    ET.SubElement(title,"XForm").text=f"1 0 0 1 {max(0,(columns*cell_mm-label_width)/2):g} {top_mm/2:g}"; project.append(title); cells=[]; material_laser_settings=None
     for row,y_value in enumerate(y_values):
         for column,x_value in enumerate(x_values):
             index=row*columns+column+1; layer=deepcopy(source_cut)
@@ -3084,6 +3353,8 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
                 node=layer.find(f"./{field}")
                 if node is None: node=ET.SubElement(layer,field)
                 node.set("Value",repr(value) if output_format == "lbmt" else f"{value:g}")
+            if output_format == "lbmt" and material_laser_settings is None:
+                material_laser_settings = lightburn_setting_snapshot(layer)
             index_node=layer.find("./index")
             if index_node is None: index_node=ET.SubElement(layer,"index")
             index_node.set("Value",str(index)); name_node=layer.find("./name")
@@ -3093,7 +3364,10 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
             if min_node is not None and max_node is not None and float(min_node.get("Value",0))>float(max_node.get("Value",100)): raise ValueError("This sweep creates a cell whose minimum power exceeds maximum power")
             project.append(layer); shape=ET.Element("Shape",{"Type":"Rect","ShapeID":str(index),"CutIndex":str(index),"W":f"{cell_mm:g}","H":f"{cell_mm:g}","Cr":"0"})
             ET.SubElement(shape,"XForm").text=f"1 0 0 1 {(column+.5)*cell_mm:g} {top_mm+(row+.5)*cell_mm:g}"; project.append(shape)
-            cells.append({"index":index,"row":row+1,"column":column+1,"overrides":{x_parameter:x_value,y_parameter:y_value},"laser_settings":lightburn_setting_snapshot(layer)})
+            cell = {"index":index,"row":row+1,"column":column+1,"overrides":{x_parameter:x_value,y_parameter:y_value}}
+            if output_format != "lbmt":
+                cell["laser_settings"] = lightburn_setting_snapshot(layer)
+            cells.append(cell)
     metadata={"kind":"color_discovery_grid","schema_version":1,"grid_id":grid_id,"columns":columns,"rows":rows,"cell_size_mm":cell_mm,
               "grid_width_mm":columns*cell_mm,"grid_height_mm":rows*cell_mm,"requested_grid_width_mm":width_mm,"requested_grid_length_mm":length_mm,
               "top_label_band_mm":top_mm,"x_parameter":x_parameter,"y_parameter":y_parameter,"x_values":x_values,"y_values":y_values,"cells":cells,
@@ -3122,6 +3396,7 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
         metadata.update(cell_width_mm=cell_width, cell_height_mm=cell_height,
                         cell_gap_mm=COLOR_LBMT_CELL_GAP_MM, cell_size_mm=None,
                         matrix_scale=COLOR_LBMT_MATRIX_SCALE,
+                        material_laser_settings=material_laser_settings,
                         grid_width_mm=width_mm*COLOR_LBMT_MATRIX_SCALE,
                         grid_height_mm=length_mm*COLOR_LBMT_MATRIX_SCALE-COLOR_LBMT_VERTICAL_TEXT_ALLOWANCE_MM,
                         top_label_band_mm=0,
@@ -3142,7 +3417,7 @@ def create_color_discovery_grid(event, guest=False, upload_task_id=""):
     elif guest:
         table.put_item(Item={**runtime_key(grid_id),"task_id":grid_id,"status":"completed","guest":True,"guest_access_capability":refinement_record["guest_access_capability"],"guest_access_expires_at":now+GUEST_JOB_SECONDS,"metadata":dynamo_value(metadata),"artifact_keys":artifact_keys,"created_at":now,"updated_at":now,"expires_at":now+GUEST_JOB_SECONDS})
     else:
-        table.put_item(Item={"pk":f"USER#{owner}","sk":f"COLORDISCOVERY#{grid_id}","grid_id":grid_id,"metadata":dynamo_value(metadata),"artifact_keys":artifact_keys,"created_at":now,"updated_at":now,"expires_at":now+TTL_SECONDS})
+        table.put_item(Item={"pk":f"USER#{owner}","sk":f"COLORDISCOVERY#{grid_id}","grid_id":grid_id,"metadata":dynamo_value(metadata),"artifact_keys":artifact_keys,"created_at":now,"updated_at":now})
     downloads={name:s3.generate_presigned_url("get_object",Params={"Bucket":BUCKET,"Key":key,"ResponseContentDisposition":f'attachment; filename="{key.rsplit("/",1)[-1]}"'},ExpiresIn=900) for name,key in (("lightburn",project_key),("metadata",metadata_key))}
     return response(201,{"grid_id":grid_id,"metadata":metadata,"downloads":downloads})
 
@@ -3172,6 +3447,12 @@ def get_color_discovery_grid(event, grid_reference, guest=False):
         ).get("Item")
     if not item:
         return response(404, {"message":"Color Discovery grid not found or expired"})
+    if not guest and "expires_at" in item:
+        table.update_item(
+            Key={"pk":item["pk"], "sk":item["sk"]},
+            UpdateExpression="REMOVE expires_at",
+        )
+        item.pop("expires_at", None)
     grid_id = str(item.get("grid_id") or str(item.get("sk") or "").removeprefix("COLORDISCOVERY#"))
     artifacts = item.get("artifact_keys") if isinstance(item.get("artifact_keys"), dict) else {}
     downloads = {}
@@ -3191,21 +3472,65 @@ def get_color_discovery_grid(event, grid_reference, guest=False):
 
 
 def list_color_discovery_grids(event):
-    owner, now, grids = user_id(event), int(time.time()), []
-    for item in user_items(owner, "COLORDISCOVERY#", limit=50):
-        if int(item.get("expires_at") or 0) <= now:
-            continue
+    owner, grids, items, start_key = user_id(event), [], [], None
+    while True:
+        options = {
+            "KeyConditionExpression": Key("pk").eq(f"USER#{owner}") & Key("sk").begins_with("COLORDISCOVERY#"),
+            "ScanIndexForward": False,
+        }
+        if start_key:
+            options["ExclusiveStartKey"] = start_key
+        page = table.query(**options)
+        items.extend(page.get("Items", []))
+        start_key = page.get("LastEvaluatedKey")
+        if not start_key:
+            break
+    for item in items:
+        if "expires_at" in item:
+            table.update_item(
+                Key={"pk":item["pk"], "sk":item["sk"]},
+                UpdateExpression="REMOVE expires_at",
+            )
+            item.pop("expires_at", None)
         grid_id = str(item.get("grid_id") or str(item.get("sk") or "").removeprefix("COLORDISCOVERY#"))
         metadata = json_value(item.get("metadata") or {})
+        refinement = metadata.get("refinement") if isinstance(metadata.get("refinement"), dict) else {}
         grids.append({
             "grid_id":grid_id, "short_id":grid_id[:8],
             "created_at":int(item.get("created_at") or 0),
             "material":str(metadata.get("material") or ""),
             "setting_description":str(metadata.get("setting_description") or ""),
             "cell_count":len(metadata.get("cells") or []),
+            "output_format":str(metadata.get("output_format") or "lbrn2"),
+            "parent_grid_id":str(refinement.get("grid_id") or ""),
+            "parent_cell_index":int(refinement.get("cell_index") or 0),
         })
     grids.sort(key=lambda item:item["created_at"], reverse=True)
     return response(200, {"grids":grids})
+
+
+def delete_color_discovery_grid(event, grid_id):
+    owner = user_id(event)
+    try:
+        grid_id = str(uuid.UUID(str(grid_id or "")))
+    except ValueError as error:
+        raise ValueError("Choose a valid saved Color Discovery grid") from error
+    key = {"pk":f"USER#{owner}", "sk":f"COLORDISCOVERY#{grid_id}"}
+    item = table.get_item(Key=key, ConsistentRead=True).get("Item")
+    if not item:
+        return response(404, {"message":"Color Discovery grid not found"})
+    expected_prefix = f"users/{owner}/color-discovery/{grid_id}/"
+    artifact_keys = item.get("artifact_keys") if isinstance(item.get("artifact_keys"), dict) else {}
+    object_keys = sorted({str(value) for value in artifact_keys.values() if value})
+    if any(not object_key.startswith(expected_prefix) for object_key in object_keys):
+        return response(400, {"message":"We couldn't safely delete this Color Discovery grid, so it was left unchanged. Report the grid ID."})
+    if object_keys:
+        s3.delete_objects(
+            Bucket=BUCKET,
+            Delete={"Objects":[{"Key":object_key} for object_key in object_keys], "Quiet":True},
+        )
+    table.delete_item(Key=key)
+    return response(200, {"deleted_grid_id":grid_id})
 
 
 def save_color_discovery_palette(event):
@@ -3249,7 +3574,7 @@ def save_color_discovery_palette(event):
     for cell,color,palette_index in selected:
         description,official_hex=PALETTE[palette_index]
         entry=ET.SubElement(material,"Entry",{"Thickness":"-1.0000","Desc":description,"NoThickTitle":f"{description} {color}"})
-        cut=lightburn_snapshot_element(cell.get("laser_settings")); index_node=cut.find("./index")
+        cut=lightburn_snapshot_element(color_discovery_cell_snapshot(metadata, cell)); index_node=cut.find("./index")
         if index_node is None: index_node=ET.SubElement(cut,"index")
         index_node.set("Value",str(palette_index)); name_node=cut.find("./name")
         if name_node is None: name_node=ET.SubElement(cut,"name")
@@ -3443,6 +3768,11 @@ def import_upload(event):
     extension = os.path.splitext(filename)[1].lower()
     if kind not in extensions or extension not in extensions[kind]:
         raise ValueError("Choose a supported Material Library or Fauxlographic Palette file")
+    target_id = str(data.get("target_library_id") or "")
+    if target_id:
+        target = owned_material(owner, target_id)
+        if kind != "material" or not target or (target.get("library_intent") or "color_palette") != "color_palette":
+            raise ValueError("Choose an existing Color palette for these swatches.")
     import_id, token = str(uuid.uuid4()), secrets.token_urlsafe(32)
     digest, now = token_hash(token), int(time.time())
     key = f"imports/{owner}/{import_id}/{filename}"
@@ -3462,6 +3792,7 @@ def import_upload(event):
         "kind": kind, "filename": filename, "s3_key": key, "capability": digest,
         "display_name": str(data.get("name") or os.path.splitext(filename)[0]).strip()[:160],
         "material_name": material_name,
+        "target_library_id": target_id,
         "base_setting_id": data.get("base_setting_id"),
         "hatch_operation": str(data.get("hatch_operation") or "setting"),
         "start_angle": str(data.get("start_angle", "0")), "angular_span": str(data.get("angular_span", "180")),
@@ -3728,6 +4059,37 @@ def hatch_palette_contents(material_name, base_entry=None, base_settings=None, b
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
 
+def append_imported_swatches(owner, target_id, contents):
+    library = owned_material(owner, target_id)
+    if not library or (library.get("library_intent") or "color_palette") != "color_palette":
+        raise ValueError("The destination Color palette is no longer available. Refresh the Vault and choose a Color palette.")
+    stored = s3.get_object(Bucket=BUCKET, Key=library["s3_key"])
+    original = stored["Body"].read(MAX_MATERIAL_BYTES + 1)
+    if len(original) > MAX_MATERIAL_BYTES:
+        raise ValueError("The destination palette exceeds the import size limit.")
+    root = ET.fromstring(original)
+    destination, material_name = single_palette_material(root, "Destination palette")
+    incoming, _ = single_palette_material(ET.fromstring(contents), "Imported swatches")
+    entries = incoming.findall("./Entry")
+    if not 1 <= len(entries) <= 100:
+        raise ValueError("Import between 1 and 100 swatches at a time.")
+    destination.extend(deepcopy(entries))
+    validate_library_descriptions(root)
+    updated = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    if len(updated) > MAX_MATERIAL_BYTES:
+        raise ValueError("These swatches would exceed the palette size limit. Import fewer settings.")
+    summary = material_summary(updated)
+    # Do not overwrite edits made after this read. No automatic retry on conflict.
+    s3.put_object(Bucket=BUCKET, Key=library["s3_key"], Body=updated,
+                  ContentType="application/xml", IfMatch=stored["ETag"])
+    table.update_item(Key={"pk": f"USER#{owner}", "sk": f"MATERIAL#{target_id}"},
+                      UpdateExpression="SET summary=:summary, updated_at=:now",
+                      ConditionExpression="attribute_exists(pk)",
+                      ExpressionAttributeValues={":summary": dynamo_value(summary), ":now": int(time.time())})
+    return response(200, {"material_library": public_library_summary(summary) | {
+        "library_id": target_id, "name": library["name"], "library_intent": "color_palette"}})
+
+
 def finalize_import(event, import_id):
     owner, data = user_id(event), body_json(event)
     key = {"pk": f"USER#{owner}", "sk": f"IMPORT#{import_id}"}
@@ -3770,6 +4132,8 @@ def finalize_import(event, import_id):
         asset_id, now = str(uuid.uuid4()), int(time.time())
         if pending["kind"] == "material":
             contents = retain_selected_material(contents, pending.get("material_name"))
+            if pending.get("target_library_id"):
+                return append_imported_swatches(owner, pending["target_library_id"], contents)
             if pending.get("library_intent") == "hatch_palette":
                 root = ET.fromstring(contents)
                 source_entries = [entry for material in root.findall("./Material") for entry in material.findall("./Entry")]
@@ -3917,6 +4281,21 @@ def thumbnail_presigned_post(task_id, content_type, digest):
     )
 
 
+def snapshot_saved_input(task_id, digest, source_key, category, filename, maximum):
+    """Copy one mutable Vault object into the immutable retained job inputs."""
+    head = s3.head_object(Bucket=BUCKET, Key=source_key)
+    size = int(head.get("ContentLength") or 0)
+    if size < 1 or size > maximum:
+        raise ValueError("The selected saved input is empty or exceeds the allowed size")
+    destination = f"jobs/{task_id}/inputs/{category}-{safe_name(filename, 'input.bin')}"
+    s3.copy_object(
+        Bucket=BUCKET, CopySource={"Bucket": BUCKET, "Key": source_key}, Key=destination,
+        ContentType=str(head.get("ContentType") or "application/octet-stream"),
+        Metadata={"upload-capability": digest}, MetadataDirective="REPLACE",
+    )
+    return destination
+
+
 def create_upload(event):
     data = body_json(event)
     owner = user_id(event)
@@ -3960,8 +4339,12 @@ def create_upload(event):
         runtime_item["svg_only"] = True
     if thumbnail:
         runtime_item["expected_thumbnail_key"] = thumbnail["key"]
+    saved_material_key = ""
     if saved_material:
-        runtime_item["saved_material_key"] = saved_material["s3_key"]
+        saved_material_key = snapshot_saved_input(
+            task_id, digest, saved_material["s3_key"], "material", material_name, MAX_MATERIAL_BYTES,
+        )
+        runtime_item["saved_material_key"] = saved_material_key
         runtime_item["saved_material_name"] = material_name
         runtime_item["saved_material_library_id"] = saved_library_id
     generated_material_key = ""
@@ -3997,8 +4380,12 @@ def create_upload(event):
         s3.put_object(Bucket=BUCKET, Key=generated_material_key, Body=library_bytes,
                       ContentType="application/xml", Metadata={"upload-capability":digest})
         runtime_item["generated_recipe_id"] = saved_recipe_id
-        runtime_item["saved_recipe_key"] = saved_recipe["s3_key"]
-        runtime_item["saved_recipe_name"] = safe_name(saved_recipe.get("original_name"), "recipe.json")
+        saved_recipe_name = safe_name(saved_recipe.get("original_name"), "recipe.json")
+        saved_recipe_key = f"jobs/{task_id}/inputs/recipe-{saved_recipe_name}"
+        s3.put_object(Bucket=BUCKET, Key=saved_recipe_key, Body=json.dumps(profile, separators=(",", ":")).encode("utf-8"),
+                      ContentType="application/json", Metadata={"upload-capability":digest})
+        runtime_item["saved_recipe_key"] = saved_recipe_key
+        runtime_item["saved_recipe_name"] = saved_recipe_name
         runtime_item["generated_material_name"] = saved_recipe.get("name") or "Fauxlographic Palette"
         runtime_item["generated_black_setting_name"] = embedded_black_name
         runtime_item["generated_recipe_count"] = len(measured)
@@ -4013,7 +4400,7 @@ def create_upload(event):
     result["material"] = (None if svg_only else
                           {"key": generated_material_key, "saved": True, "generated": True, "name": material_name}
                           if saved_recipe else
-                          {"key": saved_material["s3_key"], "saved": True, "name": material_name}
+                          {"key": saved_material_key, "saved": True, "name": material_name}
                           if saved_material else
                           presigned_post(task_id, "material", material_name, material_type, MAX_MATERIAL_BYTES, digest))
     return response(201, result)
@@ -4322,7 +4709,7 @@ def validate_mandala_request(data):
     if not isinstance(layers, list) or not 1 <= len(layers) <= 12:
         raise ValueError("A Layered Mandala needs 1 to 12 layers")
     permitted = {
-        "name", "motif", "ornament_style", "motif_composition", "custom_svg", "construction", "support_mode", "rim_style",
+        "name", "layer_diameter_mm", "motif", "ornament_style", "motif_composition", "custom_svg", "construction", "support_mode", "rim_style",
         "repetitions", "rings", "inner_radius_ratio", "motif_scale",
         "motif_radial_position", "motif_tangential_position", "fragment_scale",
         "radial_stretch", "tangent_stretch", "twist_degrees",
@@ -4396,9 +4783,11 @@ def validate_mandala_request(data):
             raise ValueError(f"Mandala layer {index} has an invalid ornament family")
         if motif_composition not in {"flow_character", "whole_repeat", "kaleidoscope", "hybrid"}:
             raise ValueError(f"Mandala layer {index} has an invalid motif composition")
+        layer_diameter = layer_number("layer_diameter_mm", "diameter", 20, diameter, diameter)
         cleaned = {key: value for key, value in layer.items() if key in permitted}
         cleaned.update({
             "name": str(layer.get("name") or f"Layer {index}").strip()[:80] or f"Layer {index}",
+            "layer_diameter_mm": layer_diameter,
             "motif": motif,
             "custom_svg": custom_svg,
             "construction": construction,
@@ -4419,11 +4808,11 @@ def validate_mandala_request(data):
             "rotation_degrees": layer_number("rotation_degrees", "rotation", -180, 180, 0),
             "alternate_rotation": layer_boolean("alternate_rotation", "alternate ring phase", True),
             "mirror_alternating": layer_boolean("mirror_alternating", "mirror alternating motifs", False),
-            "rim_width_mm": layer_number("rim_width_mm", "rim width", .5, diameter * .15, max(2, diameter * .025)),
-            "bridge_width_mm": layer_number("bridge_width_mm", "bridge width", .4, diameter * .08, max(1, diameter * .012)),
+            "rim_width_mm": layer_number("rim_width_mm", "rim width", .5, layer_diameter * .15, min(layer_diameter * .15, max(.5, layer_diameter * .025))),
+            "bridge_width_mm": layer_number("bridge_width_mm", "bridge width", .4, layer_diameter * .08, min(layer_diameter * .08, max(.4, layer_diameter * .012))),
             "support_sweep_degrees": layer_number("support_sweep_degrees", "support sweep", -75, 75, 0),
             "bridge_wave_amount": layer_number("bridge_wave_amount", "bridge wave amount", 0, 1, 0),
-            "bridge_wave_amplitude_mm": layer_number("bridge_wave_amplitude_mm", "bridge wave amplitude", 0, diameter * .2, max(2, diameter * .04)),
+            "bridge_wave_amplitude_mm": layer_number("bridge_wave_amplitude_mm", "bridge wave amplitude", 0, layer_diameter * .2, min(layer_diameter * .2, max(2, layer_diameter * .04))),
             "bridge_wave_position": layer_number("bridge_wave_position", "bridge wave position", .1, .9, .5),
             "layer_openness": layer_number("layer_openness", "openness", 0, 1, 0),
             "opening_inner_ratio": layer_number("opening_inner_ratio", "opening inner position", .05, .85, .25),
@@ -4570,7 +4959,7 @@ def validate_spiralgrap_request(data):
     layers = data.get("layers")
     if not isinstance(layers, list) or not 1 <= len(layers) <= 6:
         raise ValueError("A SpiralGraph project needs 1 to 6 drawing layers")
-    permitted = {"name", "track", "custom_svg", "gear_teeth", "pen_hole", "side", "start_mark", "direction", "rotation_quarter_turns", "include_track", "output_mode", "fill_thickness_mm", "swatch_hex"}
+    permitted = {"name", "track", "custom_svg", "track_width_percent", "track_height_percent", "gear_size_percent", "pen_reach_percent", "drawing_size_percent", "gear_teeth", "pen_hole", "side", "start_mark", "direction", "rotation_quarter_turns", "include_track", "output_mode", "fill_thickness_mm", "swatch_hex"}
     clean_layers, total_svg = [], 0
     for index, layer in enumerate(layers, start=1):
         if not isinstance(layer, dict) or set(layer) - permitted:
@@ -4601,6 +4990,14 @@ def validate_spiralgrap_request(data):
             if value not in choices:
                 raise ValueError(f"SpiralGraph drawing {index} has an invalid {key.replace('_', ' ')}")
             return value
+        def layer_number(key, minimum, maximum, default):
+            try:
+                value = float(layer.get(key, default))
+            except (TypeError, ValueError) as error:
+                raise ValueError(f"SpiralGraph drawing {index} has an invalid {key.replace('_', ' ')}") from error
+            if not math.isfinite(value) or not minimum <= value <= maximum:
+                raise ValueError(f"SpiralGraph drawing {index} {key.replace('_', ' ')} must be between {minimum:g} and {maximum:g}")
+            return value
         try:
             thickness = float(layer.get("fill_thickness_mm", 1.2))
         except (TypeError, ValueError) as error:
@@ -4616,6 +5013,11 @@ def validate_spiralgrap_request(data):
         clean_layers.append({
             "name": str(layer.get("name") or f"Drawing {index}").strip()[:80] or f"Drawing {index}",
             "track": track, "custom_svg": custom_svg,
+            "track_width_percent": layer_number("track_width_percent", 40, 160, 100),
+            "track_height_percent": layer_number("track_height_percent", 40, 160, 100),
+            "gear_size_percent": layer_number("gear_size_percent", 50, 150, 100),
+            "pen_reach_percent": layer_number("pen_reach_percent", 0, 125, 100),
+            "drawing_size_percent": layer_number("drawing_size_percent", 20, 100, 100),
             "gear_teeth": choice("gear_teeth", {24, 30, 32, 36, 40, 42, 45, 48, 56, 60}, 40),
             "pen_hole": choice("pen_hole", set(range(1, 7)), 5),
             "side": choice("side", {"inside", "outside"}, "inside"),
@@ -4755,16 +5157,24 @@ def create_holographic_upload(event):
     artwork_type = str(data.get("artwork_content_type") or mimetypes.guess_type(artwork_name)[0]
                        or "application/octet-stream")[:120]
     thumbnail = thumbnail_presigned_post(task_id, data.get("thumbnail_content_type"), digest)
+    material_name = safe_name(material.get("original_name"), "materials.clb")
+    recipe_name = safe_name(recipe.get("original_name"), "recipe.json")
+    material_key = snapshot_saved_input(
+        task_id, digest, material["s3_key"], "material", material_name, MAX_MATERIAL_BYTES,
+    )
+    recipe_key = snapshot_saved_input(
+        task_id, digest, recipe["s3_key"], "recipe", recipe_name, MAX_RECIPE_BYTES,
+    )
     now = int(time.time())
     runtime_item = {
         **runtime_key(task_id), "task_id": task_id, "user_id": owner,
         "status": "uploading", "upload_capability": digest, "log_count": 0,
         "upload_expires_at": now + UPLOAD_CAPABILITY_SECONDS,
         "created_at": now, "updated_at": now, "expires_at": now + TTL_SECONDS,
-        "saved_material_key": material["s3_key"],
-        "saved_material_name": safe_name(material.get("original_name"), "materials.clb"),
-        "saved_recipe_key": recipe["s3_key"],
-        "saved_recipe_name": safe_name(recipe.get("original_name"), "recipe.json"),
+        "saved_material_key": material_key, "saved_material_name": material_name,
+        "saved_material_library_id": str(data.get("saved_material_library_id") or "").strip(),
+        "saved_recipe_key": recipe_key, "saved_recipe_name": recipe_name,
+        "saved_holographic_recipe_id": str(data.get("saved_holographic_recipe_id") or "").strip(),
     }
     if thumbnail:
         runtime_item["expected_thumbnail_key"] = thumbnail["key"]
@@ -4774,8 +5184,8 @@ def create_holographic_upload(event):
         "artwork": presigned_post(task_id, "artwork", artwork_name, artwork_type,
                                     MAX_ARTWORK_BYTES, digest),
         "thumbnail": thumbnail,
-        "material": {"key": material["s3_key"], "saved": True},
-        "recipe": {"key": recipe["s3_key"], "saved": True},
+        "material": {"key": material_key, "saved": True},
+        "recipe": {"key": recipe_key, "saved": True},
         "expires_in_seconds": UPLOAD_CAPABILITY_SECONDS,
     })
 
@@ -4810,8 +5220,8 @@ def submit_holographic_job(event, task_id):
             if thumbnail_key != str(item.get("expected_thumbnail_key") or ""):
                 raise ValueError("The artwork thumbnail does not match this job. Submit the job again to start a fresh upload.")
             verify_upload(thumbnail_key, item["upload_capability"], MAX_THUMBNAIL_BYTES)
-        verify_saved_recipe(recipe_key, user_id(event), MAX_RECIPE_BYTES)
-        verify_saved_material(material_key, user_id(event), MAX_MATERIAL_BYTES)
+        verify_upload(recipe_key, item["upload_capability"], MAX_RECIPE_BYTES)
+        verify_upload(material_key, item["upload_capability"], MAX_MATERIAL_BYTES)
     except (TypeError, ValueError) as error:
         return response(400, {"message": str(error)})
     payload = {
@@ -5081,6 +5491,7 @@ def submit_job(event, task_id, guest=False):
         data["new_width"] = str(processing_width)
         data["new_height"] = str(processing_height)
         data["high_resolution_panel"] = high_resolution_panel
+        data["high_capacity_worker"] = needs_high_capacity_worker(processing_width, processing_height)
     else:
         panel_tiling = {"enabled": False}
         data["high_resolution_panel"] = False
@@ -5092,6 +5503,7 @@ def submit_job(event, task_id, guest=False):
                 raise ValueError
         except (TypeError, ValueError):
             return response(400, {"message": "Ordinary Rasterizer jobs are limited to 1,600 processing pixels per axis. Enable Panel Tiling for a larger assembled image."})
+        data["high_capacity_worker"] = needs_high_capacity_worker(*standard_dimensions)
     data["panel_tiling"] = panel_tiling
     crop_shape = str(data.get("crop_shape") or "").strip().lower()
     if crop_shape not in {"", "rectangle", "square", "oval", "circle", "transparency"}:
@@ -5172,7 +5584,14 @@ def submit_job(event, task_id, guest=False):
             "The custom glyph image couldn't be used. Remove it and choose a PNG, "
             "JPEG, or WebP image again."
         )
-        if not isinstance(value, dict) or set(value) != {"width", "height", "data"}:
+        allowed_keys = {"width", "height", "data"}
+        if flow_region_number is not None:
+            allowed_keys.add("alpha")
+        if (
+            not isinstance(value, dict)
+            or not {"width", "height", "data"}.issubset(value)
+            or set(value) - allowed_keys
+        ):
             raise ValueError(message)
         width, height, encoded = value.get("width"), value.get("height"), value.get("data")
         if (
@@ -5187,6 +5606,16 @@ def submit_job(event, task_id, guest=False):
             raise ValueError(message) from error
         if len(decoded) != width * height:
             raise ValueError(message)
+        if "alpha" in value:
+            encoded_alpha = value.get("alpha")
+            if not isinstance(encoded_alpha, str) or len(encoded_alpha) > 21856:
+                raise ValueError(message)
+            try:
+                decoded_alpha = base64.b64decode(encoded_alpha, validate=True)
+            except Exception as error:
+                raise ValueError(message) from error
+            if len(decoded_alpha) != width * height:
+                raise ValueError(message)
     def validate_custom_svg(value, label):
         message = (
             f"The custom {label} SVG couldn't be used. Choose a plain SVG "
@@ -5579,7 +6008,10 @@ def submit_job(event, task_id, guest=False):
         elif saved_material_key:
             if material_key != saved_material_key:
                 raise ValueError("The saved Material Library no longer matches this upload. Review your library choice, then submit the job again.")
-            verify_saved_material(material_key, owner, MAX_MATERIAL_BYTES)
+            if material_key.startswith(expected_prefix):
+                verify_upload(material_key, item["upload_capability"], MAX_MATERIAL_BYTES)
+            else:
+                verify_saved_material(material_key, owner, MAX_MATERIAL_BYTES)
         else:
             verify_upload(material_key, item["upload_capability"], MAX_MATERIAL_BYTES)
     except ValueError as error:
@@ -5692,8 +6124,9 @@ def submit_job(event, task_id, guest=False):
         batch.put_item(Item=admin_index)
     try:
         queue_message = {"task_id": task_id}
-        if data.get("high_resolution_panel") is True:
-            queue_message["worker_type"] = "high_resolution_panel"
+        worker_type = raster_job_worker_type(data)
+        if worker_type:
+            queue_message["worker_type"] = worker_type
         sqs.send_message(QueueUrl=QUEUE_URL, MessageBody=json.dumps(queue_message, separators=(",", ":")))
     except Exception:
         # Restore the capability so a transient SQS error is safely retryable.
@@ -5842,6 +6275,8 @@ def handler(event, _context):
             return create_holographic_calibration(event, upload_task_id=parts[2])
         if method == "GET" and len(parts) == 3 and parts[:2] == ["color-discovery", "grids"]:
             return get_color_discovery_grid(event, parts[2])
+        if method == "DELETE" and len(parts) == 3 and parts[:2] == ["color-discovery", "grids"]:
+            return delete_color_discovery_grid(event, parts[2])
         if method == "POST" and len(parts) == 4 and parts[:2] == ["account", "imports"] and parts[3] == "finalize":
             uuid.UUID(parts[2])
             return finalize_import(event, parts[2])
@@ -5864,6 +6299,9 @@ def handler(event, _context):
         if method in {"GET", "DELETE"} and len(parts) == 3 and parts[:2] == ["account", "jobs"]:
             uuid.UUID(parts[2])
             return account_job(event, parts[2]) if method == "GET" else delete_account_job(event, parts[2])
+        if method == "POST" and len(parts) == 4 and parts[:2] == ["account", "jobs"] and parts[3] == "rerun":
+            uuid.UUID(parts[2])
+            return rerun_account_job(event, parts[2])
         if method == "GET" and len(parts) == 3 and parts[:2] == ["admin", "jobs"]:
             uuid.UUID(parts[2])
             return admin_job(event, parts[2])

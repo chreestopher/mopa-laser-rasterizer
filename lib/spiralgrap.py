@@ -97,6 +97,11 @@ def validate_spiralgrap_config(raw):
             "name": str(source.get("name") or f"Drawing {index}").strip()[:80] or f"Drawing {index}",
             "track": track,
             "custom_svg": custom_svg,
+            "track_width_percent": _number(source.get("track_width_percent", 100), "Track width percent", 40, 160),
+            "track_height_percent": _number(source.get("track_height_percent", 100), "Track height percent", 40, 160),
+            "gear_size_percent": _number(source.get("gear_size_percent", 100), "Gear size percent", 50, 150),
+            "pen_reach_percent": _number(source.get("pen_reach_percent", 100), "Pen reach percent", 0, 125),
+            "drawing_size_percent": _number(source.get("drawing_size_percent", 100), "Drawing size percent", 20, 100),
             "gear_teeth": _integer(source.get("gear_teeth", 40), "rolling gear", GEAR_TEETH),
             "pen_hole": _integer(source.get("pen_hole", 5), "pen hole", PEN_HOLES),
             "side": side,
@@ -152,6 +157,7 @@ def _track_line(layer):
         polygon = triangle.buffer(-.07, join_style=1).buffer(.07, resolution=24, join_style=1)
     else:
         polygon = _largest_polygon(svg_to_unit_geometry(layer["custom_svg"], padding=.02))
+    polygon = affinity.scale(polygon, xfact=layer["track_width_percent"] / 100, yfact=layer["track_height_percent"] / 100, origin=(0, 0))
     polygon = affinity.rotate(polygon, layer["rotation_quarter_turns"] * 90, origin=(0, 0))
     return LineString(polygon.exterior.coords)
 
@@ -172,8 +178,9 @@ def generate_layer(layer, diameter):
     perimeter = track.length
     track_teeth = TRACK_TEETH[layer["track"]]
     gear_teeth = layer["gear_teeth"]
-    gear_radius = perimeter / (2 * math.pi) * gear_teeth / track_teeth
-    pen_radius = gear_radius * PEN_HOLES[layer["pen_hole"]]
+    roll_radius = perimeter / (2 * math.pi) * gear_teeth / track_teeth
+    gear_radius = roll_radius * layer["gear_size_percent"] / 100
+    pen_radius = gear_radius * PEN_HOLES[layer["pen_hole"]] * layer["pen_reach_percent"] / 100
     loops = gear_teeth // math.gcd(track_teeth, gear_teeth)
     samples = min(24000, max(1200, loops * track_teeth * 10))
     phase = (layer["start_mark"] - 1) * math.pi / 4
@@ -185,7 +192,7 @@ def generate_layer(layer, diameter):
         x, y, tx, ty = _sample_closed(track, distance)
         nx, ny = ty, -tx
         center_x, center_y = x + nx * gear_radius * side_sign, y + ny * gear_radius * side_sign
-        pen_angle = phase + roll_sign * side_sign * distance / gear_radius
+        pen_angle = phase + roll_sign * side_sign * distance / roll_radius
         points.append((center_x + math.cos(pen_angle) * pen_radius, center_y + math.sin(pen_angle) * pen_radius))
     points[-1] = points[0]
     curve = LineString(points)
@@ -197,7 +204,7 @@ def generate_layer(layer, diameter):
             max(all_bounds[2], track_bounds[2]), max(all_bounds[3], track_bounds[3]),
         )
     extent = max(all_bounds[2] - all_bounds[0], all_bounds[3] - all_bounds[1]) or 1
-    scale = diameter / extent * .94
+    scale = diameter / extent * .94 * layer["drawing_size_percent"] / 100
     center_x = (all_bounds[0] + all_bounds[2]) / 2
     center_y = (all_bounds[1] + all_bounds[3]) / 2
     curve = affinity.translate(curve, xoff=-center_x, yoff=-center_y)

@@ -26,9 +26,9 @@ durable_ttl_count="$(aws dynamodb scan \
   --region "$REGION" \
   --table-name "$TABLE_NAME" \
   --select COUNT \
-  --filter-expression 'attribute_exists(#ttl) AND (begins_with(#sk,:material) OR begins_with(#sk,:depth) OR begins_with(#sk,:holo) OR begins_with(#pk,:community))' \
+  --filter-expression 'attribute_exists(#ttl) AND (begins_with(#sk,:material) OR begins_with(#sk,:depth) OR begins_with(#sk,:holo) OR begins_with(#sk,:color) OR begins_with(#pk,:community))' \
   --expression-attribute-names '{"#pk":"pk","#sk":"sk","#ttl":"expires_at"}' \
-  --expression-attribute-values '{":material":{"S":"MATERIAL#"},":depth":{"S":"DEPTHPALETTE#"},":holo":{"S":"HOLORECIPE#"},":community":{"S":"LASER_COMMUNITY"}}' \
+  --expression-attribute-values '{":material":{"S":"MATERIAL#"},":depth":{"S":"DEPTHPALETTE#"},":holo":{"S":"HOLORECIPE#"},":color":{"S":"COLORDISCOVERY#"},":community":{"S":"LASER_COMMUNITY"}}' \
   --query Count --output text | awk '{count += $1} END {print count + 0}')"
 if [ "$durable_ttl_count" != "0" ]; then
   echo "Refusing to enable TTL: $durable_ttl_count durable Material Library/palette record(s) contain $TTL_ATTRIBUTE." >&2

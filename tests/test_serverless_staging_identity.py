@@ -50,7 +50,7 @@ def test_staging_deployer_can_update_workflow_and_api_inline_policies():
 
 def test_migration_copies_only_durable_assets_and_keeps_source():
     migration = read("dev_setup/migrate_staging_identity_assets.py")
-    assert 'DURABLE_PREFIXES = ("MATERIAL#", "DEPTHPALETTE#", "HOLOCALIBRATION#", "HOLORECIPE#")' in migration
+    assert 'DURABLE_PREFIXES = ("MATERIAL#", "DEPTHPALETTE#", "HOLOCALIBRATION#", "HOLORECIPE#", "COLORDISCOVERY#")' in migration
     assert 'item["sk"] == "PREFERENCES"' in migration
     assert "s3.copy_object" in migration
     assert "table.put_item" in migration

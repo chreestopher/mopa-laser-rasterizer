@@ -4,22 +4,23 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>SpiralGraph Lab | MOPA Laser Rasterizer</title>
-  <meta name="description" content="Create laser-ready rolling-gear artwork with familiar virtual plates, gears, pen holes, and custom closed SVG tracks.">
+  <meta name="description" content="Create laser-ready rolling-gear artwork with familiar virtual plates, gears, pen holes, and custom SVG or raster-image tracks.">
   <link rel="stylesheet" href="/machine_chrome.css?v=3">
   <link rel="stylesheet" href="/staging-shell.css?v=1">
   <link rel="stylesheet" href="/staging-shell-v2.css">
   <link rel="stylesheet" href="/staging-pages.css?v=4">
-  <link rel="stylesheet" href="/spiralgraph.css?v=4">
+  <link rel="stylesheet" href="/spiralgraph.css?v=6">
   <script src="/staging-shell.js?v=4" defer></script>
-  <script src="/spiralgraph.js?v=10" type="module"></script>
+  <script src="/spiralgraph.js?v=14" type="module"></script>
 </head>
 <body>
   <main id="main-content" class="spiralgrap-shell">
-    <section id="registeredAccess" class="spiralgrap-panel" hidden><h2>Operator access required</h2><p>SpiralGraph projects use saved Processing Palettes and retained Job History, so this laboratory requires a signed-in account.</p><a id="loginLink" class="spiralgrap-button" href="/">Sign in</a></section>
+    <section id="registeredAccess" class="spiralgrap-panel" hidden><h2>Operator access required</h2><p>SpiralGraph projects use saved Processing Palettes and retained Job History, so this laboratory requires a signed-in account.</p><a id="loginLink" data-registered-access-login class="spiralgrap-button" href="/">Sign in</a></section>
     <div id="registeredContent" hidden>
-      <section class="spiralgrap-panel"><p class="eyebrow">Experimental rolling-gear vector construction</p><h2>SpiralGraph Lab</h2><p>Choose familiar virtual track plates, numbered gears, pen holes, and start marks. Every available combination is deliberately bounded to produce a closed, recognizable rolling-gear pattern. A custom closed SVG can replace the outer track.</p></section>
       <form id="spiralgrapForm">
-        <section class="spiralgrap-panel"><h2>Project and machine setup</h2><div class="control-grid">
+        <div class="workspace-title"><div><h1>SpiralGraph Lab</h1><p>Edit one drawing at a time. Preview changes as you work.</p></div></div>
+        <details id="projectSetup" class="spiralgrap-panel setup-disclosure"><summary>Project and machine setup</summary>
+        <section class="spiralgrap-panel"><h2 id="projectSetupTitle" class="visually-hidden">Project and machine setup</h2><div class="control-grid">
           <label>Project name<input id="projectName" maxlength="120" value="SpiralGraph Study"></label>
           <label>Finished size (mm)<input id="diameter" type="number" min="20" max="1000" step="1" value="150"></label>
           <label>Workbed width (mm)<input id="workbedWidth" type="number" min="20" max="3000" step="1" value="175"></label>
@@ -30,9 +31,9 @@
           <label class="processing-fallback">Fill setting<select id="fillSetting"></select></label>
           <label>Optional layer color palette<select id="colorPalette"><option value="">Built-in SpiralGraph colors</option></select></label>
         </div><p id="paletteStatus" class="fine-print">Loading saved Processing Palettes…</p></section>
-        <section class="spiralgrap-panel"><div class="section-heading"><div><h2>Drawing layers</h2><p>Layer order is preserved in SVG and LightBurn output.</p></div><button id="addLayer" type="button" class="spiralgrap-button">Add drawing</button></div><div id="layerList" class="layer-list"></div></section>
-        <section id="hardwarePreview" class="spiralgrap-panel hardware-preview" aria-labelledby="hardwarePreviewTitle">
-          <div class="preview-heading"><div><h2 id="hardwarePreviewTitle">Virtual hardware</h2><p id="hardwareLayerName">Drawing 1</p></div><output id="hardwareSummary"></output></div>
+        </details>
+        <details id="hardwarePreview" class="spiralgrap-panel hardware-preview"><summary id="hardwarePreviewTitle">Virtual hardware</summary>
+          <div class="preview-heading"><div><p id="hardwareLayerName">Drawing 1</p></div><output id="hardwareSummary"></output></div>
           <div class="hardware-grid">
             <figure><figcaption>Track plate</figcaption><svg id="trackHardware" viewBox="0 0 240 240" role="img" aria-label="Selected track plate"></svg></figure>
             <figure><figcaption>Rolling gear and pencil holes</figcaption><svg id="gearHardware" viewBox="0 0 240 240" role="radiogroup" aria-label="Choose a pencil hole on the rolling gear"></svg></figure>
@@ -40,12 +41,25 @@
           </div>
           <p class="hardware-note">This is a configuration diagram. Teeth are schematic and are not cutting geometry for manufacturing physical gears.</p>
           <p id="holeSelectionStatus" class="visually-hidden" aria-live="polite"></p>
+        </details>
+        <section id="spiralgraphWorkspace" class="spiralgrap-panel drawing-workspace" aria-label="SpiralGraph drawing editor">
+          <div class="workspace-toolbar">
+            <div class="layer-toolbar"><label>Edit layer<select id="layerSelector"></select></label><button id="addLayer" type="button" class="spiralgrap-button">Add drawing</button></div>
+            <div class="preview-heading"><div><h2>Live preview</h2><p id="layerPreviewName">Drawing 1</p></div><label>View<select id="previewMode"><option value="drawing">Single drawing</option><option value="combined">Combined project</option></select></label></div>
+          </div>
+          <div class="workspace-body">
+            <section class="layer-workspace" aria-label="Selected drawing controls"><label class="settings-selector">Settings section<select id="settingsPage"><option value="track">Drawing &amp; track</option><option value="gear">Gear &amp; pen</option><option value="pattern">Position &amp; direction</option><option value="output">Color &amp; output</option></select></label><div id="layerList" class="layer-list"></div></section>
+            <section class="preview-workspace" aria-label="Live SpiralGraph preview">
+              <div class="preview-stage">
+                <canvas id="activePreview" width="720" height="720" aria-label="Selected SpiralGraph drawing preview"></canvas>
+                <canvas id="stackPreview" width="720" height="720" aria-label="Combined SpiralGraph project preview" hidden></canvas>
+              </div>
+              <div class="preview-navigation"><output id="layerPreviewPosition" for="layerPreviewSlider layerSelector">Drawing 1 of 1</output><label class="preview-layer-control">Select drawing<input id="layerPreviewSlider" type="range" min="1" max="1" step="1" value="1"></label></div>
+            </section>
+          </div>
+        <section class="generation-panel"><button id="generate" type="submit" class="spiralgrap-button primary">Generate project for review</button><p id="status" role="status" aria-live="polite">Configure the drawings and inspect both previews before generating.</p></section>
         </section>
-        <section class="spiralgrap-panel preview-workspace">
-          <div><div class="preview-heading"><div><h2>Single drawing</h2><p id="layerPreviewName">Drawing 1</p></div><output id="layerPreviewPosition">Drawing 1 of 1</output></div><label class="preview-layer-control">Preview drawing<input id="layerPreviewSlider" type="range" min="1" max="1" step="1" value="1"></label><canvas id="activePreview" width="720" height="720" aria-label="Selected SpiralGraph drawing preview"></canvas></div>
-          <div><h2>Combined project</h2><canvas id="stackPreview" width="720" height="720" aria-label="Combined SpiralGraph project preview"></canvas></div>
-        </section>
-        <section class="spiralgrap-panel"><p><strong>Final generation:</strong> the worker rebuilds every rolling path, verifies its bounds, and creates editable SVG, LightBurn, and manifest files. Always review geometry and laser settings before execution.</p><button id="generate" type="submit" class="spiralgrap-button primary">Generate project for review</button><p id="status" role="status" aria-live="polite">Configure the drawings and inspect both previews before generating.</p><div id="outputs" class="output-grid"></div></section>
+        <div id="outputs" class="output-grid" aria-live="polite"></div>
       </form>
     </div>
   </main>

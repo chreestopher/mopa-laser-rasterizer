@@ -33,6 +33,10 @@ Resources:
             AllowedOrigins: ["*"]
             ExposedHeaders: [ETag]
             MaxAge: 600
+          # Native project handoff reads existing signed downloads in staging.
+          - AllowedMethods: [GET]
+            AllowedOrigins: ["https://serverless-staging.mopa-laser-rasterizer.com"]
+            MaxAge: 600
       LifecycleConfiguration:
         Rules:
           - Id: ExpireStagingJobs

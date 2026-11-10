@@ -35,7 +35,7 @@ from .packing import (
     independent_rotation_degrees,
     placement_variant,
 )
-from custom_shape import decode_grayscale_mask, svg_to_unit_geometry
+from custom_shape import decode_alpha_mask, decode_grayscale_mask, svg_to_unit_geometry
 
 
 USES_SOURCE_LUMINANCE = True
@@ -572,14 +572,26 @@ def _prepare_fauxlogram_flow(settings):
         mask_spec = region.get("mask") if isinstance(region, dict) else None
         if isinstance(mask_spec, dict):
             image = decode_grayscale_mask(mask_spec)
-            values = image.astype(float) / 255.0
+            alpha = decode_alpha_mask(mask_spec)
+            mode = str(region.get("mask_mode") or "silhouette")
+            if mode == "silhouette" and alpha is not None:
+                # Transparent uploads retain a distinct luminance plane so the
+                # same image can switch modes. Silhouette mode intentionally
+                # uses only its alpha plane, matching the legacy behavior.
+                values = alpha.astype(float) / 255.0
+                coverage = None
+            else:
+                values = image.astype(float) / 255.0
+                coverage = alpha.astype(float) / 255.0 if alpha is not None else None
             offset = region.get("mask_offset") or [0, 0]
             offset_x = number(offset[0] if len(offset) > 0 else 0, 0, -1, 1)
             offset_y = number(offset[1] if len(offset) > 1 else 0, 0, -1, 1)
             if region.get("mask_invert"):
                 values = 1.0 - values
             threshold = number(region.get("mask_threshold"), 0.5, 0, 1)
-            active_y, active_x = ((values > 0) & (values >= threshold)).nonzero()
+            active = values >= threshold
+            active &= coverage > 0 if coverage is not None else values > 0
+            active_y, active_x = active.nonzero()
             if len(active_x):
                 width = max(image.shape[1] - 1, 1)
                 height = max(image.shape[0] - 1, 1)
@@ -592,8 +604,9 @@ def _prepare_fauxlogram_flow(settings):
                 painted.append(mask_bounds)
                 masks[index] = {
                     "values": values,
+                    "coverage": coverage,
                     "threshold": threshold,
-                    "mode": str(region.get("mask_mode") or "silhouette"),
+                    "mode": mode,
                     "offset": (offset_x, offset_y),
                 }
         if painted:
@@ -632,6 +645,20 @@ def _flow_mask_value(mask, x, y):
     column = min(values.shape[1] - 1, max(0, round(local_x * (values.shape[1] - 1))))
     row = min(values.shape[0] - 1, max(0, round(local_y * (values.shape[0] - 1))))
     return float(values[row, column])
+
+
+def _flow_mask_coverage(mask, x, y):
+    coverage = mask.get("coverage")
+    if coverage is None:
+        return None
+    offset_x, offset_y = mask.get("offset", (0, 0))
+    local_x = x - offset_x
+    local_y = y - offset_y
+    if not 0 <= local_x <= 1 or not 0 <= local_y <= 1:
+        return 0.0
+    column = min(coverage.shape[1] - 1, max(0, round(local_x * (coverage.shape[1] - 1))))
+    row = min(coverage.shape[0] - 1, max(0, round(local_y * (coverage.shape[0] - 1))))
+    return float(coverage[row, column])
 
 
 def _flow_mask_gradient_angle(mask, x, y, bounds):
@@ -726,7 +753,9 @@ def _painted_flow_controls(x, y, bounds, settings):
         if mask is None:
             continue
         value = _flow_mask_value(mask, nx, ny)
-        if value > 0 and value >= mask["threshold"]:
+        coverage = _flow_mask_coverage(mask, nx, ny)
+        active = coverage > 0 if coverage is not None else value > 0
+        if active and value >= mask["threshold"]:
             region_index = candidate
             mask_value = value
             break

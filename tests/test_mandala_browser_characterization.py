@@ -41,7 +41,8 @@ HARNESS = r"""
   let requestedFrames = 0;
   let cancelledFrames = 0;
   window.requestAnimationFrame = callback => {
-    requestedFrames += 1;
+    // Workspace sizing shares RAF; count only design-preview requests.
+    if (callback.name !== 'fitWorkspace') requestedFrames += 1;
     return setTimeout(() => callback(performance.now()), 0);
   };
   window.cancelAnimationFrame = handle => {
@@ -59,6 +60,7 @@ HARNESS = r"""
   }
 
   const scenario = new URLSearchParams(location.search).get('scenario');
+  if (['workspace','guest-login'].includes(scenario)) document.write('<script src="/staging-shell.js?v=4" defer><' + '/script>');
   const failures = [];
   const runtimeErrors = [];
   const fetchHistory = [];
@@ -166,24 +168,29 @@ HARNESS = r"""
     },
   };
 
-  if (scenario === 'guest') {
+  if (['guest','guest-login','refresh-only','login-during-config','restored-login'].includes(scenario)) {
     localStorage.removeItem('id_token');
     sessionStorage.removeItem('id_token');
   } else {
     localStorage.setItem('id_token', '__JWT__');
   }
+  if (scenario === 'refresh-only') localStorage.setItem('refresh_token', 'characterization-refresh');
   if (scenario === 'auth-retry') localStorage.setItem('refresh_token', 'characterization-refresh');
 
   window.fetch = async (inputValue, options = {}) => {
     const url = new URL(typeof inputValue === 'string' ? inputValue : inputValue.url, location.href);
     const method = options.method || 'GET';
     fetchHistory.push(`${method} ${url.pathname}`);
-    if (url.pathname === '/config.json') return jsonResponse({
+    if (url.pathname === '/config.json') {
+      if (scenario === 'login-during-config') localStorage.setItem('id_token','__JWT__');
+      return jsonResponse({
       api_url: '/api',
       client_id: 'characterization-client',
       cognito_domain: 'example.invalid',
       callback_url: `${location.origin}/callback`,
     });
+    }
+    if (url.pathname === '/api/service-status') return jsonResponse({status: 'active'});
     if (url.pathname === '/oauth2/token') return jsonResponse({id_token: 'characterization-refreshed-token'});
     if (url.pathname === '/api/account/resources') {
       accountRequests += 1;
@@ -232,12 +239,15 @@ HARNESS = r"""
     check($('#activePreview').width === 620 && $('#stackPreview').width === 620, 'preview canvas dimensions changed');
 
     let firstLayer = $$('.layer-card')[0];
+    check(firstLayer.querySelector('[data-field="layer_diameter_mm"]').value === '150', 'default layer diameter did not match the project');
+    check(firstLayer.querySelector('[data-field="layer_diameter_mm"]').max === '150', 'layer diameter maximum did not match the project');
     input(firstLayer.querySelector('[data-field="rim_width_mm"]'), 30);
     input(firstLayer.querySelector('[data-field="bridge_width_mm"]'), 20);
     change($('#diameter'), 100);
     firstLayer = $$('.layer-card')[0];
     check(firstLayer.querySelector('[data-field="rim_width_mm"]').value === '15', 'rim width did not follow the diameter limit');
     check(firstLayer.querySelector('[data-field="bridge_width_mm"]').value === '8', 'bridge width did not follow the diameter limit');
+    check(firstLayer.querySelector('[data-field="layer_diameter_mm"]').value === '100', 'layer diameter was not clamped to the project');
     input(firstLayer.querySelector('[data-field="rim_width_mm"]'), 4);
     input(firstLayer.querySelector('[data-field="bridge_width_mm"]'), 1.5);
     change($('#diameter'), 210);
@@ -258,6 +268,7 @@ HARNESS = r"""
 
     let card = $$('.layer-card')[1];
     input(card.querySelector('[data-field="name"]'), 'Characterized layer');
+    input(card.querySelector('[data-field="layer_diameter_mm"]'), 84);
     input(card.querySelector('[data-field="ornament_style"]'), 'paisley');
     input(card.querySelector('[data-field="motif_composition"]'), 'flow_character');
     input(card.querySelector('[data-field="support_mode"]'), 'fully_connected');
@@ -270,12 +281,77 @@ HARNESS = r"""
     input(card.querySelector('[data-field="mirror_wedges"]'), false);
     await settle();
     check($('#layerPreviewName').textContent === 'Characterized layer', 'active-layer name did not update');
+    check(card.querySelector('[data-field="layer_diameter_mm"]').value === '84', 'independent layer diameter did not update');
     check($('#layerPreviewSlider').max === '5', 'preview selector did not track layer count');
 
     card.querySelector('[data-action="up"]').click();
     check($('#layerPreviewPosition').textContent === 'Layer 1 of 5', 'Earlier did not move the active layer');
     $$('.layer-card')[0].querySelector('[data-action="remove"]').click();
     check($$('.layer-card').length === 4, 'Remove did not remove the active layer');
+  }
+
+  async function contextualControlChecks() {
+    await startupChecks();
+    const card = $$('.layer-card')[0];
+    const group = name => {
+      const pages = {'custom-image':'shape','flow-strength':'flow','flowing-form':'flow','motif-position':'placement','fragment-slicing':'placement','motif-mirroring':'placement','outer-edge':'support','support-bridges':'bridges','support-sweep':'support','bridge-wave':'bridges'};
+      if (pages[name]) change($('#settingsPage'), pages[name]);
+      return card.querySelector(`[data-control-group="${name}"]`);
+    };
+    const controls = card.querySelector('.layer-controls');
+    const layerCard = group('layer-settings');
+    const motifCard = group('motif-settings');
+    const supportCard = group('support-settings');
+    check(layerCard.parentElement === controls && motifCard.parentElement === controls && supportCard.parentElement === controls, 'settings were not consolidated into three top-level cards');
+    for (const name of ['motif-layout', 'custom-image', 'flow-strength', 'flowing-form', 'motif-position', 'fragment-slicing', 'motif-mirroring']) {
+      check(motifCard.contains(group(name)), `${name} was not consolidated inside the Motif card`);
+    }
+    for (const name of ['construction', 'openwork', 'opening-placement']) {
+      check(layerCard.contains(group(name)), `${name} was not consolidated inside the Layer settings card`);
+    }
+    for (const name of ['outer-edge', 'support-bridges', 'support-sweep', 'bridge-wave']) {
+      check(supportCard.contains(group(name)), `${name} was not consolidated inside the Structural support card`);
+    }
+    check(!visible(group('custom-image')), 'custom image controls were shown for a built-in motif');
+    check(!visible(group('flowing-form')), 'flowing controls were shown for a hybrid composition');
+    check(visible(group('motif-position')) && visible(group('fragment-slicing')), 'hybrid motif controls were not shown');
+    check(visible(group('support-bridges')) && visible(group('bridge-wave')), 'connected bridge controls were not shown');
+    check(visible(group('opening-placement')), 'opening placement was hidden for nonzero openness');
+
+    input(card.querySelector('[data-field="fragment_scale"]'), 2.2);
+    input(card.querySelector('[data-field="motif_composition"]'), 'whole_repeat');
+    check(!visible(group('fragment-slicing')), 'fragment controls remained visible for whole motifs');
+    input(card.querySelector('[data-field="motif_composition"]'), 'flow_character');
+    check(visible(group('flowing-form')), 'flowing controls did not appear for flowing character');
+    check(!visible(group('motif-position')) && !visible(group('fragment-slicing')), 'fragment placement controls remained visible for flowing character');
+    input(card.querySelector('[data-field="flow_amount"]'), 0);
+    check(!visible(group('flowing-form')) && visible(group('motif-mirroring')), 'zero flow did not switch to repeated-motif controls');
+    input(card.querySelector('[data-field="flow_amount"]'), 0.6);
+    check(visible(group('flowing-form')) && !visible(group('motif-mirroring')), 'nonzero flow did not restore flowing-form controls');
+    input(card.querySelector('[data-field="motif"]'), 'custom');
+    check(visible(group('custom-image')), 'custom image controls did not appear for a custom motif');
+    check(!visible(group('flowing-form')), 'procedural flowing controls remained visible for a custom image');
+    input(card.querySelector('[data-field="motif"]'), 'petal');
+    input(card.querySelector('[data-field="motif_composition"]'), 'hybrid');
+    check(card.querySelector('[data-field="fragment_scale"]').value === '2.2', 'hidden fragment value was not retained');
+
+    input(card.querySelector('[data-field="support_mode"]'), 'loose');
+    check(!visible(group('outer-edge')) && !visible(group('support-bridges')) && !visible(group('support-sweep')), 'support controls remained visible for loose pieces');
+    input(card.querySelector('[data-field="support_mode"]'), 'outer_rim');
+    input(card.querySelector('[data-field="rim_style"]'), 'closed');
+    check(visible(group('outer-edge')) && !visible(group('support-sweep')), 'closed rim showed an unrelated sweep control');
+    input(card.querySelector('[data-field="rim_style"]'), 'petal');
+    check(visible(group('support-sweep')), 'petal crown did not show its sweep control');
+    input(card.querySelector('[data-field="support_mode"]'), 'automatic_bridges');
+    input(card.querySelector('[data-field="bridge_wave_amount"]'), 0);
+    check(!visible(group('bridge-wave')), 'wave shape controls remained visible for a straight bridge');
+    input(card.querySelector('[data-field="bridge_wave_amount"]'), 0.5);
+    check(visible(group('bridge-wave')), 'wave shape controls did not appear for a curved bridge');
+
+    input(card.querySelector('[data-field="layer_openness"]'), 0);
+    check(!visible(group('opening-placement')), 'opening placement remained visible with no openwork');
+    input(card.querySelector('[data-field="layer_openness"]'), 0.25);
+    check(visible(group('opening-placement')), 'opening placement did not appear for openwork');
   }
 
   async function paletteRoutingChecks() {
@@ -304,6 +380,7 @@ HARNESS = r"""
     card.querySelector('[data-action="randomize"]').click();
     card = $$('.layer-card')[0];
     check(card.querySelector('[data-field="name"]').value === 'Named layer', 'Randomize changed the layer name');
+    check(card.querySelector('[data-field="layer_diameter_mm"]').value === '100', 'Randomize changed the layer diameter');
     check(card.querySelector('[data-field="repetitions"]').value !== before, 'Randomize did not change bounded geometry controls');
     check(Number(card.querySelector('[data-field="bridge_wave_amount"]').value) >= 0 && Number(card.querySelector('[data-field="bridge_wave_amount"]').value) <= 1, 'random bridge wave left its allowed range');
     card.querySelector('[data-action="reset"]').click();
@@ -312,6 +389,7 @@ HARNESS = r"""
     check(card.querySelector('[data-field="motif"]').value === 'petal', 'Reset did not restore the default motif');
     check(card.querySelector('[data-field="repetitions"]').value === '12', 'Reset did not restore default repetitions');
     check(card.querySelector('[data-field="support_mode"]').value === 'automatic_bridges', 'Reset did not restore automatic bridges');
+    check(card.querySelector('[data-field="layer_diameter_mm"]').value === '150', 'Reset did not restore the full project diameter');
   }
 
   async function previewChecks() {
@@ -341,8 +419,8 @@ HARNESS = r"""
     card = $$('.layer-card')[0];
 
     attachFile(card.querySelector('[data-field="custom_file"]'), new File(['not svg'], 'motif.txt', {type: 'text/plain'}));
-    await waitFor(() => alerts.length === 1, 'non-SVG custom file did not report a validation error');
-    check(alerts[0] === 'Choose an SVG file.', `non-SVG error changed (${alerts[0]})`);
+    await waitFor(() => alerts.length === 1, 'non-image custom file did not report a validation error');
+    check(alerts[0] === 'Choose an SVG or raster image.', `non-image error changed (${alerts[0]})`);
 
     attachFile(card.querySelector('[data-field="custom_file"]'), new File(['x'.repeat(65537)], 'large.svg', {type: 'image/svg+xml'}));
     await waitFor(() => alerts.length === 2, 'oversized custom SVG did not report a validation error');
@@ -367,6 +445,12 @@ HARNESS = r"""
     attachFile(card.querySelector('[data-field="custom_file"]'), new File([safe], 'characterization-motif.svg', {type: 'image/svg+xml'}));
     await waitFor(() => $$('.layer-card')[0].querySelector('.custom-svg-status')?.textContent.includes('Loaded characterization-motif.svg'), 'safe custom SVG was not retained');
     check($$('.layer-card')[0].querySelector('[data-field="motif"]').value === 'custom', 'custom motif selection changed after loading SVG');
+
+    card = $$('.layer-card')[0];
+    const pngBytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='), character => character.charCodeAt(0));
+    attachFile(card.querySelector('[data-field="custom_file"]'), new File([pngBytes], 'characterization-motif.png', {type: 'image/png'}));
+    await waitFor(() => $$('.layer-card')[0].querySelector('.custom-svg-status')?.textContent.includes('Loaded characterization-motif.png'), 'raster motif was not converted and retained');
+    check($$('.layer-card')[0].querySelector('[data-field="motif"]').value === 'custom', 'custom motif selection changed after loading raster artwork');
   }
 
   async function submitChecks() {
@@ -376,6 +460,7 @@ HARNESS = r"""
     input($('#workbedWidth'), 240);
     input($('#workbedHeight'), 230);
     let card = $$('.layer-card')[0];
+    input(card.querySelector('[data-field="layer_diameter_mm"]'), 96);
     input(card.querySelector('[data-field="ornament_style"]'), 'billow');
     input(card.querySelector('[data-field="motif_composition"]'), 'flow_character');
     input(card.querySelector('[data-field="support_sweep_degrees"]'), 24);
@@ -393,6 +478,7 @@ HARNESS = r"""
     check(submittedPayload?.processing_palette_id === 'processing-1', 'Processing Palette ID was not submitted');
     check(submittedPayload?.material === 'Maple' && submittedPayload?.cut_entry_ref === 'cut-1', 'Cut role selection changed in payload');
     check(submittedPayload?.layers?.length === 3, 'payload layer count changed');
+    check(submittedPayload?.layers?.[0]?.layer_diameter_mm === 96, 'layer diameter changed in payload');
     check(submittedPayload?.layers?.[0]?.ornament_style === 'billow' && submittedPayload?.layers?.[0]?.motif_composition === 'flow_character', 'ornament settings changed in payload');
     check(submittedPayload?.layers?.[0]?.support_sweep_degrees === 24 && submittedPayload?.layers?.[0]?.bridge_wave_amount === 0.75, 'bridge settings changed in payload');
     check(submittedPayload?.layers?.[0]?.layer_openness === 0.35 && submittedPayload?.layers?.[0]?.opening_inner_ratio === 0.42, 'openwork settings changed in payload');
@@ -439,6 +525,67 @@ HARNESS = r"""
     check($$('#outputs a').length === 1, 'resumed output was not rendered');
   }
 
+  async function workspaceChecks() {
+    await startupChecks();
+    await settle();
+    const onScreen = element => {
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.bottom <= innerHeight + 1 && rect.left >= 0 && rect.right <= innerWidth + 1;
+    };
+    const shown = element => element.getClientRects().length && getComputedStyle(element).display !== 'none';
+    check(Boolean($('.staging-shell')), 'workspace was not tested with shared navigation');
+    check(document.documentElement.scrollHeight <= innerHeight + 1, `desktop page needs scrolling (${document.documentElement.scrollHeight} > ${innerHeight})`);
+    check(onScreen($('#activePreview')), 'preview did not fit in the viewport');
+    check($('#activePreview').getBoundingClientRect().height >= innerHeight * .4, 'desktop preview is too small for detailed inspection');
+    const layerTools=$('.layer-toolbar').getBoundingClientRect(),previewTools=$('.workspace-toolbar .preview-heading').getBoundingClientRect();
+    check(Math.abs(layerTools.top+layerTools.height/2-previewTools.top-previewTools.height/2) <= 1, 'layer and preview headers are not aligned in the same row');
+    check(onScreen($('#generate')), 'Generate did not fit in the viewport');
+    check($$('.layer-card').filter(shown).length === 1, 'multiple layer editors were shown');
+    for (const composition of ['hybrid','flow_character']) {
+      input($('.layer-card [data-field="motif_composition"]'), composition);
+    for (const page of ['layer','shape','pattern','transform','flow','placement','support','bridges']) {
+      change($('#settingsPage'), page);
+      for (const field of $$('.layer-card input, .layer-card select').filter(shown)) {
+        check(onScreen(field), `${page}: ${field.dataset.field} did not fit in the viewport`);
+        const pane = $('.layer-workspace').getBoundingClientRect();
+        check(field.getBoundingClientRect().bottom <= pane.bottom + 1, `${page}: ${field.dataset.field} needs control-pane scrolling`);
+      }
+    }
+    }
+    input($('.layer-card [data-field="motif_composition"]'), 'hybrid');
+    input($('.layer-card [data-field="motif"]'), 'custom');
+    change($('#settingsPage'), 'shape');
+    check(onScreen($('.layer-card [data-field="custom_file"]')), 'custom image upload did not fit');
+    input($('.layer-card [data-field="motif"]'), 'petal');
+    change($('#settingsPage'), 'pattern');
+    input($('.layer-card [data-field="repetitions"]'), 19);
+    change($('#layerSelector'), '1');
+    check($('#layerPreviewPosition').textContent === 'Layer 2 of 3', 'layer selector did not select the preview');
+    check($$('.layer-card').filter(shown)[0].dataset.layer === '1', 'selector and editor disagree');
+    input($('#layerPreviewSlider'), 1);
+    check($('#layerSelector').value === '0', 'slider and selector disagree');
+    check($('.layer-card [data-field="repetitions"]').value === '19', 'switching layers lost edits');
+    const invalidField = $('.layer-card [data-field="radial_stretch"]');
+    input(invalidField, 9);
+    change($('#layerSelector'), '1');
+    change($('#settingsPage'), 'layer');
+    check(!$('#mandalaForm').reportValidity(), 'invalid hidden-layer control was accepted');
+    check($('#layerSelector').value === '0' && $('#settingsPage').value === 'transform', 'validation did not reveal the invalid layer and settings section');
+    check(onScreen(invalidField), 'invalid field remained hidden');
+    input(invalidField, 1);
+    change($('#previewMode'), 'stack');
+    check($('#activePreview').hidden && !$('#stackPreview').hidden, 'stack view did not switch canvases');
+    check(onScreen($('#stackPreview')), 'stacked preview did not fit');
+    $('#openProjectSetup').click();
+    check($('#projectSetup').open && onScreen($('#diameter')), 'project setup did not open accessibly');
+    $('#closeProjectSetup').click();
+    check(!$('#projectSetup').open, 'project setup did not close');
+    while (!$('#addLayer').disabled) $('#addLayer').click();
+    check($('#layerSelector').options.length === 12, 'layer selector did not stop at twelve layers');
+    check($$('.layer-card').filter(shown).length === 1, 'adding layers exposed other editors');
+    check(onScreen($('#stackPreview')) && onScreen($('#generate')), 'twelve-layer project exceeded the viewport');
+  }
+
   async function mobileChecks() {
     await startupChecks();
     check(innerWidth <= 500, `mobile viewport was not applied (${innerWidth})`);
@@ -449,14 +596,37 @@ HARNESS = r"""
   }
 
   async function runScenario() {
-    if (scenario === 'guest') {
+    if (scenario === 'guest-login') {
+      $('#loginLink').click();
+      await waitFor(() => Boolean(window.__loginUrl), 'shared login did not create an authorization request');
+      const url=new URL(window.__loginUrl);
+      const verifier=sessionStorage.getItem('pkce_verifier');
+      check(Boolean(verifier) && verifier.length >= 43, 'login did not preserve a PKCE verifier');
+      check(url.searchParams.get('code_challenge_method') === 'S256', 'login did not use S256');
+      const digest=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+      const challenge=btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+      check(url.searchParams.get('code_challenge') === challenge, 'challenge does not match the stored verifier');
+      check(url.searchParams.get('redirect_uri') === new URL('/',location.origin).href, 'login callback changed origin');
+      check(sessionStorage.getItem('post_login_path') === location.pathname+location.search, 'login lost the Mandala return path');
+    } else if (scenario === 'guest') {
       check(visible($('#registeredAccess')), 'signed-out access prompt was not shown');
       check(!visible($('#registeredContent')), 'signed-out content was exposed');
-      check($('#loginLink').href.includes('example.invalid/oauth2/authorize'), 'sign-in link was not configured');
+      check($('#loginLink').hasAttribute('data-registered-access-login'), 'sign-in did not use the shared PKCE login flow');
       check(!fetchHistory.includes('GET /api/account/resources'), 'signed-out page requested account resources');
+    } else if (scenario === 'refresh-only' || scenario === 'login-during-config') {
+      await startupChecks();
+      check(accountAuthorization.every(value => value.startsWith('Bearer ')), 'shared session was not sent to account API');
+      check(!sessionStorage.getItem('oauth_state'), 'Mandala created an incompatible standalone OAuth flow');
+    } else if (scenario === 'restored-login') {
+      check(visible($('#registeredAccess')), 'missing session did not show access prompt');
+      localStorage.setItem('id_token','__JWT__');
+      dispatchEvent(new Event('pageshow'));
+      await waitFor(() => $$('.layer-card').length === 3, 'restored page did not recover the shared session');
+      check(!visible($('#registeredAccess')), 'access prompt remained after recovery');
     } else if (scenario === 'startup') await startupChecks();
     else if (scenario === 'palette-routing') await paletteRoutingChecks();
     else if (scenario === 'editor') await editorChecks();
+    else if (scenario === 'contextual-controls') await contextualControlChecks();
     else if (scenario === 'randomize-reset') await randomizeResetChecks();
     else if (scenario === 'preview') await previewChecks();
     else if (scenario === 'custom-svg') await customSvgChecks();
@@ -465,13 +635,14 @@ HARNESS = r"""
     else if (scenario === 'polling-failure') await pollingFailureChecks();
     else if (scenario === 'auth-retry') await authRetryChecks();
     else if (scenario === 'resume') await resumeChecks();
+    else if (scenario === 'workspace') await workspaceChecks();
     else if (scenario === 'mobile') await mobileChecks();
     else fail(`unknown scenario: ${scenario}`);
   }
 
   const timer = setInterval(async () => {
     if (started) return;
-    const ready = scenario === 'guest' ? visible($('#registeredAccess')) : visible($('#registeredContent')) && $$('.layer-card').length === 3;
+    const ready = ['guest','guest-login','restored-login'].includes(scenario) ? visible($('#registeredAccess')) : visible($('#registeredContent')) && $$('.layer-card').length === 3;
     if (!ready) return;
     started = true;
     try { await runScenario(); }
@@ -507,13 +678,19 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
         cls.temp = tempfile.TemporaryDirectory(prefix="mopa-mandala-browser-")
         cls.site = Path(cls.temp.name) / "site"
         shutil.copytree(WEB, cls.site)
+        shutil.copyfile(ROOT / "static" / "machine_chrome.css", cls.site / "machine_chrome.css")
+        shell_path = cls.site / "staging-shell.js"
+        shell_path.write_text(shell_path.read_text(encoding="utf-8").replace(
+            'location.href = `https://${config.cognito_domain}/oauth2/authorize?${query}`;',
+            'window.__loginUrl = `https://${config.cognito_domain}/oauth2/authorize?${query}`;',
+        ), encoding="utf-8")
         page_path = cls.site / "mandala.html"
         page = page_path.read_text(encoding="utf-8")
         page = re.sub(r'\s*<script src="/staging-shell\.js\?v=4" defer></script>', '', page)
         page = page.replace(
-            '<script src="/mandala.js?v=14" type="module"></script>',
+            '<script src="/mandala.js?v=19" type="module"></script>',
             '<script src="/mandala-characterization-harness.js"></script>\n'
-            '<script src="/mandala.js?v=14" type="module"></script>',
+            '<script src="/mandala.js?v=19" type="module"></script>',
         )
         page_path.write_text(page, encoding="utf-8")
         (cls.site / "mandala-characterization-harness.js").write_text(
@@ -532,7 +709,7 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
         cls.thread.join(timeout=2)
         cls.temp.cleanup()
 
-    def _run_scenario(self, scenario, query="", mobile=False):
+    def _run_scenario(self, scenario, query="", mobile=False, size=None):
         port = self.server.server_address[1]
         url = f"http://127.0.0.1:{port}/mandala.html?scenario={scenario}{query}"
         with tempfile.TemporaryDirectory(prefix="mopa-mandala-profile-") as profile:
@@ -548,6 +725,8 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
             ]
             if mobile:
                 command.extend(["--window-size=390,844", "--force-device-scale-factor=1"])
+            if size:
+                command.extend([f"--window-size={size}", "--force-device-scale-factor=1"])
             command.append(url)
             completed = subprocess.run(
                 command,
@@ -571,6 +750,14 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
     def test_signed_out_access_is_gated(self):
         self._run_scenario("guest")
 
+    def test_signed_out_login_uses_the_shared_pkce_callback_contract(self):
+        self._run_scenario('guest-login')
+
+    def test_shared_session_recovery_without_another_login(self):
+        for scenario in ('refresh-only', 'login-during-config', 'restored-login'):
+            with self.subTest(scenario=scenario):
+                self._run_scenario(scenario)
+
     def test_authenticated_startup_palette_dimensions_and_previews(self):
         self._run_scenario("startup")
 
@@ -580,13 +767,16 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
     def test_layer_add_duplicate_edit_reorder_and_remove(self):
         self._run_scenario("editor")
 
+    def test_layer_controls_follow_their_geometry_dependencies(self):
+        self._run_scenario("contextual-controls")
+
     def test_layer_randomize_is_bounded_and_reset_restores_defaults(self):
         self._run_scenario("randomize-reset")
 
     def test_selected_and_stacked_previews_preserve_colors_and_frame_coalescing(self):
         self._run_scenario("preview")
 
-    def test_custom_svg_rejects_executable_content_and_retains_safe_vector(self):
+    def test_custom_image_rejects_executable_content_and_converts_raster_artwork(self):
         self._run_scenario("custom-svg")
 
     def test_submission_payload_completion_outputs_and_resume_url(self):
@@ -603,6 +793,11 @@ class MandalaBrowserCharacterizationTests(unittest.TestCase):
 
     def test_existing_task_resumes_and_renders_downloads(self):
         self._run_scenario("resume", "&task=mandala-resume-task")
+
+    def test_workspace_fits_desktop_and_laptop_with_shared_navigation(self):
+        for size in ("1366,768", "1440,900", "1920,1080", "1024,768"):
+            with self.subTest(size=size):
+                self._run_scenario("workspace", size=size)
 
     def test_mobile_layout_has_no_horizontal_overflow(self):
         self._run_scenario("mobile", mobile=True)

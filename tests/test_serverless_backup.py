@@ -71,8 +71,8 @@ class ServerlessBackupTests(unittest.TestCase):
         self.assertTrue(module.durable_key("users/owner/materials/library/file.clb"))
         self.assertTrue(module.durable_key("users/owner/holographic-recipes/id/file.json"))
         self.assertTrue(module.durable_key("users/owner/holographic-calibrations/id/file.svg"))
+        self.assertTrue(module.durable_key("users/owner/color-discovery/id/grid.json"))
         self.assertFalse(module.durable_key("users/owner/jobs/id/output.svg"))
-        self.assertFalse(module.durable_key("users/owner/color-discovery/id/grid.json"))
         self.assertFalse(module.durable_key("jobs/id/output.svg"))
 
     def test_changed_objects_copy_and_missing_objects_are_versioned_deletes(self):

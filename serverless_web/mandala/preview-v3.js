@@ -17,15 +17,16 @@ export function createMandalaPreview({query,getLayers,getActiveLayer}){
     layer._imagePromise=new Promise((resolve,reject)=>{
       const image=new Image(),url=URL.createObjectURL(new Blob([layer.custom_svg.svg],{type:"image/svg+xml"}));
       image.onload=()=>{URL.revokeObjectURL(url);layer._image=image;resolve(image)};
-      image.onerror=()=>{URL.revokeObjectURL(url);reject(new Error("Custom SVG preview failed"))};
+      image.onerror=()=>{URL.revokeObjectURL(url);reject(new Error("Custom image preview failed"))};
       image.src=url;
     }).catch(()=>null);
     return layer._imagePromise;
   }
 
   function drawLayer(canvas,layer,index,alpha=1){
-    const context=canvas.getContext("2d"),size=canvas.width,center=size/2,radius=size*.43;
-    const scale=radius/(Number(query("#diameter").value)||150)*2;
+    const context=canvas.getContext("2d"),size=canvas.width,center=size/2,projectRadius=size*.43;
+    const projectDiameter=Math.max(20,Number(query("#diameter").value)||150),layerDiameter=Math.max(20,Math.min(projectDiameter,Number(layer.layer_diameter_mm)||projectDiameter));
+    const radius=projectRadius*layerDiameter/projectDiameter,scale=projectRadius/projectDiameter*2;
     const inner=radius*Number(layer.inner_radius_ratio),rim=Math.max(2,Number(layer.rim_width_mm)*scale),outer=radius-rim*1.2;
     const rings=Math.max(1,Number(layer.rings)),repetitions=Math.max(4,Number(layer.repetitions)),ringStep=(outer-inner)/rings;
     const bridgeWidth=Math.min(Number(layer.bridge_width_mm)*scale,Math.max(.4*scale,ringStep*.24));

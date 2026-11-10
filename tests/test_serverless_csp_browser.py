@@ -95,6 +95,8 @@ class _CspHandler(http.server.SimpleHTTPRequestHandler):
             self.server.csp_result_ready.set()
 
     def do_GET(self):
+        if self.path == "/":
+            self.server.document_requested.set()
         if self.path == "/probe-loaded":
             try:
                 self.send_response(204)
@@ -118,6 +120,21 @@ class _CspHandler(http.server.SimpleHTTPRequestHandler):
 
 class _CspServer(http.server.ThreadingHTTPServer):
     request_queue_size = 16
+
+
+def _retry_unloaded_probe(document_requested, probe_loaded, inline_executed, reports, errors):
+    """Retry startup only, never a loaded page with missing CSP evidence."""
+    return not any((document_requested, probe_loaded, inline_executed, reports, errors))
+
+
+class CspStartupRetryTests(unittest.TestCase):
+    def test_retry_only_when_browser_never_requested_the_page(self):
+        self.assertTrue(_retry_unloaded_probe(False, False, False, [], []))
+        self.assertFalse(_retry_unloaded_probe(True, False, False, [], []))
+        self.assertFalse(_retry_unloaded_probe(False, True, False, [], []))
+        self.assertFalse(_retry_unloaded_probe(False, False, True, [], []))
+        self.assertFalse(_retry_unloaded_probe(False, False, False, [{}], []))
+        self.assertFalse(_retry_unloaded_probe(False, False, False, [], ['invalid report']))
 
 
 class ServerlessCspBrowserTests(unittest.TestCase):
@@ -145,6 +162,7 @@ class ServerlessCspBrowserTests(unittest.TestCase):
         cls.server.inline_executed = False
         cls.server.csp_reports = []
         cls.server.report_errors = []
+        cls.server.document_requested = threading.Event()
         cls.server.probe_loaded = threading.Event()
         cls.server.csp_result_ready = threading.Event()
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
@@ -162,41 +180,56 @@ class ServerlessCspBrowserTests(unittest.TestCase):
         self.server.inline_executed = False
         self.server.csp_reports = []
         self.server.report_errors = []
+        self.server.document_requested.clear()
         self.server.probe_loaded.clear()
         self.server.csp_result_ready.clear()
-        with tempfile.TemporaryDirectory(prefix="mopa-csp-profile-") as profile:
-            with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as browser_log:
-                browser = subprocess.Popen(
-                    [
-                        self.browser,
-                        "--headless=new",
-                        "--disable-gpu",
-                        "--no-sandbox",
-                        "--disable-dev-shm-usage",
-                        f"--user-data-dir={profile}",
-                        f"http://127.0.0.1:{port}/",
-                    ],
-                    stdout=browser_log,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    start_new_session=os.name == "posix",
-                )
-                try:
-                    # Cold Chromium startup on hosted Linux runners can spend more than
-                    # 20 seconds initializing system services. This is only a failure
-                    # deadline: a successful probe returns immediately when both
-                    # browser-native network signals arrive.
-                    ready = self.server.csp_result_ready.wait(timeout=60)
-                finally:
-                    _stop_browser_process_tree(browser)
-                browser_log.seek(0)
-                log_output = browser_log.read()
+        logs = []
+        for attempt in range(2):
+            with tempfile.TemporaryDirectory(prefix="mopa-csp-profile-") as profile:
+                with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as browser_log:
+                    browser = subprocess.Popen(
+                        [
+                            self.browser,
+                            "--headless=new",
+                            "--disable-gpu",
+                            "--no-first-run",
+                            "--no-default-browser-check",
+                            "--disable-background-networking",
+                            "--no-proxy-server",
+                            "--no-sandbox",
+                            "--disable-dev-shm-usage",
+                            f"--user-data-dir={profile}",
+                            f"http://127.0.0.1:{port}/",
+                        ],
+                        stdout=browser_log,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        start_new_session=os.name == "posix",
+                    )
+                    try:
+                        # Cold Chromium startup on hosted Linux runners can spend more than
+                        # 20 seconds initializing system services. This is only a failure
+                        # deadline: a successful probe returns immediately when both
+                        # browser-native network signals arrive.
+                        ready = self.server.csp_result_ready.wait(timeout=60)
+                    finally:
+                        _stop_browser_process_tree(browser)
+                    browser_log.seek(0)
+                    attempt_log = browser_log.read()
+            logs.append(f"Attempt {attempt + 1}:\n{attempt_log[-2000:]}")
+            if ready or not _retry_unloaded_probe(
+                self.server.document_requested.is_set(), self.server.probe_loaded.is_set(),
+                self.server.inline_executed, self.server.csp_reports, self.server.report_errors,
+            ):
+                break
+        log_output = "\n".join(logs)
 
         diagnostics = (
+            f"document_requested={self.server.document_requested.is_set()}, "
             f"probe_loaded={self.server.probe_loaded.is_set()}, "
             f"inline_executed={self.server.inline_executed}, "
             f"report_errors={self.server.report_errors}, "
-            f"reports={self.server.csp_reports}\n{log_output[-2000:]}"
+            f"reports={self.server.csp_reports}\n{log_output}"
         )
         self.assertTrue(ready, f"Chromium did not complete the CSP probe: {diagnostics}")
         self.assertTrue(self.server.inline_executed, diagnostics)

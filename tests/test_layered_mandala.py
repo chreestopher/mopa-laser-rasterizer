@@ -53,6 +53,41 @@ def test_generator_preserves_exact_radial_symmetry_and_bounds():
         assert max(abs(value) for value in geometry.bounds) <= config["diameter_mm"] / 2 + 1e-6
 
 
+def test_layers_default_to_project_diameter_for_backward_compatibility():
+    clean = validate_mandala_config(sample_config())
+    assert [layer["layer_diameter_mm"] for layer in clean["layers"]] == [120, 120]
+
+
+def test_each_layer_can_have_an_independent_physical_diameter():
+    config = sample_config()
+    config["layers"][0]["layer_diameter_mm"] = 120
+    config["layers"][1].update({
+        "layer_diameter_mm": 72,
+        "rim_width_mm": 4,
+        "bridge_width_mm": 2,
+        "bridge_wave_amplitude_mm": 8,
+    })
+    clean, geometries = generate_mandala(config)
+    assert [layer["layer_diameter_mm"] for layer in clean["layers"]] == [120, 72]
+    assert max(abs(value) for value in geometries[0].bounds) == pytest.approx(60, abs=.1)
+    assert max(abs(value) for value in geometries[1].bounds) == pytest.approx(36, abs=.1)
+
+
+@pytest.mark.parametrize("layer_diameter", [19.9, 120.1])
+def test_layer_diameter_must_fit_inside_project_diameter(layer_diameter):
+    config = sample_config()
+    config["layers"][0]["layer_diameter_mm"] = layer_diameter
+    with pytest.raises(ValueError, match="Layer 1 diameter"):
+        validate_mandala_config(config)
+
+
+def test_structural_dimensions_are_bounded_by_layer_diameter():
+    config = sample_config()
+    config["layers"][0].update({"layer_diameter_mm": 40, "rim_width_mm": 7})
+    with pytest.raises(ValueError, match="Layer 1 rim width"):
+        validate_mandala_config(config)
+
+
 def test_connected_support_modes_export_one_physical_piece():
     config = sample_config()
     base_layer = config["layers"][1]
@@ -328,6 +363,7 @@ def test_exports_include_combined_project_individual_layers_and_manifest(tmp_pat
         manifest = json.loads(bundle.read("manifest.json"))
         assert manifest["layer_order"] == "front_to_back"
         assert [layer["index"] for layer in manifest["layers"]] == [1, 2]
+        assert [layer["diameter_mm"] for layer in manifest["layers"]] == [120, 120]
         assert all(layer["path_count"] > 0 for layer in manifest["layers"])
 
 

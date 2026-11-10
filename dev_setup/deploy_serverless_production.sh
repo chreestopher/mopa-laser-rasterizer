@@ -12,6 +12,7 @@ if [ "${1:-}" != "--apply" ]; then
   exit 2
 fi
 serverless_production_guard
+configure_aws_deployment_credentials
 
 required=(SERVERLESS_PRODUCTION_IMAGE_URI S3_BUCKET_NAME DYNAMODB_TABLE_NAME)
 for name in "${required[@]}"; do
@@ -30,9 +31,15 @@ case "$S3_BUCKET_NAME $DYNAMODB_TABLE_NAME" in
     ;;
 esac
 
+# Convert legacy signed-in discovery-grid records before the durable-asset
+# guard runs. This is idempotent and never changes guest or job records.
+python3 "$SCRIPT_DIR/make_color_discovery_grids_durable.py" \
+  --table "$DYNAMODB_TABLE_NAME" --region "${AWS_REGION:-us-east-2}" --apply
+
 # The retained production table is passed into CloudFormation rather than
 # created by it, so reconcile selective job-record TTL explicitly. The helper
-# aborts if any durable Material Library or palette record contains expires_at.
+# aborts if any durable Material Library, palette, or discovery-grid record
+# contains expires_at.
 bash "$SCRIPT_DIR/ensure_dynamodb_job_ttl.sh" --apply "$DYNAMODB_TABLE_NAME"
 
 export SERVERLESS_ENVIRONMENT_NAME=serverless-production

@@ -136,9 +136,12 @@ if [ "${SERVERLESS_CONFIGURE_ARTIFACT_CORS:-false}" = "true" ]; then
   [ -z "$PRIMARY_HOSTNAME" ] || CORS_ORIGINS+=("https://$PRIMARY_HOSTNAME")
   [ -z "$ALTERNATE_HOSTNAME" ] || CORS_ORIGINS+=("https://$ALTERNATE_HOSTNAME")
   CORS_ALLOWED_ORIGINS="$(IFS=,; echo "${CORS_ORIGINS[*]}")"
-  CORS_CONFIGURATION="$(CORS_ALLOWED_ORIGINS="$CORS_ALLOWED_ORIGINS" python3 -c 'import json,os
+  CORS_CONFIGURATION="$(CORS_ALLOWED_ORIGINS="$CORS_ALLOWED_ORIGINS" CORS_ENVIRONMENT_LABEL="$ENVIRONMENT_LABEL" python3 -c 'import json,os
 origins=[value for value in os.environ["CORS_ALLOWED_ORIGINS"].split(",") if value]
-print(json.dumps({"CORSRules":[{"AllowedHeaders":["*"],"AllowedMethods":["POST"],"AllowedOrigins":origins,"ExposeHeaders":["ETag"],"MaxAgeSeconds":600}]},separators=(",",":")))')"
+rules=[{"AllowedHeaders":["*"],"AllowedMethods":["POST"],"AllowedOrigins":origins,"ExposeHeaders":["ETag"],"MaxAgeSeconds":600}]
+if os.environ["CORS_ENVIRONMENT_LABEL"] == "Serverless staging":
+    rules.append({"AllowedMethods":["GET"],"AllowedOrigins":["https://serverless-staging.mopa-laser-rasterizer.com"],"MaxAgeSeconds":600})
+print(json.dumps({"CORSRules":rules},separators=(",",":")))')"
   aws s3api put-bucket-cors --region "$REGION" --bucket "$BUCKET" \
     --cors-configuration "$CORS_CONFIGURATION"
   echo "Artifact upload CORS configured for: ${CORS_ORIGINS[*]}"
@@ -206,19 +209,35 @@ aws s3 cp "$BUILD_DIR/seo/color-lab.html" "s3://$STATIC_BUCKET/web/color-lab.htm
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/color-lab.js" "s3://$STATIC_BUCKET/web/color-lab.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/custom-image-vectorizer-v1.js" "s3://$STATIC_BUCKET/web/custom-image-vectorizer-v1.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/mandala/state-v1.js" "s3://$STATIC_BUCKET/web/mandala/state-v1.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/mandala/state-v2.js" "s3://$STATIC_BUCKET/web/mandala/state-v2.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/mandala/palette-routing-v1.js" "s3://$STATIC_BUCKET/web/mandala/palette-routing-v1.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/mandala/geometry-v1.js" "s3://$STATIC_BUCKET/web/mandala/geometry-v1.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
-aws s3 cp "$REPO_ROOT/serverless_web/mandala/preview-v1.js" "s3://$STATIC_BUCKET/web/mandala/preview-v1.js" \
+aws s3 cp "$REPO_ROOT/serverless_web/mandala/preview-v2.js" "s3://$STATIC_BUCKET/web/mandala/preview-v2.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
-aws s3 cp "$REPO_ROOT/serverless_web/mandala/asset-constraints-v1.js" "s3://$STATIC_BUCKET/web/mandala/asset-constraints-v1.js" \
+aws s3 cp "$REPO_ROOT/serverless_web/mandala/preview-v3.js" "s3://$STATIC_BUCKET/web/mandala/preview-v3.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/mandala/asset-constraints-v2.js" "s3://$STATIC_BUCKET/web/mandala/asset-constraints-v2.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/mandala/asset-constraints-v3.js" "s3://$STATIC_BUCKET/web/mandala/asset-constraints-v3.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/mandala/job-lifecycle-v1.js" "s3://$STATIC_BUCKET/web/mandala/job-lifecycle-v1.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
-aws s3 cp "$REPO_ROOT/serverless_web/mandala/layer-editor-v1.js" "s3://$STATIC_BUCKET/web/mandala/layer-editor-v1.js" \
+aws s3 cp "$REPO_ROOT/serverless_web/mandala/job-lifecycle-v2.js" "s3://$STATIC_BUCKET/web/mandala/job-lifecycle-v2.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/mandala/layer-editor-v2.js" "s3://$STATIC_BUCKET/web/mandala/layer-editor-v2.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/mandala/layer-editor-v3.js" "s3://$STATIC_BUCKET/web/mandala/layer-editor-v3.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/mandala/layer-editor-v4.js" "s3://$STATIC_BUCKET/web/mandala/layer-editor-v4.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/mandala/layer-editor-v5.js" "s3://$STATIC_BUCKET/web/mandala/layer-editor-v5.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/mandala.js" "s3://$STATIC_BUCKET/web/mandala.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
@@ -226,15 +245,17 @@ aws s3 cp "$REPO_ROOT/serverless_web/mandala.css" "s3://$STATIC_BUCKET/web/manda
   --region "$REGION" --content-type text/css --cache-control no-cache --only-show-errors
 aws s3 cp "$BUILD_DIR/seo/mandala.html" "s3://$STATIC_BUCKET/web/mandala.html" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
-aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/geometry-v1.js" "s3://$STATIC_BUCKET/web/spiralgraph/geometry-v1.js" \
+aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/geometry-v2.js" "s3://$STATIC_BUCKET/web/spiralgraph/geometry-v2.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
-aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/hardware-preview-v1.js" "s3://$STATIC_BUCKET/web/spiralgraph/hardware-preview-v1.js" \
+aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/hardware-preview-v2.js" "s3://$STATIC_BUCKET/web/spiralgraph/hardware-preview-v2.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
-aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/canvas-preview-v1.js" "s3://$STATIC_BUCKET/web/spiralgraph/canvas-preview-v1.js" \
+aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/canvas-preview-v2.js" "s3://$STATIC_BUCKET/web/spiralgraph/canvas-preview-v2.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
-aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/drawing-editor-v1.js" "s3://$STATIC_BUCKET/web/spiralgraph/drawing-editor-v1.js" \
+aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/drawing-editor-v2.js" "s3://$STATIC_BUCKET/web/spiralgraph/drawing-editor-v2.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
-aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/state-v1.js" "s3://$STATIC_BUCKET/web/spiralgraph/state-v1.js" \
+aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/drawing-editor-v3.js" "s3://$STATIC_BUCKET/web/spiralgraph/drawing-editor-v3.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/state-v2.js" "s3://$STATIC_BUCKET/web/spiralgraph/state-v2.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/spiralgraph/palette-routing-v1.js" "s3://$STATIC_BUCKET/web/spiralgraph/palette-routing-v1.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
@@ -272,15 +293,52 @@ aws s3 cp "$REPO_ROOT/static/depthmap_lightburn.js" "s3://$STATIC_BUCKET/web/dep
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/depthmap_bootstrap.js" "s3://$STATIC_BUCKET/web/depthmap_bootstrap.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
+# The integration module is inert outside its explicit staging origin and when
+# extension discovery fails. Publish dependencies before the History document.
+aws s3 cp "$REPO_ROOT/serverless_web/lightburn-integration.js" "s3://$STATIC_BUCKET/web/lightburn-integration.js" \
+  --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/lightburn-integration.css" "s3://$STATIC_BUCKET/web/lightburn-integration.css" \
+  --region "$REGION" --content-type text/css --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/history.html" "s3://$STATIC_BUCKET/web/history.html" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/history.js" "s3://$STATIC_BUCKET/web/history.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
+if [ "$ENVIRONMENT_LABEL" = "Serverless staging" ]; then
+  # Isolated extension POC; dependencies precede the page. Never publish to production.
+  aws s3 cp "$REPO_ROOT/serverless_web/lightburn-connection-test.js" "s3://$STATIC_BUCKET/web/lightburn-connection-test.js" \
+    --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
+  aws s3 cp "$REPO_ROOT/serverless_web/lightburn-connection-test.css" "s3://$STATIC_BUCKET/web/lightburn-connection-test.css" \
+    --region "$REGION" --content-type text/css --cache-control no-cache --only-show-errors
+  aws s3 cp "$REPO_ROOT/serverless_web/lightburn-connection-test.html" "s3://$STATIC_BUCKET/web/lightburn-connection-test.html" \
+    --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
+fi
 aws s3 cp "$REPO_ROOT/serverless_web/admin.html" "s3://$STATIC_BUCKET/web/admin.html" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/admin.js" "s3://$STATIC_BUCKET/web/admin.js" \
   --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/admin.css" "s3://$STATIC_BUCKET/web/admin.css" \
+  --region "$REGION" --content-type text/css --cache-control no-cache --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/lightburn-page-bridge.js" "s3://$STATIC_BUCKET/web/lightburn-page-bridge.js" \
+  --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
+EXTENSION_ENVIRONMENT=production
+if [ "$ENVIRONMENT_LABEL" = "Serverless staging" ]; then EXTENSION_ENVIRONMENT=staging; fi
+python3 "$REPO_ROOT/dev_setup/package_lightburn_extension.py" --output "$BUILD_DIR/lightburn-extension.zip" \
+  --origin "$PUBLIC_BASE_URL" --environment "$EXTENSION_ENVIRONMENT" --guide-output "$BUILD_DIR/lightburn-extension.html"
+aws s3 cp "$BUILD_DIR/lightburn-extension.zip" "s3://$STATIC_BUCKET/web/downloads/mopa-lightburn-extension-beta.zip" \
+  --content-type application/zip --cache-control no-cache --region "$REGION" --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/lightburn-extension-guide.css" "s3://$STATIC_BUCKET/web/lightburn-extension-guide.css" \
+  --content-type text/css --cache-control no-cache --region "$REGION" --only-show-errors
+aws s3 cp "$BUILD_DIR/lightburn-extension.html" "s3://$STATIC_BUCKET/web/lightburn-extension.html" \
+  --content-type text/html --cache-control no-cache --region "$REGION" --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/lightburn-palette-model.js" "s3://$STATIC_BUCKET/web/lightburn-palette-model.js" \
+  --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/lightburn-processing-model.js" "s3://$STATIC_BUCKET/web/lightburn-processing-model.js" \
+  --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/lightburn-processing-import.js" "s3://$STATIC_BUCKET/web/lightburn-processing-import.js" \
+  --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/lightburn-palette-import.js" "s3://$STATIC_BUCKET/web/lightburn-palette-import.js" \
+  --region "$REGION" --content-type application/javascript --cache-control no-cache --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/lightburn-palette-import.css" "s3://$STATIC_BUCKET/web/lightburn-palette-import.css" \
   --region "$REGION" --content-type text/css --cache-control no-cache --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/vault.html" "s3://$STATIC_BUCKET/web/vault.html" \
   --region "$REGION" --content-type text/html --cache-control no-cache --only-show-errors

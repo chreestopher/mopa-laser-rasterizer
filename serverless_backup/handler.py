@@ -7,7 +7,7 @@ import boto3
 
 SOURCE_BUCKET = os.environ["SOURCE_BUCKET"]
 BACKUP_BUCKET = os.environ["BACKUP_BUCKET"]
-DURABLE_KINDS = frozenset({"materials", "holographic-recipes", "holographic-calibrations"})
+DURABLE_KINDS = frozenset({"materials", "holographic-recipes", "holographic-calibrations", "color-discovery"})
 MAX_SINGLE_COPY_BYTES = 5 * 1024**3
 
 s3 = boto3.client("s3")

@@ -6,13 +6,13 @@
       "version": "v1.1.0",
       "date": "2026-10-02",
       "title": "Build Bigger, Shape Deeper, and Control More of the Engraving",
-      "summary": "A major workflow release adding panel-sized production, richer LightBurn exports, operation-based Processing Palettes, and new tools for layered and geometric artwork.",
+      "summary": "A major workflow release adding panel-sized production, richer LightBurn exports and browser integration, operation-based Processing Palettes, and new tools for layered and geometric artwork.",
       "groups": [
         {
           "title": "Improvements to existing workflows",
           "items": [
             "Panel Tiling splits large Rasterizer designs across repeatable blanks and exports centered tile files, a manifest, and an assembly map.",
-            "Color Discovery can export native LightBurn Material Test presets with grids of up to 400 cells, avoiding the 30-cell limit of color-layer-based LightBurn projects.",
+            "Color Discovery can export native LightBurn Material Test presets with grids of up to 800 cells, avoiding the 30-cell limit of color-layer-based LightBurn projects.",
             "Expanded geometry options add Halftone Newsprint, custom Glyph and Krasnow cells, tighter packing, seeded rotation, per-swatch routing, and source-image detail in Parallax SVG exports.",
             "Job History thumbnails, steadier signed-in navigation, recoverable expired guest links, bulk swatch routing controls, and optional white engraving make everyday workflows easier to manage."
           ]
@@ -29,8 +29,27 @@
           "title": "New experimental laboratories",
           "items": [
             "Layered Mandala Lab builds coordinated multi-sheet radial artwork with custom motifs, openwork, structural supports, and per-layer Randomize and Reset controls.",
-            "SpiralGraph Lab creates open-line or filled-ribbon drawings from interactive virtual tracks, gears, pencil holes, and custom SVG tracks, with optional per-drawing palette routing.",
+            "SpiralGraph Lab creates open-line or filled-ribbon drawings from resizable virtual tracks, gears, pencil reaches, and custom SVG or raster-image tracks, with independent drawing sizes and optional per-drawing palette routing.",
             "Generated LightBurn projects remain editable starting points: inspect every layer and setting, then test on suitable scrap before running valuable work."
+          ]
+        },
+        {
+          "title": "LightBurn browser extension beta",
+          "items": [
+            "Connect Rasterizer to local LightBurn through the Chrome/Edge browser extension beta. Requires LightBurn 2.23 or later.",
+            "Create a Color palette from selected LightBurn Material Library entries and assign each entry to a Rasterizer swatch during preview.",
+            "Import LightBurn swatches into an existing Color palette, or create a Processing palette by assigning settings to Cut, Score, Photo, Fill, Shovel, Cleaning, and 3D-Slice roles.",
+            "Imports show completion feedback; imported settings remain snapshots rather than live synchronization.",
+            "Load native .lbrn2 files up to 250 MiB from Job History, review the current project, and explicitly confirm replacement. The extension does not start the laser.",
+            "Connection, pairing, and import failure handling help recover interrupted operations. If completion is unknown, inspect LightBurn before retrying; closing a dialog does not cancel an import.",
+            "A download and installation guide covers Chrome/Edge, enabling LightBurn API access, pairing, usage, and manual updates. Extension controls appear only when the extension is enabled.",
+            "Deployment packages each download for its own website origin: Development for staging and Beta for production. Unpacked installations require manual updates."
+          ]
+        },
+        {
+          "title": "Deployment reliability",
+          "items": [
+            "Staging deployment compares each component against its last successful deployment, so changes missed by a failed deployment remain eligible on the next run."
           ]
         }
       ],
@@ -42,6 +61,10 @@
         {
           "label": "Read the release story",
           "href": "/release-story"
+        },
+        {
+          "label": "Install the LightBurn extension beta",
+          "href": "/lightburn-extension.html"
         }
       ]
     },

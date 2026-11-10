@@ -112,8 +112,10 @@ def validate_mandala_config(raw):
         motif_composition = str(source.get("motif_composition") or "flow_character").strip().lower()
         if motif_composition not in MOTIF_COMPOSITIONS:
             raise ValueError(f"Mandala layer {index} has an invalid motif composition")
+        layer_diameter = _number(source.get("layer_diameter_mm", diameter), f"Layer {index} diameter", 20, diameter)
         cleaned_layers.append({
             "name": str(source.get("name") or f"Layer {index}").strip()[:80] or f"Layer {index}",
+            "layer_diameter_mm": layer_diameter,
             "motif": motif,
             "custom_svg": cleaned_svg,
             "construction": construction,
@@ -134,11 +136,11 @@ def validate_mandala_config(raw):
             "rotation_degrees": _number(source.get("rotation_degrees", 0), f"Layer {index} rotation", -180, 180),
             "alternate_rotation": _boolean(source.get("alternate_rotation"), f"Layer {index} alternate ring phase", True),
             "mirror_alternating": _boolean(source.get("mirror_alternating"), f"Layer {index} mirror alternating motifs", False),
-            "rim_width_mm": _number(source.get("rim_width_mm", max(2, diameter * 0.025)), f"Layer {index} rim width", 0.5, diameter * 0.15),
-            "bridge_width_mm": _number(source.get("bridge_width_mm", max(1, diameter * 0.012)), f"Layer {index} bridge width", 0.4, diameter * 0.08),
+            "rim_width_mm": _number(source.get("rim_width_mm", min(layer_diameter * 0.15, max(0.5, layer_diameter * 0.025))), f"Layer {index} rim width", 0.5, layer_diameter * 0.15),
+            "bridge_width_mm": _number(source.get("bridge_width_mm", min(layer_diameter * 0.08, max(0.4, layer_diameter * 0.012))), f"Layer {index} bridge width", 0.4, layer_diameter * 0.08),
             "support_sweep_degrees": _number(source.get("support_sweep_degrees", 0), f"Layer {index} support sweep", -75, 75),
             "bridge_wave_amount": _number(source.get("bridge_wave_amount", 0), f"Layer {index} bridge wave amount", 0, 1),
-            "bridge_wave_amplitude_mm": _number(source.get("bridge_wave_amplitude_mm", max(2, diameter * 0.04)), f"Layer {index} bridge wave amplitude", 0, diameter * 0.2),
+            "bridge_wave_amplitude_mm": _number(source.get("bridge_wave_amplitude_mm", min(layer_diameter * 0.2, max(2, layer_diameter * 0.04))), f"Layer {index} bridge wave amplitude", 0, layer_diameter * 0.2),
             "bridge_wave_position": _number(source.get("bridge_wave_position", 0.5), f"Layer {index} bridge wave position", 0.1, 0.9),
             "layer_openness": _number(source.get("layer_openness", 0), f"Layer {index} openness", 0, 1),
             "opening_inner_ratio": _number(source.get("opening_inner_ratio", 0.25), f"Layer {index} opening inner position", 0.05, 0.85),
@@ -539,7 +541,7 @@ def _connect_pattern_to_support(pattern, support, hub_radius, width, repetitions
 def generate_layer_geometry(config, layer_index):
     """Generate one centered, rotationally symmetric physical layer."""
     layer = config["layers"][layer_index]
-    radius = config["diameter_mm"] / 2
+    radius = layer["layer_diameter_mm"] / 2
     rim_width = min(layer["rim_width_mm"], radius * 0.3)
     inner_limit = max(radius * layer["inner_radius_ratio"], layer["bridge_width_mm"] * 1.5)
     outer_limit = radius - rim_width * 1.2
@@ -849,6 +851,7 @@ def build_mandala_exports(output_directory, config):
         layer_paths = write_lightburn(lightburn_path, clean, geometries, [index - 1])
         manifest["layers"].append({
             "index": index, "name": layer["name"], "motif": layer["motif"],
+            "diameter_mm": layer["layer_diameter_mm"],
             "construction": layer["construction"], "support_mode": layer["support_mode"],
             "path_count": layer_paths, "area_mm2": round(float(geometry.area), 5),
             "svg": svg_path.name, "lightburn": lightburn_path.name,

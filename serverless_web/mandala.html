@@ -4,33 +4,32 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Layered Mandala Lab | MOPA Laser Rasterizer</title>
-  <meta name="description" content="Build cuttable multi-layer radial mandala projects from built-in and custom SVG motifs.">
+  <meta name="description" content="Build cuttable multi-layer radial mandala projects from built-in motifs or custom SVG and raster artwork.">
   <link rel="stylesheet" href="/machine_chrome.css?v=3">
   <link rel="stylesheet" href="/staging-shell.css?v=1">
   <link rel="stylesheet" href="/staging-shell-v2.css">
   <link rel="stylesheet" href="/staging-pages.css?v=4">
-  <link rel="stylesheet" href="/mandala.css?v=2">
+  <link rel="stylesheet" href="/mandala.css?v=6">
   <script src="/staging-shell.js?v=4" defer></script>
-  <script src="/mandala.js?v=14" type="module"></script>
+  <script src="/mandala.js?v=19" type="module"></script>
 </head>
 <body>
   <main id="main-content" class="mandala-shell">
     <section id="registeredAccess" class="mandala-panel access-panel" hidden>
       <h2>Operator access required</h2>
       <p>Layered Mandala projects use saved Processing Palettes and retained Job History, so this laboratory requires a signed-in account.</p>
-      <a id="loginLink" class="mandala-button" href="/">Sign in</a>
+      <a id="loginLink" data-registered-access-login class="mandala-button" href="/">Sign in</a>
     </section>
 
     <div id="registeredContent" hidden>
-      <section class="mandala-panel intro-panel">
-        <p class="eyebrow">Experimental layered vector construction</p>
-        <h2>Layered Mandala Lab</h2>
-        <p>Create front-to-back physical layers from constrained radial patterns. Every design retains a center, concentric organization, and exact rotational repetition. This first implementation supports built-in motifs and plain closed-vector SVG motifs.</p>
-      </section>
-
       <form id="mandalaForm">
+        <div class="workspace-title">
+          <div><h1>Layered Mandala Lab</h1><p>Edit one layer at a time. Preview changes as you work.</p></div>
+          <button id="openProjectSetup" type="button" class="mandala-button">Project &amp; machine setup</button>
+        </div>
+        <dialog id="projectSetup" class="mandala-panel" aria-labelledby="projectSetupTitle">
         <section class="mandala-panel project-controls">
-          <h2>Project and machine setup</h2>
+          <div class="section-heading"><h2 id="projectSetupTitle">Project and machine setup</h2><button id="closeProjectSetup" type="button" class="mandala-button">Done</button></div>
           <div class="control-grid">
             <label>Project name<input id="projectName" maxlength="120" value="Layered Mandala"></label>
             <label>Finished diameter (mm)<input id="diameter" type="number" min="20" max="1000" step="1" value="150"></label>
@@ -43,40 +42,50 @@
           <p id="paletteStatus" class="fine-print">Loading saved Processing Palettes…</p>
         </section>
 
-        <section class="mandala-panel layer-workspace">
-          <div class="section-heading">
-            <div><h2>Physical layers</h2><p>Layers are exported in front-to-back order.</p></div>
-            <button id="addLayer" type="button" class="mandala-button">Add layer</button>
-          </div>
-          <div id="layerList" class="layer-list"></div>
-        </section>
-
-        <section class="mandala-panel preview-workspace">
-          <div class="single-layer-preview">
-            <div class="preview-heading">
-              <div>
-                <h2>Single layer</h2>
-                <p id="layerPreviewName">Layer 1</p>
-              </div>
-              <output id="layerPreviewPosition" for="layerPreviewSlider">Layer 1 of 1</output>
+        </dialog>
+        <section id="mandalaWorkspace" class="mandala-panel mandala-workspace" aria-label="Mandala layer editor">
+          <div class="workspace-toolbar">
+            <div class="layer-toolbar">
+              <label>Edit layer<select id="layerSelector" aria-describedby="layerOrderHint"></select></label>
+              <p id="layerOrderHint">Front-to-back order</p>
+              <button id="addLayer" type="button" class="mandala-button">Add layer</button>
             </div>
-            <label class="preview-layer-control" for="layerPreviewSlider">Preview layer
-              <input id="layerPreviewSlider" type="range" min="1" max="1" step="1" value="1">
-            </label>
-            <canvas id="activePreview" width="620" height="620" aria-label="Selected mandala layer preview"></canvas>
+            <div class="preview-heading">
+              <div><h2>Live preview</h2><p id="layerPreviewName">Layer 1</p></div>
+              <label>View<select id="previewMode"><option value="layer">Single layer</option><option value="stack">Fully stacked assembly</option></select></label>
+            </div>
           </div>
-          <div>
-            <h2>Fully stacked assembly</h2>
-            <canvas id="stackPreview" width="620" height="620" aria-label="Stacked mandala assembly preview"></canvas>
+          <div class="workspace-body">
+            <section class="layer-workspace" aria-label="Selected layer controls">
+              <label class="settings-selector">Settings section<select id="settingsPage">
+                <option value="layer">Layer &amp; openwork</option>
+                <option value="shape">Shape &amp; custom image</option>
+                <option value="pattern">Pattern layout</option>
+                <option value="transform">Pattern transform</option>
+                <option value="flow">Flowing form</option>
+                <option value="placement">Placement &amp; mirroring</option>
+                <option value="support">Rim &amp; support</option>
+                <option value="bridges">Bridge shape</option>
+              </select></label>
+              <div id="layerList" class="layer-list"></div>
+            </section>
+            <section class="preview-workspace" aria-label="Live design preview">
+              <div class="preview-stage">
+                <canvas id="activePreview" width="620" height="620" aria-label="Selected mandala layer preview"></canvas>
+                <canvas id="stackPreview" width="620" height="620" aria-label="Stacked mandala assembly preview" hidden></canvas>
+              </div>
+              <div class="preview-navigation">
+                <output id="layerPreviewPosition" for="layerPreviewSlider layerSelector">Layer 1 of 1</output>
+                <label class="preview-layer-control" for="layerPreviewSlider">Select layer<input id="layerPreviewSlider" type="range" min="1" max="1" step="1" value="1"></label>
+              </div>
+            </section>
           </div>
-        </section>
-
         <section class="mandala-panel generation-panel">
-          <p><strong>Final generation:</strong> the backend rebuilds and validates the geometry, then creates a combined LightBurn project, individual layer projects and SVGs, an assembly preview, and a manifest.</p>
           <button id="generate" type="submit" class="mandala-button primary">Generate projects for review</button>
           <p id="status" role="status" aria-live="polite">Configure the layers and inspect both previews before generating.</p>
-          <div id="outputs" class="output-grid"></div>
         </section>
+        </section>
+        <div id="outputs" class="output-grid" aria-live="polite"></div>
       </form>
     </div>
   </main>
