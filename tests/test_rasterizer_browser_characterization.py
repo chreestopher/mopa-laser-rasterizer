@@ -41,7 +41,7 @@ HARNESS = r"""
 (() => {
   const params = new URLSearchParams(location.search);
   const scenario = params.get('scenario');
-  const eventDrivenScenario = ['shape-assets', 'flow-painter'].includes(scenario);
+  const eventDrivenScenario = ['shape-assets', 'flow-painter', 'geometry-routing'].includes(scenario);
   const failures = [];
   const runtimeErrors = [];
   const statusHistory = [];
@@ -733,13 +733,13 @@ HARNESS = r"""
       choice.value = 'svg';
       choice.dispatchEvent(new Event('change', {bubbles: true}));
       attachArtwork('#artwork');
-      return;
+      return true;
     }
     if (!window.__geometryStyleSelected) {
       window.__geometryStyleSelected = true;
       document.querySelector('#geometryStyle').value = 'by_swatch';
       document.querySelector('#geometryStyle').dispatchEvent(new Event('change', {bubbles: true}));
-      return;
+      return true;
     }
     const routes = [...document.querySelectorAll('#geometryRoutingGrid .geometry-route-card')];
     if (routes.length !== palette.length) return;
@@ -760,7 +760,7 @@ HARNESS = r"""
       window.__geometryBulkApplied = gray.querySelector('[data-route-style]').value === 'glyphs' && white.querySelector('[data-route-style]').value === 'glyphs';
       white.querySelector('[data-route-style]').value = 'halftone_newsprint';
       white.querySelector('[data-route-style]').dispatchEvent(new Event('change', {bubbles: true}));
-      return;
+      return true;
     }
     const glyphBox = document.querySelector('#routedGlyphControls');
     const halftoneBox = document.querySelector('#routedHalftoneControls');
@@ -780,8 +780,7 @@ HARNESS = r"""
     const dotSize = halftoneBox.querySelector('[data-geometry-parameter="cell_size_mm"]');
     dotSize.value = '0.55';
     dotSize.dispatchEvent(new Event('input', {bubbles: true}));
-    window.__submissionStarted = true;
-    form.requestSubmit();
+    return beginMultistageSubmission(form);
   };
   const startFlowPainterCharacterization = () => {
     const form = document.querySelector('#job');
@@ -892,7 +891,7 @@ HARNESS = r"""
     if (scenario === 'palette-resources') startPaletteResourcesCharacterization();
     if (scenario === 'material-input') startMaterialInputCharacterization();
     const shapeAssetsAdvanced = scenario === 'shape-assets' && startShapeAssetsCharacterization();
-    if (scenario === 'geometry-routing') startGeometryRoutingCharacterization();
+    const geometryRoutingAdvanced = scenario === 'geometry-routing' && startGeometryRoutingCharacterization();
     const flowPainterAdvanced = scenario === 'flow-painter' && startFlowPainterCharacterization();
     if (scenario === 'submission-error' && !window.__submissionStarted) return;
     if (!eventDrivenScenario) submissionReadinessObserver?.disconnect();
@@ -962,7 +961,7 @@ HARNESS = r"""
     }
     if (ready || Date.now() >= deadline) finish();
     else if (eventDrivenScenario) {
-      if (shapeAssetsAdvanced || flowPainterAdvanced) queueApplicationCheck();
+      if (shapeAssetsAdvanced || flowPainterAdvanced || geometryRoutingAdvanced) queueApplicationCheck();
     }
     else setTimeout(waitForApplication, 25);
   };
