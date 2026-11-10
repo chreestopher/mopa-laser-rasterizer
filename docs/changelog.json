@@ -45,12 +45,6 @@
             "A download and installation guide covers Chrome/Edge, enabling LightBurn API access, pairing, usage, and manual updates. Extension controls appear only when the extension is enabled.",
             "Deployment packages each download for its own website origin: Development for staging and Beta for production. Unpacked installations require manual updates."
           ]
-        },
-        {
-          "title": "Deployment reliability",
-          "items": [
-            "Staging deployment compares each component against its last successful deployment, so changes missed by a failed deployment remain eligible on the next run."
-          ]
         }
       ],
       "links": [
