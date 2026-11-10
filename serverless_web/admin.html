@@ -13,6 +13,18 @@
 <body>
   <h1>Administration</h1>
   <p>Private operational visibility for serverless processing.</p>
+  <section class="admin-panel admin-protected admin-release-panel" aria-labelledby="admin-release-title" hidden>
+    <div class="admin-heading">
+      <div><p class="admin-kicker">One-time production action</p><h2 id="admin-release-title">Release announcement</h2></div>
+      <strong id="releaseAnnouncementState" class="admin-count">&mdash;</strong>
+    </div>
+    <p id="releaseAnnouncementSubject">Loading the prepared announcement&hellip;</p>
+    <p id="releaseAnnouncementNotice" role="status">Checking announcement readiness&hellip;</p>
+    <div class="admin-tools admin-release-actions">
+      <button id="announceRelease" class="danger" type="button" disabled>Announce Release</button>
+    </div>
+    <p class="admin-release-footnote">This sends the approved email once to confirmed users who explicitly opted in. It cannot be sent from staging and will not run during deployment.</p>
+  </section>
   <section class="admin-panel admin-protected admin-service-panel" aria-labelledby="admin-service-title" hidden>
     <div class="admin-heading">
       <div><p class="admin-kicker">Monthly spend protection</p><h2 id="admin-service-title">Processing availability</h2></div>
@@ -73,6 +85,6 @@
     <div id="adminObjectOwners" class="admin-object-owners"><p>Loading saved object ownership&hellip;</p></div>
     <p class="admin-object-counts-footnote">Each saved palette or calibration set counts once; backing files and temporary job data are not included.</p>
   </section>
-  <script type="module" src="/admin.js?v=5"></script>
+  <script type="module" src="/admin.js?v=6"></script>
 </body>
 </html>

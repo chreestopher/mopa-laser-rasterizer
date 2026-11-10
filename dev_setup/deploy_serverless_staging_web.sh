@@ -60,6 +60,15 @@ case "$GUEST_ACCESS_ENABLED" in
   true|false) ;;
   *) echo "SERVERLESS_GUEST_ACCESS_ENABLED must be true or false." >&2; exit 2 ;;
 esac
+RELEASE_EMAIL_SOURCE="${SERVERLESS_RELEASE_EMAIL_SOURCE:-}"
+RELEASE_EMAIL_CONTACT_LIST="${SERVERLESS_RELEASE_EMAIL_CONTACT_LIST:-}"
+RELEASE_EMAIL_TOPIC="${SERVERLESS_RELEASE_EMAIL_TOPIC:-}"
+RELEASE_EMAIL_CONFIGURATION_SET="${SERVERLESS_RELEASE_EMAIL_CONFIGURATION_SET:-}"
+RELEASE_ANNOUNCEMENT_LIVE_ENABLED="${SERVERLESS_RELEASE_ANNOUNCEMENT_LIVE_ENABLED:-false}"
+case "$RELEASE_ANNOUNCEMENT_LIVE_ENABLED" in
+  true|false) ;;
+  *) echo "SERVERLESS_RELEASE_ANNOUNCEMENT_LIVE_ENABLED must be true or false." >&2; exit 2 ;;
+esac
 
 output() {
   aws cloudformation describe-stacks --region "$REGION" --stack-name "$1" \
@@ -80,11 +89,16 @@ PIPE_NAME="${PIPE_ARN##*/}"
 BUILD_DIR="$(mktemp -d)"
 trap 'rm -rf -- "$BUILD_DIR"' EXIT
 cp "$REPO_ROOT/serverless_api/handler.py" "$BUILD_DIR/handler.py"
+mkdir -p "$BUILD_DIR/dev_setup" "$BUILD_DIR/docs/releases"
+cp "$REPO_ROOT/dev_setup/release_announcement_email.py" "$BUILD_DIR/dev_setup/release_announcement_email.py"
+printf '' > "$BUILD_DIR/dev_setup/__init__.py"
+cp "$REPO_ROOT/docs/releases/current-announcement.json" "$BUILD_DIR/docs/releases/current-announcement.json"
 BUILD_DIR="$BUILD_DIR" python3 -c 'import os,zipfile
 root=os.environ["BUILD_DIR"]
 with zipfile.ZipFile(os.path.join(root,"function.zip"),"w",zipfile.ZIP_DEFLATED) as archive:
-    info=zipfile.ZipInfo("handler.py",(1980,1,1,0,0,0)); info.external_attr=0o644<<16
-    archive.writestr(info,open(os.path.join(root,"handler.py"),"rb").read())'
+    for name in ("handler.py", "dev_setup/__init__.py", "dev_setup/release_announcement_email.py", "docs/releases/current-announcement.json"):
+        info=zipfile.ZipInfo(name,(1980,1,1,0,0,0)); info.external_attr=0o644<<16
+        archive.writestr(info,open(os.path.join(root,*name.split("/")),"rb").read())'
 CODE_DIGEST="$(sha256sum "$BUILD_DIR/function.zip" | cut -d' ' -f1)"
 CODE_KEY="web-deploy/api-${CODE_DIGEST}.zip"
 aws s3 cp "$BUILD_DIR/function.zip" "s3://$STATIC_BUCKET/$CODE_KEY" --region "$REGION" --only-show-errors
@@ -110,6 +124,11 @@ aws cloudformation deploy --region "$REGION" --stack-name "$WEB_STACK" \
     "LambdaCodeBucket=$STATIC_BUCKET" "LambdaCodeKey=$CODE_KEY" \
     "CognitoUserPoolId=$COGNITO_POOL_ID" "CognitoDomain=$COGNITO_DOMAIN" \
     "AdminEmail=$ADMIN_EMAIL" \
+    "ReleaseEmailSource=$RELEASE_EMAIL_SOURCE" \
+    "ReleaseEmailContactList=$RELEASE_EMAIL_CONTACT_LIST" \
+    "ReleaseEmailTopic=$RELEASE_EMAIL_TOPIC" \
+    "ReleaseEmailConfigurationSet=$RELEASE_EMAIL_CONFIGURATION_SET" \
+    "ReleaseAnnouncementLiveEnabled=$RELEASE_ANNOUNCEMENT_LIVE_ENABLED" \
     "AccessGateAuthorization=$ACCESS_GATE_AUTHORIZATION" \
     "GuestAccessEnabled=$GUEST_ACCESS_ENABLED" "AllowedUserSub=$ALLOWED_USER_SUB" \
     "DeploymentName=$DEPLOYMENT_NAME" "ApiFunctionName=$API_FUNCTION_NAME" \

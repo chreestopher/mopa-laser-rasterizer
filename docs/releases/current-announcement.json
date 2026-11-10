@@ -1,0 +1,28 @@
+{
+  "release_id": "v1-1-0",
+  "release_version": "v1.1.0",
+  "release_date": "2026-10-02",
+  "status": "draft",
+  "test_email_approved": false,
+  "subject": "New in MOPA Laser Rasterizer: build bigger, shape deeper, and control more",
+  "preheader": "LightBurn browser integration, 800-cell Material Tests, Panel Tiling, Depthmap exports, and new artwork tools.",
+  "heading": "Build bigger, shape deeper, and control more",
+  "intro": "This release adds Chrome/Edge integration with local LightBurn, expands familiar engraving workflows, and introduces new tools for layered and geometric artwork.",
+  "highlights": [
+    "Connect Rasterizer to local LightBurn with the Chrome/Edge browser extension beta, requiring LightBurn 2.23 or later. Import Material Library settings into Color or Processing palettes; imported settings are snapshots, not live synchronization.",
+    "Load native .lbrn2 files up to 250 MiB from Job History into LightBurn after reviewing and confirming project replacement. The extension does not start the laser.",
+    "Panel Tiling splits large designs across repeatable blanks and provides centered tile files, an assembly map, and a manifest.",
+    "Color Discovery can export native LightBurn Material Test presets with up to 800 cells, avoiding the 30-cell limit of color-layer-based project grids.",
+    "Expanded geometry tools add Halftone Newsprint, custom Glyph and Krasnow cells, tighter packing, seeded rotation, per-swatch routing, and source-image detail in Parallax SVG exports.",
+    "Depthmaps export as editable LightBurn Grayscale or Galvo 3D Sliced projects. Processing Palettes organize material settings by operation, including Cut, Score, Photo, Fill, Shovel, Cleaning, and 3D-Slice.",
+    "Layered Relief creates aligned physical layers with adjustable depth groups, per-layer and full-stack previews, registration features, score guides, and optional surface engraving.",
+    "Layered Mandala Lab creates coordinated multi-sheet radial artwork with custom motifs, openwork, structural supports, and per-layer Randomize and Reset controls.",
+    "SpiralGraph Lab creates open-line or filled-ribbon drawings from resizable tracks, gears, pencil reaches, and custom SVG or raster-image tracks, with independent drawing sizes and optional per-drawing palette routing.",
+    "Everyday workflow improvements include Job History thumbnails, steadier signed-in navigation, recoverable expired guest links, bulk swatch routing controls, and optional white engraving."
+  ],
+  "closing": "These tools create editable starting points rather than machine-certified jobs. Inspect every generated LightBurn project and test on suitable scrap before running valuable work.",
+  "cta_label": "Read the complete changelog",
+  "cta_url": "https://mopa-laser-rasterizer.com/changelog",
+  "product_url": "https://mopa-laser-rasterizer.com/",
+  "postal_address": "MOPA Laser Rasterizer · [MAILING ADDRESS REQUIRED BEFORE LIVE SEND]"
+}
