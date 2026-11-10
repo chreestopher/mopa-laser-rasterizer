@@ -125,7 +125,41 @@ def test_render_has_plain_and_html_unsubscribe_and_escapes(approved_announcement
     assert rendered.html.count(release_email.UNSUBSCRIBE_URL) == 1
     assert "Use &lt;safe&gt; rendering &amp; escaping." in rendered.html
     assert "Use <safe> rendering & escaping." in rendered.text
-    assert rendered.campaign_id.startswith("next-production-release-")
+    assert rendered.campaign_id.startswith("v1-1-0-")
+    assert rendered.text.startswith("MOPA-LASER-RASTERIZER\n")
+    assert "font-family:Impact,'Arial Narrow',Arial,sans-serif" in rendered.html
+    assert ">MOPA-LASER-RASTERIZER</div>" in rendered.html
+    assert "color:#d9d2af" in rendered.html
+    assert "font-size:34px" in rendered.html
+    assert approved_announcement["closing"] in rendered.text
+    assert approved_announcement["closing"] in rendered.html
+    assert release_email.SUBREDDIT_INVITATION in rendered.text
+    assert release_email.SUBREDDIT_URL in rendered.text
+    assert f'href="{release_email.SUBREDDIT_URL}"' in rendered.html
+    assert "font-size:11px" in rendered.html
+    assert f'>{release_email.SUBREDDIT_INVITATION}</a>' in rendered.html
+
+
+def test_formatting_test_is_single_recipient_and_not_list_managed(approved_announcement):
+    rendered = release_email.render_announcement(approved_announcement)
+    ses = FakeSes()
+
+    message_id = release_email.send_test_message(
+        ses=ses,
+        recipient="owner@example.com",
+        rendered=rendered,
+        source="sender@example.com",
+        configuration_set="",
+    )
+
+    assert message_id == "message-1"
+    request = ses.calls[0]
+    assert request["Destination"] == {"ToAddresses": ["owner@example.com"]}
+    assert request["Content"]["Simple"]["Subject"]["Data"].startswith("[TEST] ")
+    assert "ListManagementOptions" not in request
+    assert "ConfigurationSetName" not in request
+    assert release_email.UNSUBSCRIBE_URL not in request["Content"]["Simple"]["Body"]["Html"]["Data"]
+    assert "TEST MESSAGE ONLY" in request["Content"]["Simple"]["Body"]["Html"]["Data"]
 
 
 def test_cognito_enumeration_paginates_and_requires_confirmed_verified_enabled():
@@ -255,7 +289,7 @@ def test_default_cli_is_preview_only_and_draft_cannot_send(tmp_path, capsys):
         ])
 
 
-def test_release_email_is_not_wired_into_deployment_workflows():
+def test_deployment_does_not_require_announcement_approval_or_send_email():
     deployment_files = [
         *ROOT.glob(".github/workflows/*"),
         ROOT / "dev_setup" / "deploy_serverless_staging_release.sh",
@@ -263,4 +297,9 @@ def test_release_email_is_not_wired_into_deployment_workflows():
     ]
     for path in deployment_files:
         if path.is_file():
-            assert "release_announcement_email.py" not in path.read_text(encoding="utf-8")
+            text = path.read_text(encoding="utf-8")
+            assert "--send" not in text
+    production_workflow = (ROOT / ".github" / "workflows" / "deploy-serverless-production.yml").read_text(encoding="utf-8")
+    production_release = (ROOT / "dev_setup" / "deploy_serverless_production_release.sh").read_text(encoding="utf-8")
+    assert "validate_release_announcement.py" not in production_workflow
+    assert "validate_release_announcement.py" not in production_release

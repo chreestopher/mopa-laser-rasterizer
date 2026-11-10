@@ -26,6 +26,10 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ANNOUNCEMENT = ROOT / "docs" / "releases" / "current-announcement.json"
 UNSUBSCRIBE_URL = "{{amazonSESUnsubscribeUrl}}"
 SEND_ENABLE_VALUE = "I_UNDERSTAND_THIS_SENDS_LIVE_EMAIL"
+TEST_SEND_ENABLE_VALUE = "I_UNDERSTAND_THIS_SENDS_ONE_TEST_EMAIL"
+RENDER_VERSION = "release-email-v3"
+SUBREDDIT_URL = "https://www.reddit.com/r/MOPA_LASER_RASTERIZER/"
+SUBREDDIT_INVITATION = "Join our subreddit for project sharing, support, and discussion."
 MAX_SES_RETRIES = 5
 EMAIL_PATTERN = re.compile(r"^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$")
 RETRYABLE_CODES = {
@@ -58,8 +62,9 @@ class RenderedAnnouncement(NamedTuple):
 def load_announcement(path: Path) -> dict[str, Any]:
     data = json.loads(path.read_text(encoding="utf-8"))
     required_strings = (
-        "release_id", "status", "subject", "preheader", "heading", "intro",
-        "cta_label", "cta_url", "product_url", "postal_address",
+        "release_id", "release_version", "release_date", "status", "subject",
+        "preheader", "heading", "intro", "closing", "cta_label", "cta_url",
+        "product_url", "postal_address",
     )
     missing = [key for key in required_strings if not isinstance(data.get(key), str) or not data[key].strip()]
     if missing:
@@ -79,7 +84,10 @@ def load_announcement(path: Path) -> dict[str, Any]:
 
 
 def campaign_id_for(announcement: dict[str, Any]) -> str:
-    canonical = json.dumps(announcement, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    canonical = json.dumps(
+        {"announcement": announcement, "render_version": RENDER_VERSION},
+        sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+    )
     digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]
     slug = re.sub(r"[^a-z0-9-]+", "-", announcement["release_id"].lower()).strip("-")
     if not slug:
@@ -91,29 +99,36 @@ def render_announcement(announcement: dict[str, Any]) -> RenderedAnnouncement:
     campaign_id = campaign_id_for(announcement)
     bullets_text = "\n".join(f"- {item}" for item in announcement["highlights"])
     text_body = (
+        f"MOPA-LASER-RASTERIZER\n\n"
         f"{announcement['heading']}\n\n{announcement['intro']}\n\n"
         f"What's new\n{bullets_text}\n\n"
+        f"{announcement['closing']}\n\n"
         f"{announcement['cta_label']}: {announcement['cta_url']}\n\n"
         f"You are receiving this because you opted in to MOPA Laser Rasterizer release updates.\n"
         f"Unsubscribe or update preferences: {UNSUBSCRIBE_URL}\n\n"
-        f"{announcement['postal_address']}\n{announcement['product_url']}"
+        f"{announcement['postal_address']}\n{announcement['product_url']}\n\n"
+        f"{SUBREDDIT_INVITATION}\n{SUBREDDIT_URL}"
     )
     bullet_html = "".join(f"<li>{html.escape(item)}</li>" for item in announcement["highlights"])
     html_body = f"""<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>{html.escape(announcement['subject'])}</title></head>
+<title>{html.escape(announcement['subject'])}</title>
+<style>@media(max-width:480px){{.email-wordmark{{font-size:22px!important;letter-spacing:.06em!important}}}}</style></head>
 <body style="margin:0;background:#11150f;color:#e8eddf;font-family:Arial,sans-serif">
 <div style="display:none;max-height:0;overflow:hidden">{html.escape(announcement['preheader'])}</div>
 <main style="max-width:640px;margin:auto;padding:32px 20px">
+<div class="email-wordmark" style="margin:0 0 30px;padding:18px 12px 20px;border-bottom:1px solid #465142;text-align:center;color:#d9d2af;font-family:Impact,'Arial Narrow',Arial,sans-serif;font-size:34px;font-weight:500;line-height:1.1;letter-spacing:0.12em;text-shadow:0 3px #050705;white-space:nowrap">MOPA-LASER-RASTERIZER</div>
 <h1 style="color:#9bed7f">{html.escape(announcement['heading'])}</h1>
 <p style="line-height:1.6">{html.escape(announcement['intro'])}</p>
 <h2>What's new</h2><ul style="line-height:1.7">{bullet_html}</ul>
+<p style="line-height:1.6">{html.escape(announcement['closing'])}</p>
 <p style="margin:30px 0"><a href="{html.escape(announcement['cta_url'], quote=True)}" style="background:#78c95e;color:#10140f;padding:13px 20px;text-decoration:none;font-weight:bold">{html.escape(announcement['cta_label'])}</a></p>
 <hr style="border:0;border-top:1px solid #465142">
 <p style="color:#b8bdaF;font-size:12px;line-height:1.5">You are receiving this because you opted in to MOPA Laser Rasterizer release updates.<br>
 <a href="{UNSUBSCRIBE_URL}" style="color:#9bed7f">Unsubscribe or update preferences</a><br>
 {html.escape(announcement['postal_address'])}<br>
 <a href="{html.escape(announcement['product_url'], quote=True)}" style="color:#9bed7f">{html.escape(announcement['product_url'])}</a></p>
+<p style="margin:18px 0 0;color:#9da795;font-size:11px;line-height:1.5;text-align:center"><a href="{SUBREDDIT_URL}" style="color:#d9d2af;text-decoration:underline">{SUBREDDIT_INVITATION}</a></p>
 </main></body></html>"""
     if text_body.count(UNSUBSCRIBE_URL) != 1 or html_body.count(UNSUBSCRIBE_URL) != 1:
         raise ReleaseEmailError("rendered content must contain one unsubscribe placeholder per format")
@@ -326,12 +341,49 @@ def send_campaign(
         lock_path.unlink(missing_ok=True)
 
 
+def send_test_message(*, ses: Any, recipient: str, rendered: RenderedAnnouncement,
+                      source: str, configuration_set: str) -> str:
+    """Send one clearly labeled formatting test without touching the campaign ledger."""
+    recipient = normalize_email(recipient)
+    source = normalize_email(source)
+    if not recipient or not source:
+        raise ReleaseEmailError("test recipient and source must be normalized email addresses")
+    test_note = (
+        "TEST MESSAGE ONLY — the live announcement will include the managed "
+        "unsubscribe link here after approval."
+    )
+    text_body = rendered.text.replace(
+        f"Unsubscribe or update preferences: {UNSUBSCRIBE_URL}", test_note,
+    )
+    html_body = rendered.html.replace(
+        f'<a href="{UNSUBSCRIBE_URL}" style="color:#9bed7f">Unsubscribe or update preferences</a>',
+        html.escape(test_note),
+    )
+    request = dict(
+        FromEmailAddress=source,
+        Destination={"ToAddresses": [recipient]},
+        Content={"Simple": {
+            "Subject": {"Data": f"[TEST] {rendered.subject}", "Charset": "UTF-8"},
+            "Body": {
+                "Text": {"Data": text_body, "Charset": "UTF-8"},
+                "Html": {"Data": html_body, "Charset": "UTF-8"},
+            },
+        }},
+        EmailTags=[{"Name": "campaign", "Value": f"test-{rendered.campaign_id}"[:256]}],
+    )
+    if configuration_set:
+        request["ConfigurationSetName"] = configuration_set
+    response = ses.send_email(**request)
+    return str(response.get("MessageId") or "")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--announcement", type=Path, default=DEFAULT_ANNOUNCEMENT)
     parser.add_argument("--preview-dir", type=Path, default=ROOT / "outputs" / "release-email-preview")
     parser.add_argument("--discover-recipients", action="store_true", help="read Cognito and SES; never sends")
     parser.add_argument("--send", action="store_true", help="enable gated live send (disabled by default)")
+    parser.add_argument("--send-test-to", help="send one formatting test to this exact address")
     parser.add_argument("--region", default=os.environ.get("AWS_REGION", "us-east-2"))
     parser.add_argument("--profile", default=os.environ.get("AWS_PROFILE"))
     parser.add_argument("--user-pool-id")
@@ -350,7 +402,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _require_live_options(args: argparse.Namespace) -> None:
-    required = ["user_pool_id", "contact_list", "topic", "expected_account_id"]
+    if args.send_test_to:
+        required = ["source_email", "expected_account_id"]
+    else:
+        required = ["user_pool_id", "contact_list", "topic", "expected_account_id"]
     if args.send:
         required.extend(("source_email", "configuration_set", "audit_log"))
     missing = [name.replace("_", "-") for name in required if not getattr(args, name)]
@@ -360,19 +415,30 @@ def _require_live_options(args: argparse.Namespace) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.send and args.send_test_to:
+        raise ReleaseEmailError("choose either --send or --send-test-to, not both")
     announcement = load_announcement(args.announcement)
     rendered = render_announcement(announcement)
     args.preview_dir.mkdir(parents=True, exist_ok=True)
     (args.preview_dir / "announcement.txt").write_text(rendered.text, encoding="utf-8")
     (args.preview_dir / "announcement.html").write_text(rendered.html, encoding="utf-8")
     print(f"Rendered campaign {rendered.campaign_id} ({announcement['status']}) to {args.preview_dir}")
-    if not args.discover_recipients and not args.send:
+    if not args.discover_recipients and not args.send and not args.send_test_to:
         print("Preview only: no AWS clients were created and no recipient data was read.")
         return 0
 
     _require_live_options(args)
     if args.messages_per_second <= 0 or args.batch_size <= 0:
         raise ReleaseEmailError("messages-per-second and batch-size must be positive")
+    if args.send_test_to:
+        if os.environ.get("RELEASE_EMAIL_TEST_SEND_ENABLED") != TEST_SEND_ENABLE_VALUE:
+            raise ReleaseEmailError(
+                f"set RELEASE_EMAIL_TEST_SEND_ENABLED={TEST_SEND_ENABLE_VALUE} for a one-recipient test"
+            )
+        if normalize_email(args.send_test_to) != args.send_test_to.lower():
+            raise ReleaseEmailError("--send-test-to must be a normalized email address")
+        if normalize_email(args.source_email) != args.source_email.lower():
+            raise ReleaseEmailError("--source-email must be a normalized email address")
     if args.send:
         if announcement["status"] != "approved":
             raise ReleaseEmailError("sending requires announcement status 'approved'")
@@ -393,6 +459,13 @@ def main(argv: list[str] | None = None) -> int:
         raise ReleaseEmailError("active AWS account does not match --expected-account-id")
     cognito = session.client("cognito-idp")
     ses = session.client("sesv2")
+    if args.send_test_to:
+        message_id = send_test_message(
+            ses=ses, recipient=args.send_test_to, rendered=rendered,
+            source=args.source_email, configuration_set=args.configuration_set,
+        )
+        print(f"Test email sent to the configured recipient. SES message ID: {message_id}")
+        return 0
     recipients = select_recipients(
         cognito_member_emails(cognito, args.user_pool_id),
         opted_in_contact_emails(ses, args.contact_list, args.topic),

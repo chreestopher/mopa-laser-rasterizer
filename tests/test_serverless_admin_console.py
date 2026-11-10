@@ -22,6 +22,7 @@ class ServerlessAdminConsoleTests(unittest.TestCase):
             "GET /admin/jobs", "GET /admin/jobs/{task_id}",
             "DELETE /admin/jobs/{task_id}", "POST /admin/jobs/{task_id}/cancel",
             "GET /admin/users", "GET /admin/object-counts", "GET /admin/state-transitions",
+            "GET /admin/release-announcement", "POST /admin/release-announcement/announce",
         ):
             self.assertIn(f'RouteKey: "{route}"', self.infrastructure)
         self.assertGreaterEqual(self.infrastructure.count("AuthorizationType: JWT"), 5)
@@ -97,9 +98,9 @@ class ServerlessAdminConsoleTests(unittest.TestCase):
         self.assertIn("color:#20221e!important", self.styles)
 
     def test_operational_panels_stay_hidden_until_admin_authorization_succeeds(self):
-        self.assertEqual(self.page.count('class="admin-panel admin-protected'), 5)
-        self.assertEqual(self.page.count('aria-labelledby="admin-'), 5)
-        self.assertEqual(self.page.count('hidden>'), 5)
+        self.assertEqual(self.page.count('class="admin-panel admin-protected'), 6)
+        self.assertEqual(self.page.count('aria-labelledby="admin-'), 6)
+        self.assertEqual(self.page.count('hidden>'), 6)
         self.assertIn('document.querySelectorAll(".admin-protected")', self.client)
         self.assertIn("protectedPanels.forEach(panel=>panel.hidden=false)", self.client)
         self.assertIn('if(!token||(tokenExpiresSoon()&&!await refreshSession()))return', self.client)
@@ -150,6 +151,29 @@ class ServerlessAdminConsoleTests(unittest.TestCase):
         self.assertIn("userEmailsById.get(user.user_id)", self.client)
         self.assertIn("backing files and temporary job data are not included", self.page)
         self.assertIn("dynamodb:Scan", self.infrastructure)
+
+    def test_release_announcement_is_a_guarded_one_time_admin_action(self):
+        self.assertLess(self.page.index('id="admin-release-title"'), self.page.index('id="admin-service-title"'))
+        self.assertIn('id="announceRelease"', self.page)
+        self.assertIn('api("/admin/release-announcement")', self.client)
+        self.assertIn('api("/admin/release-announcement/announce",{method:"POST"})', self.client)
+        self.assertIn("This sends real email and cannot be undone", self.client)
+        self.assertIn("if not RELEASE_ANNOUNCEMENT_LIVE_ENABLED:", self.handler)
+        self.assertIn('announcement["status"] != "approved"', self.handler)
+        self.assertIn('announcement.get("test_email_approved") is not True', self.handler)
+        self.assertIn('"This release announcement has already been sent."', self.handler)
+        self.assertIn('Key("pk").eq("SYSTEM#RELEASE_ANNOUNCEMENT")', self.handler)
+        self.assertIn("ses:ListContacts", self.infrastructure)
+        self.assertIn("ses:SendEmail", self.infrastructure)
+        self.assertIn('"ReleaseAnnouncementLiveEnabled=$RELEASE_ANNOUNCEMENT_LIVE_ENABLED"', self.deploy)
+        self.assertIn('RELEASE_ANNOUNCEMENT_LIVE_ENABLED="${SERVERLESS_RELEASE_ANNOUNCEMENT_LIVE_ENABLED:-false}"', self.deploy)
+
+    def test_release_content_and_sender_are_packaged_with_the_api(self):
+        for name in (
+            "dev_setup/release_announcement_email.py",
+            "docs/releases/current-announcement.json",
+        ):
+            self.assertIn(name, self.deploy)
 
 
 if __name__ == "__main__":

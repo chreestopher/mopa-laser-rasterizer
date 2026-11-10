@@ -13,6 +13,7 @@ import re
 from datetime import datetime, timezone
 from copy import deepcopy
 from decimal import Decimal
+from pathlib import Path
 from urllib.parse import unquote
 from xml.etree import ElementTree as ET
 
@@ -20,6 +21,8 @@ import boto3
 from boto3.dynamodb.conditions import Attr, Key
 from botocore.config import Config
 from botocore.exceptions import ClientError
+
+from dev_setup import release_announcement_email as release_email
 
 
 REGION = os.environ.get("AWS_REGION", "us-east-2")
@@ -44,6 +47,14 @@ ARTWORK_TELEMETRY_SECONDS = int(os.environ.get("ARTWORK_TELEMETRY_SECONDS", str(
 WORKER_LOG_GROUP_NAME = os.environ.get("WORKER_LOG_GROUP_NAME", "").strip()
 PIPE_NAME = os.environ.get("WORKER_PIPE_NAME", "").strip()
 AWS_ACCOUNT_ID = os.environ.get("DEPLOYMENT_ACCOUNT_ID", "").strip()
+RELEASE_EMAIL_SOURCE = os.environ.get("RELEASE_EMAIL_SOURCE", "").strip().casefold()
+RELEASE_EMAIL_CONTACT_LIST = os.environ.get("RELEASE_EMAIL_CONTACT_LIST", "").strip()
+RELEASE_EMAIL_TOPIC = os.environ.get("RELEASE_EMAIL_TOPIC", "").strip()
+RELEASE_EMAIL_CONFIGURATION_SET = os.environ.get("RELEASE_EMAIL_CONFIGURATION_SET", "").strip()
+RELEASE_ANNOUNCEMENT_LIVE_ENABLED = (
+    os.environ.get("RELEASE_ANNOUNCEMENT_LIVE_ENABLED", "false").strip().casefold() == "true"
+)
+RELEASE_ANNOUNCEMENT_PATH = Path(__file__).resolve().parent / "docs" / "releases" / "current-announcement.json"
 MAX_JOB_LOG_EVENTS = max(1, min(10000, int(os.environ.get("MAX_JOB_LOG_EVENTS", "10000"))))
 HIGH_CAPACITY_PROCESSING_AXIS = 800
 MAX_STANDARD_PROCESSING_AXIS = 1600
@@ -59,6 +70,8 @@ cognito = boto3.client("cognito-idp", region_name=REGION)
 cloudwatch_logs = boto3.client("logs", region_name=REGION)
 pipes = boto3.client("pipes", region_name=REGION)
 cloudwatch = boto3.client("cloudwatch", region_name=REGION)
+ses = boto3.client("sesv2", region_name=REGION)
+lambda_client = boto3.client("lambda", region_name=REGION)
 table = boto3.resource("dynamodb", region_name=REGION).Table(TABLE_NAME)
 
 SERVICE_CONTROL_KEY = {"pk": "SYSTEM#SERVICE", "sk": "CONTROL"}
@@ -402,6 +415,259 @@ def admin_state_transitions(event):
         "projected_transitions": projected,
         "estimated_charge_usd": round(max(0, transitions - free_tier) * 0.000025, 4),
     })
+
+
+def current_release_announcement():
+    announcement = release_email.load_announcement(RELEASE_ANNOUNCEMENT_PATH)
+    return announcement, release_email.render_announcement(announcement)
+
+
+def release_campaign_key(campaign_id):
+    return {"pk": "SYSTEM#RELEASE_ANNOUNCEMENT", "sk": f"CAMPAIGN#{campaign_id}"}
+
+
+def release_announcement_status(event):
+    denied = require_admin(event)
+    if denied:
+        return denied
+    announcement, rendered = current_release_announcement()
+    item = table.get_item(Key=release_campaign_key(rendered.campaign_id), ConsistentRead=True).get("Item") or {}
+    required_configuration = all((
+        RELEASE_EMAIL_SOURCE, RELEASE_EMAIL_CONTACT_LIST,
+        RELEASE_EMAIL_TOPIC, RELEASE_EMAIL_CONFIGURATION_SET,
+    ))
+    return response(200, {
+        "release_id": announcement["release_id"],
+        "release_version": announcement["release_version"],
+        "subject": announcement["subject"],
+        "campaign_id": rendered.campaign_id,
+        "content_status": announcement["status"],
+        "test_email_approved": announcement.get("test_email_approved") is True,
+        "live_enabled": RELEASE_ANNOUNCEMENT_LIVE_ENABLED,
+        "configuration_ready": required_configuration,
+        "status": str(item.get("status") or "ready"),
+        "eligible_count": int(item.get("eligible_count") or 0),
+        "sent_count": int(item.get("sent_count") or 0),
+        "failed_count": int(item.get("failed_count") or 0),
+        "announced_at": int(item.get("announced_at") or 0),
+    })
+
+
+def _release_recipients():
+    return release_email.select_recipients(
+        release_email.cognito_member_emails(cognito, COGNITO_USER_POOL_ID),
+        release_email.opted_in_contact_emails(
+            ses, RELEASE_EMAIL_CONTACT_LIST, RELEASE_EMAIL_TOPIC,
+        ),
+    )
+
+
+def _release_recipient_key(campaign_id, email):
+    digest = hashlib.sha256(f"{campaign_id}\0{email}".encode("utf-8")).hexdigest()
+    return {"pk": "SYSTEM#RELEASE_ANNOUNCEMENT", "sk": f"RECIPIENT#{campaign_id}#{digest}"}
+
+
+def _send_release_email(rendered, email):
+    last_error = None
+    for retry in range(4):
+        try:
+            return ses.send_email(
+                FromEmailAddress=RELEASE_EMAIL_SOURCE,
+                Destination={"ToAddresses": [email]},
+                Content={"Simple": {
+                    "Subject": {"Data": rendered.subject, "Charset": "UTF-8"},
+                    "Body": {
+                        "Text": {"Data": rendered.text, "Charset": "UTF-8"},
+                        "Html": {"Data": rendered.html, "Charset": "UTF-8"},
+                    },
+                }},
+                ConfigurationSetName=RELEASE_EMAIL_CONFIGURATION_SET,
+                ListManagementOptions={
+                    "ContactListName": RELEASE_EMAIL_CONTACT_LIST,
+                    "TopicName": RELEASE_EMAIL_TOPIC,
+                },
+                EmailTags=[{"Name": "campaign", "Value": rendered.campaign_id[:256]}],
+            )
+        except ClientError as error:
+            last_error = error
+            code = error.response.get("Error", {}).get("Code", "ClientError")
+            if code not in release_email.RETRYABLE_CODES or retry == 3:
+                raise
+            time.sleep(min(2 ** retry, 4))
+    raise last_error
+
+
+def announce_release(event):
+    denied = require_admin(event)
+    if denied:
+        return denied
+    announcement, rendered = current_release_announcement()
+    if not RELEASE_ANNOUNCEMENT_LIVE_ENABLED:
+        return response(409, {"message": "Release announcements are disabled in this environment."})
+    if announcement["status"] != "approved" or announcement.get("test_email_approved") is not True:
+        return response(409, {"message": "The release announcement has not completed approval."})
+    if not all((RELEASE_EMAIL_SOURCE, RELEASE_EMAIL_CONTACT_LIST,
+                RELEASE_EMAIL_TOPIC, RELEASE_EMAIL_CONFIGURATION_SET)):
+        return response(503, {"message": "Release email delivery is not configured."})
+
+    campaign_key = release_campaign_key(rendered.campaign_id)
+    existing = table.get_item(Key=campaign_key, ConsistentRead=True).get("Item") or {}
+    if str(existing.get("status") or "") == "sent":
+        return response(409, {"message": "This release announcement has already been sent."})
+    if str(existing.get("status") or "") == "sending":
+        return response(409, {"message": "This release announcement is already being sent."})
+
+    now = int(time.time())
+    if existing:
+        try:
+            table.update_item(
+                Key=campaign_key,
+                UpdateExpression="SET #status=:sending, eligible_count=:count, updated_at=:now",
+                ConditionExpression="#status=:failed",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":sending": "sending", ":failed": "failed",
+                    ":count": 0, ":now": now,
+                },
+            )
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                return response(409, {"message": "This release announcement is already being sent."})
+            raise
+    else:
+        try:
+            table.put_item(
+                Item={**campaign_key, "status": "sending", "release_id": announcement["release_id"],
+                      "eligible_count": 0, "created_at": now, "updated_at": now},
+                ConditionExpression="attribute_not_exists(pk)",
+            )
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                return response(409, {"message": "This release announcement is already being sent."})
+            raise
+
+    try:
+        lambda_client.invoke(
+            FunctionName=os.environ["AWS_LAMBDA_FUNCTION_NAME"],
+            InvocationType="Event",
+            Payload=json.dumps({
+                "internal_action": "send_release_announcement",
+                "campaign_id": rendered.campaign_id,
+            }, separators=(",", ":")).encode("utf-8"),
+        )
+    except Exception:
+        table.update_item(
+            Key=campaign_key,
+            UpdateExpression="SET #status=:failed, updated_at=:now",
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={":failed": "failed", ":now": int(time.time())},
+        )
+        raise
+    return response(202, {"status": "sending", "campaign_id": rendered.campaign_id})
+
+
+def deliver_release_announcement(campaign_id):
+    announcement, rendered = current_release_announcement()
+    if not secrets.compare_digest(str(campaign_id or ""), rendered.campaign_id):
+        raise ValueError("Release announcement campaign does not match the deployed content")
+    campaign_key = release_campaign_key(rendered.campaign_id)
+    recipients = _release_recipients()
+    if not recipients:
+        table.update_item(
+            Key=campaign_key,
+            UpdateExpression="SET #status=:failed, eligible_count=:zero, failed_count=:zero, updated_at=:now",
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={
+                ":failed": "failed", ":zero": 0, ":now": int(time.time()),
+            },
+        )
+        return {"status": "failed", "sent_count": 0, "failed_count": 0}
+    table.update_item(
+        Key=campaign_key,
+        UpdateExpression="SET eligible_count=:count, updated_at=:now",
+        ConditionExpression="#status=:sending",
+        ExpressionAttributeNames={"#status": "status"},
+        ExpressionAttributeValues={
+            ":sending": "sending", ":count": len(recipients), ":now": int(time.time()),
+        },
+    )
+    for ordinal, email in enumerate(recipients, 1):
+        recipient_key = _release_recipient_key(rendered.campaign_id, email)
+        try:
+            # Atomically claim new recipients or confirmed failures only. A sent
+            # or ambiguous in-flight attempt must never be sent again here.
+            table.update_item(
+                Key=recipient_key,
+                UpdateExpression="SET #state=:attempting, ordinal=:ordinal, updated_at=:now",
+                ConditionExpression="attribute_not_exists(pk) OR #state=:failed",
+                ExpressionAttributeNames={"#state": "state"},
+                ExpressionAttributeValues={
+                    ":attempting": "attempting", ":failed": "failed",
+                    ":ordinal": ordinal, ":now": int(time.time()),
+                },
+            )
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                continue
+            raise
+        try:
+            sent = _send_release_email(rendered, email)
+        except ClientError as error:
+            table.update_item(
+                Key=recipient_key,
+                UpdateExpression="SET #state=:failed, error_code=:code, updated_at=:now",
+                ExpressionAttributeNames={"#state": "state"},
+                ExpressionAttributeValues={
+                    ":failed": "failed",
+                    ":code": error.response.get("Error", {}).get("Code", "ClientError"),
+                    ":now": int(time.time()),
+                },
+            )
+        else:
+            # If recording success fails, retain 'attempting': SES may have
+            # accepted the email, so treating this as retryable risks duplicates.
+            table.update_item(
+                Key=recipient_key,
+                UpdateExpression="SET #state=:sent, message_id=:message, updated_at=:now REMOVE error_code",
+                ExpressionAttributeNames={"#state": "state"},
+                ExpressionAttributeValues={
+                    ":sent": "sent", ":message": str(sent.get("MessageId") or ""),
+                    ":now": int(time.time()),
+                },
+            )
+
+    records = []
+    query = {
+        "KeyConditionExpression": (
+            Key("pk").eq("SYSTEM#RELEASE_ANNOUNCEMENT")
+            & Key("sk").begins_with(f"RECIPIENT#{rendered.campaign_id}#")
+        ),
+        "ConsistentRead": True,
+    }
+    while True:
+        page = table.query(**query)
+        records.extend(page.get("Items", []))
+        if not page.get("LastEvaluatedKey"):
+            break
+        query["ExclusiveStartKey"] = page["LastEvaluatedKey"]
+    sent_count = sum(str(item.get("state") or "") == "sent" for item in records)
+    failed_count = sum(str(item.get("state") or "") != "sent" for item in records)
+    status = "sent" if failed_count == 0 and sent_count == len(recipients) else "failed"
+    completed = int(time.time())
+    table.update_item(
+        Key=campaign_key,
+        UpdateExpression=("SET #status=:status, sent_count=:sent, failed_count=:failed, "
+                          "updated_at=:now, announced_at=:announced"),
+        ExpressionAttributeNames={"#status": "status"},
+        ExpressionAttributeValues={
+            ":status": status, ":sent": sent_count, ":failed": failed_count,
+            ":now": completed, ":announced": completed if status == "sent" else 0,
+        },
+    )
+    return {
+        "status": status, "sent_count": sent_count, "failed_count": failed_count,
+        "announced_at": completed if status == "sent" else 0,
+    }
 
 
 def safe_name(value, fallback):
@@ -6171,6 +6437,22 @@ def get_job(event, task_id, guest=False):
 
 def handler(event, _context):
     try:
+        if event.get("internal_action") == "send_release_announcement":
+            campaign_id = str(event.get("campaign_id") or "")
+            try:
+                return deliver_release_announcement(campaign_id)
+            except Exception as error:
+                print(f"Release announcement delivery failed: {error}", flush=True)
+                if campaign_id:
+                    table.update_item(
+                        Key=release_campaign_key(campaign_id),
+                        UpdateExpression="SET #status=:failed, updated_at=:now",
+                        ExpressionAttributeNames={"#status": "status"},
+                        ExpressionAttributeValues={
+                            ":failed": "failed", ":now": int(time.time()),
+                        },
+                    )
+                return {"status": "failed"}
         method = ((event.get("requestContext") or {}).get("http") or {}).get("method", "GET")
         path = unquote(event.get("rawPath") or "/")
         if method == "GET" and path == "/service-status":
@@ -6255,6 +6537,10 @@ def handler(event, _context):
             return admin_users(event)
         if method == "GET" and path == "/admin/object-counts":
             return admin_object_counts(event)
+        if method == "GET" and path == "/admin/release-announcement":
+            return release_announcement_status(event)
+        if method == "POST" and path == "/admin/release-announcement/announce":
+            return announce_release(event)
         if path == "/admin/service-control" and method in {"GET", "POST"}:
             return admin_service_control(event)
         if method == "GET" and path == "/admin/state-transitions":
