@@ -3,9 +3,12 @@ import math
 import time
 from decimal import Decimal
 from pathlib import Path
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "lib"))
+from heat_reduction import normalize_heat_reduction
 HANDLER = ROOT / "serverless_api" / "handler.py"
 
 
@@ -24,6 +27,7 @@ def load_cleaner():
         "time": time,
         "math": math,
         "Decimal": Decimal,
+        "normalize_heat_reduction": normalize_heat_reduction,
     }
     exec(compile(ast.Module(body=selected, type_ignores=[]), str(HANDLER), "exec"), namespace)
     return namespace["clean_last_used_form"]
@@ -55,6 +59,15 @@ def test_last_used_rasterizer_settings_retain_white_treatment():
     })
 
     assert result["values"]["white_is"] == "unengraved"
+
+
+def test_last_used_heat_reduction_retains_valid_project_count():
+    clean = load_cleaner()
+    result = clean("last_rasterizer_form", {
+        "saved_at": int(time.time()),
+        "values": {"heat_reduction": {"enabled": True, "projects": Decimal("10"), "unknown": "discard"}},
+    })
+    assert result["values"]["heat_reduction"] == {"enabled": True, "projects": 10}
 
 
 def test_last_used_panel_tiling_retains_layout_but_not_enabled_state():

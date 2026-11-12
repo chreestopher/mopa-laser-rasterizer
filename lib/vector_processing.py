@@ -31,6 +31,7 @@ from abstract_filters import (
 )
 from abstract_filters.common import number as _number
 import geometry_styles
+from heat_reduction import normalize_heat_reduction, distribute_layers
 
 
 SOURCE_BLACK_PROGRESS_BATCHES = 6
@@ -3087,6 +3088,65 @@ def _empty_lightburn_copy(project):
     return result
 
 
+def export_heat_projects(layers, colors, black_hex, template, root, path, note, settings, export_lightburn):
+    """Write aligned cooling jobs alongside a manifest in the caller's folder."""
+    count = settings["projects"]
+    # Some specialized palettes append carrier settings above native C00-C29.
+    # Move those active settings into unused native colors to reserve T1.
+    colors = dict(colors)
+    template = _empty_lightburn_copy(template)
+    active_indexes = {colors[color][1] for color, geometry in layers.items() if not geometry.is_empty}
+    available = iter(index for index in range(30) if index not in active_indexes)
+    remap = {}
+    for index in sorted(active_indexes):
+        if index >= 30:
+            replacement = next(available, None)
+            if replacement is None:
+                raise ValueError("Heat Reduction needs a free alignment Tool layer. Reduce the number of engraving swatches to 30 or fewer.")
+            remap[index] = replacement
+    template._layers = [layer for layer in template._layers if layer.index in active_indexes]
+    for layer in template._layers:
+        layer.index = remap.get(layer.index, layer.index)
+    for color, metadata in colors.items():
+        colors[color] = (metadata[0], remap.get(metadata[1], metadata[1]), *metadata[2:])
+    x, y, width, height = map(float, root.get("viewBox").split())
+    right, bottom = x + width, y + height
+    for geometry in layers.values():
+        if not geometry.is_empty:
+            left, top, geometry_right, geometry_bottom = geometry.bounds
+            x, y = min(x, left), min(y, top)
+            right, bottom = max(right, geometry_right), max(bottom, geometry_bottom)
+    width, height = right - x, bottom - y
+    # Include any geometry that an abstract preset extends beyond the canvas,
+    # so every job still has exactly the same positioning bounds.
+    root = _tile_svg_root(width, height, x, y)
+    files = []
+    for index, job_layers in enumerate(distribute_layers(layers, count, settings.get("_interleaved_colors", ())), 1):
+        project = _empty_lightburn_copy(template)
+        job_root = copy.deepcopy(root)
+        export_processed_layers(
+            job_layers, colors, black_hex, 1.0, job_root, project,
+            export_lightburn=export_lightburn,
+        )
+        if export_lightburn:
+            project.add_layer(lightburn.ToolLayer())
+            project.add(lightburn.Square(width, height, x=x + width / 2, y=y + height / 2).layer(30))
+        job_path = f"{path}-heat-{index:02d}-of-{count:02d}.svg"
+        job_note = (
+            f"Heat Reduction project {index} of {count}. Run each project once, in order. "
+            "Keep the material in position and allow cooling between jobs. "
+            "The identical T1 alignment perimeter does not engrave. Use the same "
+            f"origin and positioning mode for every project.\n\n{note}"
+        )
+        save_vector_output(job_root, job_path, project, export_lightburn, job_note)
+        files.append({
+            "sequence": index,
+            "svg": os.path.basename(job_path),
+            "lightburn": os.path.basename(job_path) + ".lbrn2" if export_lightburn else None,
+        })
+    return {"projects": files, "alignment_bounds_mm": [x, y, width, height]}
+
+
 def _ordered_panel_tiles(settings):
     positions = []
     rows, columns = settings["rows"], settings["columns"]
@@ -3167,6 +3227,7 @@ def export_panel_tiles(
     settings,
     black_lightburn_geometry=None,
     export_lightburn=True,
+    heat_reduction=None,
 ):
     """Clip completed global geometry into repeatably positioned panel files."""
     temp_dir = tempfile.mkdtemp(prefix="panel-tiles-", dir=os.path.dirname(output_svg_path) or None)
@@ -3220,6 +3281,19 @@ def export_panel_tiles(
                 settings["tile_width_mm"], settings["tile_height_mm"],
                 workbed_x, workbed_y,
             )
+            if heat_reduction and heat_reduction.get("enabled"):
+                heat = export_heat_projects(
+                    tile_layers, target_colors, black_hex, lb_project_template, root,
+                    os.path.join(temp_dir, stem), lightburn_note, heat_reduction, export_lightburn,
+                )
+                manifest["tiles"].append({
+                    "sequence": sequence, "row": row + 1, "column": column + 1,
+                    "source_origin_mm": {"x": source_x, "y": source_y},
+                    "workbed_center_mm": {"x": workbed_center_x, "y": workbed_center_y},
+                    "workbed_origin_mm": {"x": workbed_x, "y": workbed_y},
+                    "heat_reduction": heat,
+                })
+                continue
             project = _empty_lightburn_copy(lb_project_template)
             export_processed_layers(
                 processed_layers=tile_layers,
@@ -3288,6 +3362,7 @@ def raster_to_puzzle_and_lightburn(
     crop_shape="",
     white_is="engraved",
     panel_tiling=None,
+    heat_reduction=None,
 ):
     """
     Parses a raster image, applies a structural vector scale_factor,
@@ -3312,6 +3387,7 @@ def raster_to_puzzle_and_lightburn(
     """
 
     panel_tiling = normalize_panel_tiling(panel_tiling)
+    heat_reduction = normalize_heat_reduction(heat_reduction)
 
     # Quantization uses the real LightBurn layers that survived both palette
     # filtering and exact Material Library matching. Black-and-white photos
@@ -3888,6 +3964,19 @@ def raster_to_puzzle_and_lightburn(
         geometry_style=geometry_style,
         geometry_style_parameters=normalized_geometry_parameters,
     )
+    if heat_reduction.get("enabled"):
+        if mixed_krasnow:
+            carriers = geometry_styles.target_colors_for_style(
+                TARGET_COLORS, normalized_geometry_parameters, geometry_styles.KRASNOW_STYLE,
+            )
+        elif krasnow_mode or filter_name == "krasnow_grating":
+            carriers = TARGET_COLORS
+        else:
+            carriers = {}
+        heat_reduction["_interleaved_colors"] = [
+            color for color in carriers
+            if color != black_hex or krasnow_grate_black
+        ]
     if panel_tiling.get("enabled"):
         export_panel_tiles(
             processed_layers=processed_layers,
@@ -3900,7 +3989,28 @@ def raster_to_puzzle_and_lightburn(
             settings=panel_tiling,
             black_lightburn_geometry=black_lightburn_geometry,
             export_lightburn=export_lightburn,
+            heat_reduction=heat_reduction,
         )
+    elif heat_reduction.get("enabled"):
+        temp_dir = tempfile.mkdtemp(prefix="heat-reduction-", dir=os.path.dirname(output_svg_path) or None)
+        base = output_svg_path.removesuffix(".vector.svg")
+        try:
+            layers = {
+                color: scale(geometry, xfact=scale_factor, yfact=scale_factor, origin=(0, 0))
+                for color, geometry in processed_layers.items()
+            }
+            manifest = export_heat_projects(
+                layers, TARGET_COLORS, black_hex, lb_project_instance, root,
+                os.path.join(temp_dir, "artwork"), lightburn_note, heat_reduction, export_lightburn,
+            )
+            manifest["format"] = "mopa-rasterizer-heat-reduction-v1"
+            with open(os.path.join(temp_dir, "heat-manifest.json"), "w", encoding="utf-8") as output:
+                json.dump(manifest, output, indent=2)
+            with zipfile.ZipFile(f"{base}.heat-reduction.zip", "w", zipfile.ZIP_DEFLATED) as archive:
+                for name in sorted(os.listdir(temp_dir)):
+                    archive.write(os.path.join(temp_dir, name), name)
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
     else:
         export_processed_layers(
             processed_layers=processed_layers,
