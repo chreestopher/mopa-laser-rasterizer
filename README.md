@@ -31,6 +31,7 @@ Thank you to [@benkrasnow](https://github.com/benkrasnow) for sharing his [MOPA 
 - Configure Halftone Newsprint geometry with multicolor or Black-only output, source-driven or seeded dot sizes, and adjustable physical spacing.
 - Configure Krasnow Grating geometry with built-in or uploaded custom cell shapes, tight packing, independent deterministic rotation, patch, spacing, angle, fauxlogram-gradient scope/direction, and painted flow-region controls.
 - Split globally processed artwork into repeatably positioned panel tiles with configurable blank size, row/column count, assembly gaps, edge inset, workbed origin, ordering, and an assembly manifest/map.
+- Enable Heat Reduction beneath Panel Tiling to download 2–10 cooling projects in a ZIP. Whole filled shapes stay intact and are balanced approximately by engraved area; individual Krasnow strokes are interleaved across the artwork. Every LightBurn project shares a non-engraving T1 alignment perimeter. Run each numbered project once with the same origin and positioning mode, keeping the material in place and allowing cooling between projects. With Panel Tiling, each panel receives its own cooling projects. A single large shape can make the balance uneven or leave a project without engraving geometry.
 - Export non-overlapping color geometry as layered SVG.
 - Export LightBurn `.lbrn2` projects using settings imported from `.clb`, `.lbmat`, or compatible `.lbrn` files.
 - Use SVG-Only mode without uploading laser settings or using LightBurn.

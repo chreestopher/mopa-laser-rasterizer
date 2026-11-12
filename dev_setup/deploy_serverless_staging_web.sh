@@ -89,6 +89,7 @@ PIPE_NAME="${PIPE_ARN##*/}"
 BUILD_DIR="$(mktemp -d)"
 trap 'rm -rf -- "$BUILD_DIR"' EXIT
 cp "$REPO_ROOT/serverless_api/handler.py" "$BUILD_DIR/handler.py"
+cp "$REPO_ROOT/lib/heat_reduction.py" "$BUILD_DIR/heat_reduction.py"
 mkdir -p "$BUILD_DIR/dev_setup" "$BUILD_DIR/docs/releases"
 cp "$REPO_ROOT/dev_setup/release_announcement_email.py" "$BUILD_DIR/dev_setup/release_announcement_email.py"
 printf '' > "$BUILD_DIR/dev_setup/__init__.py"
@@ -96,7 +97,7 @@ cp "$REPO_ROOT/docs/releases/current-announcement.json" "$BUILD_DIR/docs/release
 BUILD_DIR="$BUILD_DIR" python3 -c 'import os,zipfile
 root=os.environ["BUILD_DIR"]
 with zipfile.ZipFile(os.path.join(root,"function.zip"),"w",zipfile.ZIP_DEFLATED) as archive:
-    for name in ("handler.py", "dev_setup/__init__.py", "dev_setup/release_announcement_email.py", "docs/releases/current-announcement.json"):
+    for name in ("handler.py", "heat_reduction.py", "dev_setup/__init__.py", "dev_setup/release_announcement_email.py", "docs/releases/current-announcement.json"):
         info=zipfile.ZipInfo(name,(1980,1,1,0,0,0)); info.external_attr=0o644<<16
         archive.writestr(info,open(os.path.join(root,*name.split("/")),"rb").read())'
 CODE_DIGEST="$(sha256sum "$BUILD_DIR/function.zip" | cut -d' ' -f1)"
@@ -209,6 +210,14 @@ aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/ui-helpers-v1.js" "s3://$STATIC_
 aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/material-input-v1.js" "s3://$STATIC_BUCKET/web/rasterizer/material-input-v1.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/serverless_web/rasterizer-v4.js" "s3://$STATIC_BUCKET/web/rasterizer-v4.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/heat-reduction-v1.js" "s3://$STATIC_BUCKET/web/rasterizer/heat-reduction-v1.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/submission-v2.js" "s3://$STATIC_BUCKET/web/rasterizer/submission-v2.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/rasterizer/form-state-v2.js" "s3://$STATIC_BUCKET/web/rasterizer/form-state-v2.js" \
+  --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
+aws s3 cp "$REPO_ROOT/serverless_web/rasterizer-v5.js" "s3://$STATIC_BUCKET/web/rasterizer-v5.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors
 aws s3 cp "$REPO_ROOT/static/community-set-v1.js" "s3://$STATIC_BUCKET/web/static/community-set-v1.js" \
   --region "$REGION" --content-type application/javascript --cache-control public,max-age=31536000,immutable --only-show-errors

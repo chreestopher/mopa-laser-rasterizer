@@ -342,6 +342,21 @@ class Layer:
                 f'        <numPasses Value="{self.numPasses}"/>\n'
                 f'    </CutSetting>\n')
 
+class ToolLayer(Layer):
+    """LightBurn's reserved T1 workspace layer; never laser output."""
+
+    def __init__(self):
+        super().__init__()
+        self.type = "Tool"
+        self.index = 30
+        self.name = "Heat Reduction alignment"
+
+    def write(self, f):
+        f.write('    <CutSetting type="Tool"><index Value="30"/>'
+                '<name Value="Heat Reduction alignment"/>'
+                '<doOutput Value="0"/></CutSetting>\n')
+
+
 class CutLayer(Layer):
     def __init__(self, index, name, minPower, maxPower, speed):
         super().__init__()

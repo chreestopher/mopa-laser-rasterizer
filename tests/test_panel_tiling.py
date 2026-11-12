@@ -376,13 +376,13 @@ def test_panel_tiling_controls_oversized_dimension_fields_and_aspect_matching():
 
 
 def test_panel_tiling_preferences_restore_layout_but_start_disabled():
-    script = (ROOT / "serverless_web" / "rasterizer-v4.js").read_text(encoding="utf-8")
+    script = (ROOT / "serverless_web" / "rasterizer" / "form-state-v2.js").read_text(encoding="utf-8")
     panel_script = (ROOT / "serverless_web" / "rasterizer" / "panel-tiling-v1.js").read_text(encoding="utf-8")
-    submission_script = (ROOT / "serverless_web" / "rasterizer" / "submission-v1.js").read_text(encoding="utf-8")
+    submission_script = (ROOT / "serverless_web" / "rasterizer" / "submission-v2.js").read_text(encoding="utf-8")
 
     assert "export function panelTilingPreferenceValues()" in panel_script
     assert "delete settings.enabled" in panel_script
-    assert "panel_tiling:panelTilingPreferenceValues()" in script
+    assert "panel_tiling: dependencies.panelTilingPreferenceValues()" in script
     assert submission_script.count("panelTiling: panelTilingParameters()") == 1
     assert "toggle.checked=false" in panel_script
     assert "toggle.checked=Boolean(settings.enabled)" not in panel_script

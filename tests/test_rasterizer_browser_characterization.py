@@ -315,7 +315,7 @@ HARNESS = r"""
         'selected_color_hexes', 'selected_holographic_recipe_indexes', 'image_preset', 'abstract_filter',
         'abstract_filter_parameters', 'color_matching_mode', 'color_matching_hue_weight',
         'color_matching_saturation_weight', 'color_matching_lightness_weight',
-        'geometry_style', 'geometry_style_parameters', 'panel_tiling', 'color_name_overrides', 'cut_mode',
+        'geometry_style', 'geometry_style_parameters', 'panel_tiling', 'heat_reduction', 'color_name_overrides', 'cut_mode',
         'preserve_black_outlines', 'svg_only'
       ];
       assert(submittedPayload !== null, 'guest submission payload was not sent');
@@ -326,6 +326,8 @@ HARNESS = r"""
       assert(submittedPayload?.svg_only === true && submittedPayload?.material === '', 'SVG-only submission flags changed');
       assert(Array.isArray(submittedPayload?.selected_color_hexes) && submittedPayload.selected_color_hexes.length === palette.length, 'selected guest swatches changed');
       assert(typeof submittedPayload?.panel_tiling === 'object' && submittedPayload.panel_tiling !== null, 'panel tiling payload stopped being an object');
+      assert(submittedPayload?.heat_reduction?.enabled === true && submittedPayload.heat_reduction.projects === 10, 'Heat Reduction did not submit ten projects');
+      assert(window.__heatControlsChecked === true, 'Heat Reduction disclosure or validation failed');
       assert(fetchHistory.includes('POST /api/guest/uploads'), 'guest upload permission was not requested');
       assert(fetchHistory.includes('POST /api/guest/jobs/guest-submit-task/submit'), 'guest job was not submitted');
       assert(document.querySelector('#status').textContent.startsWith('COMPLETED'), 'submitted guest job did not complete');
@@ -334,7 +336,7 @@ HARNESS = r"""
       assert(!location.search.includes('task='), 'guest submission unexpectedly persisted its task ID in the URL');
     } else if (scenario === 'authenticated-submit') {
       const expectedGrantKeys = ['artwork_name', 'artwork_content_type', 'thumbnail_content_type', 'material_name', 'material_content_type', 'holographic_palette_name', 'holographic_palette_content_type', 'upload_holographic_palette', 'saved_material_library_id', 'saved_holographic_recipe_id', 'svg_only'];
-      const expectedPayloadKeys = ['upload_token', 'artwork_key', 'thumbnail_key', 'material_key', 'holographic_palette_key', 'pixel_square_mm', 'new_width', 'new_height', 'crop_shape', 'white_is', 'material', 'colors', 'selected_color_hexes', 'selected_holographic_recipe_indexes', 'image_preset', 'abstract_filter', 'abstract_filter_parameters', 'color_matching_mode', 'color_matching_hue_weight', 'color_matching_saturation_weight', 'color_matching_lightness_weight', 'geometry_style', 'geometry_style_parameters', 'panel_tiling', 'color_name_overrides', 'cut_mode', 'preserve_black_outlines', 'svg_only'];
+      const expectedPayloadKeys = ['upload_token', 'artwork_key', 'thumbnail_key', 'material_key', 'holographic_palette_key', 'pixel_square_mm', 'new_width', 'new_height', 'crop_shape', 'white_is', 'material', 'colors', 'selected_color_hexes', 'selected_holographic_recipe_indexes', 'image_preset', 'abstract_filter', 'abstract_filter_parameters', 'color_matching_mode', 'color_matching_hue_weight', 'color_matching_saturation_weight', 'color_matching_lightness_weight', 'geometry_style', 'geometry_style_parameters', 'panel_tiling', 'heat_reduction', 'color_name_overrides', 'cut_mode', 'preserve_black_outlines', 'svg_only'];
       assert(Object.keys(uploadGrantPayload || {}).join('|') === expectedGrantKeys.join('|'), `authenticated upload grant keys or ordering changed: ${Object.keys(uploadGrantPayload || {}).join('|')}`);
       assert(Object.keys(submittedPayload || {}).join('|') === expectedPayloadKeys.join('|'), `authenticated submission keys or ordering changed: ${Object.keys(submittedPayload || {}).join('|')}`);
       assert(uploadGrantPayload?.svg_only === true && uploadGrantPayload?.upload_holographic_palette === false, 'authenticated upload grant booleans changed');
@@ -562,6 +564,18 @@ HARNESS = r"""
     const choice = document.querySelector('#materialChoice');
     choice.value = 'svg';
     choice.dispatchEvent(new Event('change', {bubbles: true}));
+    const heatToggle = document.querySelector('#heatReductionEnabled');
+    const heatDetails = document.querySelector('#heatReductionDetails');
+    const heatCount = document.querySelector('#heatReductionProjects');
+    const initiallyHidden = heatDetails.hidden && heatCount.disabled && heatToggle.getAttribute('aria-expanded') === 'false';
+    heatToggle.click();
+    const revealed = !heatDetails.hidden && !heatCount.disabled && heatToggle.getAttribute('aria-expanded') === 'true';
+    const rejected = ['1', '11', '2.5'].every(value => { heatCount.value = value; return !heatCount.checkValidity(); });
+    heatToggle.click();
+    const collapsed = heatDetails.hidden && heatCount.disabled;
+    heatToggle.click();
+    heatCount.value = '10';
+    window.__heatControlsChecked = initiallyHidden && revealed && rejected && collapsed && heatCount.checkValidity();
     attachArtwork('#artwork');
     document.querySelector('#job').requestSubmit();
   };
@@ -988,7 +1002,7 @@ HARNESS = r"""
 
 class _QuietHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
-        if self.path.startswith("/rasterizer/submission-v1.js"):
+        if self.path.startswith("/rasterizer/submission-v2.js"):
             time.sleep(0.25)
         super().do_GET()
 
@@ -1016,8 +1030,8 @@ class RasterizerBrowserCharacterizationTests(unittest.TestCase):
         index = index_path.read_text(encoding="utf-8")
         index = re.sub(r'\s*<script src="/staging-shell\.js\?v=4" defer></script>', '', index)
         index = index.replace(
-            '<script type="module" src="/rasterizer-v4.js"></script>',
-            '<script src="/characterization-harness.js"></script>\n<script type="module" src="/rasterizer-v4.js"></script>',
+            '<script type="module" src="/rasterizer-v5.js"></script>',
+            '<script src="/characterization-harness.js"></script>\n<script type="module" src="/rasterizer-v5.js"></script>',
         )
         index_path.write_text(index, encoding="utf-8")
         (cls.site / "characterization-harness.js").write_text(HARNESS.replace("__JWT__", _jwt()), encoding="utf-8")

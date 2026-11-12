@@ -126,6 +126,21 @@ def _extract_single_panel_archive(archive_path, destination, stem):
     with zipfile.ZipFile(archive_path) as archive:
         names = set(archive.namelist())
         source_svg = "tile-01-r01-c01.svg"
+        manifest = json.loads(archive.read("panel-manifest.json")) if "panel-manifest.json" in names else {}
+        heat = next(iter(manifest.get("tiles", [])), {}).get("heat_reduction")
+        if heat:
+            for project in heat["projects"]:
+                for key in ("svg", "lightburn"):
+                    name = project.get(key)
+                    if not name:
+                        continue
+                    renamed = name.replace("tile-01-r01-c01", stem, 1)
+                    if os.path.basename(name) != name or os.path.basename(renamed) != renamed:
+                        raise ValueError("Invalid cooling project filename in panel archive.")
+                    with archive.open(name) as source, open(os.path.join(destination, renamed), "wb") as output:
+                        shutil.copyfileobj(source, output)
+                    project[key] = renamed
+            return heat
         source_lbrn = f"{source_svg}.lbrn2"
         if source_svg not in names:
             raise ValueError("A high-resolution panel worker did not produce its SVG tile.")
@@ -249,7 +264,7 @@ def run_high_resolution_panel_job(argv, panel_tiling, pixel_mm, plan):
                         f"failed with exit code {result.returncode}."
                     )
                 child_archive = os.path.join(render_dir, f"{stem}.panel-tiles.zip")
-                _extract_single_panel_archive(child_archive, temp_dir, stem)
+                heat = _extract_single_panel_archive(child_archive, temp_dir, stem)
                 completed[sequence] = {
                     "sequence": sequence,
                     "row": row + 1,
@@ -260,6 +275,10 @@ def run_high_resolution_panel_job(argv, panel_tiling, pixel_mm, plan):
                     "svg": f"{stem}.svg",
                     "lightburn": f"{stem}.svg.lbrn2" if os.path.exists(os.path.join(temp_dir, f"{stem}.svg.lbrn2")) else None,
                 }
+                if heat:
+                    completed[sequence].pop("svg")
+                    completed[sequence].pop("lightburn")
+                    completed[sequence]["heat_reduction"] = heat
         manifest["tiles"] = [completed[index] for index in sorted(completed)]
         with open(os.path.join(temp_dir, "panel-manifest.json"), "w", encoding="utf-8") as output:
             json.dump(manifest, output, indent=2)
@@ -316,6 +335,10 @@ def main(argv=None):
     if white_is not in {"engraved", "unengraved"}:
         user_input_error("Choose whether White is engraved or unengraved")
     panel_tiling = {}
+    try:
+        heat_reduction = vector_processing.normalize_heat_reduction(argv[20] if len(argv) > 20 else None)
+    except ValueError as error:
+        user_input_error(str(error))
     high_resolution_panel = None
     if len(argv) > 19 and argv[19].strip():
         try:
@@ -606,6 +629,7 @@ def main(argv=None):
                 "artwork_crop_shape": crop_shape or "none",
                 "white_is": white_is,
                 "panel_tiling": panel_tiling,
+                "heat_reduction": heat_reduction,
             },
             export_lightburn=not svg_only,
             geometry_style=geometry_style,
@@ -613,6 +637,7 @@ def main(argv=None):
             crop_shape=crop_shape,
             white_is=white_is,
             panel_tiling=panel_tiling,
+            heat_reduction=heat_reduction,
         )
     finally:
         if temporary_panel_source and os.path.exists(temporary_panel_source):

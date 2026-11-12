@@ -23,6 +23,10 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from dev_setup import release_announcement_email as release_email
+try:
+    from heat_reduction import normalize_heat_reduction
+except ModuleNotFoundError:
+    from lib.heat_reduction import normalize_heat_reduction
 
 
 REGION = os.environ.get("AWS_REGION", "us-east-2")
@@ -1167,6 +1171,7 @@ LAST_USED_FORM_FIELDS = {
         "image_preset", "filter_parameters", "cut_mode", "preserve_black_outlines",
         "geometry_style", "geometry_style_parameters",
         "panel_tiling",
+        "heat_reduction",
         "white_is",
         "color_matching_mode", "color_matching_hue_weight",
         "color_matching_saturation_weight", "color_matching_lightness_weight",
@@ -1310,6 +1315,11 @@ def clean_last_used_form(name, snapshot):
                     value, geometry=key == "geometry_style_parameters"
                 )
             clean_values[key] = clean_parameters
+        elif key == "heat_reduction":
+            try:
+                clean_values[key] = normalize_heat_reduction(value)
+            except ValueError:
+                continue
         elif key == "panel_tiling" and isinstance(value, dict):
             clean_values[key] = {
                 parameter: parameter_value
@@ -5654,6 +5664,10 @@ def submit_job(event, task_id, guest=False):
     except (TypeError, ValueError):
         return response(400, {"message": "Pixel size must be at least 0.01 mm"})
     data["pixel_square_mm"] = str(pixel_square_mm)
+    try:
+        data["heat_reduction"] = normalize_heat_reduction(data.get("heat_reduction"))
+    except ValueError as error:
+        return response(400, {"message": str(error)})
     raw_panel_tiling = data.get("panel_tiling") or {"enabled": False}
     try:
         panel_tiling = json.loads(raw_panel_tiling) if isinstance(raw_panel_tiling, str) else raw_panel_tiling

@@ -2090,6 +2090,7 @@ def long_running_script(task_id, data, image_path, material_settings_path, uploa
             str(data.get("crop_shape", "")).strip().lower(),
             str(data.get("white_is", "engraved")).strip().lower(),
             json.dumps(data.get("panel_tiling") or {"enabled": False}, separators=(",", ":")),
+            json.dumps(data.get("heat_reduction") or {"enabled": False}, separators=(",", ":")),
         ]
 
         def run_process(arguments):

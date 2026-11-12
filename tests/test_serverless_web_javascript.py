@@ -882,6 +882,9 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
         ROOT / "static" / "docs-search-v1.js",
     }
     retained_versioned_assets = {
+        WEB / "rasterizer-v4.js",
+        WEB / "rasterizer" / "submission-v1.js",
+        WEB / "rasterizer" / "form-state-v1.js",
         WEB / "mandala" / "state-v1.js",
         WEB / "mandala" / "preview-v2.js",
         WEB / "mandala" / "asset-constraints-v2.js",
@@ -895,10 +898,11 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
     assert all(len(modes) == 1 for modes in referenced_modes.values())
     assert referenced_modes[WEB / "staging-shell.js"] == {"classic"}
     assert referenced_modes[WEB / "blank-palette.js"] == {"classic"}
-    assert referenced_modes[WEB / "rasterizer-v4.js"] == {"module"}
+    assert referenced_modes[WEB / "rasterizer-v5.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "output-rendering-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "jobs-v1.js"] == {"module"}
-    assert referenced_modes[WEB / "rasterizer" / "submission-v1.js"] == {"module"}
+    assert referenced_modes[WEB / "rasterizer" / "submission-v2.js"] == {"module"}
+    assert referenced_modes[WEB / "rasterizer" / "heat-reduction-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "artwork-preview-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "panel-tiling-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "palette-resources-v1.js"] == {"module"}
@@ -907,7 +911,7 @@ def test_all_serverless_web_javascript_parses_in_its_execution_mode(
     assert referenced_modes[WEB / "rasterizer" / "geometry-controls-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "image-style-matching-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "session-api-v1.js"] == {"module"}
-    assert referenced_modes[WEB / "rasterizer" / "form-state-v1.js"] == {"module"}
+    assert referenced_modes[WEB / "rasterizer" / "form-state-v2.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "ui-helpers-v1.js"] == {"module"}
     assert referenced_modes[WEB / "rasterizer" / "material-input-v1.js"] == {"module"}
     assert referenced_modes[WEB / "custom-image-vectorizer-v1.js"] == {"module"}
