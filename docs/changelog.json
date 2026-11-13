@@ -12,7 +12,10 @@
           "title": "Improvements to existing workflows",
           "items": [
             "Panel Tiling splits large Rasterizer designs across repeatable blanks and exports centered tile files, a manifest, and an assembly map.",
+            "Heat Reduction spreads artwork across 2–10 numbered cooling projects in a ZIP, keeping filled shapes intact, interleaving Krasnow strokes, and sharing a non-engraving T1 alignment perimeter in LightBurn. It also works per panel with Panel Tiling.",
+            "Job History can rerun completed or failed retained jobs from their exact input snapshot or with the current saved palette, creating a separate job for review.",
             "Color Discovery can export native LightBurn Material Test presets with grids of up to 800 cells, avoiding the 30-cell limit of color-layer-based LightBurn projects.",
+            "Saved Color Discovery grids retain refinement ancestry, with controls to revisit a grid or branch from an earlier refinement source.",
             "Expanded geometry options add Halftone Newsprint, custom Glyph and Krasnow cells, tighter packing, seeded rotation, per-swatch routing, and source-image detail in Parallax SVG exports.",
             "Job History thumbnails, steadier signed-in navigation, recoverable expired guest links, bulk swatch routing controls, and optional white engraving make everyday workflows easier to manage."
           ]
