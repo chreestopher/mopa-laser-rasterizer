@@ -57,6 +57,8 @@ The in-depth guides are available at:
 
 - [MOPA Madness: The Wizzard of Awes' Full Tutorial on Fauxlographic Laser Engraving](https://mopa-laser-rasterizer.com/docs/fauxlogram-tutorial)
 - [Geometric Alchemy: The Wizzard of Awes' Full Guide to Multi-Geometry Rasterizer Jobs](https://mopa-laser-rasterizer.com/docs/multi-geometry-rasterizer-guide)
+- [Heat Reduction: Aligned Cooling Projects](https://mopa-laser-rasterizer.com/docs/heat-reduction)
+- [LightBurn Browser Extension Beta](https://mopa-laser-rasterizer.com/docs/lightburn-browser-integration)
 
 ## Rasterizer workflow
 
@@ -67,6 +69,8 @@ The in-depth guides are available at:
 5. Crop the artwork when needed, choose the processing dimensions and physical pixel size, select the desired palette and Image Style, then choose a Geometry Style or per-swatch routing.
 6. Submit the job, follow its status and logs, and download whichever completed output files are useful for the workflow.
 7. Inspect dimensions, geometry, layers, cut modes, output states, and every laser parameter before framing and testing the job.
+
+Signed-in users can rerun completed or failed retained jobs from Job History using **Rerun exact snapshot** or **Rerun with current palette**. Each creates a new job; the current-palette option requires a linked saved Vault palette. Retained inputs must still be available within the seven-day retention window. Review the new outputs before engraving.
 
 For MOPA color work, Flood Fill has often produced the best combination of engraving quality and run time in this project's testing, but it remains an operator-controlled LightBurn setting that must be validated on the actual system.
 

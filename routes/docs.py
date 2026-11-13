@@ -912,6 +912,21 @@ DOCS["krasnow-grating-geometry"] = _page(
     [],
     ["geometry-styles", "color-layers", "diffraction-gratings", "holographic-calibration"],
 )
+DOCS["heat-reduction"] = _page(
+    "Heat Reduction: Aligned Cooling Projects",
+    "Spread one engraving across 2–10 numbered projects, with intact filled shapes, interleaved Krasnow strokes, and shared LightBurn alignment.",
+    "Heat Reduction distributes the finished engraving geometry across separate projects so you can let the material cool between runs. It works with a single artwork or with Panel Tiling and preserves the selected laser settings.",
+    [
+        ("Enable Heat Reduction", ["On the Rasterizer page, find Heat Reduction beneath Panel Tiling. Enable it and set Number of projects to a whole number from 2 to 10; the initial value is 4. Panel Tiling does not need to be enabled. Check this choice before submitting: restored account settings can enable Heat Reduction again."]),
+        ("How the geometry is divided", ["Whole filled shapes, including their holes, stay intact and are distributed approximately by engraved area. Individual Krasnow strokes are interleaved across the artwork instead of splitting a filled shape into strips. Choose by Swatch jobs retain their per-swatch geometry styles and settings.", "Area balance is not a prediction of engraving time or temperature. A single large filled shape cannot be divided, so projects can have uneven workloads or no engraving geometry. Inspect the entire set before running it."]),
+        ("Download and inspect the ZIP", ["Without Panel Tiling, the output is a .heat-reduction.zip containing numbered SVG files, matching .lbrn2 files when using a Material Library, and heat-manifest.json. Filenames identify the sequence, for example artwork-heat-01-of-04.svg and artwork-heat-01-of-04.svg.lbrn2. These numbered outputs replace the ordinary single-artwork files for this job.", "The manifest lists the sequence and filenames, plus shared alignment bounds in millimeters as X, Y, width, and height. SVG-only mode supplies the numbered SVGs and manifest without laser settings or a LightBurn T1 perimeter; preserve their shared coordinates when importing them into your own software."]),
+        ("Keep every cooling project aligned", ["Every LightBurn project includes the same non-engraving T1 alignment perimeter, giving the set consistent positioning bounds even when individual projects contain different shapes. Keep that perimeter intact and disabled for engraving. Review each project's embedded Notes and confirm its dimensions and settings.", "Keep the material fixed, use the same origin and positioning mode for every project, and run each numbered project once in sequence. Allow cooling between projects. Do not recenter or scale individual subsets independently. The feature does not insert an automatic cooling delay or operate the laser; determine a suitable pause by testing your material and process."]),
+        ("Combine with Panel Tiling", ["Each panel receives its own numbered cooling projects inside the panel ZIP. The panel manifest includes that panel's cooling-project list and alignment bounds, and the assembly map still locates the physical blanks. Finish the numbered set for one blank, allowing cooling between runs, before replacing it with the next blank in the fixture."]),
+        ("Limits and physical results", ["LightBurn output reserves T1 for alignment. If specialized palette settings leave no free native engraving layer for remapping, reduce the number of engraving swatches to 30 or fewer and submit again.", "Splitting an engraving changes its thermal history and can change color or finish. Heat Reduction does not change power, speed, passes, or other selected cut settings, and it does not guarantee less warping or a particular temperature. Test the complete sequence on expendable material before production."]),
+    ],
+    ["panel-tiling", "lightburn-export", "geometry-styles", "svg-only-mode", "why-fixturing-is-so-important", "job-history"],
+)
+
 DOCS["krasnow-grating-geometry"].update({
     "description": "Create open-path diffraction-grating artwork based on Ben Krasnow's method by using the cut settings stored in the selected material's Fauxlographic entry as a machine-specific 1.00 µm calibration anchor and scaling the output-layer speeds to produce a range of pulse pitches.",
     "intro": "Krasnow Grating Geometry Style follows Rasterizer's image resizing, palette quantization, and color-region cleanup stages, then rebuilds selected geometry as patches of parallel open lines. Source-image luminance controls each patch's line angle, while source-image hue and the selected fauxlogram gradient determine which diffraction carrier receives that patch.",
@@ -1595,12 +1610,64 @@ DOCS["power-down-cutoff-frequency"]["diagram"] = {
 }
 
 
+DOCS["lightburn-browser-integration"] = _page(
+    "LightBurn Browser Extension Beta",
+    "Import LightBurn settings into Color and Processing palettes and load retained native projects directly from Job History.",
+    "The Chrome and Edge extension connects Rasterizer to LightBurn 2.23 or later on the same computer. Sign in to use the Vault and Job History workflows. Imported settings are snapshots; later LightBurn changes do not automatically update saved palettes.",
+    [
+        ("Install and pair", [{"before": "Follow the ", "link_text": "extension download and installation guide", "path": "/lightburn-extension.html", "after": " for the current package, pairing, troubleshooting, and manual updates. Extract the ZIP, enable Developer mode in your browser's extension manager, and use Load unpacked on the folder containing manifest.json. In LightBurn, enable Edit > Settings > Extensions > Allow API Access from Network, then check the connection and approve pairing from the extension diagnostics page. Pair separately for each browser profile."}, "Use the download for the website you are visiting. Staging and production packages are restricted to their respective origins; staging is labeled Development. Refresh the website after enabling or reloading the extension. Updates require replacing the unpacked files and reloading the extension manually."]),
+        ("Import Color palette settings", ["In Swatch Palette Vault, choose Import swatch palette from LightBurn to create a Color palette, or Import LightBurn Swatches on an existing Color palette. Save pending Vault edits first. Read the selected LightBurn Material Library, select entries, choose Preview import, and assign Rasterizer swatches before confirming. Appending retains existing settings and assignments. Review the completion message and imported settings before using the palette."]),
+        ("Import a Processing Palette", ["Choose Import processing palette from LightBurn and assign selected settings to Cut, Score, Photo, Fill, Shovel, Cleaning, or 3D-Slice roles. Leave unused roles unassigned, preview the import, and confirm. Use these operation roles in compatible Depthmap and Layered Relief workflows; Processing Palettes do not supply Rasterizer color quantization."]),
+        ("Load a retained project", ["In Job History, expand a completed job and select Load in LightBurn beside a native .lbrn2 download. Save the current LightBurn work, review the displayed project, and explicitly confirm replacement. Extension version 0.7.2 or later accepts native files up to 250 MiB. SVG files and ZIP archives do not have this action; extract cooling or panel projects and open their individual files manually.", "Keep one LightBurn instance open and avoid competing imports or project edits during transfer. Large files may take up to two minutes to upload and another five minutes for completion. Closing the dialog does not cancel an import. If completion is unknown, inspect LightBurn before retrying. The extension does not start the laser; inspect every layer and setting before engraving."]),
+    ],
+    ["material-vault", "job-history", "lightburn-export", "depthmap-export"],
+)
+
+DOCS["job-history"]["sections"].insert(2, (
+    "Rerun a retained job", [
+        "After a signed-in job completes or fails, expand it and choose Rerun exact snapshot to reuse its retained inputs and requested processing settings. This creates a new queued job and a separate Job History entry. It reruns processing with the current application; it does not promise byte-identical output or repeat a physical laser run.",
+        "Choose Rerun with current palette to reuse the artwork and processing request while resolving the saved Vault palette's current settings. Use this after updating tested palette settings. This option requires a linked saved palette; it is unavailable for a one-off uploaded palette or a job without a saved palette. A deleted palette or missing retained input prevents the rerun.",
+        "Reruns require the original job and inputs to remain available within retention. Download important files before the seven-day expiry, and inspect the new outputs before engraving.",
+    ],
+))
+DOCS["color-discovery"]["sections"].insert(4, (
+    "Saved grids and refinement ancestry", [
+        "Signed-in members can return to saved Color Discovery grids with Use grid. Explore ancestry shows the chain of original and refined grids, including the parent cell used at each step. Select Use as refinement source on an ancestor to explore another branch from that test.",
+        "Deleting a saved grid removes that grid and its downloadable files while leaving its refinement descendants saved. Their ancestry display identifies a parent that is no longer saved. Keep local copies of test files and records you need for long-term comparison.",
+    ],
+))
+DOCS["job-history"]["sections"].append((
+    "Load native projects in LightBurn", [
+        {"before": "The optional ", "link_text": "LightBurn browser extension beta", "link_slug": "lightburn-browser-integration", "after": " adds Load in LightBurn beside retained native .lbrn2 downloads. Review and confirm replacement of the current LightBurn project before importing."},
+    ],
+))
+DOCS["panel-tiling"]["sections"].append((
+    "Cooling projects for each panel", [
+        {"before": "Enable ", "link_text": "Heat Reduction", "link_slug": "heat-reduction", "after": " to replace each panel's ordinary files with 2–10 numbered cooling projects. The panel ZIP and assembly map remain the entry point; complete each blank's aligned cooling sequence before changing blanks."},
+    ],
+))
+DOCS["lightburn-export"]["sections"].insert(1, (
+    "Panel and cooling archives", [
+        "Panel Tiling and Heat Reduction package numbered outputs in a ZIP rather than the ordinary single-artwork downloads. Heat Reduction exports SVGs and, for library-backed jobs, corresponding LightBurn projects with a shared non-engraving T1 alignment perimeter. Extract the ZIP and follow the manifest's sequence; keep the same origin and positioning mode throughout each cooling set.",
+    ],
+))
+for _slug, _related in {
+    "preset-controls": ["heat-reduction"],
+    "panel-tiling": ["heat-reduction"],
+    "svg-only-mode": ["heat-reduction"],
+    "lightburn-export": ["heat-reduction", "lightburn-browser-integration"],
+    "material-vault": ["lightburn-browser-integration"],
+    "job-history": ["lightburn-browser-integration", "heat-reduction"],
+}.items():
+    DOCS[_slug]["related"].extend(_related)
+
+
 DOC_GROUPS = [
     ("In-depth workflow guides", ["fauxlogram-tutorial", "multi-geometry-rasterizer-guide", "manual-krasnow-geometry-workflow", "color-discovery-material-test-presets"]),
-    ("Rasterizer", ["preset-controls", "artwork-cropping", "geometry-styles", "halftone-newsprint-geometry", "krasnow-grating-geometry", "panel-tiling", "raster-to-vector", "svg-only-mode", "raster-vs-vector", "image-presets", "cartoon-preset", "color-photo-preset", "black-and-white-photo", "pixel-size", "color-layers"]),
+    ("Rasterizer", ["preset-controls", "artwork-cropping", "geometry-styles", "halftone-newsprint-geometry", "krasnow-grating-geometry", "panel-tiling", "heat-reduction", "raster-to-vector", "svg-only-mode", "raster-vs-vector", "image-presets", "cartoon-preset", "color-photo-preset", "black-and-white-photo", "pixel-size", "color-layers"]),
     ("Abstract filters", ["abstract-filters", "abstract-filter-reference"] + [f"{slug}-filter" for slug in FILTER_PAGES]),
     ("Laser technology", ["my-personal-laser-journey", "mopa-color-laser-engraving", "types-of-lasers-for-engraving", "continuous-wave-vs-pulsed-lasers", "what-does-mopa-mean", "what-does-q-switched-mean", "diode-lasers-explained", "co2-lasers-explained", "uv-lasers-explained", "laser-engraving-parameters", "all-about-operation-mode", "all-about-laser-power", "what-is-laser-ablation", "all-about-engraving-speed", "all-about-laser-frequency", "all-about-pulse-width", "power-down-cutoff-frequency", "all-about-line-interval", "all-about-engraving-passes", "all-about-scan-angle-crosshatch", "why-fixturing-is-so-important", "laser-compatibility", "what-laser-should-i-buy", "color-discovery"]),
-    ("LightBurn and materials", ["works-with-lightburn", "material-vault", "hatch-palettes", "material-coupon-generator", "community-set", "material-libraries", "blank-palette-library", "lightburn-export", "lightburn-large-projects", "reduce-lightburn-object-count", "mopa-laser-workflow"]),
+    ("LightBurn and materials", ["works-with-lightburn", "lightburn-browser-integration", "material-vault", "hatch-palettes", "material-coupon-generator", "community-set", "material-libraries", "blank-palette-library", "lightburn-export", "lightburn-large-projects", "reduce-lightburn-object-count", "mopa-laser-workflow"]),
     ("Fauxlographic Etching Lab", ["holographic-etching", "what-is-iridescence", "iridescent-laser-engraving", "iridescent-engraving-challenges", "holographic-lab-workflow", "holographic-calibration", "analyze-calibration-photo", "holographic-recipes", "holographic-artwork", "diffraction-gratings", "choose-cut-mode"]),
     ("Depthmap / Relief Engraving Lab", ["depthmap-generator", "depthmap-workflow", "depth-palettes", "depthmap-adjustments", "depthmap-manual-editing", "depthmap-export", "depthmap-limitations"]),
     ("Layered Mandala Lab", ["layered-mandala-lab"]),
