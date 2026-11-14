@@ -529,7 +529,18 @@ class ServerlessHolographicPaletteRoutingTests(unittest.TestCase):
 
         self.assertIn('if key.endswith(".svg"):\n        return (0, key)', handler)
         self.assertIn('if key.endswith(".lbrn2"):\n        return (1, key)', handler)
-        self.assertEqual(handler.count("ordered_output_descriptors(task_id, source_name,"), 3)
+        functions = {
+            node.name: node for node in ast.parse(handler).body
+            if isinstance(node, ast.FunctionDef)
+        }
+        for endpoint in ("get_job", "account_job", "admin_job"):
+            with self.subTest(endpoint=endpoint):
+                self.assertTrue(any(
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "ordered_output_descriptors"
+                    for node in ast.walk(functions[endpoint])
+                ), f"{endpoint} must use shared download ordering")
         self.assertIn('class="staging-action-button output-download-button"', output_rendering)
         self.assertIn('const label = `Download ${outputBasename(output)}`', output_rendering)
         self.assertIn("name.endsWith('.svg') ? 0 : name.endsWith('.lbrn2') ? 1 : 2", output_rendering)
