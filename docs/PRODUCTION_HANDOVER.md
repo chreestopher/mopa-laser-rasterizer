@@ -12,6 +12,8 @@ Production is a serverless AWS application: private static S3 behind CloudFront,
 
 ### System map
 
+For reported output problems, open the retained job in the admin console and use **Project downloads** to inspect its generated SVG, LightBurn project, or ZIP archive. Available outputs are listed for account and guest jobs, including failed jobs with retained files. Links expire after 15 minutes; close and reopen the job to refresh them. Downloads remain subject to job retention and deletion. Access requires the configured verified admin identity.
+
 ```mermaid
 flowchart LR
     U[Visitor or signed-in user] --> DNS[Route 53 and TLS certificate]

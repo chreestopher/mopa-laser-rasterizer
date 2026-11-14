@@ -1571,6 +1571,18 @@ def admin_job(event, task_id):
     live = runtime(task_id) or {}
     logs = job_logs(task_id, live)
     error_message = str(live.get("error_message") or history.get("error_message") or "")
+    source_name = str(history.get("source_name") or record.get("source_name") or "Artwork")
+    artifact_prefix = str(record.get("artifact_prefix") or (
+        f"jobs/{task_id}/" if record.get("guest") is True else f"users/{owner}/jobs/{task_id}/"
+    ))
+    options = {"Bucket": BUCKET, "Prefix": artifact_prefix.rstrip("/") + "/outputs/"}
+    objects = []
+    while True:
+        page = s3.list_objects_v2(**options)
+        objects.extend(obj for obj in page.get("Contents", []) if not obj["Key"].endswith("/"))
+        if not page.get("NextContinuationToken"):
+            break
+        options["ContinuationToken"] = page["NextContinuationToken"]
     return response(200, {
         "task_id": task_id,
         "status": str(live.get("status") or record.get("status") or history.get("status") or "unknown"),
@@ -1586,6 +1598,7 @@ def admin_job(event, task_id):
         "updated_at": int(live.get("updated_at") or history.get("updated_at") or record.get("updated_at") or 0),
         "error": error_message,
         "logs": visible_job_logs(logs, error_message),
+        "outputs": ordered_output_descriptors(task_id, source_name, objects),
         "queued": str(live.get("status") or "").lower() == "pending" and bool(live.get("payload")),
     })
 
